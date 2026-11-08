@@ -426,7 +426,8 @@ local function onXPBoost(message)
 	if typeof(data) ~= "table" or data.kind ~= "XPBoost"
 		or (data.multiplier ~= 1 and data.multiplier ~= 2 and data.multiplier ~= 4)
 		or not finiteNumber(data.expiresAt) or data.expiresAt < 0 then return end
-	globalEventBindable:Fire({kind = "XPBoost", multiplier = data.multiplier, expiresAt = math.floor(data.expiresAt)})
+	local lowerExpiry = if finiteNumber(data.lowerExpiresAt) and data.lowerExpiresAt > os.time() then math.floor(data.lowerExpiresAt) else 0
+	globalEventBindable:Fire({kind = "XPBoost", multiplier = data.multiplier, expiresAt = math.floor(data.expiresAt), lowerExpiresAt = lowerExpiry})
 end
 
 local function onDJ(message)
