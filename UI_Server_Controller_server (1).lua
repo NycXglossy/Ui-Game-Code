@@ -1425,6 +1425,7 @@ local PRODUCT_IDS = {
 
 type ProductData = {
 	type: "Donation" | "Item" | "TitleSlot" | "XPBoost",
+	productId: number?,
 	perk: string?,
 	amount: number?,
 	name: string?,
@@ -1443,6 +1444,7 @@ local function registerProduct(productId: number, data: ProductData)
 	if PRODUCT_MAP[productId] then
 		error(string.format("[ClubMusic] Duplicate Developer Product ID: %d", productId))
 	end
+	data.productId = productId
 	PRODUCT_MAP[productId] = data
 end
 
