@@ -561,17 +561,16 @@ local function recoverPendingXPReceipt(record: any): (boolean, any)
 	if typeof(record) ~= "table" or typeof(record.pendingReceipt) ~= "string" then return true, record end
 	local pendingId = record.pendingReceipt
 	local key = xpReceiptKey(pendingId)
-	if not key then return false, record end
-	local journal = getXPReceipt(pendingId)
-	if typeof(journal) == "table" then
+	if not key or not allowXPDataStoreOperation() then return false, record end
+	local journalOk, journal = pcall(function() return xpReceiptStore:GetAsync(key) end)
+	if not journalOk then return false, record end
+	if typeof(journal) ~= "table" or journal.purchaseId ~= pendingId then
 		local legacyKey = legacyXPReceiptKey(pendingId)
-		if legacyKey and journal.purchaseId ~= pendingId then
-			local legacyOk, legacyValue = pcall(function() return xpReceiptStore:GetAsync(legacyKey) end)
-			if legacyOk and typeof(legacyValue) == "table" and legacyValue.purchaseId == pendingId then
-				journal = legacyValue
-				key = legacyKey
-			end
-		end
+		if not legacyKey or not allowXPDataStoreOperation() then return false, record end
+		local legacyOk, legacyValue = pcall(function() return xpReceiptStore:GetAsync(legacyKey) end)
+		if not legacyOk or typeof(legacyValue) ~= "table" or legacyValue.purchaseId ~= pendingId then return false, record end
+		journal = legacyValue
+		key = legacyKey
 	end
 	if typeof(journal) ~= "table" or journal.purchaseId ~= pendingId or (journal.status ~= "Prepared" and journal.status ~= "Completed") then
 		warn("[ClubMusic Global] Pending XP receipt has no recoverable journal: " .. pendingId)
