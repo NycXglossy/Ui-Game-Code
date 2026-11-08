@@ -2592,6 +2592,12 @@ task.spawn(function()
 		-- MessagingService is primary; staggered durable reads reconcile missed notifications.
 		task.wait(45 + random:NextNumber(0, 15))
 		refreshGlobalXPBoost()
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(5)
 		local nowClock = os.clock()
 		local changed = xpStateDirty
 		xpStateDirty = false
