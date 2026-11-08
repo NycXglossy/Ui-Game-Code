@@ -95,11 +95,43 @@ end
 
 local fallbackBuckets: {[string]: {tokens: number, updated: number}} = {}
 local signalCounts: {[string]: number} = {}
+local MAX_FALLBACK_BUCKETS = 2048
+local MAX_SIGNAL_KEYS = 2048
+local FALLBACK_BUCKET_IDLE_SECONDS = CONFIG.BudgetKeyTtlSeconds
+local lastFallbackPrune = 0
+
+local function pruneFallbackBuckets(now: number)
+	if now - lastFallbackPrune < 15 then return end
+	lastFallbackPrune = now
+	for key, state in pairs(fallbackBuckets) do
+		if now - state.updated > FALLBACK_BUCKET_IDLE_SECONDS then
+			fallbackBuckets[key] = nil
+		end
+	end
+end
 
 local function fallbackBucket(key: string, capacity: number, refill: number, cost: number): boolean
 	local now = os.clock()
+	pruneFallbackBuckets(now)
 	local state = fallbackBuckets[key]
-	if not state then state = {tokens = capacity, updated = now}; fallbackBuckets[key] = state end
+	if not state then
+		-- Bound cardinality even during bursts of unique user IDs between prune passes.
+		local count = 0
+		local oldestKey: string? = nil
+		local oldestUpdated = math.huge
+		for existingKey, existing in pairs(fallbackBuckets) do
+			count += 1
+			if existing.updated < oldestUpdated then
+				oldestUpdated = existing.updated
+				oldestKey = existingKey
+			end
+		end
+		if count >= MAX_FALLBACK_BUCKETS and oldestKey then
+			fallbackBuckets[oldestKey] = nil
+		end
+		state = {tokens = capacity, updated = now}
+		fallbackBuckets[key] = state
+	end
 	state.tokens = math.min(capacity, state.tokens + math.max(0, now - state.updated) * refill)
 	state.updated = now
 	if state.tokens < cost then return false end
@@ -315,7 +347,15 @@ bindFunction("ReportSignal", function(userId: any, signal: any, detail: any)
 	if not key or not cleanSignal then return false end
 	-- Reports are intentionally aggregated locally; do not publish attacker-controlled details globally.
 	local reportKey = key .. ":" .. cleanSignal
-	local count = (signalCounts[reportKey] or 0) + 1
+	local previous = signalCounts[reportKey]
+	if previous == nil then
+		local keyCount = 0
+		for _ in pairs(signalCounts) do keyCount += 1 end
+		-- Diagnostics are best-effort; cap unique keys to prevent memory growth.
+		if keyCount >= MAX_SIGNAL_KEYS then return false end
+		previous = 0
+	end
+	local count = previous + 1
 	signalCounts[reportKey] = math.min(count, 100)
 	if count == 1 then warn("[ClubMusic Global] Suspicious signal user=" .. key .. " type=" .. cleanSignal .. " detail=" .. (cleanDetail or "")) end
 	return true
