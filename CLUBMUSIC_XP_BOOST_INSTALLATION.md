@@ -34,7 +34,7 @@ XPBoost4xProductId = 0, -- replace with the 4x XP product ID
 
 Use the actual numeric IDs. Do not reuse a donation, shop, or title-slot product ID. The server rejects duplicate product IDs during startup. A value of `0` disables that purchase prompt.
 
-The controller already owns `MarketplaceService.ProcessReceipt`. Do not create another script that overwrites it. The global service atomically stores the receipt ID with the boost extension, so Roblox receipt retries cannot add the same boost time twice.
+The controller already owns `MarketplaceService.ProcessReceipt`. Do not create another script that overwrites it. The global service uses a durable per-PurchaseId journal plus an atomic pending marker stored with the existing global timer record. Retries and crash recovery detect an already-applied timer extension before applying it again. New XP boost receipts no longer consume entries in the capped player-profile receipt map.
 
 ## XP behavior
 
@@ -45,7 +45,10 @@ The controller already owns `MarketplaceService.ProcessReceipt`. Do not create a
 - The 2x product adds 15 minutes to the shared 2x timer.
 - The 4x product adds 30 minutes to the shared 4x timer.
 - The highest currently active multiplier applies to all players in all live servers.
-- Separate 2x and 4x timers are retained. A 2x timer can resume after a stronger 4x timer expires if it is still active.
+- Separate 2x and 4x timers are retained. A 2x timer resumes after a stronger 4x timer expires if it is still active.
+- XP accrues continuously using the multiplier active during each elapsed interval, retaining fractional XP between updates. It does not retroactively apply a newly purchased boost to earlier playtime.
+- Cross-server MessagingService notifications update live servers promptly. Staggered DataStore reconciliation is the fallback when a notification is missed.
+- The active global timer keeps its existing `globalXPBoost_v1` key. Per-purchase XP receipt records are stored in `ClubMusic_XPBoostReceipts_v1`; this avoids an ever-growing receipt map in the global timer value.
 
 ## Studio and live testing
 
@@ -62,8 +65,10 @@ Test in a private published test place with at least two live servers:
 2. Purchase 2x; verify all players across both servers receive 20 XP per full minute for the active interval.
 3. Purchase 4x; verify it overrides 2x while active, then verify any still-active 2x timer resumes.
 4. Simulate/retry receipt processing where possible and verify the boost timer extends only once per PurchaseId.
-5. Test DataStore/MemoryStore outages and confirm purchases are not acknowledged before the durable boost activation and profile receipt recording complete.
-6. Confirm no duplicate `ProcessReceipt` handlers or duplicate scripts are running.
+5. Test DataStore outages and confirm XP boost receipts remain unacknowledged until the global per-purchase journal and timer update are durably committed. Player-profile receipt ledger capacity is not part of XP boost acknowledgment.
+6. Confirm that overlapping 2x and 4x timers accrue at the correct tier before, during, and after the overlap.
+7. Confirm missed MessagingService notifications are reconciled by the staggered DataStore refresh.
+8. Confirm no duplicate `ProcessReceipt` handlers or duplicate scripts are running.
 
 ## Verification limits
 
