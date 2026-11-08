@@ -1499,8 +1499,10 @@ for slotNumber = 2, TITLE_SLOT_COUNT do
 	})
 end
 
--- Durable receipt ledger. A receipt is acknowledged only after UpdateAsync has
--- atomically recorded the reward and PurchaseId in the player's profile key.
+-- Durable receipt journal. The profile reward and pending marker are committed in
+-- one UpdateAsync; a separate hashed per-purchase journal is completed before
+-- ProcessReceipt acknowledges the purchase. The legacy profile receipt map is read
+-- for migration only and is not expanded by new purchases.
 local function applyReceiptToStoredData(data: {[string]: any}, productData: {[string]: any}): boolean
 	if productData.type == "Donation" then
 		local amount = math.max(0, math.floor(tonumber(productData.amount) or 0))
@@ -1808,7 +1810,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	end
 	if productData.type == "XPBoost" then
 		-- The global per-PurchaseId journal is authoritative for XP boosts.
-		-- Do not make acknowledgment depend on the capped profile receipt ledger.
+		-- Do not write XP receipts into the legacy profile receipt map.
 		processedReceipts[receiptId] = true
 		notify(player, string.format("%dx global XP boost activated!", productData.multiplier), "ok")
 		publishState(nil)
