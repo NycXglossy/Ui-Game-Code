@@ -639,6 +639,11 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 	local receiptReadOk, receiptRecord, storedReceiptKey = readXPReceipt(receiptId)
 	if not receiptReadOk then return false, 0, 1 end
 	if storedReceiptKey then receiptKey = storedReceiptKey end
+	if typeof(receiptRecord) == "table" and (receiptRecord.purchaseId ~= receiptId
+		or receiptRecord.multiplier ~= multiplier or receiptRecord.duration ~= duration) then
+		warn("[ClubMusic Global] XP receipt journal identity mismatch; refusing to grant.")
+		return false, 0, 1
+	end
 	if typeof(receiptRecord) == "table" and receiptRecord.status == "Completed" then
 		if not allowXPDataStoreOperation() then return false, 0, 1 end
 		local latestOk, latest = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
