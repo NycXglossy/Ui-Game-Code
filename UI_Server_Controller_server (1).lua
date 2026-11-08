@@ -361,23 +361,37 @@ local cachedGlobalXpExpiresAt = 0
 local studioXpBoostMultiplier = 1
 local studioXpBoostExpiresAt = 0
 local xpLastAwardAt: {[number]: number} = {}
+local xpFractional: {[number]: number} = {}
+local settleAllXP: (() -> ())? = nil
+local xpStateDirty = false
+
+local function setGlobalXPState(multiplier: number, expiresAt: number)
+	if multiplier ~= 1 and multiplier ~= 2 and multiplier ~= 4 then return end
+	if typeof(expiresAt) ~= "number" or expiresAt ~= expiresAt
+		or expiresAt == math.huge or expiresAt == -math.huge or expiresAt < 0 then return end
+	local cleanExpiry = if multiplier == 1 or expiresAt <= os.time() then 0 else math.floor(expiresAt)
+	local cleanMultiplier = if cleanExpiry == 0 then 1 else multiplier
+	if cleanMultiplier == cachedGlobalXpMultiplier and cleanExpiry == cachedGlobalXpExpiresAt then return end
+	if settleAllXP then settleAllXP() end
+	cachedGlobalXpMultiplier = cleanMultiplier
+	cachedGlobalXpExpiresAt = cleanExpiry
+	xpStateDirty = true
+end
+
 local function refreshGlobalXPBoost()
 	if RunService:IsStudio() then
-		cachedGlobalXpMultiplier = if studioXpBoostExpiresAt > os.time() then studioXpBoostMultiplier else 1
-		cachedGlobalXpExpiresAt = if studioXpBoostExpiresAt > os.time() then studioXpBoostExpiresAt else 0
+		setGlobalXPState(studioXpBoostMultiplier, studioXpBoostExpiresAt)
 		return
 	end
 	local callOk, multiplier, expiresAt = globalInvoke("GetGlobalXPBoost")
 	if callOk and typeof(multiplier) == "number" and multiplier == multiplier
-		and typeof(expiresAt) == "number" and expiresAt == expiresAt then
-		if multiplier == 2 or multiplier == 4 then
-			cachedGlobalXpMultiplier = multiplier
-			cachedGlobalXpExpiresAt = math.max(0, math.floor(expiresAt))
-		elseif multiplier == 1 then
-			cachedGlobalXpMultiplier, cachedGlobalXpExpiresAt = 1, 0
-		end
+		and typeof(expiresAt) == "number" and expiresAt == expiresAt
+		and (multiplier == 1 or multiplier == 2 or multiplier == 4) then
+		setGlobalXPState(multiplier, expiresAt)
 	end
-	if cachedGlobalXpExpiresAt <= os.time() then cachedGlobalXpMultiplier, cachedGlobalXpExpiresAt = 1, 0 end
+	if cachedGlobalXpExpiresAt > 0 and cachedGlobalXpExpiresAt <= os.time() then
+		setGlobalXPState(1, 0)
+	end
 end
 
 local configFolder = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicConfig") :: Folder
@@ -1590,8 +1604,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 			studioXpBoostExpiresAt = math.min(os.time() + 30 * 24 * 60 * 60,
 				math.max(os.time(), previousExpiry) + productData.duration)
 			studioXpBoostMultiplier = key
-			cachedGlobalXpMultiplier = key
-			cachedGlobalXpExpiresAt = studioXpBoostExpiresAt
+			setGlobalXPState(key, studioXpBoostExpiresAt)
 		else
 			local activateOk, activated, expiry, effectiveMultiplier = globalInvoke(
 				"ActivateGlobalXPBoost", productData.multiplier, productData.duration, receiptId
@@ -1600,12 +1613,18 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 				warn("[ClubMusic] Global XP boost activation failed; receipt will be retried.")
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
-			if typeof(expiry) == "number" and expiry > os.time()
-				and (effectiveMultiplier == 2 or effectiveMultiplier == 4) then
-				cachedGlobalXpExpiresAt = math.floor(expiry)
-				cachedGlobalXpMultiplier = effectiveMultiplier
+			if typeof(expiry) == "number" and (effectiveMultiplier == 1 or effectiveMultiplier == 2 or effectiveMultiplier == 4) then
+				setGlobalXPState(effectiveMultiplier, expiry)
 			end
 		end
+	end
+	if productData.type == "XPBoost" then
+		-- The global per-PurchaseId journal is authoritative for XP boosts.
+		-- Do not make acknowledgment depend on the capped profile receipt ledger.
+		processedReceipts[receiptId] = true
+		notify(player, string.format("%dx global XP boost activated!", productData.multiplier), "ok")
+		publishState(nil)
+		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	local ok, alreadyProcessed, err = persistReceipt(userId, receiptId, productData)
 	if not ok then
@@ -2429,6 +2448,7 @@ local function onJoin(player: Player)
 	applyVipAttribute(player)
 	player:SetAttribute("ClubRank", getRank(player))
 	xpLastAwardAt[player.UserId] = os.clock()
+	xpFractional[player.UserId] = 0
 	publishState(nil) -- also refreshes the staff roster for everyone with access
 end
 
@@ -2438,6 +2458,12 @@ end
 -- immediately and through ServerStorage.ChildAdded for startup-order recovery.
 local function handleGlobalMessage(message: any)
 	if typeof(message) ~= "table" then return end
+	if message.kind == "XPBoost" and (message.multiplier == 1 or message.multiplier == 2 or message.multiplier == 4)
+		and isFiniteNumber(message.expiresAt) and message.expiresAt >= 0 then
+		setGlobalXPState(message.multiplier, message.expiresAt)
+		publishState(nil)
+		return
+	end
 	if message.kind == "Announcement" and isValidString(message.text, 240) then
 		broadcast("[GLOBAL] " .. message.text, "info")
 		return
@@ -2507,31 +2533,49 @@ ServerStorage.ChildAdded:Connect(function(child)
 	if child.Name == "ClubMusicGlobalAPI" and child:IsA("Folder") then watchGlobalApi(child) end
 end)
 
+local function settlePlayerXP(player: Player, nowClock: number): boolean
+	local userId = player.UserId
+	local profile = profiles[userId]
+	local lastClock = xpLastAwardAt[userId]
+	if not profile then return false end
+	if not lastClock then xpLastAwardAt[userId] = nowClock; return false end
+	local elapsed = math.max(0, nowClock - lastClock)
+	xpLastAwardAt[userId] = nowClock
+	if elapsed <= 0 then return false end
+	local boostedSeconds = 0
+	if cachedGlobalXpMultiplier > 1 and cachedGlobalXpExpiresAt > 0 then
+		local expiryClock = nowClock + (cachedGlobalXpExpiresAt - os.time())
+		boostedSeconds = math.clamp(expiryClock - lastClock, 0, elapsed)
+	end
+	local weightedSeconds = elapsed + boostedSeconds * (cachedGlobalXpMultiplier - 1)
+	local fractional = (xpFractional[userId] or 0) + weightedSeconds * (CONFIG.XPPerMinute / 60)
+	local gain = math.floor(fractional + 1e-7)
+	xpFractional[userId] = fractional - gain
+	if gain <= 0 then return false end
+	profile.xp = math.min(9007199254740000, profile.xp + gain)
+	player:SetAttribute("XP", profile.xp)
+	player:SetAttribute("Level", math.floor(profile.xp / CONFIG.XPPerLevel) + 1)
+	player:SetAttribute("XPToNextLevel", CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel))
+	scheduleProfileSave(player)
+	return true
+end
+
+settleAllXP = function()
+	local nowClock = os.clock()
+	for _, player in ipairs(Players:GetPlayers()) do settlePlayerXP(player, nowClock) end
+end
+
 task.spawn(function()
 	refreshGlobalXPBoost()
 	while true do
-		task.wait(15)
+		-- MessagingService is primary; staggered durable reads reconcile missed notifications.
+		task.wait(45 + random:NextNumber(0, 15))
 		refreshGlobalXPBoost()
 		local nowClock = os.clock()
-		local multiplier = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpMultiplier else 1
-		local changed = false
+		local changed = xpStateDirty
+		xpStateDirty = false
 		for _, player in ipairs(Players:GetPlayers()) do
-			local profile = profiles[player.UserId]
-			local lastAward = xpLastAwardAt[player.UserId]
-			if profile and lastAward then
-				local elapsed = nowClock - lastAward
-				if elapsed >= 60 then
-					local fullMinutes = math.floor(elapsed / 60)
-					xpLastAwardAt[player.UserId] = lastAward + fullMinutes * 60
-					local gain = CONFIG.XPPerMinute * multiplier * fullMinutes
-					profile.xp = math.min(9007199254740000, profile.xp + gain)
-					player:SetAttribute("XP", profile.xp)
-					player:SetAttribute("Level", math.floor(profile.xp / CONFIG.XPPerLevel) + 1)
-					player:SetAttribute("XPToNextLevel", CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel))
-					scheduleProfileSave(player)
-					changed = true
-				end
-			end
+			if settlePlayerXP(player, nowClock) then changed = true end
 		end
 		if changed then publishState(nil) end
 	end
@@ -2543,7 +2587,9 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
+	if settleAllXP then settlePlayerXP(player, os.clock()) end
 	xpLastAwardAt[userId] = nil
+	xpFractional[userId] = nil
 	local finalSaveOk = saveProfile(player)
 	if finalSaveOk then
 		releaseProfileSession(userId)
