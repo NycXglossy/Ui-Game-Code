@@ -67,10 +67,12 @@ The audit branch now includes:
 - 100 XP per level, with XP, level, and next-level attributes/state replicated to the player's UI.
 - A new **XP & Boosts** renderer tab.
 - A 2x XP Developer Product (15 minutes) and a 4x XP Developer Product (30 minutes).
-- Cross-server boost timers stored in the global control DataStore and read by every live server.
-- The highest active multiplier applies. Purchases extend the timer for their own multiplier.
-- A bounded, durable global PurchaseId ledger makes boost activation idempotent across receipt retries.
-- The existing profile receipt ledger still records the receipt before Roblox is told that the purchase is granted.
+- Cross-server boost timers stored in the existing global control DataStore key `globalXPBoost_v1`.
+- Separate 2x and 4x timers are preserved; the effective rate can step from 4x back down to an active 2x timer.
+- XP is accrued by weighted elapsed seconds, retaining fractional XP and splitting accrual at known boost-expiry boundaries. A boost change settles the prior interval before the new multiplier is applied.
+- MessagingService publishes prompt boost-state changes to live servers. A staggered 45–60 second durable DataStore refresh reconciles missed messages without every server polling every 15 seconds.
+- XP boost PurchaseIds are recorded in the separate `ClubMusic_XPBoostReceipts_v1` DataStore, one small durable record per purchase. The shared timer update and its `pendingReceipt` marker are committed in the same `UpdateAsync`; recovery completes an interrupted journal without extending the timer twice.
+- New XP boost receipts bypass the capped player-profile receipt map because the global purchase journal is the authoritative durable receipt record for that product type. Existing legacy receipt entries in the old global timer record are still recognized.
 - Studio test purchases use session-only boost state because cross-server services are disabled by default in Studio.
 
 Configuration required before purchases work:
@@ -81,6 +83,18 @@ Configuration required before purchases work:
 - XP profiles in Studio memory mode do not persist after the Studio server session.
 
 The existing `ClubMusic_Overhead_Title_Renderer_client.lua` is already present on this branch. It consumes server-published title attributes and supports fixed, RGB, gradient, rainbow, two-tone, and shimmer effects. It was retained rather than duplicated.
+
+## XP boost corrections applied on the audit branch
+
+The earlier XP receipt and accrual findings have been corrected in the current branch version:
+
+1. Removed the 2,500-entry cap from the global XP boost receipt map for new purchases. New purchases use per-PurchaseId journal keys instead of growing a single shared DataStore value. Existing `globalXPBoost_v1` timers and legacy receipt entries are retained.
+2. Added a durable `Prepared`/`Completed` per-purchase journal and an atomic `pendingReceipt` marker alongside the timer extension. If a server stops between the timer update and journal completion, the next retry recovers the pending transaction before another receipt can be applied.
+3. XP boost acknowledgments no longer depend on writing the same receipt into the capped player-profile ledger. Other Developer Product types continue to use the existing profile receipt ledger and its safety cap.
+4. Replaced whole-minute/current-multiplier awarding with weighted elapsed-time accrual. The controller settles the previous rate before switching multipliers and handles the 4x-to-2x fallback when both timers overlap.
+5. Added cross-server XP boost notifications and a staggered DataStore reconciliation fallback. The renderer/network remote contract is unchanged; the existing state snapshot is published immediately on a received boost update.
+
+The per-purchase XP journal uses DataStore keys prefixed with `xpr_` and accepts PurchaseIds up to 46 ASCII alphanumeric, hyphen, or underscore characters to remain within the DataStore key-length limit. A value outside that format is rejected safely and remains unacknowledged rather than being mapped to a collision-prone hash.
 
 ## Studio DataStore error investigation
 
