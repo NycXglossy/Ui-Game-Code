@@ -168,6 +168,12 @@ end
 local function getModeration(userId: number): {[string]: any}
 	local key = userKey(userId)
 	if not key then return {} end
+	-- Bound durable reads across all servers. If the shared limiter itself is
+	-- unavailable, report a lookup failure so callers can fail closed.
+	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
+	if not budgetShared or not budgetAllowed then
+		return {lookupFailed = true}
+	end
 	local ok, data = pcall(function() return moderationStore:GetAsync(key) end)
 	if not ok then
 		warn("[ClubMusic Global] Moderation lookup failed for " .. key .. ": " .. tostring(data))
@@ -179,7 +185,12 @@ end
 local function updateModeration(userId: number, field: string, value: any, actorUserId: number, reason: string?): boolean
 	local key = userKey(userId)
 	if not key or (field ~= "globalBan" and field ~= "requestBlocked") then return false end
-	local ok, result = pcall(function()
+	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
+	if not budgetShared or not budgetAllowed then
+		warn("[ClubMusic Global] Moderation update rejected: shared DataStore budget unavailable.")
+		return false
+	end
+	local ok, result = pcall(function(){
 		return moderationStore:UpdateAsync(key, function(old)
 			local data = if typeof(old) == "table" then table.clone(old) else {}
 			data[field] = value
