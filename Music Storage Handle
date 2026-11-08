@@ -1,0 +1,352 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+
+local MusicStorageHandler = {}
+
+-- ====================================
+-- CONFIGURATION
+-- ====================================
+local CONFIG = {
+	MAX_CACHED_SOUNDS = 20,
+	LOAD_TIMEOUT = 15,
+	PARALLEL_BATCH_SIZE = 5,
+	CLEANUP_INTERVAL = 300,
+	MIN_USAGE_THRESHOLD = 60,
+	RETRY_ATTEMPTS = 2,
+	RETRY_DELAY = 1
+}
+
+-- ====================================
+-- STATE MANAGEMENT
+-- ====================================
+MusicStorageHandler.Status = {
+	IsLoading = false,
+	CachedSounds = {},
+	LoadingPromises = {},
+	AccessTimes = {},
+	FailedSounds = {},
+	Stats = {
+		TotalLoads = 0,
+		CacheHits = 0,
+		CacheMisses = 0,
+		MemoryFreed = 0
+	}
+}
+
+-- ====================================
+-- STORAGE FOLDER
+-- ====================================
+local storageFolder
+local function getStorageFolder()
+	if not storageFolder or not storageFolder.Parent then
+		storageFolder = ReplicatedStorage:FindFirstChild("MusicStorage")
+		if not storageFolder then
+			storageFolder = Instance.new("Folder")
+			storageFolder.Name = "MusicStorage"
+			storageFolder.Parent = ReplicatedStorage
+		end
+	end
+	return storageFolder
+end
+
+-- ====================================
+-- LRU CACHE MANAGEMENT
+-- ====================================
+local function updateAccessTime(musicId)
+	MusicStorageHandler.Status.AccessTimes[musicId] = tick()
+end
+
+local function getLRUSounds()
+	local sounds = {}
+	for _, sound in ipairs(getStorageFolder():GetChildren()) do
+		if sound:IsA("Sound") then
+			local lastAccess = MusicStorageHandler.Status.AccessTimes[sound.Name] or 0
+			table.insert(sounds, {
+				sound = sound,
+				lastAccess = lastAccess,
+				age = tick() - lastAccess
+			})
+		end
+	end
+
+	-- Sort by least recently used
+	table.sort(sounds, function(a, b)
+		return a.lastAccess < b.lastAccess
+	end)
+
+	return sounds
+end
+
+local function cleanupOldSounds()
+	local sounds = getLRUSounds()
+	local removed = 0
+	local currentTime = tick()
+
+	-- Remove sounds exceeding cache limit
+	while #sounds > CONFIG.MAX_CACHED_SOUNDS do
+		local oldest = sounds[1]
+		if oldest.sound then
+			pcall(function()
+				oldest.sound:Destroy()
+				MusicStorageHandler.Status.CachedSounds[oldest.sound.Name] = nil
+				MusicStorageHandler.Status.AccessTimes[oldest.sound.Name] = nil
+				removed = removed + 1
+			end)
+		end
+		table.remove(sounds, 1)
+	end
+
+	-- Remove unused sounds
+	for _, data in ipairs(sounds) do
+		if data.age > CONFIG.MIN_USAGE_THRESHOLD then
+			pcall(function()
+				data.sound:Destroy()
+				MusicStorageHandler.Status.CachedSounds[data.sound.Name] = nil
+				MusicStorageHandler.Status.AccessTimes[data.sound.Name] = nil
+				removed = removed + 1
+			end)
+		end
+	end
+
+	if removed > 0 then
+		MusicStorageHandler.Status.Stats.MemoryFreed = 
+			MusicStorageHandler.Status.Stats.MemoryFreed + removed
+	end
+
+	return removed
+end
+
+-- ====================================
+-- PARALLEL LOADING WITH RETRY
+-- ====================================
+local function loadSoundWithRetry(musicId, musicTitle)
+	for attempt = 1, CONFIG.RETRY_ATTEMPTS do
+		local sound = Instance.new("Sound")
+		sound.Name = musicId
+		sound.SoundId = "rbxassetid://" .. musicId
+		sound.Volume = 0
+		sound.Looped = false
+		sound.Parent = getStorageFolder()
+
+		-- Metadata
+		sound:SetAttribute("Title", musicTitle or "Unknown")
+		sound:SetAttribute("CreatedAt", tick())
+
+		-- Wait for load with timeout
+		local startTime = tick()
+		while sound.TimeLength == 0 and (tick() - startTime) < CONFIG.LOAD_TIMEOUT do
+			task.wait(0.1)
+		end
+
+		if sound.TimeLength > 0 then
+			sound:SetAttribute("Duration", sound.TimeLength)
+			updateAccessTime(musicId)
+			return sound, sound.TimeLength
+		else
+			-- Failed, cleanup and retry
+			pcall(function() sound:Destroy() end)
+			if attempt < CONFIG.RETRY_ATTEMPTS then
+				task.wait(CONFIG.RETRY_DELAY)
+			end
+		end
+	end
+
+	-- All retries failed
+	return nil, 0
+end
+
+-- ====================================
+-- LAZY LOAD (ON-DEMAND)
+-- ====================================
+function MusicStorageHandler:LoadSound(musicId, musicTitle)
+	-- Check cache first
+	local cached = self.Status.CachedSounds[musicId]
+	if cached then
+		self.Status.Stats.CacheHits = self.Status.Stats.CacheHits + 1
+		updateAccessTime(musicId)
+		local duration = cached:GetAttribute("Duration") or cached.TimeLength
+		return cached, duration
+	end
+
+	-- Check if already loading
+	if self.Status.LoadingPromises[musicId] then
+		-- Wait for existing load
+		local startWait = tick()
+		while self.Status.LoadingPromises[musicId] and (tick() - startWait) < CONFIG.LOAD_TIMEOUT do
+			task.wait(0.1)
+		end
+		-- Check cache again
+		cached = self.Status.CachedSounds[musicId]
+		if cached then
+			return cached, cached:GetAttribute("Duration") or cached.TimeLength
+		end
+	end
+
+	-- Start new load
+	self.Status.LoadingPromises[musicId] = true
+	self.Status.Stats.CacheMisses = self.Status.Stats.CacheMisses + 1
+	self.Status.Stats.TotalLoads = self.Status.Stats.TotalLoads + 1
+
+	local sound, duration = loadSoundWithRetry(musicId, musicTitle)
+
+	self.Status.LoadingPromises[musicId] = nil
+
+	if sound and duration > 0 then
+		self.Status.CachedSounds[musicId] = sound
+
+		-- Cleanup if over limit
+		if #getStorageFolder():GetChildren() > CONFIG.MAX_CACHED_SOUNDS then
+			cleanupOldSounds()
+		end
+
+		return sound, duration
+	else
+		-- Mark as failed
+		self.Status.FailedSounds[musicId] = {
+			title = musicTitle,
+			timestamp = tick()
+		}
+		return nil, 0
+	end
+end
+
+-- ====================================
+-- BATCH PRELOAD (OPTIONAL - FOR POPULAR SONGS)
+-- ====================================
+function MusicStorageHandler:PreloadBatch(musicList, onProgress, onComplete)
+	if self.Status.IsLoading then
+		return
+	end
+
+	self.Status.IsLoading = true
+	local totalSongs = #musicList
+	local loadedCount = 0
+	local failedCount = 0
+
+	task.spawn(function()
+		-- Process in parallel batches
+		for i = 1, totalSongs, CONFIG.PARALLEL_BATCH_SIZE do
+			local batch = {}
+			local batchEnd = math.min(i + CONFIG.PARALLEL_BATCH_SIZE - 1, totalSongs)
+
+			-- Start parallel loads
+			for j = i, batchEnd do
+				local music = musicList[j]
+				if music and music.id then
+					table.insert(batch, task.spawn(function()
+						local sound, duration = self:LoadSound(music.id, music.judul)
+						if duration > 0 then
+							loadedCount = loadedCount + 1
+							-- Update original data
+							music.Duration = duration
+						else
+							failedCount = failedCount + 1
+						end
+
+						if onProgress then
+							onProgress(loadedCount + failedCount, totalSongs, music.judul, duration)
+						end
+					end))
+				end
+			end
+
+			-- Wait for batch to complete
+			for _, thread in ipairs(batch) do
+				-- Threads already spawned, just give them time
+			end
+
+			task.wait(0.2)
+		end
+
+		self.Status.IsLoading = false
+
+		if onComplete then
+			onComplete(loadedCount, totalSongs)
+		end
+	end)
+end
+
+-- ====================================
+-- GET METHODS
+-- ====================================
+function MusicStorageHandler:GetSound(musicId)
+	local sound = self.Status.CachedSounds[musicId]
+	if sound then
+		updateAccessTime(musicId)
+		local duration = sound:GetAttribute("Duration") or sound.TimeLength
+		return sound, duration
+	end
+	return nil, 0
+end
+
+function MusicStorageHandler:IsSoundReady(musicId)
+	local sound = self.Status.CachedSounds[musicId]
+	if sound then
+		local duration = sound:GetAttribute("Duration") or 0
+		return duration > 0
+	end
+	return false
+end
+
+function MusicStorageHandler:IsSoundFailed(musicId)
+	return self.Status.FailedSounds[musicId] ~= nil
+end
+
+-- ====================================
+-- AUTO CLEANUP LOOP
+-- ====================================
+function MusicStorageHandler:StartAutoCleanup()
+	task.spawn(function()
+		while true do
+			task.wait(CONFIG.CLEANUP_INTERVAL)
+			cleanupOldSounds()
+		end
+	end)
+end
+
+-- ====================================
+-- STATISTICS
+-- ====================================
+function MusicStorageHandler:GetStats()
+	local cacheSize = 0
+	for _ in pairs(self.Status.CachedSounds) do
+		cacheSize = cacheSize + 1
+	end
+
+	local hitRate = self.Status.Stats.TotalLoads > 0 and
+		(self.Status.Stats.CacheHits / self.Status.Stats.TotalLoads * 100) or 0
+
+	return {
+		cachedSounds = cacheSize,
+		totalLoads = self.Status.Stats.TotalLoads,
+		cacheHits = self.Status.Stats.CacheHits,
+		cacheMisses = self.Status.Stats.CacheMisses,
+		hitRate = string.format("%.1f%%", hitRate),
+		failedSounds = #self.Status.FailedSounds,
+		memoryFreed = self.Status.Stats.MemoryFreed
+	}
+end
+
+function MusicStorageHandler:PrintStats()
+	-- Method kept for compatibility but does nothing
+end
+
+-- ====================================
+-- MANUAL CLEANUP
+-- ====================================
+function MusicStorageHandler:ForceCleanup()
+	return cleanupOldSounds()
+end
+
+function MusicStorageHandler:ClearCache()
+	for _, sound in ipairs(getStorageFolder():GetChildren()) do
+		if sound:IsA("Sound") then
+			pcall(function() sound:Destroy() end)
+		end
+	end
+	self.Status.CachedSounds = {}
+	self.Status.AccessTimes = {}
+	self.Status.FailedSounds = {}
+end
+
+return MusicStorageHandler
