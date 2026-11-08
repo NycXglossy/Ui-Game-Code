@@ -39,7 +39,7 @@ The checked-in map is empty by default. A track without a configured sound ID re
 
 The supplied `Music Module` has an empty `MusicList`; its example song entries are commented out. The supplied `Music System` requires five child manager modules (`MusicQueueManager`, `MusicPlaybackManager`, `MusicValidationService`, `MusicSkipVoteManager`, and `MusicPlaylistManager`) that were not present in the repository tree. Consequently, the exact internals of those managers could not be ported or verified. Equivalent core responsibilities are retained in the existing secured controller rather than inventing missing module behavior or copying the source system's separate role authority.
 
-The uploaded `Audio Sound Count 1.rbxm` is deliberately not installed or integrated, consistent with the explicit instruction not to add the audio-count asset/system. The supplied `Music Group.rbxm` and five RemoteEvent models are not required at runtime; the controller creates/owns its own SoundGroup and uses its existing remotes.
+The supplied `Audio Sound Count 1.rbxm` is now included in the integration as the playback Sound asset `ServerMusicSound`; despite its filename, the decoded Roblox model contains a Sound instance, not a counter script or counter module. Import it into Studio and parent it directly under `SoundService` (name must remain `ServerMusicSound`). The controller will use it and assign it to the `ClubMusic` SoundGroup. If omitted, the controller creates a fallback Sound with that name. The supplied `Music Group.rbxm` and five RemoteEvent models are not required at runtime; the controller creates/owns its own SoundGroup and uses its existing remotes.
 
 ## Installation
 
