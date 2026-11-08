@@ -338,7 +338,8 @@ local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: Remo
 -- system's second remote/event architecture and keeps playback under this controller.
 -- The existing renderer can still set a local-only SoundGroup volume per client.
 local musicSoundGroup = getOrCreate(SoundService, "SoundGroup", "ClubMusic") :: SoundGroup
-local musicSound = getOrCreate(musicSoundGroup, "Sound", "ClubMusicPlayback") :: Sound
+local musicSound = getOrCreate(SoundService, "Sound", "ClubMusicPlayback") :: Sound
+musicSound.SoundGroup = musicSoundGroup
 musicSound.Volume = 1
 musicSound.Looped = false
 musicSound.PlaybackSpeed = 1
@@ -582,7 +583,7 @@ end
 local ACTION_COOLDOWNS: {[string]: number} = {
 	RequestTrack = 0.5, RequestAudioAsset = CONFIG.AudioInspectionCooldownSeconds,
 	ReloadSong = CONFIG.ReloadCooldownSeconds, ToggleFavorite = 0.2, VoteSkip = 0.5,
-	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJClearQueue = 1, DJToggleLock = 1,
+	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
 	ModBlockUser = 0.5, ModSetVip = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
 	SaveTitleSlot = CONFIG.SaveTitleCooldownSeconds, SelectTitleSlot = 0.3,
