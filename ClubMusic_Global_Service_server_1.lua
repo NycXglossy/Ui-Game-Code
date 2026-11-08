@@ -612,6 +612,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 	local receiptReadOk, receiptRecord = pcall(function() return xpReceiptStore:GetAsync(receiptKey) end)
 	if not receiptReadOk then return false, 0, 1 end
 	if typeof(receiptRecord) == "table" and receiptRecord.status == "Completed" then
+		if not allowXPDataStoreOperation() then return false, 0, 1 end
 		local latestOk, latest = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
 		if not latestOk then return false, 0, 1 end
 		local effectiveMultiplier, expiry = publishXPState(latest)
@@ -632,9 +633,10 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		or prepared.purchaseId ~= receiptId or prepared.multiplier ~= multiplier
 		or prepared.duration ~= duration then return false, 0, 1 end
 	if prepared.status == "Completed" then
+		if not allowXPDataStoreOperation() then return false, 0, 1 end
 		local latestOk, latest = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
 		if not latestOk then return false, 0, 1 end
-		local effectiveMultiplier, expiry = globalXPState(latest)
+		local effectiveMultiplier, expiry = publishXPState(latest)
 		return true, expiry, effectiveMultiplier
 	end
 
