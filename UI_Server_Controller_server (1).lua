@@ -334,6 +334,41 @@ local stateRemote = getOrCreate(remotes, "RemoteEvent", "StateChanged") :: Remot
 local noticeRemote = getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
 local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: RemoteFunction
 
+-- One server-owned Sound drives the entire server. This replaces the source
+-- system's second remote/event architecture and keeps playback under this controller.
+-- The existing renderer can still set a local-only SoundGroup volume per client.
+local musicSoundGroup = getOrCreate(SoundService, "SoundGroup", "ClubMusic") :: SoundGroup
+local musicSound = getOrCreate(musicSoundGroup, "Sound", "ClubMusicPlayback") :: Sound
+musicSound.Volume = 1
+musicSound.Looped = false
+musicSound.PlaybackSpeed = 1
+musicSoundGroup.Volume = 1
+local playbackPaused = false
+
+local function stopServerMusic()
+	pcall(function()
+		musicSound:Stop()
+	end)
+end
+
+local function startServerMusic(soundId: any)
+	stopServerMusic()
+	playbackPaused = false
+	if typeof(soundId) ~= "string" or #soundId > 64
+		or not string.match(soundId, "^rbxassetid://%d+$") then
+		musicSound.SoundId = ""
+		return
+	end
+	musicSound.SoundId = soundId
+	musicSound.TimePosition = 0
+	local ok, err = pcall(function()
+		musicSound:Play()
+	end)
+	if not ok then
+		warn("[ClubMusic] Server playback could not start: " .. tostring(err))
+	end
+end
+
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 local ServerStorage = game:GetService("ServerStorage")
@@ -1193,6 +1228,7 @@ local function setNowPlaying(entry: QueueEntry)
 	nowPlaying.requestedBy = entry.requestedBy
 	nowPlaying.vip = entry.vip
 	nowPlaying.soundId = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
+	startServerMusic(nowPlaying.soundId)
 
 	table.insert(recentTracks, entry.trackId)
 	while #recentTracks > CONFIG.AutoAvoidRecent do
@@ -1289,7 +1325,7 @@ local function snapshotFor(player: Player)
 			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
 			genre = nowPlaying.genre, duration = nowPlaying.duration, elapsed = nowPlaying.elapsed,
 			dj = nowPlaying.dj, source = nowPlaying.source, requestedBy = nowPlaying.requestedBy,
-			vip = nowPlaying.vip, soundId = nowPlaying.soundId,
+			vip = nowPlaying.vip, soundId = nowPlaying.soundId, paused = playbackPaused,
 		},
 		reloadNonce = reloadNonce[player.UserId] or 0,
 		favorites = favorites,
@@ -2319,6 +2355,41 @@ local function handleAction(player: Player, action: any, payload: any)
 		return
 	end
 
+	if action == "DJPause" then
+		if not isStaff(player) then return end
+		if nowPlaying.trackId == "" then
+			notify(player, "No track is currently selected.", "warn")
+			return
+		end
+		if playbackPaused then
+			playbackPaused = false
+			local ok, err = pcall(function() musicSound:Resume() end)
+			if not ok then warn("[ClubMusic] Resume failed: " .. tostring(err)) end
+			notify(player, "Music resumed.", "ok")
+		else
+			playbackPaused = true
+			pcall(function() musicSound:Pause() end)
+			notify(player, "Music paused.", "ok")
+		end
+		publishState(nil)
+		return
+	end
+
+	if action == "DJRestart" then
+		if not isStaff(player) then return end
+		if nowPlaying.trackId == "" then
+			notify(player, "No track is currently selected.", "warn")
+			return
+		end
+		nowPlaying.elapsed = 0
+		playbackPaused = false
+		local soundId = nowPlaying.soundId
+		startServerMusic(soundId)
+		notify(player, "Current track restarted.", "ok")
+		publishState(nil)
+		return
+	end
+
 	if action == "DJClearQueue" then
 		if not isAdmin(player) then return end
 		for _, entry in ipairs(queue) do releaseSlot(entry) end
@@ -2907,15 +2978,18 @@ task.spawn(function()
 end)
 
 -- The server publishes authoritative elapsed time and current state. Clients interpolate between
--- resyncs. Audio plays on each client when a SoundId is configured in CONFIG.SoundIds
--- (or when the track is a staff-requested Creator Hub audio asset).
+-- resyncs. A single server-owned Sound replicates the active track to everyone; CONFIG.SoundIds
+-- supplies optional built-in track audio, while staff-requested Creator Hub audio is validated
+-- before it can enter the queue.
 task.spawn(function()
 	local ticks = 0
 	while true do
 		task.wait(1)
-		nowPlaying.elapsed += 1
+		if not playbackPaused then
+			nowPlaying.elapsed += 1
+		end
 		ticks += 1
-		if nowPlaying.elapsed >= nowPlaying.duration then
+		if not playbackPaused and nowPlaying.elapsed >= nowPlaying.duration then
 			advance()
 			ticks = 0
 			publishState(nil)
