@@ -506,6 +506,14 @@ local function globalXPState(record: any): (number, number, number)
 	return 1, 0, 0
 end
 
+local function publishXPState(record: any): (number, number)
+	local multiplier, expiry, lowerExpiry = globalXPState(record)
+	local message = {kind = "XPBoost", multiplier = multiplier, expiresAt = expiry, lowerExpiresAt = lowerExpiry}
+	globalEventBindable:Fire(message)
+	publishTopic(CONFIG.Topics.XPBoost, message)
+	return multiplier, expiry
+end
+
 local function allowXPDataStoreOperation(): boolean
 	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
 	return shared and allowed
@@ -536,7 +544,7 @@ local function recoverPendingXPReceipt(record: any): (boolean, any)
 	local key = xpReceiptKey(pendingId)
 	if not key then return false, record end
 	local journal = getXPReceipt(pendingId)
-	if typeof(journal) ~= "table" or (journal.status ~= "Prepared" and journal.status ~= "Completed") then
+	if typeof(journal) ~= "table" or journal.purchaseId ~= pendingId or (journal.status ~= "Prepared" and journal.status ~= "Completed") then
 		warn("[ClubMusic Global] Pending XP receipt has no recoverable journal: " .. pendingId)
 		return false, record
 	end
@@ -596,7 +604,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 
 	-- Backward compatibility: honor receipts already committed by the previous ledger.
 	if typeof(current) == "table" and typeof(current.receipts) == "table" and current.receipts[receiptId] == true then
-		local effectiveMultiplier, expiry = globalXPState(current)
+		local effectiveMultiplier, expiry = publishXPState(current)
 		return true, expiry, effectiveMultiplier
 	end
 
@@ -606,7 +614,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 	if typeof(receiptRecord) == "table" and receiptRecord.status == "Completed" then
 		local latestOk, latest = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
 		if not latestOk then return false, 0, 1 end
-		local effectiveMultiplier, expiry = globalXPState(latest)
+		local effectiveMultiplier, expiry = publishXPState(latest)
 		return true, expiry, effectiveMultiplier
 	end
 
@@ -680,10 +688,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		return false, 0, 1
 	end
 
-	local effectiveMultiplier, expiry, lowerExpiry = globalXPState(cleared)
-	local message = {kind = "XPBoost", multiplier = effectiveMultiplier, expiresAt = expiry, lowerExpiresAt = lowerExpiry}
-	globalEventBindable:Fire(message)
-	publishTopic(CONFIG.Topics.XPBoost, message)
+	local effectiveMultiplier, expiry = publishXPState(cleared)
 	return true, expiry, effectiveMultiplier
 end)
 
