@@ -25,6 +25,7 @@ local CONFIG = {
 		Announcements = "ClubMusic_Global_Announcements_v1",
 		Moderation = "ClubMusic_Global_Moderation_v1",
 		DJ = "ClubMusic_Global_DJ_v1",
+		XPBoost = "ClubMusic_Global_XPBoost_v1",
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -52,9 +53,11 @@ local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false
 local budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
 local moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 local globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
-local GLOBAL_XP_BOOST_KEY = "globalXPBoost_v1"
-local MAX_GLOBAL_XP_RECEIPTS = 2500
+local GLOBAL_XP_BOOST_KEY = "globalXPBoost_v1" -- Preserve existing active timers.
+local XP_RECEIPT_STORE_NAME = "ClubMusic_XPBoostReceipts_v1"
 local MAX_GLOBAL_XP_BOOST_SECONDS = 30 * 24 * 60 * 60
+local xpReceiptStore = DataStoreService:GetDataStore(XP_RECEIPT_STORE_NAME)
+local MAX_PURCHASE_ID_LENGTH = 46 -- "xpr_" + PurchaseId must fit the 50-character key limit.
 
 local apiFolder = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 if apiFolder and not apiFolder:IsA("Folder") then apiFolder:Destroy(); apiFolder = nil end
@@ -418,6 +421,14 @@ local function onModeration(message)
 	globalEventBindable:Fire({kind = "Moderation", userId = data.userId, field = data.field, value = data.value, reason = cleanText(data.reason, CONFIG.MaxModerationReasonLength)})
 end
 
+local function onXPBoost(message)
+	local data = if typeof(message) == "table" and typeof(message.Data) == "table" then message.Data else message
+	if typeof(data) ~= "table" or data.kind ~= "XPBoost"
+		or (data.multiplier ~= 1 and data.multiplier ~= 2 and data.multiplier ~= 4)
+		or not finiteNumber(data.expiresAt) or data.expiresAt < 0 then return end
+	globalEventBindable:Fire({kind = "XPBoost", multiplier = data.multiplier, expiresAt = math.floor(data.expiresAt)})
+end
+
 local function onDJ(message)
 	local data = message.Data
 	if not validEnvelope(data) or data.kind ~= "DJ" or not unseen(data.id) then return end
@@ -445,6 +456,7 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.Announcements, onAnnouncement)
 	subscribeWithRetry(CONFIG.Topics.Moderation, onModeration)
 	subscribeWithRetry(CONFIG.Topics.DJ, onDJ)
+	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 else
 	warn("[ClubMusic Global] Disabled in Studio or by configuration; local UI controller remains fully functional.")
 end
@@ -491,6 +503,57 @@ local function globalXPState(record: any): (number, number)
 	return 1, 0
 end
 
+local function xpReceiptKey(receiptId: string): string?
+	if #receiptId < 1 or #receiptId > MAX_PURCHASE_ID_LENGTH
+		or not string.match(receiptId, "^[%w%-_]+$") then return nil end
+	return "xpr_" .. receiptId
+end
+
+local function getXPReceipt(receiptId: string): any
+	local key = xpReceiptKey(receiptId)
+	if not key then return nil end
+	local ok, result = pcall(function() return xpReceiptStore:GetAsync(key) end)
+	if not ok then
+		warn("[ClubMusic Global] XP receipt lookup failed: " .. tostring(result))
+		return nil
+	end
+	return result
+end
+
+-- The active timer and pending receipt marker are committed in one UpdateAsync.
+-- This single marker serializes transactions; a crash is recoverable from the per-purchase journal.
+local function recoverPendingXPReceipt(record: any): (boolean, any)
+	if typeof(record) ~= "table" or typeof(record.pendingReceipt) ~= "string" then return true, record end
+	local pendingId = record.pendingReceipt
+	local key = xpReceiptKey(pendingId)
+	if not key then return false, record end
+	local journal = getXPReceipt(pendingId)
+	if typeof(journal) ~= "table" or (journal.status ~= "Prepared" and journal.status ~= "Completed") then
+		warn("[ClubMusic Global] Pending XP receipt has no recoverable journal: " .. pendingId)
+		return false, record
+	end
+	local markOk, marked = pcall(function()
+		return xpReceiptStore:UpdateAsync(key, function(old)
+			if typeof(old) ~= "table" then return nil end
+			local nextRecord = table.clone(old)
+			nextRecord.status = "Completed"
+			nextRecord.completedAt = os.time()
+			return nextRecord
+		end)
+	end)
+	if not markOk or typeof(marked) ~= "table" or marked.status ~= "Completed" then return false, record end
+	local clearOk, cleared = pcall(function()
+		return globalControlStore:UpdateAsync(GLOBAL_XP_BOOST_KEY, function(old)
+			if typeof(old) ~= "table" or old.pendingReceipt ~= pendingId then return old end
+			local nextRecord = table.clone(old)
+			nextRecord.pendingReceipt = nil
+			return nextRecord
+		end)
+	end)
+	if not clearOk or typeof(cleared) ~= "table" or cleared.pendingReceipt == pendingId then return false, record end
+	return true, cleared
+end
+
 bindFunction("GetGlobalXPBoost", function()
 	if not SERVICE_ENABLED then return nil, nil end
 	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
@@ -507,37 +570,105 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 	if not SERVICE_ENABLED then return false, 0, 1 end
 	if (multiplier ~= 2 and multiplier ~= 4) or not finiteNumber(duration)
 		or duration ~= (if multiplier == 2 then 900 else 1800)
-		or typeof(receiptId) ~= "string" or #receiptId < 1 or #receiptId > 128 then
+		or typeof(receiptId) ~= "string" then return false, 0, 1 end
+	local receiptKey = xpReceiptKey(receiptId)
+	if not receiptKey then
+		warn("[ClubMusic Global] XP PurchaseId is too long or contains unsupported characters; receipt remains pending.")
 		return false, 0, 1
 	end
 	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
 	if not budgetShared or not budgetAllowed then return false, 0, 1 end
+
+	local readOk, current = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
+	if not readOk then return false, 0, 1 end
+	local recovered = recoverPendingXPReceipt(current)
+	if not recovered then return false, 0, 1 end
+
+	-- Backward compatibility: honor receipts already committed by the previous ledger.
+	if typeof(current) == "table" and typeof(current.receipts) == "table" and current.receipts[receiptId] == true then
+		local effectiveMultiplier, expiry = globalXPState(current)
+		return true, expiry, effectiveMultiplier
+	end
+
+	local receiptReadOk, receiptRecord = pcall(function() return xpReceiptStore:GetAsync(receiptKey) end)
+	if not receiptReadOk then return false, 0, 1 end
+	if typeof(receiptRecord) == "table" and receiptRecord.status == "Completed" then
+		local latestOk, latest = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
+		if not latestOk then return false, 0, 1 end
+		local effectiveMultiplier, expiry = globalXPState(latest)
+		return true, expiry, effectiveMultiplier
+	end
+
+	-- One small durable record per purchase; the shared timer record no longer grows.
+	local preparedOk, prepared = pcall(function()
+		return xpReceiptStore:UpdateAsync(receiptKey, function(old)
+			if typeof(old) == "table" then return old end
+			return {status = "Prepared", purchaseId = receiptId, multiplier = multiplier,
+				duration = duration, createdAt = os.time()}
+		end)
+	end)
+	if not preparedOk or typeof(prepared) ~= "table"
+		or (prepared.status ~= "Prepared" and prepared.status ~= "Completed")
+		or prepared.purchaseId ~= receiptId or prepared.multiplier ~= multiplier
+		or prepared.duration ~= duration then return false, 0, 1 end
+	if prepared.status == "Completed" then
+		local latestOk, latest = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
+		if not latestOk then return false, 0, 1 end
+		local effectiveMultiplier, expiry = globalXPState(latest)
+		return true, expiry, effectiveMultiplier
+	end
+
 	local now = os.time()
-	local ok, record = pcall(function()
+	local applyOk, applied = pcall(function()
 		return globalControlStore:UpdateAsync(GLOBAL_XP_BOOST_KEY, function(old)
 			local data = if typeof(old) == "table" then table.clone(old) else {}
+			if data.pendingReceipt == receiptId then return data end
+			if data.pendingReceipt ~= nil then return nil end
 			data.boosts = if typeof(data.boosts) == "table" then table.clone(data.boosts) else {}
-			data.receipts = if typeof(data.receipts) == "table" then table.clone(data.receipts) else {}
-			if data.receipts[receiptId] == true then return data end
-			local count = 0
-			for id, value in pairs(data.receipts) do
-				if typeof(id) == "string" and value == true then count += 1 end
-			end
-			if count >= MAX_GLOBAL_XP_RECEIPTS then return nil end
 			local key = tostring(multiplier)
 			local oldExpiry = math.max(now, tonumber(data.boosts[key]) or 0)
 			data.boosts[key] = math.min(now + MAX_GLOBAL_XP_BOOST_SECONDS, oldExpiry + duration)
-			data.receipts[receiptId] = true
+			data.pendingReceipt = receiptId -- atomic with the timer extension
 			data.updatedAt = now
 			return data
 		end)
 	end)
-	if not ok or typeof(record) ~= "table" or typeof(record.receipts) ~= "table"
-		or record.receipts[receiptId] ~= true then
-		warn("[ClubMusic Global] XP boost persistence failed: " .. tostring(record))
+	if not applyOk or typeof(applied) ~= "table" or applied.pendingReceipt ~= receiptId then
+		warn("[ClubMusic Global] XP boost transaction is waiting for another receipt to recover.")
 		return false, 0, 1
 	end
-	local effectiveMultiplier, expiry = globalXPState(record)
+
+	local completeOk, completed = pcall(function()
+		return xpReceiptStore:UpdateAsync(receiptKey, function(old)
+			if typeof(old) ~= "table" or old.purchaseId ~= receiptId then return nil end
+			local nextRecord = table.clone(old)
+			nextRecord.status = "Completed"
+			nextRecord.completedAt = os.time()
+			return nextRecord
+		end)
+	end)
+	if not completeOk or typeof(completed) ~= "table" or completed.status ~= "Completed" then
+		warn("[ClubMusic Global] XP boost applied; journal completion will recover on retry.")
+		return false, 0, 1
+	end
+
+	local clearOk, cleared = pcall(function()
+		return globalControlStore:UpdateAsync(GLOBAL_XP_BOOST_KEY, function(old)
+			if typeof(old) ~= "table" or old.pendingReceipt ~= receiptId then return old end
+			local nextRecord = table.clone(old)
+			nextRecord.pendingReceipt = nil
+			return nextRecord
+		end)
+	end)
+	if not clearOk or typeof(cleared) ~= "table" or cleared.pendingReceipt == receiptId then
+		warn("[ClubMusic Global] XP boost completed; marker cleanup will recover on retry.")
+		return false, 0, 1
+	end
+
+	local effectiveMultiplier, expiry = globalXPState(cleared)
+	local message = {kind = "XPBoost", multiplier = effectiveMultiplier, expiresAt = expiry}
+	globalEventBindable:Fire(message)
+	publishTopic(CONFIG.Topics.XPBoost, message)
 	return true, expiry, effectiveMultiplier
 end)
 
