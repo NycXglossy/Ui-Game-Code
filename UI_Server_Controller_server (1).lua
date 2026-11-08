@@ -2814,6 +2814,13 @@ Players.PlayerRemoving:Connect(function(player)
 		-- save could let another server load stale profile data immediately.
 		warn("[ClubMusic] Final profile save failed; retaining session lease until expiry for userId " .. tostring(userId))
 	end
+	local departingProfile = profiles[userId]
+	for receiptId, pendingMemory in pairs(receiptMemoryPending) do
+		if pendingMemory.profile == departingProfile then receiptMemoryPending[receiptId] = nil end
+	end
+	for receiptId, appliedProfile in pairs(receiptMemoryApplied) do
+		if appliedProfile == departingProfile then receiptMemoryApplied[receiptId] = nil end
+	end
 	profiles[userId] = nil
 	requestCounts[userId] = nil
 	lastRequestAt[userId] = nil
