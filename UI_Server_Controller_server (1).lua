@@ -2372,6 +2372,10 @@ local function handleAction(player: Player, action: any, payload: any)
 			pcall(function() musicSound:Pause() end)
 			notify(player, "Music paused.", "ok")
 		end
+		local globalOk, globalPublished = globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused}, player.UserId)
+		if not globalOk or globalPublished ~= true then
+			notify(player, "Playback changed on this server, but cross-server sync is unavailable.", "warn")
+		end
 		publishState(nil)
 		return
 	end
@@ -2386,7 +2390,12 @@ local function handleAction(player: Player, action: any, payload: any)
 		playbackPaused = false
 		local soundId = nowPlaying.soundId
 		startServerMusic(soundId)
-		notify(player, "Current track restarted.", "ok")
+		local globalOk, globalPublished = globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
+		if not globalOk or globalPublished ~= true then
+			notify(player, "Track restarted here, but cross-server sync is unavailable.", "warn")
+		else
+			notify(player, "Current track restarted across servers.", "ok")
+		end
 		publishState(nil)
 		return
 	end
@@ -2769,7 +2778,11 @@ local function handleGlobalMessage(message: any)
 		return
 	end
 	if message.kind == "DJ" and typeof(message.command) == "string"
-		and (message.command == "Skip" or message.command == "ClearQueue" or message.command == "SetRequestLock") then
+		and (message.command == "Skip" or message.command == "ClearQueue" or message.command == "SetRequestLock"
+			or message.command == "SetPlaybackPaused" or message.command == "Restart") then
+		-- MessagingService may echo a command to its originating server. The local
+		-- action has already been applied there, so ignore that echo to avoid double skips.
+		if message.senderJob == game.JobId then return end
 		if message.command == "Skip" then
 			advance()
 			broadcast("A global DJ command skipped the current track.", "info")
@@ -2785,6 +2798,18 @@ local function handleGlobalMessage(message: any)
 			if changed then
 				broadcast(if requestsLocked then "Song requests are globally locked." else "Song requests are globally open.", "info")
 			end
+		elseif message.command == "SetPlaybackPaused" and typeof(message.payload) == "table"
+			and typeof(message.payload.paused) == "boolean" then
+			playbackPaused = message.payload.paused
+			pcall(function()
+				if playbackPaused then musicSound:Pause() else musicSound:Resume() end
+			end)
+			broadcast(if playbackPaused then "Music was paused globally." else "Music was resumed globally.", "info")
+		elseif message.command == "Restart" then
+			nowPlaying.elapsed = 0
+			playbackPaused = false
+			startServerMusic(nowPlaying.soundId)
+			broadcast("The current track was restarted globally.", "info")
 		end
 		publishState(nil)
 	end
