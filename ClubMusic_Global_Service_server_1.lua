@@ -15,6 +15,7 @@ local DataStoreService = game:GetService("DataStoreService")
 local MessagingService = game:GetService("MessagingService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+local ReceiptHash = require(ServerStorage:WaitForChild("ClubMusic_ReceiptHash"))
 
 local CONFIG = {
 	Enabled = true,
@@ -57,7 +58,7 @@ local GLOBAL_XP_BOOST_KEY = "globalXPBoost_v1" -- Preserve existing active timer
 local XP_RECEIPT_STORE_NAME = "ClubMusic_XPBoostReceipts_v1"
 local MAX_GLOBAL_XP_BOOST_SECONDS = 30 * 24 * 60 * 60
 local xpReceiptStore = DataStoreService:GetDataStore(XP_RECEIPT_STORE_NAME)
-local MAX_PURCHASE_ID_LENGTH = 46 -- "xpr_" + PurchaseId must fit the 50-character key limit.
+local MAX_PURCHASE_ID_LENGTH = 128
 
 local apiFolder = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 if apiFolder and not apiFolder:IsA("Folder") then apiFolder:Destroy(); apiFolder = nil end
@@ -520,17 +521,35 @@ local function allowXPDataStoreOperation(): boolean
 end
 
 local function xpReceiptKey(receiptId: string): string?
-	if #receiptId < 1 or #receiptId > MAX_PURCHASE_ID_LENGTH
-		or not string.match(receiptId, "^[%w%-_]+$") then return nil end
+	if #receiptId < 1 or #receiptId > MAX_PURCHASE_ID_LENGTH then return nil end
+	return "xph_" .. ReceiptHash.KeySuffix(receiptId)
+end
+
+local function legacyXPReceiptKey(receiptId: string): string?
+	if #receiptId < 1 or #receiptId > 46 or not string.match(receiptId, "^[%w%-_]+$") then return nil end
 	return "xpr_" .. receiptId
 end
 
-local function getXPReceipt(receiptId: string): any
+local function readXPReceipt(receiptId: string): (boolean, any, string?)
 	local key = xpReceiptKey(receiptId)
-	if not key or not allowXPDataStoreOperation() then return nil end
-	local ok, result = pcall(function() return xpReceiptStore:GetAsync(key) end)
+	if not key or not allowXPDataStoreOperation() then return false, nil, nil end
+	local ok, value = pcall(function() return xpReceiptStore:GetAsync(key) end)
+	if not ok then return false, nil, key end
+	if typeof(value) == "table" then return true, value, key end
+	local legacyKey = legacyXPReceiptKey(receiptId)
+	if legacyKey then
+		if not allowXPDataStoreOperation() then return false, nil, nil end
+		local legacyOk, legacyValue = pcall(function() return xpReceiptStore:GetAsync(legacyKey) end)
+		if not legacyOk then return false, nil, legacyKey end
+		if typeof(legacyValue) == "table" then return true, legacyValue, legacyKey end
+	end
+	return true, nil, key
+end
+
+local function getXPReceipt(receiptId: string): any
+	local ok, result = readXPReceipt(receiptId)
 	if not ok then
-		warn("[ClubMusic Global] XP receipt lookup failed: " .. tostring(result))
+		warn("[ClubMusic Global] XP receipt lookup failed: " .. receiptId)
 		return nil
 	end
 	return result
@@ -544,6 +563,16 @@ local function recoverPendingXPReceipt(record: any): (boolean, any)
 	local key = xpReceiptKey(pendingId)
 	if not key then return false, record end
 	local journal = getXPReceipt(pendingId)
+	if typeof(journal) == "table" then
+		local legacyKey = legacyXPReceiptKey(pendingId)
+		if legacyKey and journal.purchaseId ~= pendingId then
+			local legacyOk, legacyValue = pcall(function() return xpReceiptStore:GetAsync(legacyKey) end)
+			if legacyOk and typeof(legacyValue) == "table" and legacyValue.purchaseId == pendingId then
+				journal = legacyValue
+				key = legacyKey
+			end
+		end
+	end
 	if typeof(journal) ~= "table" or journal.purchaseId ~= pendingId or (journal.status ~= "Prepared" and journal.status ~= "Completed") then
 		warn("[ClubMusic Global] Pending XP receipt has no recoverable journal: " .. pendingId)
 		return false, record
@@ -591,7 +620,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		or typeof(receiptId) ~= "string" then return false, 0, 1 end
 	local receiptKey = xpReceiptKey(receiptId)
 	if not receiptKey then
-		warn("[ClubMusic Global] XP PurchaseId is too long or contains unsupported characters; receipt remains pending.")
+		warn("[ClubMusic Global] XP PurchaseId is invalid or too long; receipt remains pending.")
 		return false, 0, 1
 	end
 	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
@@ -608,9 +637,9 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		return true, expiry, effectiveMultiplier
 	end
 
-	if not allowXPDataStoreOperation() then return false, 0, 1 end
-	local receiptReadOk, receiptRecord = pcall(function() return xpReceiptStore:GetAsync(receiptKey) end)
+	local receiptReadOk, receiptRecord, storedReceiptKey = readXPReceipt(receiptId)
 	if not receiptReadOk then return false, 0, 1 end
+	if storedReceiptKey then receiptKey = storedReceiptKey end
 	if typeof(receiptRecord) == "table" and receiptRecord.status == "Completed" then
 		if not allowXPDataStoreOperation() then return false, 0, 1 end
 		local latestOk, latest = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
