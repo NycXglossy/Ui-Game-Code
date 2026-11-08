@@ -338,7 +338,7 @@ local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: Remo
 -- system's second remote/event architecture and keeps playback under this controller.
 -- The existing renderer can still set a local-only SoundGroup volume per client.
 local musicSoundGroup = getOrCreate(SoundService, "SoundGroup", "ClubMusic") :: SoundGroup
-local musicSound = getOrCreate(SoundService, "Sound", "ClubMusicPlayback") :: Sound
+local musicSound = getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
 musicSound.SoundGroup = musicSoundGroup
 musicSound.Volume = 1
 musicSound.Looped = false
