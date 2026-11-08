@@ -905,21 +905,41 @@ local function loadProfile(player: Player)
 			end
 		end
 
-		-- Title slots (new format) with migration from the old single custom title.
+		-- Load every valid new-format slot first. Only migrate the legacy title when
+		-- none of the new-format slots contains a valid title; this repairs profiles
+		-- with an empty/invalid titleSlots table without overwriting newer slot data.
 		profile.unlockedSlots = math.clamp(math.floor(tonumber(data.unlockedSlots) or 1), 1, TITLE_SLOT_COUNT)
+		local hasValidNewTitle = false
 		if typeof(data.titleSlots) == "table" then
 			for i = 1, TITLE_SLOT_COUNT do
 				local stored = data.titleSlots[tostring(i)] or data.titleSlots[i]
 				local clean = sanitizeTitleSlot(stored)
-				if clean then profile.titleSlots[i] = clean end
+				if clean then
+					profile.titleSlots[i] = clean
+					hasValidNewTitle = true
+				end
 			end
-		elseif typeof(data.customTitle) == "string" and data.customTitle ~= "" then
+		end
+
+		if not hasValidNewTitle and typeof(data.customTitle) == "string" and data.customTitle ~= "" then
 			local legacyColor = if typeof(data.titleColor) == "string" and TITLE_COLORS[data.titleColor] == true then data.titleColor else "gold"
 			local legacyStyle = if typeof(data.titleStyle) == "string" and TITLE_STYLES[data.titleStyle] == true then data.titleStyle else "normal"
 			local legacy = sanitizeTitleSlot({
 				text = data.customTitle, effect = "fixed", set = legacyColor, font = "gotham", style = legacyStyle,
 			})
-			if legacy then profile.titleSlots[1] = legacy end
+			if legacy then
+				-- Legacy text is player-authored. Re-filter it for broadcast before it
+				-- can be placed in replicated player attributes. Never fall back to raw text.
+				local filteredText = filterTitleText(player, legacy.text)
+				if filteredText and filteredText ~= "" then
+					legacy.text = filteredText
+					profile.titleSlots[1] = legacy
+				else
+					warn("[ClubMusic] Legacy custom title migration was skipped because Roblox text filtering failed for userId " .. tostring(player.UserId))
+				end
+			else
+				warn("[ClubMusic] Legacy custom title migration was skipped because the saved title failed validation for userId " .. tostring(player.UserId))
+			end
 		end
 		profile.activeSlot = math.clamp(math.floor(tonumber(data.activeSlot) or 1), 1, TITLE_SLOT_COUNT)
 	end
