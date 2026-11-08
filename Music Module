@@ -1,0 +1,81 @@
+local MusicModule = {}
+
+-- Music database
+MusicModule.MusicList = {
+--[[{id = "128878194918575", 	judul = "Bali Boze", 							sampul = "rbxassetid://127723044437307"},
+	{id = "83149130091168", 	judul = "Everything You Are",					sampul = "rbxassetid://127723044437307"},
+	{id = "115029648930419", 	judul = "Colananana", 							sampul = "rbxassetid://127723044437307"},
+	{id = "135720327336170", 	judul = "RAIZHELL, CLOUD ZERO - K1LL ZONE", 	sampul = "rbxassetid://127723044437307"},
+	{id = "73497567780440", 	judul = "DR MØB, Chris Linton - Fearless Funk", sampul = "rbxassetid://127723044437307"},
+	{id = "94056513460208", 	judul = "JB Heartbreak", 						sampul = "rbxassetid://127723044437307"},
+	{id = "91219302628458", 	judul = "WISTLE x BLOW THE WISTLE", 			sampul = "rbxassetid://127723044437307"},
+	{id = "72375016472268", 	judul = "PUSH THE FEELING ON", 					sampul = "rbxassetid://127723044437307"},
+	{id = "76722389071796", 	judul = "MIRACLES", 							sampul = "rbxassetid://127723044437307"},
+	{id = "107036524027793", 	judul = "KARATE", 								sampul = "rbxassetid://127723044437307"},
+	{id = "117238495006301", 	judul = "CARTEL", 								sampul = "rbxassetid://127723044437307"},
+	{id = "78406756989054", 	judul = "F With My G", 							sampul = "rbxassetid://127723044437307"}, ]] -- Example music list
+} 
+
+MusicModule.ActionTypes = {
+	ADD_TO_QUEUE = "ADD_TO_QUEUE",
+	CONTROL_NEXT = "CONTROL_NEXT",
+	CONTROL_PREV = "CONTROL_PREV",
+	CONTROL_PAUSE = "CONTROL_PAUSE",
+	SKIP_VOTE_YES = "SKIP_VOTE_YES",
+	SKIP_VOTE_NO = "SKIP_VOTE_NO",
+}
+
+MusicModule.EventTypes = {
+	SYNC_STATE = "SYNC_STATE",
+	QUEUE_UPDATE = "QUEUE_UPDATE",
+	NOTIFY = "NOTIFY",
+	SKIP_VOTE_START = "SKIP_VOTE_START",
+	SKIP_VOTE_UPDATE = "SKIP_VOTE_UPDATE",
+	SKIP_VOTE_END = "SKIP_VOTE_END",
+}
+
+function MusicModule:GetMusicById(musicId)
+	for _, music in ipairs(self.MusicList) do
+		if music.id == musicId then
+			return music
+		end
+	end
+	return nil
+end
+
+function MusicModule:GetAllMusic()
+	local sortedList = {}
+
+	for _, music in ipairs(self.MusicList) do
+		table.insert(sortedList, music)
+	end
+
+	table.sort(sortedList, function(a, b)
+		return string.lower(a.judul) < string.lower(b.judul)
+	end)
+
+	return sortedList
+end
+
+function MusicModule:SearchMusic(query)
+	if query == "" then
+		return self:GetAllMusic()
+	end
+
+	local results = {}
+	local lowerQuery = string.lower(query)
+
+	for _, music in ipairs(self.MusicList) do
+		if string.find(string.lower(music.judul), lowerQuery, 1, true) then
+			table.insert(results, music)
+		end
+	end
+
+	table.sort(results, function(a, b)
+		return string.lower(a.judul) < string.lower(b.judul)
+	end)
+
+	return results
+end
+
+return MusicModule
