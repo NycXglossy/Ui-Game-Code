@@ -358,9 +358,13 @@ local globalEventObject = if globalApi then globalApi:FindFirstChild("GlobalEven
 
 local cachedGlobalXpMultiplier = 1
 local cachedGlobalXpExpiresAt = 0
+local studioXpBoostMultiplier = 1
+local studioXpBoostExpiresAt = 0
+local xpLastAwardAt: {[number]: number} = {}
 local function refreshGlobalXPBoost()
 	if RunService:IsStudio() then
-		cachedGlobalXpMultiplier, cachedGlobalXpExpiresAt = 1, 0
+		cachedGlobalXpMultiplier = if studioXpBoostExpiresAt > os.time() then studioXpBoostMultiplier else 1
+		cachedGlobalXpExpiresAt = if studioXpBoostExpiresAt > os.time() then studioXpBoostExpiresAt else 0
 		return
 	end
 	local callOk, multiplier, expiresAt = globalInvoke("GetGlobalXPBoost")
@@ -1578,17 +1582,29 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	end
 
 	if productData.type == "XPBoost" then
-		local activateOk, activated, expiry, effectiveMultiplier = globalInvoke(
-			"ActivateGlobalXPBoost", productData.multiplier, productData.duration, receiptId
-		)
-		if not activateOk or activated ~= true then
-			warn("[ClubMusic] Global XP boost activation failed; receipt will be retried.")
-			return Enum.ProductPurchaseDecision.NotProcessedYet
-		end
-		if typeof(expiry) == "number" and expiry > os.time()
-			and (effectiveMultiplier == 2 or effectiveMultiplier == 4) then
-			cachedGlobalXpExpiresAt = math.floor(expiry)
-			cachedGlobalXpMultiplier = effectiveMultiplier
+		if RunService:IsStudio() then
+			-- Studio uses session-only boost state because the global service is intentionally disabled.
+			local key = productData.multiplier
+			if key ~= 2 and key ~= 4 then return Enum.ProductPurchaseDecision.NotProcessedYet end
+			local previousExpiry = if studioXpBoostMultiplier == key then studioXpBoostExpiresAt else os.time()
+			studioXpBoostExpiresAt = math.min(os.time() + 30 * 24 * 60 * 60,
+				math.max(os.time(), previousExpiry) + productData.duration)
+			studioXpBoostMultiplier = key
+			cachedGlobalXpMultiplier = key
+			cachedGlobalXpExpiresAt = studioXpBoostExpiresAt
+		else
+			local activateOk, activated, expiry, effectiveMultiplier = globalInvoke(
+				"ActivateGlobalXPBoost", productData.multiplier, productData.duration, receiptId
+			)
+			if not activateOk or activated ~= true then
+				warn("[ClubMusic] Global XP boost activation failed; receipt will be retried.")
+				return Enum.ProductPurchaseDecision.NotProcessedYet
+			end
+			if typeof(expiry) == "number" and expiry > os.time()
+				and (effectiveMultiplier == 2 or effectiveMultiplier == 4) then
+				cachedGlobalXpExpiresAt = math.floor(expiry)
+				cachedGlobalXpMultiplier = effectiveMultiplier
+			end
 		end
 	end
 	local ok, alreadyProcessed, err = persistReceipt(userId, receiptId, productData)
@@ -2412,6 +2428,7 @@ local function onJoin(player: Player)
 	end
 	applyVipAttribute(player)
 	player:SetAttribute("ClubRank", getRank(player))
+	xpLastAwardAt[player.UserId] = os.clock()
 	publishState(nil) -- also refreshes the staff roster for everyone with access
 end
 
@@ -2493,20 +2510,30 @@ end)
 task.spawn(function()
 	refreshGlobalXPBoost()
 	while true do
-		task.wait(60)
+		task.wait(5)
 		refreshGlobalXPBoost()
+		local nowClock = os.clock()
 		local multiplier = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpMultiplier else 1
+		local changed = false
 		for _, player in ipairs(Players:GetPlayers()) do
 			local profile = profiles[player.UserId]
-			if profile then
-				profile.xp = math.min(9007199254740000, profile.xp + CONFIG.XPPerMinute * multiplier)
-				player:SetAttribute("XP", profile.xp)
-				player:SetAttribute("Level", math.floor(profile.xp / CONFIG.XPPerLevel) + 1)
-				player:SetAttribute("XPToNextLevel", CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel))
-				scheduleProfileSave(player)
+			local lastAward = xpLastAwardAt[player.UserId]
+			if profile and lastAward then
+				local elapsed = nowClock - lastAward
+				if elapsed >= 60 then
+					local fullMinutes = math.floor(elapsed / 60)
+					xpLastAwardAt[player.UserId] = lastAward + fullMinutes * 60
+					local gain = CONFIG.XPPerMinute * multiplier * fullMinutes
+					profile.xp = math.min(9007199254740000, profile.xp + gain)
+					player:SetAttribute("XP", profile.xp)
+					player:SetAttribute("Level", math.floor(profile.xp / CONFIG.XPPerLevel) + 1)
+					player:SetAttribute("XPToNextLevel", CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel))
+					scheduleProfileSave(player)
+					changed = true
+				end
 			end
 		end
-		publishState(nil)
+		if changed then publishState(nil) end
 	end
 end)
 
@@ -2516,6 +2543,7 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
+	xpLastAwardAt[userId] = nil
 	local finalSaveOk = saveProfile(player)
 	if finalSaveOk then
 		releaseProfileSession(userId)
