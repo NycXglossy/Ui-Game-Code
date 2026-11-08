@@ -92,7 +92,6 @@ local CONFIG = {
 	GlobalStateMinIntervalSeconds = 0.2,
 	ProfileWriteLockTimeoutSeconds = 12,
 	ProfileSaveQueueDelaySeconds = 0.25,
-	MaxReceiptLedgerEntries = 2500,
 	XPPerMinute = 10,
 	XPPerLevel = 100,
 	XPBoost2xProductId = 0,
