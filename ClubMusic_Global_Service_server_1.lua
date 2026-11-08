@@ -52,6 +52,9 @@ local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false
 local budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
 local moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 local globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
+local GLOBAL_XP_BOOST_KEY = "globalXPBoost_v1"
+local MAX_GLOBAL_XP_RECEIPTS = 2500
+local MAX_GLOBAL_XP_BOOST_SECONDS = 30 * 24 * 60 * 60
 
 local apiFolder = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 if apiFolder and not apiFolder:IsA("Folder") then apiFolder:Destroy(); apiFolder = nil end
@@ -476,6 +479,66 @@ task.spawn(function()
 			end
 		end
 	end
+end)
+
+local function globalXPState(record: any): (number, number)
+	if typeof(record) ~= "table" or typeof(record.boosts) ~= "table" then return 1, 0 end
+	local now = os.time()
+	local twoExpiry = tonumber(record.boosts["2"]) or 0
+	local fourExpiry = tonumber(record.boosts["4"]) or 0
+	if fourExpiry > now then return 4, fourExpiry end
+	if twoExpiry > now then return 2, twoExpiry end
+	return 1, 0
+end
+
+bindFunction("GetGlobalXPBoost", function()
+	if not SERVICE_ENABLED then return nil, nil end
+	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
+	if not budgetShared or not budgetAllowed then return nil, nil end
+	local ok, record = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
+	if not ok then
+		warn("[ClubMusic Global] XP boost lookup failed: " .. tostring(record))
+		return nil, nil
+	end
+	return globalXPState(record)
+end)
+
+bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, receiptId: any)
+	if not SERVICE_ENABLED then return false, 0, 1 end
+	if (multiplier ~= 2 and multiplier ~= 4) or not finiteNumber(duration)
+		or duration ~= (if multiplier == 2 then 900 else 1800)
+		or typeof(receiptId) ~= "string" or #receiptId < 1 or #receiptId > 128 then
+		return false, 0, 1
+	end
+	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
+	if not budgetShared or not budgetAllowed then return false, 0, 1 end
+	local now = os.time()
+	local ok, record = pcall(function()
+		return globalControlStore:UpdateAsync(GLOBAL_XP_BOOST_KEY, function(old)
+			local data = if typeof(old) == "table" then table.clone(old) else {}
+			data.boosts = if typeof(data.boosts) == "table" then table.clone(data.boosts) else {}
+			data.receipts = if typeof(data.receipts) == "table" then table.clone(data.receipts) else {}
+			if data.receipts[receiptId] == true then return data end
+			local count = 0
+			for id, value in pairs(data.receipts) do
+				if typeof(id) == "string" and value == true then count += 1 end
+			end
+			if count >= MAX_GLOBAL_XP_RECEIPTS then return nil end
+			local key = tostring(multiplier)
+			local oldExpiry = math.max(now, tonumber(data.boosts[key]) or 0)
+			data.boosts[key] = math.min(now + MAX_GLOBAL_XP_BOOST_SECONDS, oldExpiry + duration)
+			data.receipts[receiptId] = true
+			data.updatedAt = now
+			return data
+		end)
+	end)
+	if not ok or typeof(record) ~= "table" or typeof(record.receipts) ~= "table"
+		or record.receipts[receiptId] ~= true then
+		warn("[ClubMusic Global] XP boost persistence failed: " .. tostring(record))
+		return false, 0, 1
+	end
+	local effectiveMultiplier, expiry = globalXPState(record)
+	return true, expiry, effectiveMultiplier
 end)
 
 print("[ClubMusic Global] Cross-server service initialized. Enabled=" .. tostring(SERVICE_ENABLED) .. " JobId=" .. JOB_ID)
