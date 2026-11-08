@@ -338,6 +338,7 @@ local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: Remo
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 local ServerStorage = game:GetService("ServerStorage")
+local ReceiptHash = require(ServerStorage:WaitForChild("ClubMusic_ReceiptHash"))
 local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI") or ServerStorage:WaitForChild("ClubMusicGlobalAPI", 15)
 local function globalInvoke(name: string, ...: any): any
 	-- Re-resolve on every call so the bridge recovers if its separate Script starts late.
@@ -1015,10 +1016,12 @@ local function saveProfile(player: Player)
 					if typeof(id) == "string" and value == true then preservedReceipts[id] = true end
 				end
 			end
+			local preservedPendingReceipt = if typeof(oldData.pendingReceipt) == "string" then oldData.pendingReceipt else nil
 			local output = table.clone(snapshot)
 			output.ownedTags = table.clone(snapshot.ownedTags)
 			output.favorites = table.clone(snapshot.favorites)
-			output.receiptIds = preservedReceipts
+			output.receiptIds = preservedReceipts -- legacy entries only; new receipts use the sharded journal.
+			output.pendingReceipt = preservedPendingReceipt
 			output.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
 			return output
 		end)
@@ -1536,58 +1539,193 @@ end
 
 local processedReceipts: {[string]: boolean} = {}
 
-local function countReceiptLedger(receiptIds: any): number
-	if typeof(receiptIds) ~= "table" then return 0 end
-	local count = 0
-	for id, value in pairs(receiptIds) do
-		if typeof(id) == "string" and value == true then count += 1 end
+local receiptJournalStores: {[number]: GlobalDataStore} = {}
+local receiptMemoryPending: {[string]: boolean} = {}
+
+local function productReceiptStore(userId: number): GlobalDataStore
+	local existing = receiptJournalStores[userId]
+	if existing then return existing end
+	local created = DataStoreService:GetDataStore("ClubMusic_ProductReceipts_" .. tostring(userId))
+	receiptJournalStores[userId] = created
+	return created
+end
+
+local function productReceiptKey(receiptId: string): string
+	return "r_" .. ReceiptHash.KeySuffix(receiptId)
+end
+
+local function recoverPendingProductReceipt(userId: number, journalStore: GlobalDataStore): (boolean, string?)
+	if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while recovering a receipt" end
+	local readOk, profileData = pcall(function() return store:GetAsync(tostring(userId)) end)
+	if not readOk then return false, tostring(profileData) end
+	if typeof(profileData) ~= "table" or typeof(profileData.pendingReceipt) ~= "string" then return true, nil end
+
+	local pendingId = profileData.pendingReceipt
+	local journalKey = productReceiptKey(pendingId)
+	if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while reading receipt journal" end
+	local journalOk, journal = pcall(function() return journalStore:GetAsync(journalKey) end)
+	if not journalOk then return false, tostring(journal) end
+	if typeof(journal) ~= "table" or journal.purchaseId ~= pendingId
+		or journal.userId ~= userId or journal.status ~= "Prepared" and journal.status ~= "Completed" then
+		warn("[ClubMusic] Profile has an unrecoverable pending receipt marker for userId " .. tostring(userId))
+		return false, "Pending receipt journal is missing or mismatched"
 	end
-	return count
+
+	if journal.status ~= "Completed" then
+		if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while completing receipt journal" end
+		local completeOk, completed = pcall(function()
+			return journalStore:UpdateAsync(journalKey, function(old)
+				if typeof(old) ~= "table" or old.purchaseId ~= pendingId or old.userId ~= userId then return nil end
+				local nextRecord = table.clone(old)
+				nextRecord.status = "Completed"
+				nextRecord.completedAt = os.time()
+				return nextRecord
+			end)
+		end)
+		if not completeOk or typeof(completed) ~= "table" or completed.status ~= "Completed" then
+			return false, "Could not complete pending receipt journal"
+		end
+	end
+
+	if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while clearing pending receipt" end
+	local clearOk, cleared = pcall(function()
+		return store:UpdateAsync(tostring(userId), function(old)
+			if typeof(old) ~= "table" or typeof(old.sessionLock) ~= "table"
+				or old.sessionLock.owner ~= SESSION_TOKEN then return nil end
+			if old.pendingReceipt ~= pendingId then return old end
+			local nextData = table.clone(old)
+			nextData.pendingReceipt = nil
+			nextData.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
+			return nextData
+		end)
+	end)
+	if not clearOk or typeof(cleared) ~= "table" or cleared.pendingReceipt == pendingId then
+		return false, "Could not clear recovered pending receipt marker"
+	end
+	return true, nil
 end
 
 local function persistReceipt(userId: number, receiptId: string, productData: {[string]: any}): (boolean, boolean, string?)
-	-- Studio purchases are session-only. ProcessReceipt's in-memory processedReceipts
-	-- guard still prevents duplicate application during this server session.
 	if USE_STUDIO_MEMORY_PROFILES then
 		return profiles[userId] ~= nil, false, nil
 	end
-
 	if not acquireProfileWriteLock(userId) then
 		return false, false, "Profile is busy; receipt will be retried"
 	end
+
+	local journalStoreOk, journalStore = pcall(function() return productReceiptStore(userId) end)
+	if not journalStoreOk then releaseProfileWriteLock(userId); return false, false, tostring(journalStore) end
+	local recovered, recoveryError = recoverPendingProductReceipt(userId, journalStore)
+	if not recovered then releaseProfileWriteLock(userId); return false, false, recoveryError end
+
+	local journalKey = productReceiptKey(receiptId)
 	if not waitForDataStoreBudget(10) then
 		releaseProfileWriteLock(userId)
-		return false, false, "Server DataStore budget is busy; receipt will be retried"
+		return false, false, "DataStore budget is busy while reading receipt journal"
 	end
+	local readOk, journal = pcall(function() return journalStore:GetAsync(journalKey) end)
+	if not readOk then releaseProfileWriteLock(userId); return false, false, tostring(journal) end
+	if typeof(journal) == "table" then
+		if journal.purchaseId ~= receiptId or journal.userId ~= userId or journal.productId ~= productData.productId then
+			releaseProfileWriteLock(userId)
+			return false, false, "Receipt journal key collision or product mismatch"
+		end
+		if journal.status == "Completed" then
+			local wasPendingInMemory = receiptMemoryPending[receiptId] == true
+			releaseProfileWriteLock(userId)
+			return true, not wasPendingInMemory, nil
+		end
+		if journal.status ~= "Prepared" then
+			releaseProfileWriteLock(userId)
+			return false, false, "Receipt journal has an invalid status"
+		end
+	else
+		if not waitForDataStoreBudget(10) then releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while preparing receipt" end
+		local prepareOk, prepared = pcall(function()
+			return journalStore:UpdateAsync(journalKey, function(old)
+				if typeof(old) == "table" then return old end
+				return {status = "Prepared", purchaseId = receiptId, userId = userId,
+					productId = productData.productId, productType = productData.type, createdAt = os.time()}
+			end)
+		end)
+		if not prepareOk or typeof(prepared) ~= "table" or prepared.purchaseId ~= receiptId
+			or prepared.userId ~= userId or prepared.productId ~= productData.productId
+			or (prepared.status ~= "Prepared" and prepared.status ~= "Completed") then
+			releaseProfileWriteLock(userId)
+			return false, false, "Could not prepare durable receipt journal"
+		end
+		journal = prepared
+		if prepared.status == "Completed" then
+			local wasPendingInMemory = receiptMemoryPending[receiptId] == true
+			releaseProfileWriteLock(userId)
+			return true, not wasPendingInMemory, nil
+		end
+	end
+
+	if not waitForDataStoreBudget(10) then releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while applying receipt" end
 	local alreadyProcessed = false
-	local ok, result = pcall(function()
+	local applyOk, applied = pcall(function()
 		return store:UpdateAsync(tostring(userId), function(oldData)
 			if typeof(oldData) ~= "table" or typeof(oldData.sessionLock) ~= "table"
 				or oldData.sessionLock.owner ~= SESSION_TOKEN then return nil end
+			if typeof(oldData.pendingReceipt) == "string" then return nil end
 			local data = table.clone(oldData)
 			data.receiptIds = if typeof(data.receiptIds) == "table" then table.clone(data.receiptIds) else {}
 			if data.receiptIds[receiptId] == true then
 				alreadyProcessed = true
 				return data
 			end
-			-- Fail closed before the profile approaches DataStore size limits. Do
-			-- not prune old PurchaseIds: deleting them can make an old receipt grant twice.
-			if countReceiptLedger(data.receiptIds) >= CONFIG.MaxReceiptLedgerEntries then
-				warn("[ClubMusic] Receipt ledger safety limit reached for userId " .. tostring(userId)
-					.. "; purchase remains unacknowledged until the ledger is migrated.")
-				return nil
-			end
 			if not applyReceiptToStoredData(data, productData) then return nil end
-			data.receiptIds[receiptId] = true
+			data.pendingReceipt = receiptId -- reward and recovery marker are one atomic profile write.
 			data.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
 			return data
 		end)
 	end)
-	releaseProfileWriteLock(userId)
-	if not ok then return false, false, tostring(result) end
-	if typeof(result) ~= "table" or typeof(result.receiptIds) ~= "table" or result.receiptIds[receiptId] ~= true then
-		return false, false, "Receipt was not confirmed in the saved profile"
+	if not applyOk or typeof(applied) ~= "table" then
+		releaseProfileWriteLock(userId)
+		return false, false, "Receipt reward was not confirmed in the profile"
 	end
+
+	if not alreadyProcessed then receiptMemoryPending[receiptId] = true end
+	if not waitForDataStoreBudget(10) then
+		releaseProfileWriteLock(userId)
+		return false, false, "DataStore budget is busy while completing receipt journal"
+	end
+	local completeOk, completed = pcall(function()
+		return journalStore:UpdateAsync(journalKey, function(old)
+			if typeof(old) ~= "table" or old.purchaseId ~= receiptId or old.userId ~= userId then return nil end
+			local nextRecord = table.clone(old)
+			nextRecord.status = "Completed"
+			nextRecord.completedAt = os.time()
+			return nextRecord
+		end)
+	end)
+	if not completeOk or typeof(completed) ~= "table" or completed.status ~= "Completed" then
+		releaseProfileWriteLock(userId)
+		return false, false, "Reward is saved; receipt journal completion will recover on retry"
+	end
+
+	if not waitForDataStoreBudget(10) then
+		releaseProfileWriteLock(userId)
+		return false, false, "Receipt is durable; pending marker cleanup will recover on retry"
+	end
+	local clearOk, cleared = pcall(function()
+		return store:UpdateAsync(tostring(userId), function(old)
+			if typeof(old) ~= "table" or typeof(old.sessionLock) ~= "table"
+				or old.sessionLock.owner ~= SESSION_TOKEN then return nil end
+			if old.pendingReceipt ~= receiptId then return old end
+			local nextData = table.clone(old)
+			nextData.pendingReceipt = nil
+			nextData.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
+			return nextData
+		end)
+	end)
+	if not clearOk or typeof(cleared) ~= "table" or cleared.pendingReceipt == receiptId then
+		releaseProfileWriteLock(userId)
+		return false, false, "Receipt is durable; pending marker cleanup will recover on retry"
+	end
+
+	releaseProfileWriteLock(userId)
 	return true, alreadyProcessed, nil
 end
 
@@ -1653,6 +1791,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	end
 	if profiles[userId] ~= profile then return Enum.ProductPurchaseDecision.NotProcessedYet end
 	applyReceiptToMemory(profile, productData)
+	receiptMemoryPending[receiptId] = nil
 	processedReceipts[receiptId] = true
 	player:SetAttribute("Tickets", profile.tickets)
 	player:SetAttribute("Coins", profile.coins)
