@@ -452,6 +452,9 @@ type Profile = {
 }
 
 local profiles: {[number]: Profile} = {}
+type PendingReceiptMemory = { profile: Profile, productData: {[string]: any} }
+local receiptMemoryPending: {[string]: PendingReceiptMemory} = {}
+local receiptMemoryApplied: {[string]: Profile} = {}
 local queue: {QueueEntry} = {}
 local nowPlaying = {
 	trackId = "",
@@ -1547,10 +1550,6 @@ end
 local processedReceipts: {[string]: boolean} = {}
 
 local receiptJournalStores: {[number]: GlobalDataStore} = {}
-type PendingReceiptMemory = { profile: Profile, productData: {[string]: any} }
-local receiptMemoryPending: {[string]: PendingReceiptMemory} = {}
-local receiptMemoryApplied: {[string]: Profile} = {}
-
 local function productReceiptStore(userId: number): GlobalDataStore
 	local existing = receiptJournalStores[userId]
 	if existing then return existing end
