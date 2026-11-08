@@ -546,15 +546,6 @@ local function readXPReceipt(receiptId: string): (boolean, any, string?)
 	return true, nil, key
 end
 
-local function getXPReceipt(receiptId: string): any
-	local ok, result = readXPReceipt(receiptId)
-	if not ok then
-		warn("[ClubMusic Global] XP receipt lookup failed: " .. receiptId)
-		return nil
-	end
-	return result
-end
-
 -- The active timer and pending receipt marker are committed in one UpdateAsync.
 -- This single marker serializes transactions; a crash is recoverable from the per-purchase journal.
 local function recoverPendingXPReceipt(record: any): (boolean, any)
