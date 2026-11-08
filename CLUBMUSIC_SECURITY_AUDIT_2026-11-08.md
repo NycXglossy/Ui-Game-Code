@@ -72,7 +72,10 @@ The audit branch now includes:
 - XP is accrued by weighted elapsed seconds, retaining fractional XP and splitting accrual at known boost-expiry boundaries. A boost change settles the prior interval before the new multiplier is applied.
 - MessagingService publishes prompt boost-state changes to live servers. A staggered 45–60 second durable DataStore refresh reconciles missed messages without every server polling every 15 seconds.
 - XP boost PurchaseIds are recorded in the separate `ClubMusic_XPBoostReceipts_v1` DataStore, one small durable record per purchase. The shared timer update and its `pendingReceipt` marker are committed in the same `UpdateAsync`; recovery completes an interrupted journal without extending the timer twice.
-- New XP boost receipts bypass the capped player-profile receipt map because the global purchase journal is the authoritative durable receipt record for that product type. Existing legacy receipt entries in the old global timer record are still recognized.
+- XP boost receipts bypass the player-profile receipt map because the global purchase journal is authoritative for that product type. Existing legacy receipt entries in the old global timer record and legacy per-purchase journal keys are still recognized.
+- All non-XP Developer Products now use a separate per-user receipt DataStore (`ClubMusic_ProductReceipts_<UserId>`). Each purchase gets a compact record keyed by a SHA-256-derived 160-bit suffix, with the complete PurchaseId, user ID, and product ID stored and compared to detect key collisions. The profile's legacy `receiptIds` map is preserved and checked for old receipts but no longer grows with new purchases.
+- For non-XP products, the profile reward and `pendingReceipt` marker are committed together in one profile `UpdateAsync`. The receipt journal is then marked Completed and the pending marker is cleared. A retry first recovers any pending transaction; a crash between those steps cannot cause the reward to be applied a second time.
+- Added `ClubMusic_ReceiptHash.lua`, a server-only SHA-256-derived key helper. Both server scripts require it from `ServerStorage`; it must not be replicated to clients.
 - Studio test purchases use session-only boost state because cross-server services are disabled by default in Studio.
 
 Configuration required before purchases work:
@@ -90,11 +93,11 @@ The earlier XP receipt and accrual findings have been corrected in the current b
 
 1. Removed the 2,500-entry cap from the global XP boost receipt map for new purchases. New purchases use per-PurchaseId journal keys instead of growing a single shared DataStore value. Existing `globalXPBoost_v1` timers and legacy receipt entries are retained.
 2. Added a durable `Prepared`/`Completed` per-purchase journal and an atomic `pendingReceipt` marker alongside the timer extension. If a server stops between the timer update and journal completion, the next retry recovers the pending transaction before another receipt can be applied.
-3. XP boost acknowledgments no longer depend on writing the same receipt into the capped player-profile ledger. Other Developer Product types continue to use the existing profile receipt ledger and its safety cap.
+3. Removed the 2,500-entry profile receipt cap as an active limit. New donation, item, and title-slot receipts use per-user receipt journals with collision-checked hashed keys and recoverable profile pending markers. The old `receiptIds` table remains for compatibility with previously granted purchases but is not expanded by new purchases.
 4. Replaced whole-minute/current-multiplier awarding with weighted elapsed-time accrual. The controller settles the previous rate before switching multipliers and handles the 4x-to-2x fallback when both timers overlap.
 5. Added cross-server XP boost notifications and a staggered DataStore reconciliation fallback. The renderer/network remote contract is unchanged; the existing state snapshot is published immediately on a received boost update.
 
-The per-purchase XP journal uses DataStore keys prefixed with `xpr_` and accepts PurchaseIds up to 46 ASCII alphanumeric, hyphen, or underscore characters to remain within the DataStore key-length limit. A value outside that format is rejected safely and remains unacknowledged rather than being mapped to a collision-prone hash.
+The XP journal now uses keys prefixed with `xph_` plus a 160-bit SHA-256-derived suffix, and accepts PurchaseIds up to 128 bytes. The full PurchaseId is stored in the journal and compared on every read/update; identity mismatches fail closed. Existing legacy `xpr_<PurchaseId>` keys are checked and recovered before new hashed records are created. The non-XP per-user journal uses the same hash helper with a distinct `r_` prefix. This avoids key-length restrictions and reduces DataStore value growth without silently pruning idempotency records.
 
 ## Studio DataStore error investigation
 
