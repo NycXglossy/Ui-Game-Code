@@ -397,7 +397,11 @@ local function refreshGlobalXPBoost()
 		setGlobalXPState(multiplier, expiresAt, lowerExpiresAt)
 	end
 	if cachedGlobalXpExpiresAt > 0 and cachedGlobalXpExpiresAt <= os.time() then
-		setGlobalXPState(1, 0)
+		if cachedGlobalXpLowerExpiresAt > os.time() then
+			setGlobalXPState(2, cachedGlobalXpLowerExpiresAt)
+		else
+			setGlobalXPState(1, 0)
+		end
 	end
 end
 
