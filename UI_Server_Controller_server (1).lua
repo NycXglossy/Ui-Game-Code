@@ -358,6 +358,7 @@ local globalEventObject = if globalApi then globalApi:FindFirstChild("GlobalEven
 
 local cachedGlobalXpMultiplier = 1
 local cachedGlobalXpExpiresAt = 0
+local cachedGlobalXpLowerExpiresAt = 0
 local studioXpBoostMultiplier = 1
 local studioXpBoostExpiresAt = 0
 local xpLastAwardAt: {[number]: number} = {}
@@ -365,16 +366,20 @@ local xpFractional: {[number]: number} = {}
 local settleAllXP: (() -> ())? = nil
 local xpStateDirty = false
 
-local function setGlobalXPState(multiplier: number, expiresAt: number)
+local function setGlobalXPState(multiplier: number, expiresAt: number, lowerExpiresAt: number?)
 	if multiplier ~= 1 and multiplier ~= 2 and multiplier ~= 4 then return end
 	if typeof(expiresAt) ~= "number" or expiresAt ~= expiresAt
 		or expiresAt == math.huge or expiresAt == -math.huge or expiresAt < 0 then return end
 	local cleanExpiry = if multiplier == 1 or expiresAt <= os.time() then 0 else math.floor(expiresAt)
 	local cleanMultiplier = if cleanExpiry == 0 then 1 else multiplier
-	if cleanMultiplier == cachedGlobalXpMultiplier and cleanExpiry == cachedGlobalXpExpiresAt then return end
+	local cleanLowerExpiry = if cleanMultiplier == 4 and typeof(lowerExpiresAt) == "number"
+		and lowerExpiresAt > os.time() then math.floor(lowerExpiresAt) else 0
+	if cleanMultiplier == cachedGlobalXpMultiplier and cleanExpiry == cachedGlobalXpExpiresAt
+		and cleanLowerExpiry == cachedGlobalXpLowerExpiresAt then return end
 	if settleAllXP then settleAllXP() end
 	cachedGlobalXpMultiplier = cleanMultiplier
 	cachedGlobalXpExpiresAt = cleanExpiry
+	cachedGlobalXpLowerExpiresAt = cleanLowerExpiry
 	xpStateDirty = true
 end
 
@@ -383,11 +388,11 @@ local function refreshGlobalXPBoost()
 		setGlobalXPState(studioXpBoostMultiplier, studioXpBoostExpiresAt)
 		return
 	end
-	local callOk, multiplier, expiresAt = globalInvoke("GetGlobalXPBoost")
+	local callOk, multiplier, expiresAt, lowerExpiresAt = globalInvoke("GetGlobalXPBoost")
 	if callOk and typeof(multiplier) == "number" and multiplier == multiplier
 		and typeof(expiresAt) == "number" and expiresAt == expiresAt
 		and (multiplier == 1 or multiplier == 2 or multiplier == 4) then
-		setGlobalXPState(multiplier, expiresAt)
+		setGlobalXPState(multiplier, expiresAt, lowerExpiresAt)
 	end
 	if cachedGlobalXpExpiresAt > 0 and cachedGlobalXpExpiresAt <= os.time() then
 		setGlobalXPState(1, 0)
@@ -1614,7 +1619,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
 			if typeof(expiry) == "number" and (effectiveMultiplier == 1 or effectiveMultiplier == 2 or effectiveMultiplier == 4) then
-				setGlobalXPState(effectiveMultiplier, expiry)
+				refreshGlobalXPBoost()
 			end
 		end
 	end
@@ -2460,7 +2465,7 @@ local function handleGlobalMessage(message: any)
 	if typeof(message) ~= "table" then return end
 	if message.kind == "XPBoost" and (message.multiplier == 1 or message.multiplier == 2 or message.multiplier == 4)
 		and isFiniteNumber(message.expiresAt) and message.expiresAt >= 0 then
-		setGlobalXPState(message.multiplier, message.expiresAt)
+		setGlobalXPState(message.multiplier, message.expiresAt, message.lowerExpiresAt)
 		publishState(nil)
 		return
 	end
@@ -2542,12 +2547,20 @@ local function settlePlayerXP(player: Player, nowClock: number): boolean
 	local elapsed = math.max(0, nowClock - lastClock)
 	xpLastAwardAt[userId] = nowClock
 	if elapsed <= 0 then return false end
-	local boostedSeconds = 0
-	if cachedGlobalXpMultiplier > 1 and cachedGlobalXpExpiresAt > 0 then
-		local expiryClock = nowClock + (cachedGlobalXpExpiresAt - os.time())
-		boostedSeconds = math.clamp(expiryClock - lastClock, 0, elapsed)
+	local boostedFourSeconds = 0
+	local boostedTwoSeconds = 0
+	if cachedGlobalXpMultiplier == 4 and cachedGlobalXpExpiresAt > 0 then
+		local fourExpiryClock = nowClock + (cachedGlobalXpExpiresAt - os.time())
+		boostedFourSeconds = math.clamp(fourExpiryClock - lastClock, 0, elapsed)
+		if cachedGlobalXpLowerExpiresAt > cachedGlobalXpExpiresAt then
+			local twoExpiryClock = nowClock + (cachedGlobalXpLowerExpiresAt - os.time())
+			boostedTwoSeconds = math.clamp(twoExpiryClock - math.max(lastClock, fourExpiryClock), 0, elapsed - boostedFourSeconds)
+		end
+	elseif cachedGlobalXpMultiplier == 2 and cachedGlobalXpExpiresAt > 0 then
+		local twoExpiryClock = nowClock + (cachedGlobalXpExpiresAt - os.time())
+		boostedTwoSeconds = math.clamp(twoExpiryClock - lastClock, 0, elapsed)
 	end
-	local weightedSeconds = elapsed + boostedSeconds * (cachedGlobalXpMultiplier - 1)
+	local weightedSeconds = elapsed + boostedFourSeconds * 3 + boostedTwoSeconds
 	local fractional = (xpFractional[userId] or 0) + weightedSeconds * (CONFIG.XPPerMinute / 60)
 	local gain = math.floor(fractional + 1e-7)
 	xpFractional[userId] = fractional - gain
