@@ -15,9 +15,10 @@ No `MusicRemotes`, `DispatchAction`, `DispatchEvent`, `MusicBroadcast`, `MusicUp
 
 - Server-owned non-positional Sound in `SoundService`, assigned to a `ClubMusic` SoundGroup, replicates the active track to players.
 - Queue advancement starts the next track and resets playback position.
-- Staff can skip, pause/resume, and restart the current track from the existing DJ booth.
+- Staff can skip, pause/resume, and restart the current track from the existing DJ booth. Pause/resume and restart use the existing global DJ MessagingService topic for best-effort cross-server synchronization; commands are not durably queued when MessagingService is unavailable.
 - Playback elapsed time stops advancing while paused.
 - Existing controller permissions, token buckets, action cooldowns, VIP/VVIP/Sultan request limits and priority, request lock/block moderation, auto DJ, queue management, and skip voting remain authoritative.
+- Originating-server echoes of global DJ messages are ignored, preventing a local skip/clear/pause/restart from being applied a second time.
 - Audio asset ID requests remain staff-only and continue through the existing inspection/validation path.
 - Per-client volume continues to use the local replicated `ClubMusic` SoundGroup; it does not grant the client server playback control.
 
