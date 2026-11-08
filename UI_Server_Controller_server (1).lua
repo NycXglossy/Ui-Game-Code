@@ -930,7 +930,7 @@ local function saveProfile(player: Player)
 		lastClaimDay = profile.lastClaimDay,
 		claimedToday = profile.claimedToday,
 		equippedTag = profile.equippedTag,
-		ownedTags = profile.ownedTags,
+		ownedTags = table.clone(profile.ownedTags),
 		titleSlots = slotsSnapshot,
 		unlockedSlots = profile.unlockedSlots,
 		activeSlot = profile.activeSlot,
@@ -938,7 +938,7 @@ local function saveProfile(player: Player)
 		glowsticks = profile.glowsticks,
 		skipTokens = profile.skipTokens,
 		neonTrail = profile.neonTrail,
-		favorites = profile.favorites,
+		favorites = table.clone(profile.favorites),
 	}
 	local ownershipLost = false
 	local ok, result = pcall(function()
@@ -2042,17 +2042,48 @@ local function handleAction(player: Player, action: any, payload: any)
 		if not isAdmin(player) then return end
 		local target = findTarget(player, payload.userId)
 		if not target or typeof(payload.blocked) ~= "boolean" then return end
+
 		if payload.blocked then
+			-- Apply the local restriction before yielding to persistent storage.
 			blockedUsers[target.UserId] = true
-			globalInvoke("SetRequestBlocked", target.UserId, true, player.UserId)
 			purgeUserEntries(target.UserId)
-			notify(target, "Staff disabled your song requests.", "warn")
-			notify(player, target.DisplayName .. " can no longer request songs.", "ok")
-		else
+		end
+
+		local globalWriteOk = true
+		if not RunService:IsStudio() then
+			local callOk, persisted = globalInvoke("SetRequestBlocked", target.UserId, payload.blocked, player.UserId)
+			globalWriteOk = callOk and persisted == true
+		end
+
+		if not globalWriteOk then
+			-- Never claim a global moderation change succeeded if its durable
+			-- record could not be confirmed. Failed unblocks remain blocked.
+			if payload.blocked then
+				blockedUsers[target.UserId] = true
+				purgeUserEntries(target.UserId)
+				if target.Parent == Players then
+					notify(target, "Staff disabled your song requests on this server.", "warn")
+				end
+				notify(player, "The request block is active on this server, but the global moderation save failed.", "warn")
+			else
+				blockedUsers[target.UserId] = true
+				notify(player, "The global unblock could not be confirmed. The player remains blocked.", "warn")
+			end
+			publishState(nil)
+			return
+		end
+
+		if not payload.blocked then
 			blockedUsers[target.UserId] = nil
-			globalInvoke("SetRequestBlocked", target.UserId, false, player.UserId)
-			notify(target, "Your song requests were re-enabled.", "ok")
+			if target.Parent == Players then
+				notify(target, "Your song requests were re-enabled.", "ok")
+			end
 			notify(player, target.DisplayName .. " can request songs again.", "ok")
+		else
+			if target.Parent == Players then
+				notify(target, "Staff disabled your song requests.", "warn")
+			end
+			notify(player, target.DisplayName .. " can no longer request songs.", "ok")
 		end
 		publishState(nil)
 		return
@@ -2369,13 +2400,16 @@ local function handleGlobalMessage(message: any)
 	end
 end
 
+local connectedGlobalEvents: {[Instance]: boolean} = {}
+
 local function attachGlobalEvent(eventObject: Instance?)
 	if eventObject and eventObject:IsA("BindableEvent") then
 		local event = eventObject :: BindableEvent
-		if not event:GetAttribute("ClubMusicControllerConnected") then
-			event:SetAttribute("ClubMusicControllerConnected", true)
-			event.Event:Connect(handleGlobalMessage)
-		end
+		-- Connection ownership belongs to this Script's lifetime. A restarted
+		-- controller receives a fresh table and can reconnect to this persistent event.
+		if connectedGlobalEvents[event] then return end
+		connectedGlobalEvents[event] = true
+		event.Event:Connect(handleGlobalMessage)
 	end
 end
 
@@ -2398,9 +2432,15 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-	saveProfile(player)
 	local userId = player.UserId
-	releaseProfileSession(userId)
+	local finalSaveOk = saveProfile(player)
+	if finalSaveOk then
+		releaseProfileSession(userId)
+	else
+		-- Keep the lease until it expires naturally. Clearing it after a failed
+		-- save could let another server load stale profile data immediately.
+		warn("[ClubMusic] Final profile save failed; retaining session lease until expiry for userId " .. tostring(userId))
+	end
 	profiles[userId] = nil
 	requestCounts[userId] = nil
 	lastRequestAt[userId] = nil
@@ -2493,7 +2533,12 @@ end)
 
 game:BindToClose(function()
 	for _, player in ipairs(Players:GetPlayers()) do
-		saveProfile(player)
-		releaseProfileSession(player.UserId)
+		local finalSaveOk = saveProfile(player)
+		if finalSaveOk then
+			releaseProfileSession(player.UserId)
+		else
+			-- Do not clear a lease when the final snapshot was not persisted.
+			warn("[ClubMusic] Shutdown save failed; retaining profile lease until expiry for userId " .. tostring(player.UserId))
+		end
 	end
 end)
