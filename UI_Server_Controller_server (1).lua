@@ -1,0 +1,2499 @@
+--!strict
+-- UI_Server_Controller (Security Hardened)
+-- Place as Script: ServerScriptService/UI_Server_Controller
+--
+-- Preserves the existing Club Music UI features and adds:
+--   * Per-action, per-player token buckets, and server-wide RemoteEvent budgets.
+--   * GetState RemoteFunction throttling and protected snapshot generation.
+--   * Server-wide audio inspection budgets, bounded concurrency, and timeout cleanup.
+--   * Strict finite-number / byte-length validation for custom title settings.
+--   * Fail-closed profile loading (no default-profile overwrite after a DataStore error).
+--   * Bounded profile write serialization, coalesced saves, and cross-server session leases.
+--   * Durable, idempotent Developer Product receipt recording before PurchaseGranted.
+--   * Preservation and size safeguards for the durable receipt ledger (never pruned).\n--   * Coalesced state broadcasts and bounded GetState snapshot work.
+--
+-- Keep this script server-side. Configure GroupId, StaffUserIds, audio allowlists,
+-- and real Developer Product IDs before publishing. See the companion README.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
+local TextService = game:GetService("TextService")
+local ContentProvider = game:GetService("ContentProvider")
+local SoundService = game:GetService("SoundService")
+local HttpService = game:GetService("HttpService")
+
+local CONFIG = {
+	GroupId = 0, -- Set to the Roblox group ID for rank/group features.
+	RankThresholds = { Owner = 255, CoOwner = 254, Admin = 200, GroupDJ = 100 },
+
+	-- Extra staff without needing a group (treated as OWNER).
+	StaffUserIds = {} :: {number},
+	-- In Studio every player is treated as OWNER so you can test the DJ booth.
+	-- Set to false to test the normal guest experience in Studio.
+	StudioStaff = true,
+
+	-- VIP: any ONE of these grants VIP. Staff are always VIP. Staff can also grant temporary VIP in the DJ booth.
+	VipGamePassId = 0,       -- Configure your VIP Game Pass ID.
+	VvipGamePassId = 0,      -- Configure your VVIP Game Pass ID.
+	TikiTideSultanPassId = 0,-- Configure your Tiki Tide Sultan Game Pass ID.
+	VipGroupRank = 0,        -- Group rank that counts as VIP (0 = disabled; needs GroupId).
+	VipPriority = true,      -- Pass holders receive tiered request priority.
+
+	MaxRequestsPerPlayer = 2,
+	VipMaxRequestsPerPlayer = 4,
+	VvipMaxRequestsPerPlayer = 6,
+	SultanMaxRequestsPerPlayer = 8,
+	RequestCooldownSeconds = 8,
+	VipCooldownSeconds = 3,
+	VvipCooldownSeconds = 2,
+	SultanCooldownSeconds = 1,
+	MaxQueueSize = 40,         -- Max PLAYER requests waiting at once.
+
+	AutoQueueTarget = 3,       -- Auto DJ keeps at least this many tracks visible in the queue.
+	AutoAvoidRecent = 6,       -- Auto DJ will not repeat any of the last N tracks.
+
+	SkipVoteRatio = 0.5,       -- Share of players needed to skip by vote.
+	SkipVoteMin = 2,           -- Minimum votes (capped to the number of players in the server).
+
+	MaxFavorites = 60,
+	ResyncSeconds = 5,         -- Clients interpolate between resyncs, so we don't spam every second.
+	ReloadCooldownSeconds = 3, -- Per-player cooldown for the "Reload song" button.
+
+	DataStoreName = "SunsetStageClubProfiles_v1",
+	SaveIntervalSeconds = 90,
+	-- Studio defaults to session-only profiles so testing works even when
+	-- "Enable Studio Access to API Services" is disabled. Set true only when
+	-- you intentionally want Studio to use the live DataStore.
+	StudioUseDataStore = false,
+
+	-- Optional audio. Map trackId -> "rbxassetid://123". Tracks without an entry play silently
+	-- (the UI still shows progress and an animated visualizer).
+	SoundIds = {} :: {[string]: string},
+
+	-- Creator Hub audio requests (staff only). The server loads the audio to confirm it is playable and
+	-- to read its real length before queueing it.
+	AudioMaxSeconds = 600,
+	AudioLoadTimeoutSeconds = 8,
+	MaxConcurrentAudioInspections = 2,
+	AudioInspectionCooldownSeconds = 10,
+	GetStateCooldownSeconds = 0.75,
+	SaveTitleCooldownSeconds = 2,
+
+	-- Server-wide abuse / workload budgets. These are shared by every player.
+	GlobalActionBurst = 180,
+	GlobalActionRefillPerSecond = 90,
+	PerPlayerActionBurst = 18,
+	PerPlayerActionRefillPerSecond = 12,
+	GlobalAudioBurst = 3,
+	GlobalAudioRefillPerSecond = 0.25,
+	GlobalStateMinIntervalSeconds = 0.2,
+	ProfileWriteLockTimeoutSeconds = 12,
+	ProfileSaveQueueDelaySeconds = 0.25,
+	MaxReceiptLedgerEntries = 2500,
+	GlobalDataStoreBurst = 30,
+	GlobalDataStoreRefillPerSecond = 3,
+	RestrictAudioToAllowlist = false,           -- true = only IDs listed below can be requested.
+	AllowedAudioAssetIds = {} :: {number},
+
+	-- Title slots: slot 1 is free, slots 2 and 3 are Developer Products. 0 = not configured.
+	TitleSlotProductIds = { [2] = 0, [3] = 0 } :: {[number]: number},
+	TitleSlotPrices = { [2] = 99, [3] = 199 } :: {[number]: number}, -- Display only; set to match the products.
+}
+
+local TRACKS: {[string]: {[string]: {title: string, artist: string, duration: number, genre: string}}} = {
+	hiphop = {
+		["hh-0"]={title="Palm Tree Freestyle",artist="Lil Coconut",duration=184,genre="Hip Hop / Rap"},
+		["hh-1"]={title="Tide Money",artist="MC Lagoon",duration=201,genre="Hip Hop / Rap"},
+		["hh-2"]={title="Boardwalk Bounce",artist="Kid Kahuna",duration=176,genre="Hip Hop / Rap"},
+		["hh-3"]={title="Sandcastle Kings",artist="Reef Gang",duration=213,genre="Hip Hop / Rap"},
+		["hh-4"]={title="Midnight Luau",artist="Big Pineapple",duration=195,genre="Hip Hop / Rap"},
+		["hh-5"]={title="Wave Check",artist="Yung Tsunami",duration=168,genre="Hip Hop / Rap"},
+	},
+	rnb = {
+		["rnb-0"]={title="Golden Hour Love",artist="Coral Rose",duration=224,genre="R&B / Soul"},
+		["rnb-1"]={title="Slow Tide",artist="Marina Soul",duration=241,genre="R&B / Soul"},
+		["rnb-2"]={title="Tiki Torch Serenade",artist="D'Angelo Bay",duration=232,genre="R&B / Soul"},
+		["rnb-3"]={title="Velvet Shoreline",artist="Honey Kai",duration=207,genre="R&B / Soul"},
+		["rnb-4"]={title="Lantern Light",artist="Nalu & The Keys",duration=219,genre="R&B / Soul"},
+	},
+	rock = {
+		["rk-0"]={title="Volcano Riff",artist="The Lava Kings",duration=238,genre="Rock"},
+		["rk-1"]={title="Surf's Up Anthem",artist="Riptide Rebels",duration=199,genre="Rock"},
+		["rk-2"]={title="Driftwood Highway",artist="Saltwater Saints",duration=262,genre="Rock"},
+		["rk-3"]={title="Thunder on the Bay",artist="Coral Crush",duration=221,genre="Rock"},
+	},
+	kpop = {
+		["kp-0"]={title="SUMMER GLITCH",artist="NEONWAVE",duration=192,genre="K-Pop"},
+		["kp-1"]={title="Pink Horizon",artist="STARR1SE",duration=205,genre="K-Pop"},
+		["kp-2"]={title="Island Signal",artist="LUMI-9",duration=187,genre="K-Pop"},
+		["kp-3"]={title="Heartbeat Lagoon",artist="KORAL",duration=199,genre="K-Pop"},
+		["kp-4"]={title="Firework Kiss",artist="AURA X",duration=181,genre="K-Pop"},
+	},
+	latin = {
+		["lt-0"]={title="Playa Caliente",artist="DJ Mango",duration=214,genre="Latin Music"},
+		["lt-1"]={title="Bailando en la Arena",artist="Sol y Mar",duration=228,genre="Latin Music"},
+		["lt-2"]={title="Noche Tropical",artist="La Ola",duration=203,genre="Latin Music"},
+		["lt-3"]={title="Fuego Lento",artist="Rey Coco",duration=197,genre="Latin Music"},
+	},
+	edm = {
+		["edm-0"]={title="Sunset Overdrive",artist="Aqualux",duration=246,genre="EDM"},
+		["edm-1"]={title="Neon Coastline",artist="VOLTA",duration=233,genre="EDM"},
+		["edm-2"]={title="Tidal Drop",artist="Prism Reef",duration=258,genre="EDM"},
+		["edm-3"]={title="Laser Lagoon",artist="Kairo",duration=219,genre="EDM"},
+		["edm-4"]={title="Afterglow Rave",artist="SKYE.EXE",duration=271,genre="EDM"},
+		["edm-5"]={title="Bassquake Beach",artist="Subduction",duration=205,genre="EDM"},
+	},
+	country = {
+		["ct-0"]={title="Beach Truck Blues",artist="Dusty Shores",duration=212,genre="Country"},
+		["ct-1"]={title="Sunburnt Sweetheart",artist="Cody Cove",duration=198,genre="Country"},
+		["ct-2"]={title="Barefoot Rodeo",artist="The Palm Ranch",duration=205,genre="Country"},
+	},
+	pop = {
+		["pop-0"]={title="Electric Paradise",artist="Mia Lumen",duration=189,genre="Pop"},
+		["pop-1"]={title="Coconut Crush",artist="Jade Rivers",duration=176,genre="Pop"},
+		["pop-2"]={title="Ocean Eyes Tonight",artist="Leo Starr",duration=201,genre="Pop"},
+		["pop-3"]={title="Glow Up Summer",artist="Nova Bay",duration=183,genre="Pop"},
+		["pop-4"]={title="Postcard Heart",artist="Kenna Blue",duration=194,genre="Pop"},
+	},
+	exclusive = {
+		["ex-0"]={title="Sunset Stage Anthem",artist="Club Resident",duration=262,genre="Club Exclusives"},
+		["ex-1"]={title="Tiki Torch Theory",artist="Club Resident ft. VOLTA",duration=238,genre="Club Exclusives"},
+		["ex-2"]={title="Low-Poly Paradise",artist="Pixel Palms",duration=224,genre="Club Exclusives"},
+		["ex-3"]={title="Mainstage Moonrise",artist="The Owners",duration=289,genre="Club Exclusives"},
+	},
+}
+
+type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string }
+
+-- Flat lookup so the "All Tracks" tab and favorites can reference any track by id.
+local TRACK_BY_ID: {[string]: Track} = {}
+local ALL_TRACK_IDS: {string} = {}
+for genreId, list in pairs(TRACKS) do
+	for id, t in pairs(list) do
+		TRACK_BY_ID[id] = { id = id, genreId = genreId, title = t.title, artist = t.artist, duration = t.duration, genre = t.genre }
+		table.insert(ALL_TRACK_IDS, id)
+	end
+end
+table.sort(ALL_TRACK_IDS)
+
+local TAGS: {[string]: boolean} = {
+	vip = true, party = true, wave = true, tiki = true, sunset = true, bass = true, island = true,
+}
+
+-- Custom title allowlists. These values are data keys, not client-supplied styles.
+local TITLE_COLORS: {[string]: boolean} = {
+	gold = true, cyan = true, pink = true, purple = true, red = true, green = true,
+}
+local TITLE_STYLES: {[string]: boolean} = {
+	normal = true, bold = true, italic = true, outline = true,
+}
+-- Effect -> allowed color-set ids (must match the client's UI_Renderer lists).
+local TITLE_SETS: {[string]: {[string]: boolean}} = {
+	fixed = { gold = true, cyan = true, pink = true, purple = true, red = true, green = true },
+	rgb = { slow = true, normal = true, fast = true },
+	gradient = { amethyst = true, aurora = true, candy = true, cotton = true, cyber = true, desert = true, emerald = true, fire = true, forest = true, galaxy = true, ice = true, lava = true, midnight = true, neon = true, ocean = true, pastel = true, purple = true, rosegold = true, royal = true, sakura = true, sapphire = true, sunset = true, thunder = true, tropical = true, volcano = true },
+	rainbow = { classic = true, pastel = true, neon = true, deep = true, amethyst = true, aurora = true, candy = true, cotton = true, cyber = true, desert = true, emerald = true, fire = true, forest = true, galaxy = true, ice = true, lava = true, midnight = true, ocean = true, purple = true, rosegold = true, royal = true, sakura = true, sapphire = true, sunset = true, thunder = true, tropical = true, volcano = true },
+	twotone = { amethyst = true, aurora = true, candy = true, cotton = true, cyber = true, desert = true, emerald = true, fire = true, forest = true, galaxy = true, ice = true, lava = true, midnight = true, neon = true, ocean = true, pastel = true, purple = true, rosegold = true, royal = true, sakura = true, sapphire = true, sunset = true, thunder = true, tropical = true, volcano = true },
+	shimmer = { amethyst = true, aurora = true, candy = true, cotton = true, cyber = true, desert = true, emerald = true, fire = true, forest = true, galaxy = true, ice = true, lava = true, midnight = true, neon = true, ocean = true, pastel = true, purple = true, rosegold = true, royal = true, sakura = true, sapphire = true, sunset = true, thunder = true, tropical = true, volcano = true },
+}
+local TITLE_FONTS: {[string]: boolean} = {
+	gotham = true, fredoka = true, arcade = true, cartoon = true, scifi = true, fantasy = true,
+	bangers = true, luckiest = true, marker = true, hand = true, retro = true, code = true,
+}
+-- Server-side colors so clients never choose raw colors.
+local TITLE_HEX: {[string]: {[string]: {string}}} = {
+	fixed = {
+		gold = {"#FCD34D"}, cyan = {"#00F0FF"}, pink = {"#FF2E93"},
+		purple = {"#A855F7"}, red = {"#EF4444"}, green = {"#2ECC71"},
+	},
+	gradient = {
+		amethyst = {"#C084FC", "#6D28D9"},
+		aurora = {"#34D399", "#A78BFA"},
+		candy = {"#FF4FA3", "#7DD3FC"},
+		cotton = {"#FBCFE8", "#E0F2FE"},
+		cyber = {"#00F5FF", "#FF00D4"},
+		desert = {"#F4A261", "#E9C46A"},
+		emerald = {"#34D399", "#047857"},
+		fire = {"#FDE047", "#DC2626"},
+		forest = {"#86A86B", "#14532D"},
+		galaxy = {"#312E81", "#D946EF"},
+		ice = {"#E0F7FF", "#60A5FA"},
+		lava = {"#FB923C", "#7F1D1D"},
+		midnight = {"#1E1B4B", "#475569"},
+		neon = {"#00F0FF", "#FF2E93"},
+		ocean = {"#00F0FF", "#2563EB"},
+		pastel = {"#F9A8D4", "#A5B4FC"},
+		purple = {"#C084FC", "#581C87"},
+		rosegold = {"#F4B6A6", "#B76E79"},
+		royal = {"#FCD34D", "#7C3AED"},
+		sakura = {"#FDA4AF", "#FCE7F3"},
+		sapphire = {"#60A5FA", "#1E40AF"},
+		sunset = {"#FF8C00", "#FF2E93"},
+		thunder = {"#FDE047", "#4338CA"},
+		tropical = {"#2DD4BF", "#FACC15"},
+		volcano = {"#FB7185", "#7F1D1D"},
+	},
+	twotone = {
+		amethyst = {"#C084FC", "#6D28D9"},
+		aurora = {"#34D399", "#A78BFA"},
+		candy = {"#FF4FA3", "#7DD3FC"},
+		cotton = {"#FBCFE8", "#E0F2FE"},
+		cyber = {"#00F5FF", "#FF00D4"},
+		desert = {"#F4A261", "#E9C46A"},
+		emerald = {"#34D399", "#047857"},
+		fire = {"#FDE047", "#DC2626"},
+		forest = {"#86A86B", "#14532D"},
+		galaxy = {"#312E81", "#D946EF"},
+		ice = {"#E0F7FF", "#60A5FA"},
+		lava = {"#FB923C", "#7F1D1D"},
+		midnight = {"#1E1B4B", "#475569"},
+		neon = {"#00F0FF", "#FF2E93"},
+		ocean = {"#00F0FF", "#2563EB"},
+		pastel = {"#F9A8D4", "#A5B4FC"},
+		purple = {"#C084FC", "#581C87"},
+		rosegold = {"#F4B6A6", "#B76E79"},
+		royal = {"#FCD34D", "#7C3AED"},
+		sakura = {"#FDA4AF", "#FCE7F3"},
+		sapphire = {"#60A5FA", "#1E40AF"},
+		sunset = {"#FF8C00", "#FF2E93"},
+		thunder = {"#FDE047", "#4338CA"},
+		tropical = {"#2DD4BF", "#FACC15"},
+		volcano = {"#FB7185", "#7F1D1D"},
+	},
+	shimmer = {
+		amethyst = {"#C084FC", "#6D28D9"},
+		aurora = {"#34D399", "#A78BFA"},
+		candy = {"#FF4FA3", "#7DD3FC"},
+		cotton = {"#FBCFE8", "#E0F2FE"},
+		cyber = {"#00F5FF", "#FF00D4"},
+		desert = {"#F4A261", "#E9C46A"},
+		emerald = {"#34D399", "#047857"},
+		fire = {"#FDE047", "#DC2626"},
+		forest = {"#86A86B", "#14532D"},
+		galaxy = {"#312E81", "#D946EF"},
+		ice = {"#E0F7FF", "#60A5FA"},
+		lava = {"#FB923C", "#7F1D1D"},
+		midnight = {"#1E1B4B", "#475569"},
+		neon = {"#00F0FF", "#FF2E93"},
+		ocean = {"#00F0FF", "#2563EB"},
+		pastel = {"#F9A8D4", "#A5B4FC"},
+		purple = {"#C084FC", "#581C87"},
+		rosegold = {"#F4B6A6", "#B76E79"},
+		royal = {"#FCD34D", "#7C3AED"},
+		sakura = {"#FDA4AF", "#FCE7F3"},
+		sapphire = {"#60A5FA", "#1E40AF"},
+		sunset = {"#FF8C00", "#FF2E93"},
+		thunder = {"#FDE047", "#4338CA"},
+		tropical = {"#2DD4BF", "#FACC15"},
+		volcano = {"#FB7185", "#7F1D1D"},
+	},
+}
+local RAINBOW_PARAMS: {[string]: {number}} = { classic = {0.85, 1}, pastel = {0.4, 1}, neon = {1, 1}, deep = {1, 0.8} }
+local RGB_SPEED: {[string]: number} = { slow = 0.12, normal = 0.25, fast = 0.5 }
+
+local MAX_CUSTOM_TITLE_LENGTH = 24
+local TITLE_SLOT_COUNT = 3
+
+local function truncateUtf8(value: string, maxCharacters: number): string
+	local boundary = utf8.offset(value, maxCharacters + 1)
+	if boundary then
+		return string.sub(value, 1, boundary - 1)
+	end
+	return value
+end
+local DAILY_REWARD_COUNT = 7
+local store = DataStoreService:GetDataStore(CONFIG.DataStoreName)
+local USE_STUDIO_MEMORY_PROFILES = RunService:IsStudio() and not CONFIG.StudioUseDataStore
+local SESSION_LOCK_SECONDS = 180
+
+if USE_STUDIO_MEMORY_PROFILES then
+	warn("[ClubMusic] Studio in-memory profile mode is active. DataStore access is skipped; profile changes will not persist after this Studio server session.")
+end
+local SESSION_TOKEN = if game.JobId ~= "" then game.JobId else HttpService:GenerateGUID(false)
+local random = Random.new()
+
+local function getOrCreate(parent: Instance, className: string, name: string): Instance
+	local found = parent:FindFirstChild(name)
+	if found and found.ClassName == className then return found end
+	if found then found:Destroy() end
+	local created = Instance.new(className)
+	created.Name = name
+	created.Parent = parent
+	return created
+end
+
+local remotes = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicRemotes") :: Folder
+local actionRemote = getOrCreate(remotes, "RemoteEvent", "RequestAction") :: RemoteEvent
+local stateRemote = getOrCreate(remotes, "RemoteEvent", "StateChanged") :: RemoteEvent
+local noticeRemote = getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
+local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: RemoteFunction
+
+-- Optional cross-server service bridge. The UI remains functional if this separate
+-- service is disabled or temporarily unavailable; the server's local security remains active.
+local ServerStorage = game:GetService("ServerStorage")
+local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI") or ServerStorage:WaitForChild("ClubMusicGlobalAPI", 15)
+local function globalInvoke(name: string, ...: any): any
+	-- Re-resolve on every call so the bridge recovers if its separate Script starts late.
+	if not globalApi or globalApi.Parent ~= ServerStorage or not globalApi:IsA("Folder") then
+		local discovered = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+		globalApi = if discovered and discovered:IsA("Folder") then discovered else nil
+	end
+	if not globalApi or not globalApi:IsA("Folder") then return false end
+	local fn = globalApi:FindFirstChild(name)
+	if not fn or not fn:IsA("BindableFunction") then return false end
+	local args = table.pack(...)
+	local ok, a, b, c = pcall(function()
+		return (fn :: BindableFunction):Invoke(table.unpack(args, 1, args.n))
+	end)
+	return ok, a, b, c
+end
+local globalEventObject = if globalApi then globalApi:FindFirstChild("GlobalEvent") else nil
+
+local configFolder = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicConfig") :: Folder
+configFolder:SetAttribute("GroupId", CONFIG.GroupId)
+
+type QueueEntry = {
+	id: string,
+	trackId: string,
+	title: string,
+	artist: string,
+	duration: number,
+	requestedBy: string,
+	userId: number,
+	genre: string,
+	source: string, -- "player" | "auto"
+	vip: boolean,
+	passTier: number?,
+	soundId: string?,
+}
+type TitleSlot = {
+	text: string,
+	effect: string,
+	set: string,
+	font: string,
+	style: string,
+	height: number,
+	distance: number,
+}
+type Profile = {
+	tickets: number,
+	coins: number,
+	loginStreak: number,
+	lastClaimDay: number,
+	claimedToday: boolean,
+	equippedTag: string?,
+	ownedTags: {[string]: boolean},
+	titleSlots: {[number]: TitleSlot},
+	unlockedSlots: number,
+	activeSlot: number,
+	showCustomTitle: boolean,
+	glowsticks: number,
+	skipTokens: number,
+	neonTrail: boolean,
+	favorites: {[string]: boolean},
+}
+
+local profiles: {[number]: Profile} = {}
+local queue: {QueueEntry} = {}
+local nowPlaying = {
+	trackId = "",
+	title = "",
+	artist = "",
+	genre = "",
+	duration = 1,
+	elapsed = 0,
+	dj = "Automated Selector",
+	source = "auto",
+	requestedBy = "Auto DJ",
+	vip = false,
+	soundId = "",
+}
+local requestCounts: {[number]: number} = {}
+local lastRequestAt: {[number]: number} = {}
+local lastActionAt: {[number]: number} = {}
+local lastReloadAt: {[number]: number} = {}
+local reloadNonce: {[number]: number} = {}
+local pendingAudio: {[number]: boolean} = {}
+local lastActionByType: {[number]: {[string]: number}} = {}
+local lastStateInvoke: {[number]: number} = {}
+local lastAudioInspection: {[number]: number} = {}
+local audioInspectionCount = 0
+local profileWriteLocks: {[number]: boolean} = {}
+local saveQueued: {[number]: boolean} = {}
+local saveAgain: {[number]: boolean} = {}
+local queueCounter = 0
+
+-- Token buckets are server-authoritative and shared across all requests in this
+-- server instance. They are deliberately separate from per-player cooldowns.
+type TokenBucket = { tokens: number, capacity: number, refillPerSecond: number, updatedAt: number }
+
+local function newTokenBucket(capacity: number, refillPerSecond: number): TokenBucket
+	return {
+		tokens = capacity,
+		capacity = capacity,
+		refillPerSecond = refillPerSecond,
+		updatedAt = os.clock(),
+	}
+end
+
+local globalActionBucket = newTokenBucket(CONFIG.GlobalActionBurst, CONFIG.GlobalActionRefillPerSecond)
+local globalAudioBucket = newTokenBucket(CONFIG.GlobalAudioBurst, CONFIG.GlobalAudioRefillPerSecond)
+local globalStateQueryBucket = newTokenBucket(30, 15)
+local globalDataStoreBucket = newTokenBucket(CONFIG.GlobalDataStoreBurst, CONFIG.GlobalDataStoreRefillPerSecond)
+local perPlayerActionBuckets: {[number]: TokenBucket} = {}
+
+local function consumeToken(bucket: TokenBucket, now: number, cost: number?): boolean
+	local amount = cost or 1
+	local elapsed = math.max(0, now - bucket.updatedAt)
+	bucket.updatedAt = now
+	bucket.tokens = math.min(bucket.capacity, bucket.tokens + elapsed * bucket.refillPerSecond)
+	if bucket.tokens < amount then return false end
+	bucket.tokens -= amount
+	return true
+end
+
+local function waitForDataStoreBudget(maxWaitSeconds: number): boolean
+	local sharedStoreCallOk, sharedStoreAllowed = globalInvoke("ConsumeDataStoreBudget")
+	if RunService:IsStudio() then
+		if sharedStoreCallOk and sharedStoreAllowed == false then return false end
+	else
+		if not sharedStoreCallOk or sharedStoreAllowed ~= true then return false end
+	end
+	local startedAt = os.clock()
+	while true do
+		if consumeToken(globalDataStoreBucket, os.clock(), 1) then return true end
+		if os.clock() - startedAt >= maxWaitSeconds then return false end
+		task.wait(0.1)
+	end
+end
+
+local function consumeActionBudget(userId: number, now: number): boolean
+	local bucket = perPlayerActionBuckets[userId]
+	if not bucket then
+		bucket = newTokenBucket(CONFIG.PerPlayerActionBurst, CONFIG.PerPlayerActionRefillPerSecond)
+		perPlayerActionBuckets[userId] = bucket
+	end
+	-- Consume the per-player bucket first. Only consume the global bucket when
+	-- the player has capacity, avoiding global-budget loss to one noisy player.
+	if not consumeToken(bucket, now, 1) then return false end
+	if not consumeToken(globalActionBucket, now, 1) then
+		bucket.tokens = math.min(bucket.capacity, bucket.tokens + 1)
+		return false
+	end
+	return true
+end
+
+local ACTION_COOLDOWNS: {[string]: number} = {
+	RequestTrack = 0.5, RequestAudioAsset = CONFIG.AudioInspectionCooldownSeconds,
+	ReloadSong = CONFIG.ReloadCooldownSeconds, ToggleFavorite = 0.2, VoteSkip = 0.5,
+	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJClearQueue = 1, DJToggleLock = 1,
+	ModBlockUser = 0.5, ModSetVip = 0.5, ModPurgeUser = 0.5,
+	ClaimDailyReward = 1, EquipTitleTag = 0.5, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
+	SaveTitleSlot = CONFIG.SaveTitleCooldownSeconds, SelectTitleSlot = 0.3,
+	ClearTitleSlot = 0.5, SetTitleVisible = 0.3,
+}
+
+local function isFiniteNumber(value: any): boolean
+	return typeof(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
+
+local function acquireProfileWriteLock(userId: number): boolean
+	local startedAt = os.clock()
+	while profileWriteLocks[userId] do
+		if os.clock() - startedAt >= CONFIG.ProfileWriteLockTimeoutSeconds then
+			warn("[ClubMusic] Timed out waiting for profile write lock for userId " .. tostring(userId))
+			return false
+		end
+		task.wait(0.05)
+	end
+	profileWriteLocks[userId] = true
+	return true
+end
+
+local function releaseProfileWriteLock(userId: number)
+	profileWriteLocks[userId] = nil
+end
+
+-- Session-only moderation / VIP / vote state
+local rankCache: {[number]: {rank: string, level: number}} = {}
+local vipPass: {[number]: boolean} = {}
+local vvipPass: {[number]: boolean} = {}
+local sultanPass: {[number]: boolean} = {}
+local tempVip: {[number]: boolean} = {}
+local blockedUsers: {[number]: boolean} = {}
+local skipVotes: {[number]: boolean} = {}
+local requestsLocked = false
+local recentTracks: {string} = {}
+local lastAutoGenre = ""
+
+-- Ranks, permissions and VIP -------------------------------------------------
+
+local function computeRank(player: Player): (string, number)
+	for _, id in ipairs(CONFIG.StaffUserIds) do
+		if id == player.UserId then return "OWNER", 4 end
+	end
+	if CONFIG.StudioStaff and RunService:IsStudio() then return "OWNER", 4 end
+	if CONFIG.GroupId <= 0 then return "GUEST", 0 end
+
+	local ok, rank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
+	if not ok or typeof(rank) ~= "number" then return "GUEST", 0 end
+	local t = CONFIG.RankThresholds
+	if rank >= t.Owner then return "OWNER", 4 end
+	if rank >= t.CoOwner then return "CO-OWNER", 3 end
+	if rank >= t.Admin then return "ADMIN", 2 end
+	if rank >= t.GroupDJ then return "GROUP DJ", 1 end
+	return "GUEST", 0
+end
+
+-- Yields (group lookups). Never call from the per-second loop.
+local function refreshRank(player: Player)
+	local rank, level = computeRank(player)
+	rankCache[player.UserId] = { rank = rank, level = level }
+end
+
+local function getRank(player: Player): string
+	local cached = rankCache[player.UserId]
+	return if cached then cached.rank else "GUEST"
+end
+
+-- Permission level: 0 guest, 1 GROUP DJ, 2 ADMIN, 3 CO-OWNER, 4 OWNER
+local function getLevel(player: Player): number
+	local cached = rankCache[player.UserId]
+	return if cached then cached.level else 0
+end
+
+local function isStaff(player: Player): boolean
+	return getLevel(player) >= 1
+end
+
+local function isAdmin(player: Player): boolean
+	return getLevel(player) >= 2
+end
+
+local function passTier(player: Player): number
+	local userId = player.UserId
+	if sultanPass[userId] == true then return 3 end
+	if vvipPass[userId] == true then return 2 end
+	if getLevel(player) >= 1 or vipPass[userId] == true or tempVip[userId] == true then return 1 end
+	return 0
+end
+
+local function isVip(player: Player): boolean
+	return passTier(player) >= 1
+end
+
+local function isVvip(player: Player): boolean
+	return passTier(player) >= 2
+end
+
+local function isSultan(player: Player): boolean
+	return passTier(player) >= 3
+end
+
+-- Owners can moderate anyone but themselves; everyone else only moderates strictly lower ranks.
+local function canModerate(actor: Player, target: Player): boolean
+	if actor == target then return false end
+	local actorLevel = getLevel(actor)
+	if actorLevel >= 4 then return true end
+	return getLevel(target) < actorLevel
+end
+
+local function applyVipAttribute(player: Player)
+	player:SetAttribute("IsVIP", isVip(player))
+	player:SetAttribute("IsVVIP", isVvip(player))
+	player:SetAttribute("IsTikiTideSultan", isSultan(player))
+	player:SetAttribute("ClubPassTier", passTier(player))
+end
+
+-- Ownership is always checked by the server. Failed marketplace lookups fail closed
+-- for the affected pass and are retried by the periodic refresh.
+local function ownsGamePass(userId: number, passId: number): boolean
+	if passId <= 0 then return false end
+	local ok, owns = pcall(function()
+		return MarketplaceService:UserOwnsGamePassAsync(userId, passId)
+	end)
+	return ok and owns == true
+end
+
+local function refreshVip(player: Player)
+	local userId = player.UserId
+	vipPass[userId] = ownsGamePass(userId, CONFIG.VipGamePassId)
+	vvipPass[userId] = ownsGamePass(userId, CONFIG.VvipGamePassId)
+	sultanPass[userId] = ownsGamePass(userId, CONFIG.TikiTideSultanPassId)
+	if not vipPass[userId] and CONFIG.VipGroupRank > 0 and CONFIG.GroupId > 0 then
+		local ok, rank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
+		if ok and typeof(rank) == "number" and rank >= CONFIG.VipGroupRank then vipPass[userId] = true end
+	end
+end
+
+local function requestLimitFor(player: Player): number
+	local tier = passTier(player)
+	if tier >= 3 then return CONFIG.SultanMaxRequestsPerPlayer end
+	if tier == 2 then return CONFIG.VvipMaxRequestsPerPlayer end
+	if tier == 1 then return CONFIG.VipMaxRequestsPerPlayer end
+	return CONFIG.MaxRequestsPerPlayer
+end
+
+local function cooldownFor(player: Player): number
+	local tier = passTier(player)
+	if tier >= 3 then return CONFIG.SultanCooldownSeconds end
+	if tier == 2 then return CONFIG.VvipCooldownSeconds end
+	if tier == 1 then return CONFIG.VipCooldownSeconds end
+	return CONFIG.RequestCooldownSeconds
+end
+
+-- Title slots -------------------------------------------------------------------
+
+-- Returns the hex colors for an effect/set (empty for RGB, which animates by speed instead).
+local function titleHexFor(effect: string, set: string): {string}
+	if effect == "rainbow" then
+		-- Palette-based rainbow sets (amethyst, fire, ocean, ...) reuse the two-color palettes above as a
+		-- circular list (color A, midpoint, color B, midpoint) that the client flows through the title.
+		local palette = if RAINBOW_PARAMS[set] == nil then TITLE_HEX.gradient[set] else nil
+		if palette and #palette >= 2 then
+			local first = Color3.fromHex(palette[1])
+			local second = Color3.fromHex(palette[2])
+			local middle = "#" .. first:Lerp(second, 0.5):ToHex()
+			return { palette[1], middle, palette[2], middle }
+		end
+		local params = RAINBOW_PARAMS[set] or RAINBOW_PARAMS.classic
+		local out = {}
+		for i = 0, 6 do
+			table.insert(out, "#" .. Color3.fromHSV(i / 7, params[1], params[2]):ToHex())
+		end
+		return out
+	end
+	local group = TITLE_HEX[effect]
+	local colors = if group then group[set] else nil
+	return colors or {}
+end
+
+-- Validates a stored/received slot. Returns nil when anything is out of the allowlists.
+local function sanitizeTitleSlot(data: any): TitleSlot?
+	if typeof(data) ~= "table" then return nil end
+	local text = data.text
+	if typeof(text) ~= "string" or #text > 256 then return nil end
+	local length = utf8.len(text)
+	if not length or length < 1 or length > MAX_CUSTOM_TITLE_LENGTH then return nil end
+	local effect = data.effect
+	if typeof(effect) ~= "string" or TITLE_SETS[effect] == nil then return nil end
+	local set = data.set
+	if typeof(set) ~= "string" or TITLE_SETS[effect][set] ~= true then return nil end
+	local font = data.font
+	if typeof(font) ~= "string" or TITLE_FONTS[font] ~= true then return nil end
+	local style = data.style
+	if typeof(style) ~= "string" or TITLE_STYLES[style] ~= true then return nil end
+	local height = tonumber(data.heightOffset or data.height)
+	local distance = tonumber(data.viewDistance or data.distance)
+	if not isFiniteNumber(height) then height = 2.5 end
+	if not isFiniteNumber(distance) then distance = 80 end
+	return {
+		text = text,
+		effect = effect,
+		set = set,
+		font = font,
+		style = style,
+		height = math.clamp(height or 2.5, 0, 8),
+		distance = math.clamp(distance or 80, 20, 200),
+	}
+end
+
+local function firstFilledSlot(profile: Profile): number?
+	for i = 1, TITLE_SLOT_COUNT do
+		if profile.titleSlots[i] and i <= profile.unlockedSlots then return i end
+	end
+	return nil
+end
+
+-- Mirrors the active slot onto player attributes for the overhead title script.
+-- Legacy attributes (CustomTitle/TitleColor/TitleStyle/ShowCustomTitle) are kept up to date as well.
+local function applyTitleAttributes(player: Player, profile: Profile)
+	local slot = profile.titleSlots[profile.activeSlot]
+	player:SetAttribute("TitleSlotsUnlocked", profile.unlockedSlots)
+	player:SetAttribute("TitleSlot", profile.activeSlot)
+	player:SetAttribute("ShowCustomTitle", profile.showCustomTitle)
+	if slot == nil then
+		player:SetAttribute("CustomTitle", "")
+		player:SetAttribute("TitleColor", "gold")
+		player:SetAttribute("TitleStyle", "normal")
+		player:SetAttribute("TitleEffect", "fixed")
+		player:SetAttribute("TitleSet", "gold")
+		player:SetAttribute("TitleColors", "#FCD34D")
+		player:SetAttribute("TitleSpeed", 0)
+		player:SetAttribute("TitleShimmer", false)
+		player:SetAttribute("TitleFont", "gotham")
+		player:SetAttribute("TitleHeight", 2.5)
+		player:SetAttribute("TitleDistance", 80)
+		return
+	end
+	player:SetAttribute("CustomTitle", slot.text)
+	player:SetAttribute("TitleColor", if slot.effect == "fixed" then slot.set else "gold")
+	player:SetAttribute("TitleStyle", slot.style)
+	player:SetAttribute("TitleEffect", slot.effect)
+	player:SetAttribute("TitleSet", slot.set)
+	player:SetAttribute("TitleColors", table.concat(titleHexFor(slot.effect, slot.set), ","))
+	player:SetAttribute("TitleSpeed", if slot.effect == "rgb" then (RGB_SPEED[slot.set] or 0.25) elseif slot.effect == "shimmer" then 0.35 else 0)
+	player:SetAttribute("TitleShimmer", slot.effect == "shimmer")
+	player:SetAttribute("TitleFont", slot.font)
+	player:SetAttribute("TitleHeight", slot.height)
+	player:SetAttribute("TitleDistance", slot.distance)
+end
+
+-- Filters player-authored text on the server before storing or replicating it. Returns nil on failure.
+local function filterTitleText(player: Player, rawText: string): string?
+	local trimmed = string.match(rawText, "^%s*(.-)%s*$") or ""
+	if trimmed == "" then return "" end
+	local ok, result = pcall(function()
+		local filtered = TextService:FilterStringAsync(trimmed, player.UserId)
+		return filtered:GetNonChatStringForBroadcastAsync()
+	end)
+	if not ok or typeof(result) ~= "string" then return nil end
+	return truncateUtf8(result, MAX_CUSTOM_TITLE_LENGTH)
+end
+
+-- Profiles --------------------------------------------------------------------
+
+local function defaultProfile(): Profile
+	return {
+		tickets = 0,
+		coins = 0,
+		loginStreak = 1,
+		lastClaimDay = 0,
+		claimedToday = false,
+		equippedTag = nil,
+		ownedTags = {vip=true, party=true, wave=true},
+		titleSlots = {},
+		unlockedSlots = 1,
+		activeSlot = 1,
+		showCustomTitle = true,
+		glowsticks = 0,
+		skipTokens = 0,
+		neonTrail = false,
+		favorites = {},
+	}
+end
+
+local function loadProfile(player: Player)
+	local profile = defaultProfile()
+	local data = nil
+	local ok = false
+	local lastError = "Profile session is already active on another server."
+
+	if USE_STUDIO_MEMORY_PROFILES then
+		-- Studio test profile: keep all existing gameplay/profile features usable
+		-- without attempting a DataStore request or requiring API access.
+		data = {}
+		ok = true
+	else
+		for attempt = 1, 5 do
+			if not waitForDataStoreBudget(20) then
+				lastError = "Server DataStore request budget is busy."
+				break
+			end
+			local callOk, result = pcall(function()
+				return store:UpdateAsync(tostring(player.UserId), function(oldData)
+					local current = if typeof(oldData) == "table" then table.clone(oldData) else {}
+					local lock = current.sessionLock
+					if typeof(lock) == "table" and typeof(lock.owner) == "string"
+						and lock.owner ~= SESSION_TOKEN and (tonumber(lock.expiresAt) or 0) > os.time() then
+						return nil -- Another live server owns this profile.
+					end
+					current.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
+					return current
+				end)
+			end)
+			if callOk and typeof(result) == "table" then
+				data = result
+				ok = true
+				break
+			end
+			if not callOk then lastError = tostring(result) end
+			if attempt < 5 then task.wait(2) end
+		end
+	end
+	if not ok then
+		warn("[ClubMusic] Profile load/lock failed for " .. player.Name .. ": " .. lastError .. ". Profile remains unavailable; refusing to save defaults.")
+		return false
+	end
+	if typeof(data) == "table" then
+		profile.tickets = math.max(0, tonumber(data.tickets) or 0)
+		profile.coins = math.max(0, tonumber(data.coins) or 0)
+		profile.loginStreak = math.clamp(math.floor(tonumber(data.loginStreak) or 1), 1, 7)
+		profile.lastClaimDay = math.max(0, math.floor(tonumber(data.lastClaimDay) or 0))
+		profile.claimedToday = data.claimedToday == true
+		profile.equippedTag = if typeof(data.equippedTag) == "string" and TAGS[data.equippedTag] == true then data.equippedTag else nil
+		profile.showCustomTitle = data.showCustomTitle ~= false
+		profile.glowsticks = math.max(0, math.floor(tonumber(data.glowsticks) or 0))
+		profile.skipTokens = math.max(0, math.floor(tonumber(data.skipTokens) or 0))
+		profile.neonTrail = data.neonTrail == true
+		if typeof(data.ownedTags) == "table" then
+			for id, owned in pairs(data.ownedTags) do
+				if TAGS[id] == true and owned == true then profile.ownedTags[id] = true end
+			end
+		end
+		if typeof(data.favorites) == "table" then
+			local count = 0
+			for id, flag in pairs(data.favorites) do
+				if count >= CONFIG.MaxFavorites then break end
+				if typeof(id) == "string" and flag == true and TRACK_BY_ID[id] then
+					profile.favorites[id] = true
+					count += 1
+				end
+			end
+		end
+
+		-- Title slots (new format) with migration from the old single custom title.
+		profile.unlockedSlots = math.clamp(math.floor(tonumber(data.unlockedSlots) or 1), 1, TITLE_SLOT_COUNT)
+		if typeof(data.titleSlots) == "table" then
+			for i = 1, TITLE_SLOT_COUNT do
+				local stored = data.titleSlots[tostring(i)] or data.titleSlots[i]
+				local clean = sanitizeTitleSlot(stored)
+				if clean then profile.titleSlots[i] = clean end
+			end
+		elseif typeof(data.customTitle) == "string" and data.customTitle ~= "" then
+			local legacyColor = if typeof(data.titleColor) == "string" and TITLE_COLORS[data.titleColor] == true then data.titleColor else "gold"
+			local legacyStyle = if typeof(data.titleStyle) == "string" and TITLE_STYLES[data.titleStyle] == true then data.titleStyle else "normal"
+			local legacy = sanitizeTitleSlot({
+				text = data.customTitle, effect = "fixed", set = legacyColor, font = "gotham", style = legacyStyle,
+			})
+			if legacy then profile.titleSlots[1] = legacy end
+		end
+		profile.activeSlot = math.clamp(math.floor(tonumber(data.activeSlot) or 1), 1, TITLE_SLOT_COUNT)
+	end
+
+	-- The active slot must be unlocked and filled; otherwise fall back to the first filled slot.
+	if profile.activeSlot > profile.unlockedSlots or profile.titleSlots[profile.activeSlot] == nil then
+		profile.activeSlot = firstFilledSlot(profile) or 1
+	end
+
+	local today = math.floor(os.time() / 86400)
+	if profile.lastClaimDay < today then
+		if profile.lastClaimDay > 0 and today - profile.lastClaimDay == 1 then
+			profile.loginStreak = (profile.loginStreak % 7) + 1
+		elseif profile.lastClaimDay == 0 or today - profile.lastClaimDay > 1 then
+			profile.loginStreak = 1
+		end
+		profile.claimedToday = false
+	end
+
+	profiles[player.UserId] = profile
+	player:SetAttribute("Tickets", profile.tickets)
+	player:SetAttribute("Coins", profile.coins)
+	player:SetAttribute("Glowsticks", profile.glowsticks)
+	player:SetAttribute("SkipTokens", profile.skipTokens)
+	player:SetAttribute("NeonTrailUnlocked", profile.neonTrail)
+	player:SetAttribute("LoginStreak", profile.loginStreak)
+	player:SetAttribute("ClaimedToday", profile.claimedToday)
+	player:SetAttribute("EquippedTag", profile.equippedTag or "")
+	applyTitleAttributes(player, profile)
+	return true
+end
+
+local function saveProfile(player: Player)
+	-- Studio memory mode intentionally has no durable backend. The in-memory
+	-- profile remains authoritative for this test session; never call UpdateAsync.
+	if USE_STUDIO_MEMORY_PROFILES then
+		return profiles[player.UserId] ~= nil
+	end
+
+	local userId = player.UserId
+	local profile = profiles[userId]
+	if not profile then return false end
+	if not acquireProfileWriteLock(userId) then return false end
+	profile = profiles[userId]
+	if not profile then releaseProfileWriteLock(userId); return false end
+	if not waitForDataStoreBudget(8) then
+		releaseProfileWriteLock(userId)
+		warn("[ClubMusic] Profile save deferred: server DataStore budget is busy for userId " .. tostring(userId))
+		return false
+	end
+
+	-- String keys keep the slot table a dictionary (safe for sparse slots) in the DataStore.
+	local slotsSnapshot: {[string]: any} = {}
+	for i = 1, TITLE_SLOT_COUNT do
+		local slot = profile.titleSlots[i]
+		if slot then
+			slotsSnapshot[tostring(i)] = {
+				text = slot.text, effect = slot.effect, set = slot.set, font = slot.font,
+				style = slot.style, height = slot.height, distance = slot.distance,
+			}
+		end
+	end
+
+	local snapshot = {
+		tickets = profile.tickets,
+		coins = profile.coins,
+		loginStreak = profile.loginStreak,
+		lastClaimDay = profile.lastClaimDay,
+		claimedToday = profile.claimedToday,
+		equippedTag = profile.equippedTag,
+		ownedTags = profile.ownedTags,
+		titleSlots = slotsSnapshot,
+		unlockedSlots = profile.unlockedSlots,
+		activeSlot = profile.activeSlot,
+		showCustomTitle = profile.showCustomTitle,
+		glowsticks = profile.glowsticks,
+		skipTokens = profile.skipTokens,
+		neonTrail = profile.neonTrail,
+		favorites = profile.favorites,
+	}
+	local ownershipLost = false
+	local ok, result = pcall(function()
+		return store:UpdateAsync(tostring(userId), function(oldData)
+			if typeof(oldData) ~= "table" or typeof(oldData.sessionLock) ~= "table"
+				or oldData.sessionLock.owner ~= SESSION_TOKEN then
+				ownershipLost = true
+				return nil -- This server no longer owns the profile; never overwrite another session.
+			end
+			local preservedReceipts = {}
+			if typeof(oldData) == "table" and typeof(oldData.receiptIds) == "table" then
+				for id, value in pairs(oldData.receiptIds) do
+					if typeof(id) == "string" and value == true then preservedReceipts[id] = true end
+				end
+			end
+			local output = table.clone(snapshot)
+			output.ownedTags = table.clone(snapshot.ownedTags)
+			output.favorites = table.clone(snapshot.favorites)
+			output.receiptIds = preservedReceipts
+			output.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
+			return output
+		end)
+	end)
+	releaseProfileWriteLock(userId)
+	if not ok or typeof(result) ~= "table" then
+		warn("[ClubMusic] Profile save failed for " .. player.Name .. ": " .. tostring(result or "profile session ownership lost"))
+		if ownershipLost and player.Parent == Players then
+			-- A second server now owns this profile. Stop this session from continuing
+			-- to mutate a stale in-memory copy that can no longer be saved safely.
+			player:Kick("Your profile session moved to another server. Please rejoin.")
+		end
+		return false
+	end
+	return true
+end
+
+-- Collapse rapid profile mutations into one save. If another mutation happens
+-- during a save, schedule one follow-up instead of spawning an unbounded stack.
+local function scheduleProfileSave(player: Player)
+	local userId = player.UserId
+	if saveQueued[userId] then
+		saveAgain[userId] = true
+		return
+	end
+	saveQueued[userId] = true
+	task.delay(CONFIG.ProfileSaveQueueDelaySeconds, function()
+		if player.Parent ~= Players or profiles[userId] == nil then
+			saveQueued[userId] = nil
+			saveAgain[userId] = nil
+			return
+		end
+		saveProfile(player)
+		saveQueued[userId] = nil
+		if saveAgain[userId] then
+			saveAgain[userId] = nil
+			scheduleProfileSave(player)
+		end
+	end)
+end
+
+-- Queue / Auto DJ ---------------------------------------------------------------
+
+local function makeEntry(track: Track, source: string, player: Player?): QueueEntry
+	queueCounter += 1
+	return {
+		id = (if player then tostring(player.UserId) else "auto") .. "-" .. tostring(queueCounter),
+		trackId = track.id,
+		title = track.title,
+		artist = track.artist,
+		duration = track.duration,
+		requestedBy = if player then player.DisplayName else "Auto DJ",
+		userId = if player then player.UserId else 0,
+		genre = track.genre,
+		source = source,
+		vip = if player then isVip(player) else false,
+		passTier = if player then passTier(player) else 0,
+		soundId = CONFIG.SoundIds[track.id],
+	}
+end
+
+local function releaseSlot(entry: QueueEntry)
+	if entry.source == "player" and entry.userId > 0 then
+		local remaining = (requestCounts[entry.userId] or 0) - 1
+		requestCounts[entry.userId] = if remaining > 0 then remaining else nil
+	end
+end
+
+local function countPlayerEntries(): number
+	local n = 0
+	for _, entry in ipairs(queue) do
+		if entry.source == "player" then n += 1 end
+	end
+	return n
+end
+
+local function findQueueIndex(id: string): number?
+	for index, entry in ipairs(queue) do
+		if entry.id == id then return index end
+	end
+	return nil
+end
+
+-- Queue order: Sultan, VVIP, VIP, normal player requests, then auto tracks.
+local function insertIndex(tier: number): number
+	local lastPlayer = 0
+	local insertAt = 0
+	for index, entry in ipairs(queue) do
+		if entry.source == "player" then
+			lastPlayer = index
+			local existingTier = tonumber(entry.passTier) or (entry.vip and 1 or 0)
+			if tier > 0 and existingTier >= tier then insertAt = index end
+		end
+	end
+	if tier > 0 and CONFIG.VipPriority then return insertAt + 1 end
+	return lastPlayer + 1
+end
+
+local function pickAutoTrack(): Track
+	local queued: {[string]: boolean} = {}
+	for _, entry in ipairs(queue) do queued[entry.trackId] = true end
+	local recentSet: {[string]: boolean} = {}
+	for _, id in ipairs(recentTracks) do recentSet[id] = true end
+
+	local pool: {Track} = {}
+	local preferred: {Track} = {}
+	for _, id in ipairs(ALL_TRACK_IDS) do
+		local track = TRACK_BY_ID[id]
+		if not queued[id] and not recentSet[id] and id ~= nowPlaying.trackId then
+			table.insert(pool, track)
+			if track.genreId ~= lastAutoGenre then table.insert(preferred, track) end
+		end
+	end
+
+	local source = if #preferred > 0 then preferred elseif #pool > 0 then pool else nil
+	if source then
+		local chosen = source[random:NextInteger(1, #source)]
+		lastAutoGenre = chosen.genreId
+		return chosen
+	end
+	return TRACK_BY_ID[ALL_TRACK_IDS[random:NextInteger(1, #ALL_TRACK_IDS)]]
+end
+
+local function topUpAuto()
+	local guard = 0
+	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
+		guard += 1
+		table.insert(queue, makeEntry(pickAutoTrack(), "auto", nil))
+	end
+end
+
+local function setNowPlaying(entry: QueueEntry)
+	nowPlaying.trackId = entry.trackId
+	nowPlaying.title = entry.title
+	nowPlaying.artist = entry.artist
+	nowPlaying.genre = entry.genre
+	nowPlaying.duration = math.max(1, entry.duration)
+	nowPlaying.elapsed = 0
+	nowPlaying.dj = "Automated Selector"
+	nowPlaying.source = entry.source
+	nowPlaying.requestedBy = entry.requestedBy
+	nowPlaying.vip = entry.vip
+	nowPlaying.soundId = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
+
+	table.insert(recentTracks, entry.trackId)
+	while #recentTracks > CONFIG.AutoAvoidRecent do
+		table.remove(recentTracks, 1)
+	end
+	table.clear(skipVotes)
+end
+
+local function advance()
+	local nextEntry = table.remove(queue, 1)
+	if nextEntry then
+		releaseSlot(nextEntry)
+	else
+		nextEntry = makeEntry(pickAutoTrack(), "auto", nil)
+	end
+	setNowPlaying(nextEntry :: QueueEntry)
+	topUpAuto()
+end
+
+-- Boot: start with an auto-selected track and a visible auto queue.
+setNowPlaying(makeEntry(TRACK_BY_ID["edm-0"], "auto", nil))
+topUpAuto()
+
+-- Skip voting ---------------------------------------------------------------------
+
+local function skipStatus(player: Player?): (number, number, boolean)
+	local list = Players:GetPlayers()
+	local count = #list
+	local votes = 0
+	for _, p in ipairs(list) do
+		if skipVotes[p.UserId] then votes += 1 end
+	end
+	local needed = math.min(count, math.max(CONFIG.SkipVoteMin, math.ceil(count * CONFIG.SkipVoteRatio)))
+	needed = math.max(needed, 1)
+	local voted = if player then skipVotes[player.UserId] == true else false
+	return votes, needed, voted
+end
+
+local function checkSkipVotes(): boolean
+	local votes, needed = skipStatus(nil)
+	if votes > 0 and votes >= needed then
+		advance()
+		return true
+	end
+	return false
+end
+
+-- State publishing ------------------------------------------------------------------
+
+local function snapshotFor(player: Player)
+	local profile = profiles[player.UserId] or defaultProfile()
+	local level = getLevel(player)
+	local vip = isVip(player)
+
+	local safeQueue = {}
+	for _, item in ipairs(queue) do
+		table.insert(safeQueue, {
+			id = item.id, trackId = item.trackId, title = item.title, artist = item.artist,
+			duration = item.duration, requestedBy = item.requestedBy, genre = item.genre,
+			source = item.source, vip = item.vip,
+		})
+	end
+
+	local favorites = {}
+	for id in pairs(profile.favorites) do favorites[id] = true end
+
+	local votes, needed, voted = skipStatus(player)
+
+	-- Title slots use string keys so sparse slots survive the remote.
+	local slotsOut: {[string]: any} = {}
+	for i = 1, TITLE_SLOT_COUNT do
+		local slot = profile.titleSlots[i]
+		if slot then
+			slotsOut[tostring(i)] = {
+				text = slot.text, effect = slot.effect, set = slot.set, font = slot.font,
+				style = slot.style, heightOffset = slot.height, viewDistance = slot.distance,
+			}
+		end
+	end
+	local pricesOut: {[string]: number} = {}
+	local productsOut: {[string]: number} = {}
+	for i = 2, TITLE_SLOT_COUNT do
+		pricesOut[tostring(i)] = CONFIG.TitleSlotPrices[i] or 0
+		productsOut[tostring(i)] = CONFIG.TitleSlotProductIds[i] or 0
+	end
+	local activeSlotData = profile.titleSlots[profile.activeSlot]
+
+	local snapshot = {
+		rank = getRank(player),
+		perm = level,
+		vip = vip,
+		queue = safeQueue,
+		nowPlaying = {
+			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
+			genre = nowPlaying.genre, duration = nowPlaying.duration, elapsed = nowPlaying.elapsed,
+			dj = nowPlaying.dj, source = nowPlaying.source, requestedBy = nowPlaying.requestedBy,
+			vip = nowPlaying.vip, soundId = nowPlaying.soundId,
+		},
+		reloadNonce = reloadNonce[player.UserId] or 0,
+		favorites = favorites,
+		skip = { votes = votes, needed = needed, voted = voted },
+		requests = { used = requestCounts[player.UserId] or 0, limit = requestLimitFor(player) },
+		locked = requestsLocked,
+		blocked = blockedUsers[player.UserId] == true,
+		vipPerks = {
+			slots = CONFIG.VipMaxRequestsPerPlayer,
+			cooldown = CONFIG.VipCooldownSeconds,
+			baseSlots = CONFIG.MaxRequestsPerPlayer,
+			baseCooldown = CONFIG.RequestCooldownSeconds,
+			priority = CONFIG.VipPriority,
+		},
+		vipGamePassId = CONFIG.VipGamePassId,
+		vvipGamePassId = CONFIG.VvipGamePassId,
+		sultanGamePassId = CONFIG.TikiTideSultanPassId,
+		passTier = passTier(player),
+		passName = if isSultan(player) then "TIKI TIDE SULTAN" elseif isVvip(player) then "VVIP" elseif isVip(player) then "VIP" else "GUEST",
+		passPerks = {
+			vip = { slots = CONFIG.VipMaxRequestsPerPlayer, cooldown = CONFIG.VipCooldownSeconds },
+			vvip = { slots = CONFIG.VvipMaxRequestsPerPlayer, cooldown = CONFIG.VvipCooldownSeconds },
+			sultan = { slots = CONFIG.SultanMaxRequestsPerPlayer, cooldown = CONFIG.SultanCooldownSeconds, priority = "highest" },
+		},
+		equippedTag = profile.equippedTag,
+		ownedTags = profile.ownedTags,
+		titleSlots = {
+			unlocked = profile.unlockedSlots,
+			active = profile.activeSlot,
+			visible = profile.showCustomTitle,
+			slots = slotsOut,
+			prices = pricesOut,
+			products = productsOut,
+		},
+		-- Legacy fields (mirror the active slot) for older clients.
+		customTitle = if activeSlotData then activeSlotData.text else "",
+		titleColor = if activeSlotData and activeSlotData.effect == "fixed" then activeSlotData.set else "gold",
+		titleStyle = if activeSlotData then activeSlotData.style else "normal",
+		showCustomTitle = profile.showCustomTitle,
+		loginStreak = profile.loginStreak,
+		claimedToday = profile.claimedToday,
+		tickets = profile.tickets,
+		coins = profile.coins,
+		glowsticks = profile.glowsticks,
+		skipTokens = profile.skipTokens,
+		neonTrail = profile.neonTrail,
+		groupId = CONFIG.GroupId,
+		players = nil :: any,
+	}
+
+	-- Only staff receive the moderation roster.
+	if level >= 1 then
+		local roster = {}
+		for _, other in ipairs(Players:GetPlayers()) do
+			table.insert(roster, {
+				userId = other.UserId,
+				name = other.Name,
+				displayName = other.DisplayName,
+				rank = getRank(other),
+				vip = isVip(other),
+				tempVip = tempVip[other.UserId] == true,
+				blocked = blockedUsers[other.UserId] == true,
+				requests = requestCounts[other.UserId] or 0,
+				canMod = canModerate(player, other),
+			})
+		end
+		snapshot.players = roster
+	end
+
+	return snapshot
+end
+
+-- Coalesce bursts of state changes. A nil target means a full server broadcast;
+-- individual player refreshes are batched when no full broadcast is pending.
+local pendingStateAll = false
+local pendingStatePlayers: {[number]: boolean} = {}
+local stateFlushScheduled = false
+
+local function flushPendingState()
+	task.wait(CONFIG.GlobalStateMinIntervalSeconds)
+	local sendAll = pendingStateAll
+	local targets = pendingStatePlayers
+	pendingStateAll = false
+	pendingStatePlayers = {}
+
+	if sendAll then
+		for _, target in ipairs(Players:GetPlayers()) do
+			local ok, snapshot = pcall(snapshotFor, target)
+			if ok and target.Parent == Players then
+				pcall(function() stateRemote:FireClient(target, snapshot) end)
+			end
+		end
+	else
+		for userId in pairs(targets) do
+			local target = Players:GetPlayerByUserId(userId)
+			if target then
+				local ok, snapshot = pcall(snapshotFor, target)
+				if ok then pcall(function() stateRemote:FireClient(target, snapshot) end) end
+			end
+		end
+	end
+
+	stateFlushScheduled = false
+	-- Work queued during the flush is handled by one further coalesced pass.
+	if pendingStateAll or next(pendingStatePlayers) ~= nil then
+		stateFlushScheduled = true
+		task.defer(flushPendingState)
+	end
+end
+
+local function publishState(player: Player?)
+	if player then
+		pendingStatePlayers[player.UserId] = true
+	else
+		pendingStateAll = true
+		table.clear(pendingStatePlayers)
+	end
+	if not stateFlushScheduled then
+		stateFlushScheduled = true
+		task.defer(flushPendingState)
+	end
+end
+
+local function notify(player: Player, text: string, kind: string?)
+	noticeRemote:FireClient(player, { text = text, kind = kind or "info" })
+end
+
+local function broadcast(text: string, kind: string?)
+	noticeRemote:FireAllClients({ text = text, kind = kind or "info" })
+end
+
+
+-- Developer Product purchases --------------------------------------------------
+-- Replace each 0 with a UNIQUE Developer Product ID from Creator Dashboard.
+-- A zero ID is intentionally ignored so unconfigured products cannot collide.
+local PRODUCT_IDS = {
+	-- Donations / Tips
+	Coconut = 0,
+	Pineapple = 0,
+	TikiTorch = 0,
+	Volcano = 0,
+	IslandLegend = 0,
+
+	-- Shop Items
+	Glowsticks = 0,
+	TikiMask = 0,
+	NeonAura = 0,
+	NeonLei = 0,
+	LEDShades = 0,
+}
+
+type ProductData = {
+	type: "Donation" | "Item" | "TitleSlot",
+	perk: string?,
+	amount: number?,
+	name: string?,
+	costCoins: number?,
+	slot: number?,
+}
+
+local PRODUCT_MAP: {[number]: ProductData} = {}
+
+local function registerProduct(productId: number, data: ProductData)
+	if productId <= 0 then
+		return -- Not configured yet.
+	end
+	if PRODUCT_MAP[productId] then
+		error(string.format("[ClubMusic] Duplicate Developer Product ID: %d", productId))
+	end
+	PRODUCT_MAP[productId] = data
+end
+
+-- Donations / Tips
+registerProduct(PRODUCT_IDS.Coconut, {
+	type = "Donation", perk = "Coconut", amount = 10,
+})
+registerProduct(PRODUCT_IDS.Pineapple, {
+	type = "Donation", perk = "Pineapple", amount = 50,
+})
+registerProduct(PRODUCT_IDS.TikiTorch, {
+	type = "Donation", perk = "Tiki Torch", amount = 100,
+})
+registerProduct(PRODUCT_IDS.Volcano, {
+	type = "Donation", perk = "Volcano", amount = 500,
+})
+registerProduct(PRODUCT_IDS.IslandLegend, {
+	type = "Donation", perk = "Island Legend", amount = 1000,
+})
+
+-- Shop Items
+registerProduct(PRODUCT_IDS.Glowsticks, {
+	type = "Item", name = "Glowsticks", costCoins = 75,
+})
+registerProduct(PRODUCT_IDS.TikiMask, {
+	type = "Item", name = "Tiki Mask", costCoins = 250,
+})
+registerProduct(PRODUCT_IDS.NeonAura, {
+	type = "Item", name = "Neon Aura", costCoins = 600,
+})
+registerProduct(PRODUCT_IDS.NeonLei, {
+	type = "Item", name = "Neon Lei", costCoins = 150,
+})
+registerProduct(PRODUCT_IDS.LEDShades, {
+	type = "Item", name = "LED Shades", costCoins = 320,
+})
+
+-- Title slots (slot 1 is free; slots 2 and 3 are paid)
+for slotNumber = 2, TITLE_SLOT_COUNT do
+	registerProduct(CONFIG.TitleSlotProductIds[slotNumber] or 0, {
+		type = "TitleSlot", slot = slotNumber, name = "Title Slot " .. tostring(slotNumber),
+	})
+end
+
+-- Durable receipt ledger. A receipt is acknowledged only after UpdateAsync has
+-- atomically recorded the reward and PurchaseId in the player's profile key.
+local function applyReceiptToStoredData(data: {[string]: any}, productData: {[string]: any}): boolean
+	if productData.type == "Donation" then
+		local amount = math.max(0, math.floor(tonumber(productData.amount) or 0))
+		data.tickets = math.max(0, math.floor(tonumber(data.tickets) or 0)) + math.floor(amount * 1.5)
+		data.coins = math.max(0, math.floor(tonumber(data.coins) or 0)) + amount * 10
+		return true
+	elseif productData.type == "Item" then
+		local name = productData.name or ""
+		data.ownedTags = if typeof(data.ownedTags) == "table" then data.ownedTags else {}
+		if name == "Glowsticks" then data.glowsticks = math.max(0, math.floor(tonumber(data.glowsticks) or 0)) + 2
+		elseif name == "Tiki Mask" then data.ownedTags.tiki = true
+		elseif name == "Neon Aura" then data.ownedTags.sunset = true
+		elseif name == "Neon Lei" then data.coins = math.max(0, math.floor(tonumber(data.coins) or 0)) + 500
+		elseif name == "LED Shades" then data.ownedTags.bass = true
+		else return false end
+		return true
+	elseif productData.type == "TitleSlot" then
+		local slotNumber = math.clamp(math.floor(tonumber(productData.slot) or 2), 2, TITLE_SLOT_COUNT)
+		data.unlockedSlots = math.max(1, math.floor(tonumber(data.unlockedSlots) or 1), slotNumber)
+		return true
+	end
+	return false
+end
+
+local function applyReceiptToMemory(profile: Profile, productData: {[string]: any})
+	if productData.type == "Donation" then
+		local amount = math.max(0, math.floor(tonumber(productData.amount) or 0))
+		profile.tickets += math.floor(amount * 1.5)
+		profile.coins += amount * 10
+	elseif productData.type == "Item" then
+		local name = productData.name or ""
+		if name == "Glowsticks" then profile.glowsticks += 2
+		elseif name == "Tiki Mask" then profile.ownedTags.tiki = true
+		elseif name == "Neon Aura" then profile.ownedTags.sunset = true
+		elseif name == "Neon Lei" then profile.coins += 500
+		elseif name == "LED Shades" then profile.ownedTags.bass = true end
+	elseif productData.type == "TitleSlot" then
+		local slotNumber = math.clamp(math.floor(tonumber(productData.slot) or 2), 2, TITLE_SLOT_COUNT)
+		profile.unlockedSlots = math.max(profile.unlockedSlots, slotNumber)
+	end
+end
+
+local processedReceipts: {[string]: boolean} = {}
+
+local function countReceiptLedger(receiptIds: any): number
+	if typeof(receiptIds) ~= "table" then return 0 end
+	local count = 0
+	for id, value in pairs(receiptIds) do
+		if typeof(id) == "string" and value == true then count += 1 end
+	end
+	return count
+end
+
+local function persistReceipt(userId: number, receiptId: string, productData: {[string]: any}): (boolean, boolean, string?)
+	-- Studio purchases are session-only. ProcessReceipt's in-memory processedReceipts
+	-- guard still prevents duplicate application during this server session.
+	if USE_STUDIO_MEMORY_PROFILES then
+		return profiles[userId] ~= nil, false, nil
+	end
+
+	if not acquireProfileWriteLock(userId) then
+		return false, false, "Profile is busy; receipt will be retried"
+	end
+	if not waitForDataStoreBudget(10) then
+		releaseProfileWriteLock(userId)
+		return false, false, "Server DataStore budget is busy; receipt will be retried"
+	end
+	local alreadyProcessed = false
+	local ok, result = pcall(function()
+		return store:UpdateAsync(tostring(userId), function(oldData)
+			if typeof(oldData) ~= "table" or typeof(oldData.sessionLock) ~= "table"
+				or oldData.sessionLock.owner ~= SESSION_TOKEN then return nil end
+			local data = table.clone(oldData)
+			data.receiptIds = if typeof(data.receiptIds) == "table" then table.clone(data.receiptIds) else {}
+			if data.receiptIds[receiptId] == true then
+				alreadyProcessed = true
+				return data
+			end
+			-- Fail closed before the profile approaches DataStore size limits. Do
+			-- not prune old PurchaseIds: deleting them can make an old receipt grant twice.
+			if countReceiptLedger(data.receiptIds) >= CONFIG.MaxReceiptLedgerEntries then
+				warn("[ClubMusic] Receipt ledger safety limit reached for userId " .. tostring(userId)
+					.. "; purchase remains unacknowledged until the ledger is migrated.")
+				return nil
+			end
+			if not applyReceiptToStoredData(data, productData) then return nil end
+			data.receiptIds[receiptId] = true
+			data.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
+			return data
+		end)
+	end)
+	releaseProfileWriteLock(userId)
+	if not ok then return false, false, tostring(result) end
+	if typeof(result) ~= "table" or typeof(result.receiptIds) ~= "table" or result.receiptIds[receiptId] ~= true then
+		return false, false, "Receipt was not confirmed in the saved profile"
+	end
+	return true, alreadyProcessed, nil
+end
+
+MarketplaceService.ProcessReceipt = function(receiptInfo: any)
+	local userId = receiptInfo.PlayerId
+	local productId = receiptInfo.ProductId
+	local receiptId = tostring(receiptInfo.PurchaseId)
+	if typeof(userId) ~= "number" or typeof(productId) ~= "number"
+		or receiptId == "" or #receiptId > 128 then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	if processedReceipts[receiptId] then return Enum.ProductPurchaseDecision.PurchaseGranted end
+	local player = Players:GetPlayerByUserId(userId)
+	local profile = profiles[userId]
+	if not player or not profile then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	local productData = PRODUCT_MAP[productId]
+	if not productData then
+		warn(string.format("[ClubMusic] Unregistered Developer Product ID %d (receipt %s).", productId, receiptId))
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	local ok, alreadyProcessed, err = persistReceipt(userId, receiptId, productData)
+	if not ok then
+		warn("[ClubMusic] Receipt persistence failed for " .. receiptId .. ": " .. tostring(err))
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	-- A receipt already in the durable ledger was granted by an earlier callback/server.
+	-- The loaded profile already contains its reward, so never apply it twice in memory.
+	if alreadyProcessed or processedReceipts[receiptId] then
+		processedReceipts[receiptId] = true
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+	if profiles[userId] ~= profile then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	applyReceiptToMemory(profile, productData)
+	processedReceipts[receiptId] = true
+	player:SetAttribute("Tickets", profile.tickets)
+	player:SetAttribute("Coins", profile.coins)
+	player:SetAttribute("Glowsticks", profile.glowsticks)
+	player:SetAttribute("SkipTokens", profile.skipTokens)
+	player:SetAttribute("NeonTrailUnlocked", profile.neonTrail)
+	if productData.type == "TitleSlot" then applyTitleAttributes(player, profile) end
+
+	if productData.type == "Donation" then
+		local amount = math.max(0, math.floor(tonumber(productData.amount) or 0))
+		local perk = productData.perk or "Donation"
+		if perk == "Coconut" then broadcast(string.format("🌴 %s sent a Coconut Tip! (+%d Tickets)", player.DisplayName, math.floor(amount * 1.5)), "info")
+		elseif perk == "Pineapple" then broadcast(string.format("🎆 %s launched a Pineapple Firework burst!", player.DisplayName), "ok")
+		elseif perk == "Tiki Torch" then broadcast(string.format("🎊 %s filled the dancefloor with Stage Confetti!", player.DisplayName), "ok")
+		elseif perk == "Volcano" then broadcast(string.format("🔥 %s activated the Volcano Light Show!", player.DisplayName), "warn")
+		elseif perk == "Island Legend" then broadcast(string.format("👑 LEGENDARY: %s is displayed on the Big Stage Screens!", player.DisplayName), "info") end
+	elseif productData.type == "Item" then
+		notify(player, string.format("Purchase Successful: %s acquired!", productData.name or "Item"), "ok")
+	elseif productData.type == "TitleSlot" then
+		notify(player, string.format("Title slot %d unlocked!", profile.unlockedSlots), "ok")
+	end
+	publishState(nil)
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+
+local function isValidString(value: any, maxLength: number): boolean
+	return typeof(value) == "string" and #value > 0 and #value <= maxLength
+end
+
+-- Remote payloads are intentionally shallow and small. This rejects oversized
+-- tables before action-specific code can inspect or retain attacker-controlled data.
+local function isBoundedPayload(payload: any): boolean
+	if typeof(payload) ~= "table" then return false end
+	local topCount = 0
+	for key, value in pairs(payload) do
+		topCount += 1
+		if topCount > 16 or typeof(key) ~= "string" or #key > 32 then return false end
+		if typeof(value) == "string" then
+			if #value > 1024 then return false end
+		elseif typeof(value) == "number" then
+			if not isFiniteNumber(value) then return false end
+		elseif typeof(value) == "table" then
+			local nestedCount = 0
+			for nestedKey, nestedValue in pairs(value) do
+				nestedCount += 1
+				-- String keys (maps) or small positive integer keys (arrays such as the title "colors" list).
+				local nestedKeyType = typeof(nestedKey)
+				local validNestedKey = (nestedKeyType == "string" and #nestedKey <= 32)
+					or (nestedKeyType == "number" and nestedKey % 1 == 0 and nestedKey >= 1 and nestedKey <= 16)
+				if nestedCount > 16 or not validNestedKey then return false end
+				local valueType = typeof(nestedValue)
+				if valueType == "string" then
+					if #nestedValue > 1024 then return false end
+				elseif valueType == "number" then
+					if not isFiniteNumber(nestedValue) then return false end
+				elseif valueType ~= "boolean" then
+					return false
+				end
+			end
+		elseif typeof(value) ~= "boolean" then
+			return false
+		end
+	end
+	return true
+end
+
+local function findTarget(actor: Player, userId: any): Player?
+	if not isFiniteNumber(userId) or userId < 1 or userId % 1 ~= 0 or userId > 9007199254740991 then return nil end
+	local target = Players:GetPlayerByUserId(userId)
+	if not target then return nil end
+	if target == actor then return nil end
+	if not canModerate(actor, target) then
+		notify(actor, "You can't moderate someone with equal or higher rank.", "warn")
+		return nil
+	end
+	return target
+end
+
+local function purgeUserEntries(userId: number): number
+	local removed = 0
+	for index = #queue, 1, -1 do
+		local entry = queue[index]
+		if entry.source == "player" and entry.userId == userId then
+			releaseSlot(entry)
+			table.remove(queue, index)
+			removed += 1
+		end
+	end
+	if removed > 0 then topUpAuto() end
+	return removed
+end
+
+-- Returns a reason string when this player may NOT queue this track right now, otherwise nil.
+-- Used by Creator Hub audio requests, which re-check after yielding for the asset lookup.
+local function requestBlockReason(player: Player, trackId: string, now: number): string?
+	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
+	if requestsLocked and getLevel(player) < 1 then return "Requests are locked by staff right now." end
+	if countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
+	local cooldown = cooldownFor(player)
+	local sinceLast = now - (lastRequestAt[player.UserId] or -1000)
+	if sinceLast < cooldown then
+		return string.format("Slow down - wait %ds to request again.", math.ceil(cooldown - sinceLast))
+	end
+	local count = requestCounts[player.UserId] or 0
+	local limit = requestLimitFor(player)
+	if count >= limit then
+		return string.format("Request limit reached (%d/%d). Wait for your track to play.", count, limit)
+	end
+	if nowPlaying.trackId == trackId then return "That track is playing right now." end
+	for _, queued in ipairs(queue) do
+		if queued.trackId == trackId then return "That track is already in the queue." end
+	end
+	return nil
+end
+
+-- Yields. Confirms an asset is an audio file, loadable by this experience, and returns its real length.
+local function inspectAudioAsset(assetId: number): (boolean, string, string, number, boolean)
+	local ok, info = pcall(function()
+		return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
+	end)
+	if not ok or typeof(info) ~= "table" then
+		return false, "Audio asset not found.", "", 0, false
+	end
+	if info.AssetTypeId ~= Enum.AssetType.Audio.Value then
+		return false, "That asset is not an audio file.", "", 0, false
+	end
+
+	local sound = Instance.new("Sound")
+	sound.Name = "AudioProbe"
+	sound.Volume = 0
+	sound.SoundId = "rbxassetid://" .. tostring(assetId)
+	sound.Parent = SoundService
+	local loadedOk = false
+	local finished = false
+	local timedOut = false
+	task.spawn(function()
+		loadedOk = pcall(function() ContentProvider:PreloadAsync({ sound }) end)
+		finished = true
+		if timedOut then
+			-- A timed-out PreloadAsync cannot be cancelled. Keep the global slot
+			-- occupied until the underlying work really ends, then clean it up.
+			pcall(function() sound:Destroy() end)
+			audioInspectionCount = math.max(0, audioInspectionCount - 1)
+		end
+	end)
+	local waited = 0
+	while not finished and waited < CONFIG.AudioLoadTimeoutSeconds do
+		task.wait(0.2)
+		waited += 0.2
+	end
+	if not finished then
+		timedOut = true
+		return false, "Audio inspection timed out. The server will release its inspection slot when loading finishes.", "", 0, true
+	end
+
+	local isLoaded = sound.IsLoaded
+	local length = sound.TimeLength
+	pcall(function() sound:Destroy() end)
+	if not loadedOk or not isLoaded or length <= 0 then
+		return false, "Audio could not be loaded (it may be private or not allowed in this experience).", "", 0, false
+	end
+	local title = tostring(info.Name or "Untitled audio")
+	local creator = if typeof(info.Creator) == "table" then tostring(info.Creator.Name or "Unknown") else "Unknown"
+	return true, truncateUtf8(title, 60), truncateUtf8(creator, 40), math.ceil(length), false
+end
+
+-- Saves a validated title slot. Returns true on success. Yields (text filtering).
+local function saveTitleSlot(player: Player, slotNumber: number, data: any, visible: boolean): boolean
+	local profile = profiles[player.UserId]
+	if not profile then return false end
+	if slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return false end
+	if slotNumber > profile.unlockedSlots then
+		notify(player, "That title slot is locked.", "warn")
+		return false
+	end
+
+	local clean = sanitizeTitleSlot(data)
+	if not clean then
+		notify(player, "That title isn't valid. Titles are 1-24 characters.", "warn")
+		return false
+	end
+	local filtered = filterTitleText(player, clean.text)
+	if filtered == nil then
+		notify(player, "Roblox text filtering is unavailable. Please try again.", "warn")
+		return false
+	end
+	if filtered == "" then
+		notify(player, "That title can't be used.", "warn")
+		return false
+	end
+	clean.text = filtered
+
+	-- The profile may have been unloaded while the filter request yielded.
+	if profiles[player.UserId] ~= profile then return false end
+	profile.titleSlots[slotNumber] = clean
+	profile.showCustomTitle = visible
+	if profile.titleSlots[profile.activeSlot] == nil or profile.activeSlot > profile.unlockedSlots then
+		profile.activeSlot = slotNumber
+	end
+	applyTitleAttributes(player, profile)
+	scheduleProfileSave(player)
+	return true
+end
+
+-- Actions -----------------------------------------------------------------------------
+
+local function handleAction(player: Player, action: any, payload: any)
+	-- Global + per-action throttles. Unknown actions are still throttled and rejected below.
+	if player.Parent ~= Players then return end
+	local now = os.clock()
+	local userId = player.UserId
+	if not consumeActionBudget(userId, now) then return end
+	local globalBudgetOk, globalAllowed = globalInvoke("ConsumeActionBudget", userId, tostring(action), 1)
+	if RunService:IsStudio() then
+		if globalBudgetOk and globalAllowed == false then return end
+	else
+		-- Live servers require the global security service; never bypass aggregate
+		-- budgets because the bridge or shared MemoryStore is unavailable.
+		if not globalBudgetOk or globalAllowed ~= true then return end
+	end
+	local previousGlobal = lastActionAt[userId] or 0
+	if previousGlobal > 0 and now - previousGlobal < 0.12 then return end
+	lastActionAt[userId] = now
+	if not isValidString(action, 32) or not isBoundedPayload(payload) then return end
+	-- Reject unknown actions before retaining attacker-controlled names in cooldown tables.
+	if ACTION_COOLDOWNS[action] == nil then return end
+	local actionTimes = lastActionByType[userId]
+	if not actionTimes then actionTimes = {}; lastActionByType[userId] = actionTimes end
+	local actionCooldown = ACTION_COOLDOWNS[action] or 0.2
+	local previousAction = actionTimes[action] or 0
+	if previousAction > 0 and now - previousAction < actionCooldown then return end
+	actionTimes[action] = now
+
+	if action == "RequestTrack" then
+		local trackId = payload.trackId
+		if not isValidString(trackId, 24) then return end
+		local track = TRACK_BY_ID[trackId]
+		if not track then return end
+
+		local level = getLevel(player)
+		if blockedUsers[player.UserId] then
+			notify(player, "Your requests are disabled by staff.", "warn")
+			return
+		end
+		if requestsLocked and level < 1 then
+			notify(player, "Requests are locked by staff right now.", "warn")
+			return
+		end
+		if countPlayerEntries() >= CONFIG.MaxQueueSize then
+			notify(player, "The request queue is full.", "warn")
+			return
+		end
+
+		local cooldown = cooldownFor(player)
+		local sinceLast = now - (lastRequestAt[player.UserId] or -1000)
+		if sinceLast < cooldown then
+			notify(player, string.format("Slow down - wait %ds to request again.", math.ceil(cooldown - sinceLast)), "warn")
+			return
+		end
+
+		local count = requestCounts[player.UserId] or 0
+		local limit = requestLimitFor(player)
+		if count >= limit then
+			notify(player, string.format("Request limit reached (%d/%d). Wait for your track to play.", count, limit), "warn")
+			return
+		end
+
+		if nowPlaying.trackId == track.id then
+			notify(player, "That track is playing right now.", "warn")
+			return
+		end
+		for _, queued in ipairs(queue) do
+			if queued.trackId == track.id then
+				notify(player, "That track is already in the queue.", "warn")
+				return
+			end
+		end
+
+		local vip = isVip(player)
+		local entry = makeEntry(track, "player", player)
+		table.insert(queue, insertIndex(passTier(player)), entry)
+		requestCounts[player.UserId] = count + 1
+		lastRequestAt[player.UserId] = now
+		notify(player, if vip and CONFIG.VipPriority then "Requested with VIP priority!" else "Track requested!", "ok")
+		publishState(nil)
+		return
+	end
+
+	-- Staff only: queue a Creator Hub / Roblox audio asset by ID.
+	if action == "RequestAudioAsset" then
+		if not isStaff(player) then
+			notify(player, "Audio asset IDs are staff only.", "warn")
+			return
+		end
+		local audioBudgetCallOk, audioBudgetAllowed = globalInvoke("ConsumeAudioBudget", userId)
+		if audioBudgetCallOk and audioBudgetAllowed == false then
+			notify(player, "Global audio inspection capacity is busy. Please try again shortly.", "warn")
+			return
+		end
+		local assetId = payload.assetId
+		if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then
+			notify(player, "That audio asset ID isn't valid.", "warn")
+			return
+		end
+		if CONFIG.RestrictAudioToAllowlist and not table.find(CONFIG.AllowedAudioAssetIds, assetId) then
+			notify(player, "That audio asset isn't on the approved list.", "warn")
+			return
+		end
+		if pendingAudio[player.UserId] then
+			notify(player, "Still checking your last audio request.", "warn")
+			return
+		end
+		local audioNow = os.clock()
+		local previousAudio = lastAudioInspection[player.UserId] or 0
+		if previousAudio > 0 and audioNow - previousAudio < CONFIG.AudioInspectionCooldownSeconds then
+			notify(player, "Please wait before checking another audio asset.", "warn")
+			return
+		end
+		if audioInspectionCount >= math.max(1, CONFIG.MaxConcurrentAudioInspections) then
+			notify(player, "Audio inspection is busy. Try again shortly.", "warn")
+			return
+		end
+		if not consumeToken(globalAudioBucket, audioNow, 1) then
+			notify(player, "The server is checking too many audio requests. Try again shortly.", "warn")
+			return
+		end
+
+		local trackId = "audio-" .. tostring(assetId)
+		local reason = requestBlockReason(player, trackId, now)
+		if reason then
+			notify(player, reason, "warn")
+			return
+		end
+
+		pendingAudio[player.UserId] = true
+		lastAudioInspection[player.UserId] = audioNow
+		audioInspectionCount += 1
+		local okInspect, valid, titleOrError, creator, duration, inspectionOwnsSlot = pcall(inspectAudioAsset, assetId)
+		if inspectionOwnsSlot ~= true then
+			audioInspectionCount = math.max(0, audioInspectionCount - 1)
+		end
+		pendingAudio[player.UserId] = nil
+		if not okInspect then
+			warn("[ClubMusic] Audio inspect error: " .. tostring(valid))
+			notify(player, "Could not check that audio asset.", "warn")
+			return
+		end
+		if not valid then
+			notify(player, titleOrError, "warn")
+			return
+		end
+		if duration > CONFIG.AudioMaxSeconds then
+			notify(player, string.format("That audio is too long (max %d minutes).", math.floor(CONFIG.AudioMaxSeconds / 60)), "warn")
+			return
+		end
+		if not player.Parent then return end
+
+		-- State may have changed while the asset loaded, so re-check before queueing.
+		local recheckNow = os.clock()
+		local recheck = requestBlockReason(player, trackId, recheckNow)
+		if recheck then
+			notify(player, recheck, "warn")
+			return
+		end
+
+		local vip = isVip(player)
+		local entry = makeEntry({
+			id = trackId,
+			genreId = "audio",
+			title = titleOrError,
+			artist = creator,
+			duration = duration,
+			genre = "Creator Hub Audio",
+		}, "player", player)
+		entry.soundId = "rbxassetid://" .. tostring(assetId)
+		table.insert(queue, insertIndex(passTier(player)), entry)
+		requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
+		lastRequestAt[player.UserId] = recheckNow
+		notify(player, "Audio queued: " .. titleOrError, "ok")
+		publishState(nil)
+		return
+	end
+
+	if action == "ReloadSong" then
+		local last = lastReloadAt[player.UserId] or -1000
+		if now - last < CONFIG.ReloadCooldownSeconds then return end
+		lastReloadAt[player.UserId] = now
+		-- Bumping the nonce makes this player's next snapshot differ, so their client re-processes
+		-- the current track (e.g. an audio script can restart playback at the right position).
+		reloadNonce[player.UserId] = (reloadNonce[player.UserId] or 0) + 1
+		publishState(player)
+		return
+	end
+
+	if action == "ToggleFavorite" then
+		local trackId = payload.trackId
+		if not isValidString(trackId, 24) or not TRACK_BY_ID[trackId] then return end
+		local profile = profiles[player.UserId]
+		if not profile then return end
+		if profile.favorites[trackId] then
+			profile.favorites[trackId] = nil
+		else
+			local count = 0
+			for _ in pairs(profile.favorites) do count += 1 end
+			if count >= CONFIG.MaxFavorites then
+				notify(player, "Favorites list is full.", "warn")
+				return
+			end
+			profile.favorites[trackId] = true
+		end
+		publishState(player)
+		return
+	end
+
+	if action == "VoteSkip" then
+		if skipVotes[player.UserId] then
+			notify(player, "You already voted to skip this track.", "warn")
+			return
+		end
+		skipVotes[player.UserId] = true
+		if checkSkipVotes() then
+			broadcast("Track skipped by vote.", "ok")
+		else
+			local votes, needed = skipStatus(nil)
+			notify(player, string.format("Skip vote counted (%d/%d).", votes, needed), "ok")
+		end
+		publishState(nil)
+		return
+	end
+
+	-- Staff ----------------------------------------------------------------------------
+
+	if action == "DJMoveUp" then
+		if not isStaff(player) then return end
+		local id = payload.queueId
+		if not isValidString(id, 64) then return end
+		local index = findQueueIndex(id)
+		if index and index > 1 then
+			queue[index], queue[index - 1] = queue[index - 1], queue[index]
+			publishState(nil)
+		end
+		return
+	end
+
+	if action == "DJRemove" then
+		if not isStaff(player) then return end
+		local id = payload.queueId
+		if not isValidString(id, 64) then return end
+		local index = findQueueIndex(id)
+		if index then
+			releaseSlot(queue[index])
+			table.remove(queue, index)
+			topUpAuto()
+			publishState(nil)
+		end
+		return
+	end
+
+	if action == "DJSkip" then
+		if not isStaff(player) then return end
+		advance()
+		globalInvoke("PublishDJCommand", "Skip", {}, player.UserId)
+		notify(player, "Track skipped.", "ok")
+		publishState(nil)
+		return
+	end
+
+	if action == "DJClearQueue" then
+		if not isAdmin(player) then return end
+		for _, entry in ipairs(queue) do releaseSlot(entry) end
+		table.clear(queue)
+		topUpAuto()
+		globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
+		notify(player, "Queue cleared.", "ok")
+		publishState(nil)
+		return
+	end
+
+	if action == "DJToggleLock" then
+		if not isStaff(player) then return end
+		local desiredLock = not requestsLocked
+		local publishCallOk, persisted = globalInvoke("PublishDJCommand", "SetRequestLock", {locked = desiredLock}, player.UserId)
+		if not RunService:IsStudio() and (not publishCallOk or persisted ~= true) then
+			-- Fail closed locally if the durable global lock cannot be confirmed.
+			requestsLocked = true
+			notify(player, "Global lock could not be confirmed. Requests remain locked on this server.", "warn")
+			publishState(nil)
+			return
+		end
+		requestsLocked = desiredLock
+		broadcast(if requestsLocked then "Song requests are now LOCKED." else "Song requests are open again.", "info")
+		publishState(nil)
+		return
+	end
+
+	if action == "ModBlockUser" then
+		if not isAdmin(player) then return end
+		local target = findTarget(player, payload.userId)
+		if not target or typeof(payload.blocked) ~= "boolean" then return end
+		if payload.blocked then
+			blockedUsers[target.UserId] = true
+			globalInvoke("SetRequestBlocked", target.UserId, true, player.UserId)
+			purgeUserEntries(target.UserId)
+			notify(target, "Staff disabled your song requests.", "warn")
+			notify(player, target.DisplayName .. " can no longer request songs.", "ok")
+		else
+			blockedUsers[target.UserId] = nil
+			globalInvoke("SetRequestBlocked", target.UserId, false, player.UserId)
+			notify(target, "Your song requests were re-enabled.", "ok")
+			notify(player, target.DisplayName .. " can request songs again.", "ok")
+		end
+		publishState(nil)
+		return
+	end
+
+	if action == "ModSetVip" then
+		if not isAdmin(player) then return end
+		local target = findTarget(player, payload.userId)
+		if not target or typeof(payload.vip) ~= "boolean" then return end
+		tempVip[target.UserId] = if payload.vip then true else nil
+		applyVipAttribute(target)
+		notify(target, if payload.vip then "You were given VIP by staff!" else "Your staff-granted VIP was removed.", "info")
+		notify(player, (if payload.vip then "VIP granted to " else "VIP removed from ") .. target.DisplayName .. ".", "ok")
+		publishState(nil)
+		return
+	end
+
+	if action == "ModPurgeUser" then
+		if not isAdmin(player) then return end
+		local target = findTarget(player, payload.userId)
+		if not target then return end
+		local removed = purgeUserEntries(target.UserId)
+		notify(player, string.format("Removed %d request(s) from %s.", removed, target.DisplayName), "ok")
+		publishState(nil)
+		return
+	end
+
+	-- Rewards / cosmetics -------------------------------------------------------------
+
+	if action == "ClaimDailyReward" then
+		local day = payload.day
+		if typeof(day) ~= "number" or day % 1 ~= 0 or day < 1 or day > DAILY_REWARD_COUNT then return end
+		local profile = profiles[player.UserId]
+		if not profile or profile.claimedToday or day ~= profile.loginStreak then return end
+
+		-- Grants map directly to the reward labels in the supplied data file.
+		if day == 1 then profile.coins += 50
+		elseif day == 2 then profile.glowsticks += 2
+		elseif day == 3 then profile.tickets += 100
+		elseif day == 4 then profile.skipTokens += 1
+		elseif day == 5 then profile.coins += 250
+		elseif day == 6 then profile.neonTrail = true
+		elseif day == 7 then profile.ownedTags.island = true
+		end
+		profile.claimedToday = true
+		profile.lastClaimDay = math.floor(os.time() / 86400)
+		player:SetAttribute("Tickets", profile.tickets)
+		player:SetAttribute("Coins", profile.coins)
+		player:SetAttribute("Glowsticks", profile.glowsticks)
+		player:SetAttribute("SkipTokens", profile.skipTokens)
+		player:SetAttribute("NeonTrailUnlocked", profile.neonTrail)
+		player:SetAttribute("ClaimedToday", true)
+		scheduleProfileSave(player)
+		publishState(player)
+		return
+	end
+
+	if action == "EquipTitleTag" then
+		local tagId = payload.tagId
+		if not isValidString(tagId, 24) or TAGS[tagId] ~= true then return end
+		local profile = profiles[player.UserId]
+		if not profile or profile.ownedTags[tagId] ~= true then return end
+		profile.equippedTag = tagId
+		player:SetAttribute("EquippedTag", tagId)
+		scheduleProfileSave(player)
+		publishState(player)
+		return
+	end
+
+	-- Legacy single custom title: stored in slot 1 as a fixed-color title.
+	if action == "SaveCustomTitle" then
+		local profile = profiles[player.UserId]
+		if not profile then return end
+
+		local rawText = payload.text
+		local colorKey = payload.color
+		local styleKey = payload.style
+		local visible = payload.visible
+
+		if typeof(rawText) ~= "string" then return end
+		local rawLength = utf8.len(rawText)
+		if not rawLength or rawLength > MAX_CUSTOM_TITLE_LENGTH then
+			notify(player, "Title must be 24 characters or fewer.", "warn")
+			return
+		end
+		if typeof(colorKey) ~= "string" or TITLE_COLORS[colorKey] ~= true then return end
+		if typeof(styleKey) ~= "string" or TITLE_STYLES[styleKey] ~= true then return end
+		if typeof(visible) ~= "boolean" then return end
+
+		local existing = profile.titleSlots[1]
+		local ok = saveTitleSlot(player, 1, {
+			text = string.match(rawText, "^%s*(.-)%s*$") or "",
+			effect = "fixed",
+			set = colorKey,
+			font = if existing then existing.font else "gotham",
+			style = styleKey,
+			height = if existing then existing.height else 2.5,
+			distance = if existing then existing.distance else 80,
+		}, visible)
+		if ok then
+			notify(player, "Custom title saved.", "ok")
+			publishState(player)
+		end
+		return
+	end
+
+	-- Extended title slots ------------------------------------------------------------
+
+	if action == "SaveTitleSlot" then
+		local slotNumber = payload.slot
+		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
+		if typeof(payload.text) ~= "string" then return end
+		-- Colors sent by the client are ignored; the server derives them from the allowlisted set.
+		local visible = if typeof(payload.visible) == "boolean" then payload.visible else true
+		local ok = saveTitleSlot(player, slotNumber, {
+			text = string.match(payload.text, "^%s*(.-)%s*$") or "",
+			effect = payload.effect,
+			set = payload.set,
+			font = payload.font,
+			style = payload.style,
+			heightOffset = payload.heightOffset,
+			viewDistance = payload.viewDistance,
+		}, visible)
+		if ok then
+			notify(player, string.format("Title slot %d saved.", slotNumber), "ok")
+			publishState(player)
+		end
+		return
+	end
+
+	if action == "SelectTitleSlot" then
+		local slotNumber = payload.slot
+		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
+		local profile = profiles[player.UserId]
+		if not profile or slotNumber > profile.unlockedSlots then return end
+		if profile.titleSlots[slotNumber] == nil then
+			notify(player, "Save a title in that slot first.", "warn")
+			return
+		end
+		profile.activeSlot = slotNumber
+		applyTitleAttributes(player, profile)
+		scheduleProfileSave(player)
+		publishState(player)
+		return
+	end
+
+	if action == "ClearTitleSlot" then
+		local slotNumber = payload.slot
+		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
+		local profile = profiles[player.UserId]
+		if not profile or slotNumber > profile.unlockedSlots then return end
+		profile.titleSlots[slotNumber] = nil
+		if profile.activeSlot == slotNumber then
+			profile.activeSlot = firstFilledSlot(profile) or 1
+		end
+		applyTitleAttributes(player, profile)
+		scheduleProfileSave(player)
+		publishState(player)
+		return
+	end
+
+	if action == "SetTitleVisible" then
+		if typeof(payload.visible) ~= "boolean" then return end
+		local profile = profiles[player.UserId]
+		if not profile then return end
+		profile.showCustomTitle = payload.visible
+		applyTitleAttributes(player, profile)
+		scheduleProfileSave(player)
+		publishState(player)
+		return
+	end
+end
+
+stateFunction.OnServerInvoke = function(player: Player)
+	if player.Parent ~= Players then return nil end
+	local now = os.clock()
+	if not consumeToken(globalStateQueryBucket, now, 1) then return nil end
+	local sharedStateCallOk, sharedStateAllowed = globalInvoke("ConsumeStateBudget", player.UserId)
+	if RunService:IsStudio() then
+		if sharedStateCallOk and sharedStateAllowed == false then return nil end
+	else
+		if not sharedStateCallOk or sharedStateAllowed ~= true then return nil end
+	end
+	local previous = lastStateInvoke[player.UserId] or 0
+	if previous > 0 and now - previous < CONFIG.GetStateCooldownSeconds then
+		return nil -- StateChanged continues to push live updates; client can retry after cooldown.
+	end
+	lastStateInvoke[player.UserId] = now
+	local ok, snapshot = pcall(snapshotFor, player)
+	if not ok then
+		warn("[ClubMusic] GetState failed for " .. player.Name .. ": " .. tostring(snapshot))
+		return nil
+	end
+	return snapshot
+end
+
+actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
+	local ok, err = pcall(handleAction, player, action, payload)
+	if not ok then warn("[ClubMusic] Action handler error: " .. tostring(err)) end
+end)
+
+-- Releases this server's profile lease after the final save. Ownership is checked
+-- inside UpdateAsync so a stale server cannot clear a newer server's lease.
+local function releaseProfileSession(userId: number)
+	if USE_STUDIO_MEMORY_PROFILES then
+		return
+	end
+	if not waitForDataStoreBudget(3) then
+		warn("[ClubMusic] Could not release profile lease before shutdown/removal; lease will expire naturally for userId " .. tostring(userId))
+		return
+	end
+
+	local ok, err = pcall(function()
+		store:UpdateAsync(tostring(userId), function(oldData)
+			if typeof(oldData) ~= "table" or typeof(oldData.sessionLock) ~= "table"
+				or oldData.sessionLock.owner ~= SESSION_TOKEN then return nil end
+			local updated = table.clone(oldData)
+			updated.sessionLock = nil
+			return updated
+		end)
+	end)
+	if not ok then warn("[ClubMusic] Could not release profile session for " .. tostring(userId) .. ": " .. tostring(err)) end
+end
+
+-- Player lifecycle ----------------------------------------------------------------------
+
+local function onJoin(player: Player)
+	local enabledCallOk, globalServiceEnabled = globalInvoke("IsEnabled")
+	local globalModerationRequired = not RunService:IsStudio()
+	if globalModerationRequired and (not enabledCallOk or globalServiceEnabled ~= true) then
+		player:Kick("The experience security service is temporarily unavailable. Please rejoin shortly.")
+		return
+	end
+	local lockCallOk, globalLock, lockLookupOk = globalInvoke("GetGlobalRequestLock")
+	if lockCallOk and lockLookupOk == true and typeof(globalLock) == "boolean" then
+		requestsLocked = globalLock
+	elseif globalModerationRequired then
+		-- Do not silently open requests when the authoritative global lock cannot be read.
+		requestsLocked = true
+	end
+	local banCallOk, globallyBanned, banLookupOk = globalInvoke("IsGloballyBanned", player.UserId)
+	if banCallOk and banLookupOk == true and globallyBanned == true then
+		player:Kick("You are globally banned from this experience.")
+		return
+	elseif globalModerationRequired and (not banCallOk or banLookupOk ~= true) then
+		-- Fail closed for global bans while the authoritative moderation store is unavailable.
+		player:Kick("Global moderation is temporarily unavailable. Please rejoin shortly.")
+		return
+	end
+	local blockCallOk, globallyBlocked, blockLookupOk = globalInvoke("IsRequestBlocked", player.UserId)
+	if blockCallOk and blockLookupOk == true and globallyBlocked == true then
+		blockedUsers[player.UserId] = true
+	elseif globalModerationRequired and (not blockCallOk or blockLookupOk ~= true) then
+		-- Keep the player connected, but fail closed for the request feature.
+		blockedUsers[player.UserId] = true
+	end
+	refreshRank(player)
+	refreshVip(player)
+	local loaded = loadProfile(player)
+	if not loaded then
+		notify(player, "Your profile could not be loaded. Please rejoin in a moment; no default profile was saved over your data.", "warn")
+		return
+	end
+	applyVipAttribute(player)
+	player:SetAttribute("ClubRank", getRank(player))
+	publishState(nil) -- also refreshes the staff roster for everyone with access
+end
+
+
+-- Apply validated cross-server events to this server's local state. The API
+-- folder can be created slightly after this controller starts, so attach both
+-- immediately and through ServerStorage.ChildAdded for startup-order recovery.
+local function handleGlobalMessage(message: any)
+	if typeof(message) ~= "table" then return end
+	if message.kind == "Announcement" and isValidString(message.text, 240) then
+		broadcast("[GLOBAL] " .. message.text, "info")
+		return
+	end
+	if message.kind == "Moderation" and isFiniteNumber(message.userId)
+		and message.userId > 0 and message.userId % 1 == 0 and message.userId <= 9007199254740991 then
+		local target = Players:GetPlayerByUserId(message.userId)
+		if message.field == "globalBan" and message.value == true then
+			if target then target:Kick("You are globally banned from this experience.") end
+		elseif message.field == "requestBlocked" and typeof(message.value) == "boolean" then
+			if message.value then
+				blockedUsers[message.userId] = true
+				purgeUserEntries(message.userId)
+			else
+				blockedUsers[message.userId] = nil
+			end
+			publishState(nil)
+		end
+		return
+	end
+	if message.kind == "DJ" and typeof(message.command) == "string"
+		and (message.command == "Skip" or message.command == "ClearQueue" or message.command == "SetRequestLock") then
+		if message.command == "Skip" then
+			advance()
+			broadcast("A global DJ command skipped the current track.", "info")
+		elseif message.command == "ClearQueue" then
+			for _, entry in ipairs(queue) do releaseSlot(entry) end
+			table.clear(queue)
+			topUpAuto()
+			broadcast("The request queue was globally cleared.", "info")
+		elseif message.command == "SetRequestLock" and typeof(message.payload) == "table"
+			and typeof(message.payload.locked) == "boolean" then
+			local changed = requestsLocked ~= message.payload.locked
+			requestsLocked = message.payload.locked
+			if changed then
+				broadcast(if requestsLocked then "Song requests are globally locked." else "Song requests are globally open.", "info")
+			end
+		end
+		publishState(nil)
+	end
+end
+
+local function attachGlobalEvent(eventObject: Instance?)
+	if eventObject and eventObject:IsA("BindableEvent") then
+		local event = eventObject :: BindableEvent
+		if not event:GetAttribute("ClubMusicControllerConnected") then
+			event:SetAttribute("ClubMusicControllerConnected", true)
+			event.Event:Connect(handleGlobalMessage)
+		end
+	end
+end
+
+local function watchGlobalApi(folder: Instance)
+	if not folder:IsA("Folder") then return end
+	attachGlobalEvent(folder:FindFirstChild("GlobalEvent"))
+	folder.ChildAdded:Connect(function(child)
+		if child.Name == "GlobalEvent" then attachGlobalEvent(child) end
+	end)
+end
+
+attachGlobalEvent(globalEventObject)
+if globalApi and globalApi:IsA("Folder") then watchGlobalApi(globalApi) end
+ServerStorage.ChildAdded:Connect(function(child)
+	if child.Name == "ClubMusicGlobalAPI" and child:IsA("Folder") then watchGlobalApi(child) end
+end)
+
+Players.PlayerAdded:Connect(function(player)
+	task.spawn(onJoin, player)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	saveProfile(player)
+	local userId = player.UserId
+	releaseProfileSession(userId)
+	profiles[userId] = nil
+	requestCounts[userId] = nil
+	lastRequestAt[userId] = nil
+	lastActionAt[userId] = nil
+	lastActionByType[userId] = nil
+	perPlayerActionBuckets[userId] = nil
+	saveQueued[userId] = nil
+	saveAgain[userId] = nil
+	lastStateInvoke[userId] = nil
+	lastAudioInspection[userId] = nil
+	lastReloadAt[userId] = nil
+	reloadNonce[userId] = nil
+	pendingAudio[userId] = nil
+	rankCache[userId] = nil
+	vipPass[userId] = nil
+	vvipPass[userId] = nil
+	sultanPass[userId] = nil
+	tempVip[userId] = nil
+	blockedUsers[userId] = nil
+	skipVotes[userId] = nil
+	-- The leaving player may still be counted by GetPlayers(); re-check next frame.
+	task.defer(function()
+		if checkSkipVotes() then broadcast("Track skipped by vote.", "ok") end
+		publishState(nil)
+	end)
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(onJoin, player)
+end
+
+-- Purchasing any pass mid-session refreshes server-verified tier ownership immediately.
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, purchased: boolean)
+	if not purchased then return end
+	local recognized = passId == CONFIG.VipGamePassId
+		or passId == CONFIG.VvipGamePassId
+		or passId == CONFIG.TikiTideSultanPassId
+	if not recognized then return end
+	task.spawn(function()
+		refreshVip(player)
+		applyVipAttribute(player)
+		local tierName = if isSultan(player) then "Tiki Tide Sultan" elseif isVvip(player) then "VVIP" elseif isVip(player) then "VIP" else "Pass"
+		notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
+		publishState(nil)
+	end)
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(CONFIG.SaveIntervalSeconds)
+		for _, player in ipairs(Players:GetPlayers()) do
+			saveProfile(player)
+		end
+	end
+end)
+
+-- Periodically re-check group rank / VIP so promotions apply without rejoining.
+task.spawn(function()
+	while true do
+		task.wait(60)
+		for _, player in ipairs(Players:GetPlayers()) do
+			task.spawn(function()
+				refreshRank(player)
+				refreshVip(player)
+				applyVipAttribute(player)
+			end)
+		end
+	end
+end)
+
+-- The server publishes authoritative elapsed time and current state. Clients interpolate between
+-- resyncs. Audio plays on each client when a SoundId is configured in CONFIG.SoundIds
+-- (or when the track is a staff-requested Creator Hub audio asset).
+task.spawn(function()
+	local ticks = 0
+	while true do
+		task.wait(1)
+		nowPlaying.elapsed += 1
+		ticks += 1
+		if nowPlaying.elapsed >= nowPlaying.duration then
+			advance()
+			ticks = 0
+			publishState(nil)
+		elseif ticks >= CONFIG.ResyncSeconds then
+			ticks = 0
+			publishState(nil)
+		end
+	end
+end)
+
+game:BindToClose(function()
+	for _, player in ipairs(Players:GetPlayers()) do
+		saveProfile(player)
+		releaseProfileSession(player.UserId)
+	end
+end)
