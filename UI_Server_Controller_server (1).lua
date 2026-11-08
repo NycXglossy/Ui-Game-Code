@@ -1009,6 +1009,12 @@ local function saveProfile(player: Player)
 				ownershipLost = true
 				return nil -- This server no longer owns the profile; never overwrite another session.
 			end
+			local pendingReceiptId = if typeof(oldData.pendingReceipt) == "string" then oldData.pendingReceipt else nil
+			local pendingMemory = if pendingReceiptId then receiptMemoryPending[pendingReceiptId] else nil
+			if pendingMemory and pendingMemory.profile == profile then
+				-- Do not overwrite a durably applied reward with a stale in-memory snapshot.
+				return nil
+			end
 			local preservedReceipts = {}
 			if typeof(oldData) == "table" and typeof(oldData.receiptIds) == "table" then
 				for id, value in pairs(oldData.receiptIds) do
@@ -1541,7 +1547,9 @@ end
 local processedReceipts: {[string]: boolean} = {}
 
 local receiptJournalStores: {[number]: GlobalDataStore} = {}
-local receiptMemoryPending: {[string]: boolean} = {}
+type PendingReceiptMemory = { profile: Profile, productData: {[string]: any} }
+local receiptMemoryPending: {[string]: PendingReceiptMemory} = {}
+local receiptMemoryApplied: {[string]: Profile} = {}
 
 local function productReceiptStore(userId: number): GlobalDataStore
 	local existing = receiptJournalStores[userId]
@@ -1570,6 +1578,14 @@ local function recoverPendingProductReceipt(userId: number, journalStore: Global
 		or journal.userId ~= userId or journal.status ~= "Prepared" and journal.status ~= "Completed" then
 		warn("[ClubMusic] Profile has an unrecoverable pending receipt marker for userId " .. tostring(userId))
 		return false, "Pending receipt journal is missing or mismatched"
+	end
+
+	local pendingMemory = receiptMemoryPending[pendingId]
+	local currentProfile = profiles[userId]
+	if pendingMemory and pendingMemory.profile == currentProfile and currentProfile then
+		applyReceiptToMemory(currentProfile, pendingMemory.productData)
+		receiptMemoryApplied[pendingId] = currentProfile
+		receiptMemoryPending[pendingId] = nil
 	end
 
 	if journal.status ~= "Completed" then
@@ -1632,9 +1648,17 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 			return false, false, "Receipt journal key collision or product mismatch"
 		end
 		if journal.status == "Completed" then
-			local wasPendingInMemory = receiptMemoryPending[receiptId] == true
+			local currentProfile = profiles[userId]
+			local pendingMemory = receiptMemoryPending[receiptId]
+			if pendingMemory and pendingMemory.profile == currentProfile and currentProfile then
+				applyReceiptToMemory(currentProfile, pendingMemory.productData)
+				receiptMemoryApplied[receiptId] = currentProfile
+				receiptMemoryPending[receiptId] = nil
+			end
+			local memoryApplied = currentProfile ~= nil and receiptMemoryApplied[receiptId] == currentProfile
+			if not memoryApplied then receiptMemoryPending[receiptId] = nil end
 			releaseProfileWriteLock(userId)
-			return true, not wasPendingInMemory, nil
+			return true, not memoryApplied, nil
 		end
 		if journal.status ~= "Prepared" then
 			releaseProfileWriteLock(userId)
@@ -1657,17 +1681,27 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 		end
 		journal = prepared
 		if prepared.status == "Completed" then
-			local wasPendingInMemory = receiptMemoryPending[receiptId] == true
+			local currentProfile = profiles[userId]
+			local pendingMemory = receiptMemoryPending[receiptId]
+			if pendingMemory and pendingMemory.profile == currentProfile and currentProfile then
+				applyReceiptToMemory(currentProfile, pendingMemory.productData)
+				receiptMemoryApplied[receiptId] = currentProfile
+				receiptMemoryPending[receiptId] = nil
+			end
+			local memoryApplied = currentProfile ~= nil and receiptMemoryApplied[receiptId] == currentProfile
+			if not memoryApplied then receiptMemoryPending[receiptId] = nil end
 			releaseProfileWriteLock(userId)
-			return true, not wasPendingInMemory, nil
+			return true, not memoryApplied, nil
 		end
 	end
 
 	if not waitForDataStoreBudget(10) then releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while applying receipt" end
 	local alreadyProcessed = false
 	-- Set before yielding: UpdateAsync can commit even if the client-side call later errors.
-	-- A retry in this same server must then reconcile the in-memory Profile exactly once.
-	receiptMemoryPending[receiptId] = true
+	-- A retry can then reconcile the same in-memory Profile exactly once.
+	local receiptProfile = profiles[userId]
+	if not receiptProfile then releaseProfileWriteLock(userId); return false, false, "Profile disappeared before receipt application" end
+	receiptMemoryPending[receiptId] = {profile = receiptProfile, productData = productData}
 	local applyOk, applied = pcall(function()
 		return store:UpdateAsync(tostring(userId), function(oldData)
 			if typeof(oldData) ~= "table" or typeof(oldData.sessionLock) ~= "table"
@@ -1690,7 +1724,13 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 		return false, false, "Receipt reward was not confirmed in the profile"
 	end
 
-	if alreadyProcessed then receiptMemoryPending[receiptId] = nil end
+	if alreadyProcessed then
+		receiptMemoryPending[receiptId] = nil
+	else
+		applyReceiptToMemory(receiptProfile, productData)
+		receiptMemoryApplied[receiptId] = receiptProfile
+		receiptMemoryPending[receiptId] = nil
+	end
 	if not waitForDataStoreBudget(10) then
 		releaseProfileWriteLock(userId)
 		return false, false, "DataStore budget is busy while completing receipt journal"
@@ -1794,8 +1834,8 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	if profiles[userId] ~= profile then return Enum.ProductPurchaseDecision.NotProcessedYet end
-	applyReceiptToMemory(profile, productData)
-	receiptMemoryPending[receiptId] = nil
+	if USE_STUDIO_MEMORY_PROFILES then applyReceiptToMemory(profile, productData) end
+	receiptMemoryApplied[receiptId] = nil
 	processedReceipts[receiptId] = true
 	player:SetAttribute("Tickets", profile.tickets)
 	player:SetAttribute("Coins", profile.coins)
