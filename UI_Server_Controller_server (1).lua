@@ -372,8 +372,10 @@ local function setGlobalXPState(multiplier: number, expiresAt: number, lowerExpi
 		or expiresAt == math.huge or expiresAt == -math.huge or expiresAt < 0 then return end
 	local cleanExpiry = if multiplier == 1 or expiresAt <= os.time() then 0 else math.floor(expiresAt)
 	local cleanMultiplier = if cleanExpiry == 0 then 1 else multiplier
-	local cleanLowerExpiry = if cleanMultiplier == 4 and typeof(lowerExpiresAt) == "number"
-		and lowerExpiresAt > os.time() then math.floor(lowerExpiresAt) else 0
+	local lowerIsFinite = typeof(lowerExpiresAt) == "number" and lowerExpiresAt == lowerExpiresAt
+		and lowerExpiresAt ~= math.huge and lowerExpiresAt ~= -math.huge
+	local cleanLowerExpiry = if cleanMultiplier == 4 and lowerIsFinite
+		and (lowerExpiresAt :: number) > os.time() then math.floor(lowerExpiresAt :: number) else 0
 	if cleanMultiplier == cachedGlobalXpMultiplier and cleanExpiry == cachedGlobalXpExpiresAt
 		and cleanLowerExpiry == cachedGlobalXpLowerExpiresAt then return end
 	if settleAllXP then settleAllXP() end
@@ -1301,8 +1303,10 @@ local function snapshotFor(player: Player)
 		xp = profile.xp,
 		level = math.floor(profile.xp / CONFIG.XPPerLevel) + 1,
 		xpToNextLevel = CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel),
-		xpMultiplier = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpMultiplier else 1,
-		xpBoostExpiresAt = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpExpiresAt else 0,
+		xpMultiplier = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpMultiplier
+			elseif cachedGlobalXpLowerExpiresAt > os.time() then 2 else 1,
+		xpBoostExpiresAt = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpExpiresAt
+			elseif cachedGlobalXpLowerExpiresAt > os.time() then cachedGlobalXpLowerExpiresAt else 0,
 		xpBoostProductIds = { twoX = CONFIG.XPBoost2xProductId, fourX = CONFIG.XPBoost4xProductId },
 		groupId = CONFIG.GroupId,
 		players = nil :: any,
