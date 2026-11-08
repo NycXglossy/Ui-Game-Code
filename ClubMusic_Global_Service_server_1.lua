@@ -493,14 +493,14 @@ task.spawn(function()
 	end
 end)
 
-local function globalXPState(record: any): (number, number)
-	if typeof(record) ~= "table" or typeof(record.boosts) ~= "table" then return 1, 0 end
+local function globalXPState(record: any): (number, number, number)
+	if typeof(record) ~= "table" or typeof(record.boosts) ~= "table" then return 1, 0, 0 end
 	local now = os.time()
 	local twoExpiry = tonumber(record.boosts["2"]) or 0
 	local fourExpiry = tonumber(record.boosts["4"]) or 0
-	if fourExpiry > now then return 4, fourExpiry end
-	if twoExpiry > now then return 2, twoExpiry end
-	return 1, 0
+	if fourExpiry > now then return 4, fourExpiry, if twoExpiry > now then twoExpiry else 0 end
+	if twoExpiry > now then return 2, twoExpiry, 0 end
+	return 1, 0, 0
 end
 
 local function xpReceiptKey(receiptId: string): string?
