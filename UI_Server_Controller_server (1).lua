@@ -1549,27 +1549,21 @@ end
 
 local processedReceipts: {[string]: boolean} = {}
 
-local receiptJournalStores: {[number]: GlobalDataStore} = {}
-local function productReceiptStore(userId: number): GlobalDataStore
-	local existing = receiptJournalStores[userId]
-	if existing then return existing end
-	local created = DataStoreService:GetDataStore("ClubMusic_ProductReceipts_" .. tostring(userId))
-	receiptJournalStores[userId] = created
-	return created
+local productReceiptJournalStore = DataStoreService:GetDataStore("ClubMusic_ProductReceipts_v1")
+
+local function productReceiptKey(userId: number, receiptId: string): string
+	return "r_" .. ReceiptHash.KeySuffix(tostring(userId) .. ":" .. receiptId)
 end
 
-local function productReceiptKey(receiptId: string): string
-	return "r_" .. ReceiptHash.KeySuffix(receiptId)
-end
-
-local function recoverPendingProductReceipt(userId: number, journalStore: GlobalDataStore): (boolean, string?)
+local function recoverPendingProductReceipt(userId: number): (boolean, string?)
+	local journalStore = productReceiptJournalStore
 	if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while recovering a receipt" end
 	local readOk, profileData = pcall(function() return store:GetAsync(tostring(userId)) end)
 	if not readOk then return false, tostring(profileData) end
 	if typeof(profileData) ~= "table" or typeof(profileData.pendingReceipt) ~= "string" then return true, nil end
 
 	local pendingId = profileData.pendingReceipt
-	local journalKey = productReceiptKey(pendingId)
+	local journalKey = productReceiptKey(userId, pendingId)
 	if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while reading receipt journal" end
 	local journalOk, journal = pcall(function() return journalStore:GetAsync(journalKey) end)
 	if not journalOk then return false, tostring(journal) end
@@ -1629,12 +1623,11 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 		return false, false, "Profile is busy; receipt will be retried"
 	end
 
-	local journalStoreOk, journalStore = pcall(function() return productReceiptStore(userId) end)
-	if not journalStoreOk then releaseProfileWriteLock(userId); return false, false, tostring(journalStore) end
-	local recovered, recoveryError = recoverPendingProductReceipt(userId, journalStore)
+	local journalStore = productReceiptJournalStore
+	local recovered, recoveryError = recoverPendingProductReceipt(userId)
 	if not recovered then releaseProfileWriteLock(userId); return false, false, recoveryError end
 
-	local journalKey = productReceiptKey(receiptId)
+	local journalKey = productReceiptKey(userId, receiptId)
 	if not waitForDataStoreBudget(10) then
 		releaseProfileWriteLock(userId)
 		return false, false, "DataStore budget is busy while reading receipt journal"
