@@ -93,6 +93,10 @@ local CONFIG = {
 	ProfileWriteLockTimeoutSeconds = 12,
 	ProfileSaveQueueDelaySeconds = 0.25,
 	MaxReceiptLedgerEntries = 2500,
+	XPPerMinute = 10,
+	XPPerLevel = 100,
+	XPBoost2xProductId = 0,
+	XPBoost4xProductId = 0,
 	GlobalDataStoreBurst = 30,
 	GlobalDataStoreRefillPerSecond = 3,
 	RestrictAudioToAllowlist = false,           -- true = only IDs listed below can be requested.
@@ -352,6 +356,26 @@ local function globalInvoke(name: string, ...: any): any
 end
 local globalEventObject = if globalApi then globalApi:FindFirstChild("GlobalEvent") else nil
 
+local cachedGlobalXpMultiplier = 1
+local cachedGlobalXpExpiresAt = 0
+local function refreshGlobalXPBoost()
+	if RunService:IsStudio() then
+		cachedGlobalXpMultiplier, cachedGlobalXpExpiresAt = 1, 0
+		return
+	end
+	local callOk, multiplier, expiresAt = globalInvoke("GetGlobalXPBoost")
+	if callOk and typeof(multiplier) == "number" and multiplier == multiplier
+		and typeof(expiresAt) == "number" and expiresAt == expiresAt then
+		if multiplier == 2 or multiplier == 4 then
+			cachedGlobalXpMultiplier = multiplier
+			cachedGlobalXpExpiresAt = math.max(0, math.floor(expiresAt))
+		elseif multiplier == 1 then
+			cachedGlobalXpMultiplier, cachedGlobalXpExpiresAt = 1, 0
+		end
+	end
+	if cachedGlobalXpExpiresAt <= os.time() then cachedGlobalXpMultiplier, cachedGlobalXpExpiresAt = 1, 0 end
+end
+
 local configFolder = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicConfig") :: Folder
 configFolder:SetAttribute("GroupId", CONFIG.GroupId)
 
@@ -394,6 +418,7 @@ type Profile = {
 	skipTokens: number,
 	neonTrail: boolean,
 	favorites: {[string]: boolean},
+	xp: number,
 }
 
 local profiles: {[number]: Profile} = {}
@@ -773,6 +798,7 @@ local function defaultProfile(): Profile
 		skipTokens = 0,
 		neonTrail = false,
 		favorites = {},
+		xp = 0,
 	}
 end
 
@@ -819,6 +845,7 @@ local function loadProfile(player: Player)
 		return false
 	end
 	if typeof(data) == "table" then
+		profile.xp = math.clamp(math.floor(tonumber(data.xp) or 0), 0, 9007199254740000)
 		profile.tickets = math.max(0, tonumber(data.tickets) or 0)
 		profile.coins = math.max(0, tonumber(data.coins) or 0)
 		profile.loginStreak = math.clamp(math.floor(tonumber(data.loginStreak) or 1), 1, 7)
@@ -880,6 +907,9 @@ local function loadProfile(player: Player)
 	end
 
 	profiles[player.UserId] = profile
+	player:SetAttribute("XP", profile.xp)
+	player:SetAttribute("Level", math.floor(profile.xp / CONFIG.XPPerLevel) + 1)
+	player:SetAttribute("XPToNextLevel", CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel))
 	player:SetAttribute("Tickets", profile.tickets)
 	player:SetAttribute("Coins", profile.coins)
 	player:SetAttribute("Glowsticks", profile.glowsticks)
@@ -939,6 +969,7 @@ local function saveProfile(player: Player)
 		skipTokens = profile.skipTokens,
 		neonTrail = profile.neonTrail,
 		favorites = table.clone(profile.favorites),
+		xp = profile.xp,
 	}
 	local ownershipLost = false
 	local ok, result = pcall(function()
@@ -1244,6 +1275,12 @@ local function snapshotFor(player: Player)
 		glowsticks = profile.glowsticks,
 		skipTokens = profile.skipTokens,
 		neonTrail = profile.neonTrail,
+		xp = profile.xp,
+		level = math.floor(profile.xp / CONFIG.XPPerLevel) + 1,
+		xpToNextLevel = CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel),
+		xpMultiplier = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpMultiplier else 1,
+		xpBoostExpiresAt = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpExpiresAt else 0,
+		xpBoostProductIds = { twoX = CONFIG.XPBoost2xProductId, fourX = CONFIG.XPBoost4xProductId },
 		groupId = CONFIG.GroupId,
 		players = nil :: any,
 	}
@@ -1347,15 +1384,19 @@ local PRODUCT_IDS = {
 	NeonAura = 0,
 	NeonLei = 0,
 	LEDShades = 0,
+	XPBoost2x = CONFIG.XPBoost2xProductId,
+	XPBoost4x = CONFIG.XPBoost4xProductId,
 }
 
 type ProductData = {
-	type: "Donation" | "Item" | "TitleSlot",
+	type: "Donation" | "Item" | "TitleSlot" | "XPBoost",
 	perk: string?,
 	amount: number?,
 	name: string?,
 	costCoins: number?,
 	slot: number?,
+	multiplier: number?,
+	duration: number?,
 }
 
 local PRODUCT_MAP: {[number]: ProductData} = {}
@@ -1403,6 +1444,8 @@ registerProduct(PRODUCT_IDS.NeonLei, {
 registerProduct(PRODUCT_IDS.LEDShades, {
 	type = "Item", name = "LED Shades", costCoins = 320,
 })
+registerProduct(PRODUCT_IDS.XPBoost2x, { type = "XPBoost", multiplier = 2, duration = 900, name = "2x XP Boost" })
+registerProduct(PRODUCT_IDS.XPBoost4x, { type = "XPBoost", multiplier = 4, duration = 1800, name = "4x XP Boost" })
 
 -- Title slots (slot 1 is free; slots 2 and 3 are paid)
 for slotNumber = 2, TITLE_SLOT_COUNT do
@@ -1433,6 +1476,8 @@ local function applyReceiptToStoredData(data: {[string]: any}, productData: {[st
 		local slotNumber = math.clamp(math.floor(tonumber(productData.slot) or 2), 2, TITLE_SLOT_COUNT)
 		data.unlockedSlots = math.max(1, math.floor(tonumber(data.unlockedSlots) or 1), slotNumber)
 		return true
+	elseif productData.type == "XPBoost" then
+		return productData.multiplier == 2 or productData.multiplier == 4
 	end
 	return false
 end
@@ -1452,6 +1497,8 @@ local function applyReceiptToMemory(profile: Profile, productData: {[string]: an
 	elseif productData.type == "TitleSlot" then
 		local slotNumber = math.clamp(math.floor(tonumber(productData.slot) or 2), 2, TITLE_SLOT_COUNT)
 		profile.unlockedSlots = math.max(profile.unlockedSlots, slotNumber)
+	elseif productData.type == "XPBoost" then
+		-- The global boost is applied by the global service, not to one profile.
 	end
 end
 
@@ -1530,6 +1577,20 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
+	if productData.type == "XPBoost" then
+		local activateOk, activated, expiry, effectiveMultiplier = globalInvoke(
+			"ActivateGlobalXPBoost", productData.multiplier, productData.duration, receiptId
+		)
+		if not activateOk or activated ~= true then
+			warn("[ClubMusic] Global XP boost activation failed; receipt will be retried.")
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		if typeof(expiry) == "number" and expiry > os.time()
+			and (effectiveMultiplier == 2 or effectiveMultiplier == 4) then
+			cachedGlobalXpExpiresAt = math.floor(expiry)
+			cachedGlobalXpMultiplier = effectiveMultiplier
+		end
+	end
 	local ok, alreadyProcessed, err = persistReceipt(userId, receiptId, productData)
 	if not ok then
 		warn("[ClubMusic] Receipt persistence failed for " .. receiptId .. ": " .. tostring(err))
@@ -1563,6 +1624,8 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		notify(player, string.format("Purchase Successful: %s acquired!", productData.name or "Item"), "ok")
 	elseif productData.type == "TitleSlot" then
 		notify(player, string.format("Title slot %d unlocked!", profile.unlockedSlots), "ok")
+	elseif productData.type == "XPBoost" then
+		notify(player, string.format("%dx global XP boost activated!", productData.multiplier), "ok")
 	end
 	publishState(nil)
 	return Enum.ProductPurchaseDecision.PurchaseGranted
@@ -2425,6 +2488,26 @@ attachGlobalEvent(globalEventObject)
 if globalApi and globalApi:IsA("Folder") then watchGlobalApi(globalApi) end
 ServerStorage.ChildAdded:Connect(function(child)
 	if child.Name == "ClubMusicGlobalAPI" and child:IsA("Folder") then watchGlobalApi(child) end
+end)
+
+task.spawn(function()
+	refreshGlobalXPBoost()
+	while true do
+		task.wait(60)
+		refreshGlobalXPBoost()
+		local multiplier = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpMultiplier else 1
+		for _, player in ipairs(Players:GetPlayers()) do
+			local profile = profiles[player.UserId]
+			if profile then
+				profile.xp = math.min(9007199254740000, profile.xp + CONFIG.XPPerMinute * multiplier)
+				player:SetAttribute("XP", profile.xp)
+				player:SetAttribute("Level", math.floor(profile.xp / CONFIG.XPPerLevel) + 1)
+				player:SetAttribute("XPToNextLevel", CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel))
+				scheduleProfileSave(player)
+			end
+		end
+		publishState(nil)
+	end
 end)
 
 Players.PlayerAdded:Connect(function(player)
