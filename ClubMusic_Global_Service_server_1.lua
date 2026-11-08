@@ -233,7 +233,7 @@ local function publishTopic(topic: string, payload: {[string]: any}): boolean
 	return true
 end
 
-local allowedDJCommands = {Skip = true, ClearQueue = true, SetRequestLock = true}
+local allowedDJCommands = {Skip = true, ClearQueue = true, SetRequestLock = true, SetPlaybackPaused = true, Restart = true}
 local function publishDJCommand(command: any, payload: any, actorUserId: any): boolean
 	if not SERVICE_ENABLED or not allowedDJCommands[command] or not finiteNumber(actorUserId) then return false end
 	if typeof(payload) ~= "table" then payload = {} end
@@ -241,6 +241,9 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): b
 	if command == "SetRequestLock" then
 		if typeof(payload.locked) ~= "boolean" then return false end
 		cleanPayload.locked = payload.locked
+	elseif command == "SetPlaybackPaused" then
+		if typeof(payload.paused) ~= "boolean" then return false end
+		cleanPayload.paused = payload.paused
 		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
 		if not budgetShared or not budgetAllowed then
 			warn("[ClubMusic Global] Global request lock change rejected: shared DataStore budget unavailable.")
@@ -437,7 +440,8 @@ local function onDJ(message)
 	if not allowedDJCommands[data.command] or not finiteNumber(data.actorUserId) then return end
 	local payload = if typeof(data.payload) == "table" then data.payload else {}
 	if data.command == "SetRequestLock" and typeof(payload.locked) ~= "boolean" then return end
-	globalEventBindable:Fire({kind = "DJ", command = data.command, payload = payload, actorUserId = data.actorUserId})
+	if data.command == "SetPlaybackPaused" and typeof(payload.paused) ~= "boolean" then return end
+	globalEventBindable:Fire({kind = "DJ", command = data.command, payload = payload, actorUserId = data.actorUserId, senderJob = data.senderJob})
 end
 
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
