@@ -2927,6 +2927,14 @@ task.spawn(function()
 end)
 
 game:BindToClose(function()
+	-- Studio memory mode has no durable profile backend and never acquires a
+	-- DataStore session lease. PlayerRemoving may already have cleared the
+	-- in-memory profile while the player is still briefly returned by GetPlayers().
+	-- There is therefore nothing to persist or release during Studio shutdown.
+	if USE_STUDIO_MEMORY_PROFILES then
+		return
+	end
+
 	for _, player in ipairs(Players:GetPlayers()) do
 		local finalSaveOk = saveProfile(player)
 		if finalSaveOk then
