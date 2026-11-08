@@ -428,14 +428,14 @@ end
 local ALLOWED_ACTIONS: {[string]: boolean} = {
 	ReloadSong = true, ToggleFavorite = true, RequestTrack = true, VoteSkip = true,
 	RequestAudioAsset = true, DJSkip = true, DJToggleLock = true, DJClearQueue = true,
-	DJMoveUp = true, DJRemove = true, ModBlockUser = true, ModSetVip = true,
+	DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ModBlockUser = true, ModSetVip = true,
 	ModPurgeUser = true, ClaimDailyReward = true, EquipTitleTag = true,
 	SaveTitleSlot = true, SetTitleVisible = true, SelectTitleSlot = true,
 	ClearTitleSlot = true,
 }
 local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	RequestTrack = true, ToggleFavorite = true, VoteSkip = true,
-	DJSkip = true, DJMoveUp = true, DJRemove = true, ClaimDailyReward = true,
+	DJSkip = true, DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ClaimDailyReward = true,
 	EquipTitleTag = true, RequestAudioAsset = true, SaveTitleSlot = true,
 	SaveCustomTitle = true,
 	-- Wrappers that UI_Network exposes; act() prefers these over raw Network.Send.
@@ -1657,10 +1657,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		buildNowPlaying()
 
 		if level >= 1 then
-			local controls = card(58)
-			actionButton(controls, "DJ SKIP", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 34), function()
+			local controls = card(104)
+			actionButton(controls, "DJ SKIP", UDim2.fromOffset(12, 10), UDim2.new(0.5, -18, 0, 34), function()
 				act("DJSkip", {})
 			end, C.Magenta)
+			actionButton(controls, "PAUSE / RESUME", UDim2.new(0.5, 6, 0, 10), UDim2.new(0.5, -18, 0, 34), function()
+				act("DJPause", {})
+			end, C.Purple)
+			actionButton(controls, "RESTART TRACK", UDim2.fromOffset(12, 54), UDim2.new(1, -24, 0, 34), function()
+				act("DJRestart", {})
+			end, C.Cyan)
 
 			sectionLabel("STAFF CONTROLS")
 			local staff = card(58)
