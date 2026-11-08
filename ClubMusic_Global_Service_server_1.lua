@@ -190,7 +190,7 @@ local function updateModeration(userId: number, field: string, value: any, actor
 		warn("[ClubMusic Global] Moderation update rejected: shared DataStore budget unavailable.")
 		return false
 	end
-	local ok, result = pcall(function(){
+	local ok, result = pcall(function()
 		return moderationStore:UpdateAsync(key, function(old)
 			local data = if typeof(old) == "table" then table.clone(old) else {}
 			data[field] = value
