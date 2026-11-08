@@ -665,8 +665,8 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		return false, 0, 1
 	end
 
-	local effectiveMultiplier, expiry = globalXPState(cleared)
-	local message = {kind = "XPBoost", multiplier = effectiveMultiplier, expiresAt = expiry}
+	local effectiveMultiplier, expiry, lowerExpiry = globalXPState(cleared)
+	local message = {kind = "XPBoost", multiplier = effectiveMultiplier, expiresAt = expiry, lowerExpiresAt = lowerExpiry}
 	globalEventBindable:Fire(message)
 	publishTopic(CONFIG.Topics.XPBoost, message)
 	return true, expiry, effectiveMultiplier
