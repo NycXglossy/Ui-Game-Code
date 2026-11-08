@@ -44,6 +44,8 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	VoteSkip = true,
 	DJMoveUp = true,
 	DJRemove = true,
+	DJPause = true,
+	DJRestart = true,
 	DJSkip = true,
 	DJClearQueue = true,
 	DJToggleLock = true,
@@ -69,6 +71,8 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	VoteSkip = 0.5,
 	DJMoveUp = 0.2,
 	DJRemove = 0.2,
+	DJPause = 0.5,
+	DJRestart = 1,
 	DJSkip = 0.5,
 	DJClearQueue = 1,
 	DJToggleLock = 1,
@@ -342,6 +346,14 @@ end
 
 function Network.DJSkip()
 	Network.Send("DJSkip", {})
+end
+
+function Network.DJPause()
+	Network.Send("DJPause", {})
+end
+
+function Network.DJRestart()
+	Network.Send("DJRestart", {})
 end
 
 function Network.DJMoveUp(queueId: string)
