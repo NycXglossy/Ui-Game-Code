@@ -2510,7 +2510,7 @@ end)
 task.spawn(function()
 	refreshGlobalXPBoost()
 	while true do
-		task.wait(5)
+		task.wait(15)
 		refreshGlobalXPBoost()
 		local nowClock = os.clock()
 		local multiplier = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpMultiplier else 1
