@@ -1665,6 +1665,9 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 
 	if not waitForDataStoreBudget(10) then releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while applying receipt" end
 	local alreadyProcessed = false
+	-- Set before yielding: UpdateAsync can commit even if the client-side call later errors.
+	-- A retry in this same server must then reconcile the in-memory Profile exactly once.
+	receiptMemoryPending[receiptId] = true
 	local applyOk, applied = pcall(function()
 		return store:UpdateAsync(tostring(userId), function(oldData)
 			if typeof(oldData) ~= "table" or typeof(oldData.sessionLock) ~= "table"
@@ -1687,7 +1690,7 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 		return false, false, "Receipt reward was not confirmed in the profile"
 	end
 
-	if not alreadyProcessed then receiptMemoryPending[receiptId] = true end
+	if alreadyProcessed then receiptMemoryPending[receiptId] = nil end
 	if not waitForDataStoreBudget(10) then
 		releaseProfileWriteLock(userId)
 		return false, false, "DataStore budget is busy while completing receipt journal"
