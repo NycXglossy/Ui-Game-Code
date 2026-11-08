@@ -58,9 +58,31 @@ The working changes are on `audit/hardened-clubmusic-2026-11-08`. The `main` bra
 - Keep `StudioUseDataStore = false` for session-only Studio profile tests unless DataStore API access is intentionally enabled.
 - `ClubMusic_Global_Service_server_1.lua` has `EnableInStudio = false` by default. Cross-server services are intentionally disabled in Studio unless deliberately enabled for a controlled test.
 
-## Version-parity gap: XP boosts
+## Integrated XP progression and global boosts
 
-The current repository does **not** contain the previously discussed 2x XP (15-minute) and 4x XP (30-minute) Developer Product boosts, the playtime XP award loop, or the cross-server persistent boost reconciliation. The controller includes level/rank references, but the requested XP boost feature is not present in these six files. It must be integrated as a separate, explicitly tested feature; this audit branch does not claim it has been added.
+The audit branch now includes:
+
+- Persistent per-player XP in the existing profile DataStore.
+- Server-awarded 10 base XP for each full minute actually spent in the server after a profile loads.
+- 100 XP per level, with XP, level, and next-level attributes/state replicated to the player's UI.
+- A new **XP & Boosts** renderer tab.
+- A 2x XP Developer Product (15 minutes) and a 4x XP Developer Product (30 minutes).
+- Cross-server boost timers stored in the global control DataStore and read by every live server.
+- The highest active multiplier applies. Purchases extend the timer for their own multiplier.
+- A bounded, durable global PurchaseId ledger makes boost activation idempotent across receipt retries.
+- The existing profile receipt ledger still records the receipt before Roblox is told that the purchase is granted.
+- Studio test purchases use session-only boost state because cross-server services are disabled by default in Studio.
+
+Configuration required before purchases work:
+
+- Set `CONFIG.XPBoost2xProductId` and `CONFIG.XPBoost4xProductId` in the server controller to two distinct, real Developer Product IDs.
+- Keep `0` until the products are created; the UI intentionally refuses to prompt an unconfigured product.
+- Keep the global service enabled in live servers. The global service remains disabled in Studio by default.
+- XP profiles in Studio memory mode do not persist after the Studio server session.
+
+The existing `ClubMusic_Overhead_Title_Renderer_client.lua` is already present on this branch. It consumes server-published title attributes and supports fixed, RGB, gradient, rainbow, two-tone, and shimmer effects. It was retained rather than duplicated.
+
+## Studio DataStore error investigation
 
 ## Studio DataStore error investigation
 
