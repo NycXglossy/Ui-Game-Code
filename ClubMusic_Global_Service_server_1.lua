@@ -506,6 +506,11 @@ local function globalXPState(record: any): (number, number, number)
 	return 1, 0, 0
 end
 
+local function allowXPDataStoreOperation(): boolean
+	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
+	return shared and allowed
+end
+
 local function xpReceiptKey(receiptId: string): string?
 	if #receiptId < 1 or #receiptId > MAX_PURCHASE_ID_LENGTH
 		or not string.match(receiptId, "^[%w%-_]+$") then return nil end
@@ -514,7 +519,7 @@ end
 
 local function getXPReceipt(receiptId: string): any
 	local key = xpReceiptKey(receiptId)
-	if not key then return nil end
+	if not key or not allowXPDataStoreOperation() then return nil end
 	local ok, result = pcall(function() return xpReceiptStore:GetAsync(key) end)
 	if not ok then
 		warn("[ClubMusic Global] XP receipt lookup failed: " .. tostring(result))
@@ -535,6 +540,7 @@ local function recoverPendingXPReceipt(record: any): (boolean, any)
 		warn("[ClubMusic Global] Pending XP receipt has no recoverable journal: " .. pendingId)
 		return false, record
 	end
+	if not allowXPDataStoreOperation() then return false, record end
 	local markOk, marked = pcall(function()
 		return xpReceiptStore:UpdateAsync(key, function(old)
 			if typeof(old) ~= "table" then return nil end
@@ -545,6 +551,7 @@ local function recoverPendingXPReceipt(record: any): (boolean, any)
 		end)
 	end)
 	if not markOk or typeof(marked) ~= "table" or marked.status ~= "Completed" then return false, record end
+	if not allowXPDataStoreOperation() then return false, record end
 	local clearOk, cleared = pcall(function()
 		return globalControlStore:UpdateAsync(GLOBAL_XP_BOOST_KEY, function(old)
 			if typeof(old) ~= "table" or old.pendingReceipt ~= pendingId then return old end
@@ -593,6 +600,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		return true, expiry, effectiveMultiplier
 	end
 
+	if not allowXPDataStoreOperation() then return false, 0, 1 end
 	local receiptReadOk, receiptRecord = pcall(function() return xpReceiptStore:GetAsync(receiptKey) end)
 	if not receiptReadOk then return false, 0, 1 end
 	if typeof(receiptRecord) == "table" and receiptRecord.status == "Completed" then
@@ -603,6 +611,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 	end
 
 	-- One small durable record per purchase; the shared timer record no longer grows.
+	if not allowXPDataStoreOperation() then return false, 0, 1 end
 	local preparedOk, prepared = pcall(function()
 		return xpReceiptStore:UpdateAsync(receiptKey, function(old)
 			if typeof(old) == "table" then return old end
@@ -622,6 +631,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 	end
 
 	local now = os.time()
+	if not allowXPDataStoreOperation() then return false, 0, 1 end
 	local applyOk, applied = pcall(function()
 		return globalControlStore:UpdateAsync(GLOBAL_XP_BOOST_KEY, function(old)
 			local data = if typeof(old) == "table" then table.clone(old) else {}
@@ -641,6 +651,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		return false, 0, 1
 	end
 
+	if not allowXPDataStoreOperation() then return false, 0, 1 end
 	local completeOk, completed = pcall(function()
 		return xpReceiptStore:UpdateAsync(receiptKey, function(old)
 			if typeof(old) ~= "table" or old.purchaseId ~= receiptId then return nil end
@@ -655,6 +666,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		return false, 0, 1
 	end
 
+	if not allowXPDataStoreOperation() then return false, 0, 1 end
 	local clearOk, cleared = pcall(function()
 		return globalControlStore:UpdateAsync(GLOBAL_XP_BOOST_KEY, function(old)
 			if typeof(old) ~= "table" or old.pendingReceipt ~= receiptId then return old end
