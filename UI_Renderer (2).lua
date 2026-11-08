@@ -881,7 +881,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	}, content)
 
 	local navButtons: {[string]: TextButton} = {}
-	local tabs = {"Home","Music","All Tracks","Audio ID","DJ Booth","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Moderation"}
+	local tabs = {"Home","Music","All Tracks","Audio ID","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Moderation"}
 
 	local function clearContent()
 		progressRefs = nil
@@ -1752,6 +1752,56 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 	end
 
+	local function renderXPBoosts()
+		sectionLabel("PLAYER PROGRESSION")
+		local xp = math.max(0, math.floor(tonumber(state.xp) or 0))
+		local level = math.max(1, math.floor(tonumber(state.level) or (math.floor(xp / 100) + 1)))
+		local toNext = math.max(0, math.floor(tonumber(state.xpToNextLevel) or (100 - (xp % 100))))
+		local progressCard = card(104)
+		label(progressCard, "LEVEL " .. tostring(level), UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.Gold, 15, true)
+		label(progressCard, tostring(xp) .. " XP  •  " .. tostring(toNext) .. " XP to next level",
+			UDim2.fromOffset(12, 34), UDim2.new(1, -24, 0, 18), C.White, 11, false)
+		local track = make("Frame", {Position=UDim2.fromOffset(12,64),Size=UDim2.new(1,-24,0,14),BackgroundColor3=C.SurfaceLight,BorderSizePixel=0}, progressCard)
+		corner(track, 7)
+		local fill = make("Frame", {Size=UDim2.new((xp % 100)/100,0,1,0),BackgroundColor3=C.Cyan,BorderSizePixel=0}, track)
+		corner(fill, 7)
+		label(progressCard, "Earn 10 base XP for each full minute played. Awards are server-authoritative.",
+			UDim2.fromOffset(12,82), UDim2.new(1,-24,0,16), C.Muted, 9, false)
+
+		sectionLabel("GLOBAL XP BOOST")
+		local multiplier = tonumber(state.xpMultiplier) or 1
+		local expiry = tonumber(state.xpBoostExpiresAt) or 0
+		local remaining = math.max(0, expiry - os.time())
+		local activeCard = card(76)
+		label(activeCard, if multiplier > 1 and remaining > 0 then string.format("%dx XP ACTIVE", multiplier) else "STANDARD XP RATE",
+			UDim2.fromOffset(12,8), UDim2.new(1,-24,0,22), if multiplier > 1 then C.Gold else C.Cyan, 13, true)
+		label(activeCard, if multiplier > 1 and remaining > 0
+			then string.format("Time remaining: %02d:%02d", math.floor(remaining/60), remaining%60)
+			else "No global boost is currently active.",
+			UDim2.fromOffset(12,36), UDim2.new(1,-24,0,18), C.Muted, 10, false)
+
+		local ids: any = if typeof(state.xpBoostProductIds) == "table" then state.xpBoostProductIds else {}
+		local twoId = tonumber(ids.twoX) or 0
+		local fourId = tonumber(ids.fourX) or 0
+		local twoCard = card(86)
+		label(twoCard, "2x XP • 15 MINUTES", UDim2.fromOffset(12,8), UDim2.new(1,-120,0,22), C.Cyan, 12, true)
+		label(twoCard, "Adds 15 minutes to the shared 2x timer.", UDim2.fromOffset(12,34), UDim2.new(1,-120,0,30), C.Muted, 9, false)
+		actionButton(twoCard, "BUY", UDim2.new(1,-104,0.5,-16), UDim2.fromOffset(92,32), function()
+			if twoId <= 0 then notify("Configure CONFIG.XPBoost2xProductId first.", C.Red); return end
+			MarketplaceService:PromptProductPurchase(player, twoId)
+		end, C.Cyan)
+		local fourCard = card(86)
+		label(fourCard, "4x XP • 30 MINUTES", UDim2.fromOffset(12,8), UDim2.new(1,-120,0,22), C.Gold, 12, true)
+		label(fourCard, "Adds 30 minutes to the shared 4x timer.", UDim2.fromOffset(12,34), UDim2.new(1,-120,0,30), C.Muted, 9, false)
+		actionButton(fourCard, "BUY", UDim2.new(1,-104,0.5,-16), UDim2.fromOffset(92,32), function()
+			if fourId <= 0 then notify("Configure CONFIG.XPBoost4xProductId first.", C.Red); return end
+			MarketplaceService:PromptProductPurchase(player, fourId)
+		end, C.Gold)
+		local note = card(54)
+		label(note, "Boosts apply to all players on live servers. The strongest active multiplier wins; repeat purchases extend that boost's timer.",
+			UDim2.fromOffset(12,0), UDim2.new(1,-24,1,0), C.Muted, 9, false)
+	end
+
 	local function renderTipJar()
 		sectionLabel("SUPPORT THE STAGE")
 		local info = card(68)
@@ -2275,6 +2325,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		["All Tracks"] = renderAllTracks,
 		["Audio ID"] = renderAudioId,
 		["DJ Booth"] = renderDJ,
+		["XP & Boosts"] = renderXPBoosts,
 		["Tip Jar"] = renderTipJar,
 		["Item Shop"] = renderShop,
 		["Daily Rewards"] = renderRewards,
