@@ -363,6 +363,7 @@ local studioXpBoostMultiplier = 1
 local studioXpBoostExpiresAt = 0
 local xpLastAwardAt: {[number]: number} = {}
 local xpFractional: {[number]: number} = {}
+local xpLastSaveAt: {[number]: number} = {}
 local settleAllXP: (() -> ())? = nil
 local xpStateDirty = false
 
@@ -2462,6 +2463,7 @@ local function onJoin(player: Player)
 	player:SetAttribute("ClubRank", getRank(player))
 	xpLastAwardAt[player.UserId] = os.clock()
 	xpFractional[player.UserId] = 0
+	xpLastSaveAt[player.UserId] = os.clock()
 	publishState(nil) -- also refreshes the staff roster for everyone with access
 end
 
@@ -2577,7 +2579,11 @@ local function settlePlayerXP(player: Player, nowClock: number): boolean
 	player:SetAttribute("XP", profile.xp)
 	player:SetAttribute("Level", math.floor(profile.xp / CONFIG.XPPerLevel) + 1)
 	player:SetAttribute("XPToNextLevel", CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel))
-	scheduleProfileSave(player)
+	local lastSavedAt = xpLastSaveAt[userId] or nowClock
+	if nowClock - lastSavedAt >= 60 then
+		xpLastSaveAt[userId] = nowClock
+		scheduleProfileSave(player)
+	end
 	return true
 end
 
@@ -2617,6 +2623,7 @@ Players.PlayerRemoving:Connect(function(player)
 	if settleAllXP then settlePlayerXP(player, os.clock()) end
 	xpLastAwardAt[userId] = nil
 	xpFractional[userId] = nil
+	xpLastSaveAt[userId] = nil
 	local finalSaveOk = saveProfile(player)
 	if finalSaveOk then
 		releaseProfileSession(userId)
