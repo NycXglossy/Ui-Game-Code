@@ -1,0 +1,2550 @@
+--!strict
+-- UI_Renderer
+-- Place as ModuleScript: ReplicatedStorage/UI_Renderer
+-- Complete native Roblox client UI for Sunset Stage Club.
+-- Privileged actions are delegated to UI_Network / UI_Server_Controller.
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local GroupService = game:GetService("GroupService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Renderer = {}
+
+local C = {
+	Base = Color3.fromRGB(15, 14, 18),
+	Surface = Color3.fromRGB(26, 24, 34),
+	SurfaceLight = Color3.fromRGB(40, 36, 51),
+	Magenta = Color3.fromRGB(255, 46, 147),
+	Cyan = Color3.fromRGB(0, 240, 255),
+	Orange = Color3.fromRGB(255, 140, 0),
+	Gold = Color3.fromRGB(252, 211, 77),
+	Purple = Color3.fromRGB(88, 28, 135),
+	Green = Color3.fromRGB(46, 204, 113),
+	White = Color3.fromRGB(255, 255, 255),
+	Muted = Color3.fromRGB(160, 155, 175),
+	Red = Color3.fromRGB(239, 68, 68),
+}
+local FONT = Enum.Font.Gotham
+local BOLD = Enum.Font.GothamBold
+local ITALIC = Enum.Font.SourceSansItalic
+
+local GENRES = {
+	{id="hiphop", name="Hip Hop / Rap", tagline="Heavy bass, big bars", color=Color3.fromRGB(192,38,211), tracks={
+		{"hh-0","Palm Tree Freestyle","Lil Coconut",184},{"hh-1","Tide Money","MC Lagoon",201},{"hh-2","Boardwalk Bounce","Kid Kahuna",176},{"hh-3","Sandcastle Kings","Reef Gang",213},{"hh-4","Midnight Luau","Big Pineapple",195},{"hh-5","Wave Check","Yung Tsunami",168}}},
+	{id="rnb", name="R&B / Soul", tagline="Smooth sunset grooves", color=Color3.fromRGB(244,63,94), tracks={
+		{"rnb-0","Golden Hour Love","Coral Rose",224},{"rnb-1","Slow Tide","Marina Soul",241},{"rnb-2","Tiki Torch Serenade","D'Angelo Bay",232},{"rnb-3","Velvet Shoreline","Honey Kai",207},{"rnb-4","Lantern Light","Nalu & The Keys",219}}},
+	{id="rock", name="Rock", tagline="Amps up to eleven", color=Color3.fromRGB(234,88,12), tracks={
+		{"rk-0","Volcano Riff","The Lava Kings",238},{"rk-1","Surf's Up Anthem","Riptide Rebels",199},{"rk-2","Driftwood Highway","Saltwater Saints",262},{"rk-3","Thunder on the Bay","Coral Crush",221}}},
+	{id="kpop", name="K-Pop", tagline="Choreo-ready hits", color=Color3.fromRGB(236,72,153), tracks={
+		{"kp-0","SUMMER GLITCH","NEONWAVE",192},{"kp-1","Pink Horizon","STARR1SE",205},{"kp-2","Island Signal","LUMI-9",187},{"kp-3","Heartbeat Lagoon","KORAL",199},{"kp-4","Firework Kiss","AURA X",181}}},
+	{id="latin", name="Latin Music", tagline="Reggaeton & salsa heat", color=Color3.fromRGB(245,158,11), tracks={
+		{"lt-0","Playa Caliente","DJ Mango",214},{"lt-1","Bailando en la Arena","Sol y Mar",228},{"lt-2","Noche Tropical","La Ola",203},{"lt-3","Fuego Lento","Rey Coco",197}}},
+	{id="edm", name="EDM", tagline="Drops over the ocean", color=Color3.fromRGB(34,211,238), tracks={
+		{"edm-0","Sunset Overdrive","Aqualux",246},{"edm-1","Neon Coastline","VOLTA",233},{"edm-2","Tidal Drop","Prism Reef",258},{"edm-3","Laser Lagoon","Kairo",219},{"edm-4","Afterglow Rave","SKYE.EXE",271},{"edm-5","Bassquake Beach","Subduction",205}}},
+	{id="country", name="Country", tagline="Boots in the sand", color=Color3.fromRGB(234,179,8), tracks={
+		{"ct-0","Beach Truck Blues","Dusty Shores",212},{"ct-1","Sunburnt Sweetheart","Cody Cove",198},{"ct-2","Barefoot Rodeo","The Palm Ranch",205}}},
+	{id="pop", name="Pop", tagline="Sing-along anthems", color=Color3.fromRGB(139,92,246), tracks={
+		{"pop-0","Electric Paradise","Mia Lumen",189},{"pop-1","Coconut Crush","Jade Rivers",176},{"pop-2","Ocean Eyes Tonight","Leo Starr",201},{"pop-3","Glow Up Summer","Nova Bay",183},{"pop-4","Postcard Heart","Kenna Blue",194}}},
+	{id="exclusive", name="Club Exclusives", tagline="Only at Sunset Stage", color=Color3.fromRGB(255,46,147), tracks={
+		{"ex-0","Sunset Stage Anthem","Club Resident",262},{"ex-1","Tiki Torch Theory","Club Resident ft. VOLTA",238},{"ex-2","Low-Poly Paradise","Pixel Palms",224},{"ex-3","Mainstage Moonrise","The Owners",289}}},
+}
+
+local TRACK_INDEX: {[string]: any} = {}
+local TRACK_GENRE: {[string]: any} = {}
+local ALL_TRACKS: {any} = {}
+for _, genre in ipairs(GENRES) do
+	for _, track in ipairs(genre.tracks) do
+		TRACK_INDEX[track[1] :: string] = track
+		TRACK_GENRE[track[1] :: string] = genre
+		table.insert(ALL_TRACKS, track)
+	end
+end
+
+local DONATIONS = {
+	{amount=10,label="Coconut",perk="Shoutout in chat",productId=0},
+	{amount=50,label="Pineapple",perk="Firework burst",productId=0},
+	{amount=100,label="Tiki Torch",perk="Stage confetti",productId=0},
+	{amount=500,label="Volcano",perk="Lava light show",productId=0},
+	{amount=1000,label="Island Legend",perk="Name on the big screen",productId=0},
+}
+local SHOP = {
+	{name="Custom Glowsticks",desc="Dual-wield glowsticks synced to stage lights.",price=75,rarity="Common",kind="Product",id=0},
+	{name="Tiki Mask",desc="Hand-carved mask with glowing ember eyes.",price=250,rarity="Rare",kind="Product",id=0},
+	{name="Neon Aura Effect",desc="A magenta-cyan aura that pulses on every beat.",price=600,rarity="Epic",kind="Product",id=0},
+	{name="VIP Backstage Pass",desc="Backstage lounge, priority song requests, 4 queue slots and 3s request cooldown.",price=1500,rarity="Legendary",kind="GamePass",passKey="vip",id=0},
+	{name="VVIP Ocean Crown Pass",desc="Everything in VIP plus 6 queue slots, 2s cooldown and higher request priority.",price=2500,rarity="Mythic",kind="GamePass",passKey="vvip",id=0},
+	{name="Tiki Tide Sultan Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="sultan",id=0},
+	{name="Neon Flower Lei",desc="Glowing hibiscus lei with petal trails.",price=150,rarity="Rare",kind="Product",id=0},
+	{name="LED Party Shades",desc="Visualizer lenses that react to the current track.",price=320,rarity="Epic",kind="Product",id=0},
+}
+local REWARDS = {
+	{day=1,label="50 Coins"},{day=2,label="2x Glowsticks"},{day=3,label="100 Tickets"},
+	{day=4,label="Song Skip Token"},{day=5,label="250 Coins"},{day=6,label="Neon Trail"},{day=7,label="Exclusive Title Tag"},
+}
+local TAGS = {
+	{id="vip",label="VIP",source="VIP Pass",owned=true,a=Color3.fromRGB(244,114,182),b=Color3.fromRGB(217,70,239)},
+	{id="party",label="Party Animal",source="Dance 10 hours",owned=true,a=Color3.fromRGB(251,146,60),b=Color3.fromRGB(252,211,77)},
+	{id="wave",label="Wave Rider",source="Login streak",owned=true,a=Color3.fromRGB(103,232,249),b=Color3.fromRGB(14,165,233)},
+	{id="tiki",label="Tiki Legend",source="Shop",owned=false,price=400,a=Color3.fromRGB(252,211,77),b=Color3.fromRGB(239,68,68)},
+	{id="sunset",label="Sunset Soul",source="Shop",owned=false,price=250,a=Color3.fromRGB(236,72,153),b=Color3.fromRGB(253,224,71)},
+	{id="bass",label="Bass Head",source="Shop",owned=false,price=150,a=Color3.fromRGB(167,139,250),b=Color3.fromRGB(99,102,241)},
+	{id="island",label="Island Royalty",source="Day 7 reward",owned=false,a=Color3.fromRGB(254,240,138),b=Color3.fromRGB(168,85,247)},
+}
+
+-- Device profiles: compact sizing for each platform.
+-- base   = UIScale applied to the whole panel (smaller = more compact)
+-- ref    = viewport the base scale is tuned for; smaller viewports shrink further (never below minF)
+-- w / h  = panel size as a fraction of the screen
+-- min/max= panel pixel limits (in unscaled UI units)
+local PROFILES: {[string]: any} = {
+	Desktop = { base = 0.88, refX = 1280, refY = 720, minF = 0.80, w = 0.62, h = 0.74,
+		min = Vector2.new(320, 300), max = Vector2.new(820, 640), toggle = 48, togglePos = UDim2.new(1, -14, 0.55, 0), hudTop = 8 },
+	Tablet = { base = 0.92, refX = 1024, refY = 600, minF = 0.85, w = 0.72, h = 0.80,
+		min = Vector2.new(320, 280), max = Vector2.new(820, 640), toggle = 52, togglePos = UDim2.new(1, -14, 0.5, 0), hudTop = 8 },
+	Mobile = { base = 0.90, refX = 640, refY = 340, minF = 0.90, w = 0.94, h = 0.90,
+		min = Vector2.new(280, 220), max = Vector2.new(640, 520), toggle = 44, togglePos = UDim2.new(1, -10, 0.35, 0), hudTop = 4 },
+	VR = { base = 0.90, refX = 1280, refY = 720, minF = 0.90, w = 0.60, h = 0.70,
+		min = Vector2.new(320, 300), max = Vector2.new(820, 640), toggle = 56, togglePos = UDim2.new(1, -24, 0.5, 0), hudTop = 40 },
+	-- Consoles and smart TVs both report as Roblox's "ten-foot interface".
+	Console = { base = 1.00, refX = 1280, refY = 720, minF = 1.00, w = 0.66, h = 0.76,
+		min = Vector2.new(360, 320), max = Vector2.new(860, 660), toggle = 56, togglePos = UDim2.new(1, -48, 0.5, 0), hudTop = 36 },
+}
+
+local function detectDevice(viewport: Vector2): string
+	if UserInputService.VREnabled then return "VR" end
+	if GuiService:IsTenFootInterface() then return "Console" end
+	local touch = UserInputService.TouchEnabled
+	local keyboard = UserInputService.KeyboardEnabled
+	if touch and not keyboard then
+		return if math.min(viewport.X, viewport.Y) >= 600 then "Tablet" else "Mobile"
+	end
+	if UserInputService.GamepadEnabled and not keyboard and not touch then return "Console" end
+	return "Desktop"
+end
+
+-- Developer Product IDs for the two paid title slots (0 = not configured; the server can override via state).
+local TITLE_SLOT_PRODUCTS: {[number]: number} = { [2] = 0, [3] = 0 }
+local TITLE_SLOT_PRICES: {[number]: number} = { [2] = 99, [3] = 199 }
+
+local TITLE_FIXED = {
+	{ id = "gold", name = "Gold", color = C.Gold },
+	{ id = "cyan", name = "Cyan", color = C.Cyan },
+	{ id = "pink", name = "Pink", color = C.Magenta },
+	{ id = "purple", name = "Purple", color = Color3.fromRGB(168, 85, 247) },
+	{ id = "red", name = "Red", color = C.Red },
+	{ id = "green", name = "Green", color = C.Green },
+}
+local TITLE_GRADIENTS = {
+	{ id="amethyst", name="Amethyst", a=Color3.fromRGB(192,132,252), b=Color3.fromRGB(109,40,217) },
+	{ id="aurora", name="Aurora", a=Color3.fromRGB(52,211,153), b=Color3.fromRGB(167,139,250) },
+	{ id="candy", name="Candy", a=Color3.fromRGB(255,79,163), b=Color3.fromRGB(125,211,252) },
+	{ id="cotton", name="Cotton", a=Color3.fromRGB(251,207,232), b=Color3.fromRGB(224,242,254) },
+	{ id="cyber", name="Cyber", a=Color3.fromRGB(0,245,255), b=Color3.fromRGB(255,0,212) },
+	{ id="desert", name="Desert", a=Color3.fromRGB(244,162,97), b=Color3.fromRGB(233,196,106) },
+	{ id="emerald", name="Emerald", a=Color3.fromRGB(52,211,153), b=Color3.fromRGB(4,120,87) },
+	{ id="fire", name="Fire", a=Color3.fromRGB(253,224,71), b=Color3.fromRGB(220,38,38) },
+	{ id="forest", name="Forest", a=Color3.fromRGB(134,168,107), b=Color3.fromRGB(20,83,45) },
+	{ id="galaxy", name="Galaxy", a=Color3.fromRGB(49,46,129), b=Color3.fromRGB(217,70,239) },
+	{ id="ice", name="Ice", a=Color3.fromRGB(224,247,255), b=Color3.fromRGB(96,165,250) },
+	{ id="lava", name="Lava", a=Color3.fromRGB(251,146,60), b=Color3.fromRGB(127,29,29) },
+	{ id="midnight", name="Midnight", a=Color3.fromRGB(30,27,75), b=Color3.fromRGB(71,85,105) },
+	{ id="neon", name="Neon", a=C.Cyan, b=C.Magenta },
+	{ id="ocean", name="Ocean", a=C.Cyan, b=Color3.fromRGB(37,99,235) },
+	{ id="pastel", name="Pastel", a=Color3.fromRGB(249,168,212), b=Color3.fromRGB(165,180,252) },
+	{ id="purple", name="Purple", a=Color3.fromRGB(192,132,252), b=Color3.fromRGB(88,28,135) },
+	{ id="rosegold", name="Rosegold", a=Color3.fromRGB(244,182,166), b=Color3.fromRGB(183,110,121) },
+	{ id="royal", name="Royal", a=C.Gold, b=Color3.fromRGB(124,58,237) },
+	{ id="sakura", name="Sakura", a=Color3.fromRGB(253,164,175), b=Color3.fromRGB(252,231,243) },
+	{ id="sapphire", name="Sapphire", a=Color3.fromRGB(96,165,250), b=Color3.fromRGB(30,64,175) },
+	{ id="sunset", name="Sunset", a=C.Orange, b=C.Magenta },
+	{ id="thunder", name="Thunder", a=Color3.fromRGB(253,224,71), b=Color3.fromRGB(67,56,202) },
+	{ id="tropical", name="Tropical", a=Color3.fromRGB(45,212,191), b=Color3.fromRGB(250,204,21) },
+	{ id="volcano", name="Volcano", a=Color3.fromRGB(251,113,133), b=Color3.fromRGB(127,29,29) },
+}
+local TITLE_TWOTONES = table.clone(TITLE_GRADIENTS)
+local TITLE_SHIMMERS = table.clone(TITLE_GRADIENTS)
+local TITLE_RAINBOWS: {any} = {
+	{ id = "classic", name = "Classic", s = 0.85, v = 1 },
+	{ id = "pastel", name = "Pastel", s = 0.4, v = 1 },
+	{ id = "neon", name = "Neon", s = 1, v = 1 },
+	{ id = "deep", name = "Deep", s = 1, v = 0.8 },
+}
+-- Palette rainbow sets: every gradient palette is also a Rainbow color set (a flowing loop of its two colors).
+-- "pastel" and "neon" already exist above as spectrum variants, so those two keep their original behavior.
+do
+	local taken: {[string]: boolean} = {}
+	for _, existing in ipairs(TITLE_RAINBOWS) do taken[existing.id] = true end
+	for _, palette in ipairs(TITLE_GRADIENTS) do
+		if not taken[palette.id] then
+			table.insert(TITLE_RAINBOWS, { id = palette.id, name = palette.name, a = palette.a, b = palette.b })
+		end
+	end
+end
+local TITLE_RGB_SPEEDS = {
+	{ id = "slow", name = "Slow", speed = 0.12 },
+	{ id = "normal", name = "Normal", speed = 0.25 },
+	{ id = "fast", name = "Fast", speed = 0.5 },
+}
+local TITLE_EFFECTS = {
+	{ id = "fixed", name = "Fixed", sets = TITLE_FIXED },
+	{ id = "rgb", name = "RGB", sets = TITLE_RGB_SPEEDS },
+	{ id = "gradient", name = "Gradient", sets = TITLE_GRADIENTS },
+	{ id = "rainbow", name = "Rainbow", sets = TITLE_RAINBOWS },
+	{ id = "twotone", name = "Two-Tone", sets = TITLE_TWOTONES },
+	{ id = "shimmer", name = "Shimmer", sets = TITLE_SHIMMERS },
+}
+local TITLE_FONTS = {
+	{ id = "gotham", name = "Gotham", font = Enum.Font.GothamBold },
+	{ id = "fredoka", name = "Fredoka", font = Enum.Font.FredokaOne },
+	{ id = "arcade", name = "Arcade", font = Enum.Font.Arcade },
+	{ id = "cartoon", name = "Cartoon", font = Enum.Font.Cartoon },
+	{ id = "scifi", name = "Sci-Fi", font = Enum.Font.SciFi },
+	{ id = "fantasy", name = "Fantasy", font = Enum.Font.Fantasy },
+	{ id = "bangers", name = "Bangers", font = Enum.Font.Bangers },
+	{ id = "luckiest", name = "Luckiest", font = Enum.Font.LuckiestGuy },
+	{ id = "marker", name = "Marker", font = Enum.Font.PermanentMarker },
+	{ id = "hand", name = "Handwritten", font = Enum.Font.PatrickHand },
+	{ id = "retro", name = "Retro", font = Enum.Font.SpecialElite },
+	{ id = "code", name = "Code", font = Enum.Font.Code },
+}
+local TITLE_STYLES = { "normal", "bold", "italic", "outline" }
+
+local function findById(list: {any}, id: string): any
+	for _, entry in ipairs(list) do
+		if entry.id == id then return entry end
+	end
+	return nil
+end
+
+local function titleSetFor(effectId: string, setId: string): any
+	local effect = findById(TITLE_EFFECTS, effectId)
+	if not effect then return TITLE_FIXED[1] end
+	return findById(effect.sets, setId) or effect.sets[1]
+end
+
+local function normalizeTitle(data: any): {[string]: any}
+	local d: any = if typeof(data) == "table" then data else {}
+	local effect = tostring(d.effect or "fixed")
+	if not findById(TITLE_EFFECTS, effect) then effect = "fixed" end
+	local set = titleSetFor(effect, tostring(d.set or d.colorSet or d.color or ""))
+	local font = tostring(d.font or "gotham")
+	if not findById(TITLE_FONTS, font) then font = "gotham" end
+	local style = tostring(d.style or "normal")
+	if not table.find(TITLE_STYLES, style) then style = "normal" end
+	return {
+		text = tostring(d.text or ""),
+		effect = effect,
+		set = set.id,
+		font = font,
+		style = style,
+		height = math.clamp(tonumber(d.heightOffset or d.height) or 2.5, 0, 8),
+		distance = math.clamp(tonumber(d.viewDistance or d.distance) or 80, 20, 200),
+	}
+end
+
+-- Circular palette (A, midpoint, B, midpoint) used by palette-based Rainbow sets; mirrors the server.
+local function rainbowPaletteFor(set: any): {Color3}
+	local middle = set.a:Lerp(set.b, 0.5)
+	return { set.a, middle, set.b, middle }
+end
+
+local function titleColorHex(effectId: string, setId: string): {string}
+	local set = titleSetFor(effectId, setId)
+	local function hex(color: Color3): string return "#" .. color:ToHex() end
+	if effectId == "fixed" then
+		return { hex(set.color) }
+	elseif effectId == "gradient" or effectId == "twotone" or effectId == "shimmer" then
+		return { hex(set.a), hex(set.b) }
+	elseif effectId == "rainbow" then
+		local out = {}
+		if set.a ~= nil then
+			for _, color in ipairs(rainbowPaletteFor(set)) do table.insert(out, hex(color)) end
+			return out
+		end
+		for i = 0, 6 do table.insert(out, hex(Color3.fromHSV(i / 7, set.s, set.v))) end
+		return out
+	end
+	return {}
+end
+
+local function escapeRich(text: string): string
+	text = string.gsub(text, "&", "&amp;")
+	text = string.gsub(text, "<", "&lt;")
+	text = string.gsub(text, ">", "&gt;")
+	return text
+end
+
+-- Rotates a circular palette smoothly; phase 0..1 is one full loop.
+local function flowPaletteSequence(colors: {Color3}, phase: number): ColorSequence
+	local count = #colors
+	local position = (phase % 1) * count
+	local base = math.floor(position)
+	local fraction = position - base
+	local keypoints = {}
+	for i = 0, count do
+		local from = colors[((i + base) % count) + 1]
+		local to = colors[((i + base + 1) % count) + 1]
+		keypoints[i + 1] = ColorSequenceKeypoint.new(i / count, from:Lerp(to, fraction))
+	end
+	return ColorSequence.new(keypoints)
+end
+
+-- Styles a TextLabel from a title spec (effect, color set, font, style) and returns an
+-- update(t) function that animates the RGB and Rainbow effects (a no-op for static ones).
+local function styleTitleLabel(label: TextLabel, spec: any): (number) -> ()
+	local fontEntry = findById(TITLE_FONTS, spec.font) or TITLE_FONTS[1]
+	label.Font = fontEntry.font
+	label.RichText = true
+	local text = escapeRich(if spec.text ~= "" then spec.text else "Your Title")
+	if spec.style == "bold" then text = "<b>" .. text .. "</b>"
+	elseif spec.style == "italic" then text = "<i>" .. text .. "</i>" end
+	label.Text = text
+	label.TextStrokeColor3 = Color3.new(0, 0, 0)
+	label.TextStrokeTransparency = if spec.style == "outline" then 0 else 1
+	label.TextColor3 = C.White
+
+	local gradient = label:FindFirstChildOfClass("UIGradient") :: UIGradient?
+	if not gradient then
+		gradient = Instance.new("UIGradient")
+		gradient.Parent = label
+	end
+	local grad = gradient :: UIGradient
+	local set = titleSetFor(spec.effect, spec.set)
+	grad.Enabled = true
+	local function noop(_: number) end
+
+	if spec.effect == "fixed" then
+		grad.Enabled = false
+		label.TextColor3 = set.color
+		return noop
+	elseif spec.effect == "gradient" then
+		grad.Color = ColorSequence.new(set.a, set.b)
+		return noop
+	elseif spec.effect == "twotone" then
+		grad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, set.a),
+			ColorSequenceKeypoint.new(0.499, set.a),
+			ColorSequenceKeypoint.new(0.5, set.b),
+			ColorSequenceKeypoint.new(1, set.b),
+		})
+		return noop
+	elseif spec.effect == "shimmer" then
+		grad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, set.a),
+			ColorSequenceKeypoint.new(0.36, set.a),
+			ColorSequenceKeypoint.new(0.5, C.White),
+			ColorSequenceKeypoint.new(0.64, set.b),
+			ColorSequenceKeypoint.new(1, set.b),
+		})
+		grad.Rotation = 0
+		return function(t: number)
+			grad.Offset = Vector2.new(((t * 0.45) % 2) - 1, 0)
+		end
+	elseif spec.effect == "rainbow" then
+		if set.a ~= nil then
+			local palette = rainbowPaletteFor(set)
+			grad.Color = flowPaletteSequence(palette, 0)
+			return function(t: number)
+				grad.Color = flowPaletteSequence(palette, t * 0.12)
+			end
+		end
+		return function(t: number)
+			local keypoints = {}
+			for i = 0, 7 do
+				local hue = ((i / 7) - t * 0.12) % 1
+				keypoints[i + 1] = ColorSequenceKeypoint.new(i / 7, Color3.fromHSV(hue, set.s, set.v))
+			end
+			grad.Color = ColorSequence.new(keypoints)
+		end
+	else -- rgb
+		grad.Enabled = false
+		return function(t: number)
+			label.TextColor3 = Color3.fromHSV((t * set.speed) % 1, 0.9, 1)
+		end
+	end
+end
+
+-- Accepts a bare ID, "rbxassetid://123", or a Creator Hub link such as
+-- https://create.roblox.com/store/asset/123/Name and returns the numeric asset ID.
+local function parseAssetId(text: string): number?
+	local raw = tostring(text)
+	local id = string.match(raw, "rbxassetid://(%d+)")
+		or string.match(raw, "asset/(%d+)")
+		or string.match(raw, "[?&]id=(%d+)")
+		or string.match(raw, "^%s*(%d+)%s*$")
+		or string.match(raw, "(%d%d%d%d+)")
+	local number = tonumber(id)
+	if number and number > 0 and number < 9007199254740992 then
+		return math.floor(number)
+	end
+	return nil
+end
+
+local function corner(parent: Instance, radius: number)
+	local obj = Instance.new("UICorner")
+	obj.CornerRadius = UDim.new(0, radius)
+	obj.Parent = parent
+	return obj
+end
+
+local function stroke(parent: Instance, color: Color3, thickness: number?)
+	local obj = Instance.new("UIStroke")
+	obj.Color = color
+	obj.Thickness = thickness or 1
+	obj.Transparency = 1
+	obj.Parent = parent
+	return obj
+end
+
+local function make(className: string, props: {[string]: any}, parent: Instance?): any
+	local obj = Instance.new(className)
+	for key, value in pairs(props) do
+		(obj :: any)[key] = value
+	end
+	if parent then obj.Parent = parent end
+	return obj
+end
+
+local function formatTime(seconds: number): string
+	local value = math.max(0, math.floor(seconds))
+	return string.format("%d:%02d", math.floor(value / 60), value % 60)
+end
+
+local function safeCall(callback: any, ...)
+	if typeof(callback) == "function" then
+		local ok, err = pcall(callback, ...)
+		if not ok then warn("[ClubMusic UI] " .. tostring(err)) end
+	end
+end
+
+-- Client-side defense in depth only. The server must still validate every action,
+-- permission, argument, cooldown, and ownership check independently.
+local ALLOWED_ACTIONS: {[string]: boolean} = {
+	ReloadSong = true, ToggleFavorite = true, RequestTrack = true, VoteSkip = true,
+	RequestAudioAsset = true, DJSkip = true, DJToggleLock = true, DJClearQueue = true,
+	DJMoveUp = true, DJRemove = true, ModBlockUser = true, ModSetVip = true,
+	ModPurgeUser = true, ClaimDailyReward = true, EquipTitleTag = true,
+	SaveTitleSlot = true, SetTitleVisible = true, SelectTitleSlot = true,
+	ClearTitleSlot = true,
+}
+local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
+	RequestTrack = true, ToggleFavorite = true, VoteSkip = true,
+	DJSkip = true, DJMoveUp = true, DJRemove = true, ClaimDailyReward = true,
+	EquipTitleTag = true, RequestAudioAsset = true, SaveTitleSlot = true,
+	SaveCustomTitle = true,
+	-- Wrappers that UI_Network exposes; act() prefers these over raw Network.Send.
+	ReloadSong = true, DJClearQueue = true, DJToggleLock = true,
+	ModBlockUser = true, ModSetVip = true, ModPurgeUser = true,
+	SelectTitleSlot = true, ClearTitleSlot = true, SetTitleVisible = true,
+}
+local ACTION_MIN_INTERVAL: {[string]: number} = {
+	RequestTrack = 0.35, RequestAudioAsset = 1.0, ReloadSong = 3.0,
+	SaveTitleSlot = 0.35, ClaimDailyReward = 0.35,
+}
+
+local function sanitizeStateValue(value: any, depth: number, seen: {[any]: boolean}): any
+	local kind = typeof(value)
+	if kind == "string" then
+		return string.sub(value, 1, 500)
+	elseif kind == "number" then
+		if value ~= value or value == math.huge or value == -math.huge then return nil end
+		return math.clamp(value, -1e9, 1e9)
+	elseif kind == "boolean" then
+		return value
+	elseif kind ~= "table" or depth >= 5 or seen[value] then
+		return nil
+	end
+	seen[value] = true
+	local copy = {}
+	local count = 0
+	for key, child in pairs(value) do
+		count += 1
+		if count > 500 then break end
+		if typeof(key) == "string" then
+			copy[string.sub(key, 1, 80)] = sanitizeStateValue(child, depth + 1, seen)
+		elseif typeof(key) == "number" and key == math.floor(key) and key >= 1 and key <= 10000 then
+			copy[key] = sanitizeStateValue(child, depth + 1, seen)
+		end
+	end
+	seen[value] = nil
+	return copy
+end
+
+function Renderer.Mount(player: Player, Network: {[string]: any})
+	assert(player and player:IsA("Player"), "Renderer.Mount expected a Player")
+	assert(typeof(Network) == "table", "Renderer.Mount expected the UI_Network table")
+
+	local playerGui = player:WaitForChild("PlayerGui")
+	local connections: {RBXScriptConnection} = {}
+	local destroyed = false
+	local expanded = false
+	local activeTab = "Home"
+	local selectedGenre = "hiphop"
+	local trackSearch = ""
+	local trackGenreFilter = "all"
+	local volume = 0.8
+	local lastVolume = 0.8
+	local sliderDragging = false
+	local lastReload = 0
+	local audioInput = ""
+	local audioLookup: {[string]: any}? = nil
+	local lookupSerial = 0
+	local previewSound: Sound? = nil
+	local previewId: number? = nil
+	local renderTabFn: (() -> ())? = nil
+	local hudBottom = 54
+	local titleSub = "collection"
+	local titleEditSlot = 1
+	local titleDraft: {[string]: any}? = nil
+	local titleAnimators: {(number) -> ()} = {}
+	local applyStateFn: ((any) -> ())? = nil
+	local state: {[string]: any} = {}
+	local toastSerial = 0
+	local lastActionAt: {[string]: number} = {}
+	local lastAudioLookupAt = -math.huge
+
+	local function perm(): number
+		return tonumber(state.perm) or 0
+	end
+
+	local function nz(value: any, fallback: string): string
+		if value == nil or value == "" then return fallback end
+		return tostring(value)
+	end
+
+	-- Now-playing progress is interpolated locally between server resyncs.
+	local elapsedBase = 0
+	local baseClock = os.clock()
+	local progressRefs: {fill: any, timeLabel: any, duration: number}? = nil
+	local vizRefs: {container: any, bars: {any}, phases: {number}, seed: number}? = nil
+	local sliderRefs: {track: any, setFromX: (number) -> ()}? = nil
+
+	local function syncElapsed()
+		local np: any = state.nowPlaying
+		if typeof(np) == "table" then
+			elapsedBase = tonumber(np.elapsed) or 0
+			baseClock = os.clock()
+		end
+	end
+
+	local function updateProgress()
+		local refs = progressRefs
+		if not refs or not refs.fill.Parent then return end
+		local elapsed = math.clamp(elapsedBase + (os.clock() - baseClock), 0, refs.duration)
+		refs.fill.Size = UDim2.new(math.clamp(elapsed / refs.duration, 0, 1), 0, 1, 0)
+		refs.timeLabel.Text = formatTime(elapsed) .. " / " .. formatTime(refs.duration)
+	end
+
+	local oldGui = playerGui:FindFirstChild("SunsetStageClubUI")
+	if oldGui then oldGui:Destroy() end
+
+	local gui = make("ScreenGui", {
+		Name = "SunsetStageClubUI",
+		ResetOnSpawn = false,
+		IgnoreGuiInset = false,
+		DisplayOrder = 40,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, playerGui) :: ScreenGui
+
+	local layoutScale = 1
+
+	local function notify(message: string, color: Color3?)
+		toastSerial += 1
+		local thisToast = toastSerial
+		local toast = make("TextLabel", {
+			Name = "Toast",
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(0.5, 0, 0, hudBottom),
+			Size = UDim2.new(0.9 / layoutScale, 0, 0, 42),
+			BackgroundColor3 = C.SurfaceLight,
+			BackgroundTransparency = 0,
+			Text = message,
+			TextColor3 = color or C.White,
+			TextSize = 13,
+			Font = BOLD,
+			TextWrapped = true,
+			ZIndex = 100,
+		}, gui)
+		corner(toast, 10)
+		stroke(toast, color or C.Cyan, 1)
+		make("UISizeConstraint", { MaxSize = Vector2.new(340, 42) }, toast)
+		make("UIScale", { Scale = layoutScale }, toast)
+		task.delay(2.6, function()
+			if toast.Parent then
+				local tween = TweenService:Create(toast, TweenInfo.new(0.2), {BackgroundTransparency=1, TextTransparency=1})
+				tween:Play()
+				tween.Completed:Once(function() if toast.Parent then toast:Destroy() end end)
+			end
+		end)
+		return thisToast
+	end
+
+	local function send(action: string, payload: any?)
+		if destroyed then return end
+		if typeof(action) ~= "string" or not ALLOWED_ACTIONS[action] then
+			warn("[ClubMusic UI] Blocked unknown client action.")
+			return
+		end
+		if payload ~= nil and typeof(payload) ~= "table" then
+			warn("[ClubMusic UI] Blocked malformed action payload: " .. action)
+			return
+		end
+		local now = os.clock()
+		local interval = ACTION_MIN_INTERVAL[action] or 0.10
+		if now - (lastActionAt[action] or 0) < interval then return end
+		lastActionAt[action] = now
+		if typeof(Network.Send) ~= "function" then
+			notify("Network action unavailable: " .. action, C.Red)
+			return
+		end
+		local ok, result = pcall(Network.Send, action, payload or {})
+		if not ok then
+			warn("[ClubMusic UI] Send failed: " .. tostring(result))
+			notify("Could not send request.", C.Red)
+		end
+	end
+
+	local function callNetwork(method: string, ...)
+		if destroyed then return end
+		if typeof(method) ~= "string" or not ALLOWED_NETWORK_METHODS[method] then
+			warn("[ClubMusic UI] Blocked unknown network method.")
+			return
+		end
+		local fn = Network[method]
+		-- Missing optional wrappers fall back to Network.Send at the call site.
+		if typeof(fn) ~= "function" then return end
+		local now = os.clock()
+		local interval = ACTION_MIN_INTERVAL[method] or 0.10
+		if now - (lastActionAt[method] or 0) < interval then return end
+		lastActionAt[method] = now
+		local ok, err = pcall(fn, ...)
+		if not ok then
+			warn("[ClubMusic UI] " .. method .. ": " .. tostring(err))
+			notify("Action failed.", C.Red)
+		end
+	end
+
+	local toggleButton = make("TextButton", {
+		Name = "OpenButton",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -18, 0.55, 0),
+		Size = UDim2.fromOffset(54, 54),
+		BackgroundColor3 = C.Magenta,
+		Text = "♫",
+		TextColor3 = C.White,
+		TextSize = 28,
+		Font = BOLD,
+		AutoButtonColor = true,
+		ZIndex = 10,
+	}, gui) :: TextButton
+	corner(toggleButton, 18)
+	stroke(toggleButton, C.Cyan, 2)
+
+	-- Top bar HUD: always-visible now-playing strip (tap it to open the club panel).
+	local hud = make("TextButton", {
+		Name = "TopBarHUD",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 8),
+		Size = UDim2.new(0.92, 0, 0, 38),
+		BackgroundColor3 = C.Surface,
+		BackgroundTransparency = 0,
+		Text = "",
+		AutoButtonColor = false,
+	}, gui) :: TextButton
+	corner(hud, 14)
+	stroke(hud, C.Magenta, 1.5)
+	local hudConstraint = make("UISizeConstraint", { MaxSize = Vector2.new(400, 38) }, hud)
+	local hudScale = make("UIScale", { Scale = 1 }, hud)
+	local hudBars: {any} = {}
+	local hudBarHolder = make("Frame", {
+		Position = UDim2.fromOffset(12, 9),
+		Size = UDim2.fromOffset(20, 20),
+		BackgroundTransparency = 1,
+	}, hud)
+	for i = 1, 4 do
+		local piece = make("Frame", {
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, (i - 1) * 5, 1, 0),
+			Size = UDim2.new(0, 3, 0.3, 0),
+			BackgroundColor3 = C.Magenta:Lerp(C.Cyan, (i - 1) / 3),
+			BorderSizePixel = 0,
+		}, hudBarHolder)
+		corner(piece, 1)
+		hudBars[i] = piece
+	end
+	local hudTitle = make("TextLabel", {
+		Position = UDim2.fromOffset(40, 3),
+		Size = UDim2.new(1, -140, 0, 18),
+		BackgroundTransparency = 1,
+		Text = "",
+		TextColor3 = C.White,
+		TextSize = 12,
+		Font = BOLD,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	}, hud)
+	local hudArtist = make("TextLabel", {
+		Position = UDim2.fromOffset(40, 19),
+		Size = UDim2.new(1, -140, 0, 14),
+		BackgroundTransparency = 1,
+		Text = "",
+		TextColor3 = C.Muted,
+		TextSize = 9,
+		Font = FONT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+	}, hud)
+	local hudTime = make("TextLabel", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 3),
+		Size = UDim2.fromOffset(88, 16),
+		BackgroundTransparency = 1,
+		Text = "",
+		TextColor3 = C.Cyan,
+		TextSize = 10,
+		Font = BOLD,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	}, hud)
+	local hudStatus = make("TextLabel", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 19),
+		Size = UDim2.fromOffset(88, 14),
+		BackgroundTransparency = 1,
+		Text = "",
+		TextColor3 = C.Muted,
+		TextSize = 9,
+		Font = FONT,
+		TextXAlignment = Enum.TextXAlignment.Right,
+	}, hud)
+	local hudTrack = make("Frame", {
+		Position = UDim2.new(0, 14, 1, -5),
+		Size = UDim2.new(1, -28, 0, 2),
+		BackgroundColor3 = C.SurfaceLight,
+		BorderSizePixel = 0,
+	}, hud)
+	local hudFill = make("Frame", {
+		Size = UDim2.fromScale(0, 1),
+		BackgroundColor3 = C.Magenta,
+		BorderSizePixel = 0,
+	}, hudTrack)
+
+	local function updateHud()
+		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
+		if now then
+			hudTitle.Text = "♫  " .. nz(now.title, "Unknown track")
+			hudArtist.Text = nz(now.artist, "Sunset Stage Club")
+			local duration = math.max(1, tonumber(now.duration) or 1)
+			local elapsed = math.clamp(elapsedBase + (os.clock() - baseClock), 0, duration)
+			hudFill.Size = UDim2.fromScale(math.clamp(elapsed / duration, 0, 1), 1)
+			hudTime.Text = formatTime(elapsed) .. " / " .. formatTime(duration)
+		else
+			hudTitle.Text = "♫  The stage is warming up"
+			hudArtist.Text = "Sunset Stage Club"
+			hudFill.Size = UDim2.fromScale(0, 1)
+			hudTime.Text = ""
+		end
+		if state.blocked == true then
+			hudStatus.Text = "Requests off"
+		elseif state.locked == true and perm() < 1 then
+			hudStatus.Text = "Requests locked"
+		else
+			local req: any = if typeof(state.requests) == "table" then state.requests else {}
+			hudStatus.Text = string.format("%sReq %d/%d", if state.vip == true then "★ " else "", tonumber(req.used) or 0, tonumber(req.limit) or 0)
+		end
+	end
+	updateHud()
+
+	local shade = make("TextButton", {
+		Name = "Backdrop",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.new(0,0,0),
+		BackgroundTransparency = 0.45,
+		Text = "",
+		Visible = false,
+		AutoButtonColor = false,
+	}, gui) :: TextButton
+
+	local panel = make("Frame", {
+		Name = "MainPanel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(0.88, 0, 0.82, 0),
+		BackgroundColor3 = C.Base,
+		Visible = false,
+		ClipsDescendants = true,
+	}, gui) :: Frame
+	corner(panel, 24)
+	stroke(panel, C.Magenta, 2)
+
+	local sizeConstraint = make("UISizeConstraint", {
+		MinSize = Vector2.new(320, 360),
+		MaxSize = Vector2.new(920, 720),
+	}, panel)
+	local panelScale = make("UIScale", { Scale = 1 }, panel)
+	local panelTarget = UDim2.new(0.88, 0, 0.82, 0)
+	local currentDevice = "Desktop"
+
+	local header = make("Frame", {
+		Name = "Header",
+		Size = UDim2.new(1, 0, 0, 68),
+		BackgroundColor3 = C.Surface,
+		BorderSizePixel = 0,
+	}, panel) :: Frame
+	-- Header follows the panel's rounded top corners; the filler squares off its bottom edge.
+	corner(header, 24)
+	make("Frame", {
+		Name = "HeaderSquare",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.new(1, 0, 0, 24),
+		BackgroundColor3 = C.Surface,
+		BorderSizePixel = 0,
+	}, header)
+	local title = make("TextLabel", {
+		Position = UDim2.fromOffset(18, 8),
+		Size = UDim2.new(1, -90, 0, 28),
+		BackgroundTransparency = 1,
+		Text = "SUNSET STAGE  ✦  CLUB",
+		TextColor3 = C.White,
+		TextSize = 18,
+		Font = BOLD,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, header)
+	local subtitle = make("TextLabel", {
+		Position = UDim2.fromOffset(19, 37),
+		Size = UDim2.new(1, -100, 0, 18),
+		BackgroundTransparency = 1,
+		Text = "TROPICAL SOUND • LIVE COMMUNITY",
+		TextColor3 = C.Cyan,
+		TextSize = 9,
+		Font = BOLD,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, header)
+	local closeButton = make("TextButton", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 12),
+		Size = UDim2.fromOffset(40, 40),
+		BackgroundColor3 = C.SurfaceLight,
+		Text = "×",
+		TextColor3 = C.White,
+		TextSize = 26,
+		Font = FONT,
+	}, header) :: TextButton
+	corner(closeButton, 12)
+
+	local nav = make("ScrollingFrame", {
+		Name = "Navigation",
+		Position = UDim2.fromOffset(0, 68),
+		Size = UDim2.new(1, 0, 0, 46),
+		BackgroundColor3 = C.Surface,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 2,
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.X,
+	}, panel) :: ScrollingFrame
+	make("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
+	}, nav)
+	make("UIPadding", {
+		PaddingLeft = UDim.new(0, 12),
+		PaddingRight = UDim.new(0, 12),
+		PaddingTop = UDim.new(0, 6),
+		PaddingBottom = UDim.new(0, 5),
+	}, nav)
+
+	local content = make("ScrollingFrame", {
+		Name = "Content",
+		Position = UDim2.fromOffset(12, 122),
+		Size = UDim2.new(1, -24, 1, -134),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 4,
+		ScrollBarImageColor3 = C.Magenta,
+		CanvasSize = UDim2.new(0,0,0,0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	}, panel) :: ScrollingFrame
+	local contentLayout = make("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 9),
+	}, content)
+	make("UIPadding", {
+		PaddingBottom = UDim.new(0, 12),
+	}, content)
+
+	local navButtons: {[string]: TextButton} = {}
+	local tabs = {"Home","Music","All Tracks","Audio ID","DJ Booth","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Moderation"}
+
+	local function clearContent()
+		progressRefs = nil
+		titleAnimators = {}
+		vizRefs = nil
+		sliderRefs = nil
+		for _, child in ipairs(content:GetChildren()) do
+			if child ~= contentLayout and not child:IsA("UIPadding") then
+				child:Destroy()
+			end
+		end
+	end
+
+	local function sectionLabel(text: string)
+		return make("TextLabel", {
+			Size = UDim2.new(1, -4, 0, 28),
+			BackgroundTransparency = 1,
+			Text = text,
+			TextColor3 = C.Cyan,
+			TextSize = 13,
+			Font = BOLD,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}, content)
+	end
+
+	local function card(height: number?): Frame
+		local frame = make("Frame", {
+			Size = UDim2.new(1, -4, 0, height or 72),
+			BackgroundColor3 = C.Surface,
+			BorderSizePixel = 0,
+		}, content) :: Frame
+		corner(frame, 12)
+		stroke(frame, C.SurfaceLight, 1)
+		return frame
+	end
+
+	local function label(parent: Instance, text: string, position: UDim2, size: UDim2, color: Color3?, textSize: number?, bold: boolean?)
+		return make("TextLabel", {
+			Position = position,
+			Size = size,
+			BackgroundTransparency = 1,
+			Text = text,
+			TextColor3 = color or C.White,
+			TextSize = textSize or 13,
+			Font = if bold then BOLD else FONT,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
+			TextWrapped = true,
+		}, parent)
+	end
+
+	local function actionButton(parent: Instance, text: string, position: UDim2, size: UDim2, callback: () -> (), color: Color3?)
+		local button = make("TextButton", {
+			Position = position,
+			Size = size,
+			BackgroundColor3 = color or C.Magenta,
+			Text = text,
+			TextColor3 = C.White,
+			TextSize = 11,
+			Font = BOLD,
+			AutoButtonColor = true,
+		}, parent) :: TextButton
+		corner(button, 9)
+		button.Activated:Connect(callback)
+		return button
+	end
+
+	local function act(method: string, payload: {[string]: any}, ...)
+		if typeof(Network[method]) == "function" then
+			callNetwork(method, ...)
+		else
+			send(method, payload)
+		end
+	end
+
+	local function requestsDisabled(): (boolean, string)
+		if state.blocked == true then
+			return true, "Staff disabled your song requests."
+		end
+		if state.locked == true and perm() < 1 then
+			return true, "Song requests are locked right now."
+		end
+		return false, ""
+	end
+
+	-- Volume is a client-side setting. It is forwarded to Network.SetVolume if provided,
+	-- otherwise to a SoundGroup named "ClubMusic" in SoundService (if one exists).
+	local function applyVolume(value: number)
+		volume = math.clamp(value, 0, 1)
+		if volume > 0 then lastVolume = volume end
+		gui:SetAttribute("Volume", volume)
+		if previewSound then previewSound.Volume = volume end
+		if typeof(Network.SetVolume) == "function" then
+			pcall(Network.SetVolume, volume)
+		else
+			local group = SoundService:FindFirstChild("ClubMusic")
+			if group and group:IsA("SoundGroup") then group.Volume = volume end
+		end
+	end
+
+	local function reloadSong()
+		if os.clock() - lastReload < 3 then
+			notify("Please wait a moment before reloading again.", C.Orange)
+			return
+		end
+		lastReload = os.clock()
+		act("ReloadSong", {})
+		if typeof(Network.GetState) == "function" and applyStateFn then
+			local ok, fresh = pcall(Network.GetState)
+			if ok and typeof(fresh) == "table" then applyStateFn(fresh) end
+		end
+		notify("Reloading song…", C.Cyan)
+	end
+
+	local function buildNowPlaying()
+		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
+		local nowCard = card(182)
+		label(nowCard, nz(now.title, "The stage is warming up"), UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 24), C.White, 15, true)
+		local detail = nz(now.artist, "Sunset Stage Club")
+		if now.source == "player" and nz(now.requestedBy, "") ~= "" then
+			detail ..= "  •  requested by " .. tostring(now.requestedBy)
+		end
+		label(nowCard, detail, UDim2.fromOffset(14, 34), UDim2.new(1, -28, 0, 18), C.Muted, 11, false)
+		local bar = make("Frame", {
+			Position = UDim2.fromOffset(14, 66),
+			Size = UDim2.new(1, -28, 0, 6),
+			BackgroundColor3 = C.SurfaceLight,
+			BorderSizePixel = 0,
+		}, nowCard)
+		corner(bar, 3)
+		local fill = make("Frame", {
+			Size = UDim2.fromScale(0, 1),
+			BackgroundColor3 = C.Magenta,
+			BorderSizePixel = 0,
+		}, bar)
+		corner(fill, 3)
+		local timeLabel = label(nowCard, "0:00 / 0:00", UDim2.fromOffset(14, 78), UDim2.new(1, -140, 0, 22), C.Cyan, 10, true)
+		progressRefs = { fill = fill, timeLabel = timeLabel, duration = math.max(1, tonumber(now.duration) or 1) }
+		updateProgress()
+
+		-- Reload song button
+		actionButton(nowCard, "↻ RELOAD", UDim2.new(1, -108, 0, 77), UDim2.fromOffset(94, 22), reloadSong, C.Purple)
+
+		-- Audio visualizer
+		local vizFrame = make("Frame", {
+			Name = "Visualizer",
+			Position = UDim2.fromOffset(14, 106),
+			Size = UDim2.new(1, -28, 0, 32),
+			BackgroundColor3 = C.Base,
+			BorderSizePixel = 0,
+		}, nowCard)
+		corner(vizFrame, 8)
+		local barHolder = make("Frame", {
+			Position = UDim2.fromOffset(6, 4),
+			Size = UDim2.new(1, -12, 1, -8),
+			BackgroundTransparency = 1,
+		}, vizFrame)
+		local count = 28
+		local seed = 0
+		for i = 1, #tostring(now.id or now.trackId or now.title or "x") do
+			seed += string.byte(tostring(now.id or now.trackId or now.title or "x"), i)
+		end
+		local bars: {any} = {}
+		local phases: {number} = {}
+		for i = 1, count do
+			local t = (i - 1) / (count - 1)
+			local piece = make("Frame", {
+				AnchorPoint = Vector2.new(0, 1),
+				Position = UDim2.new((i - 1) / count, 1, 1, 0),
+				Size = UDim2.new(1 / count, -2, 0.1, 0),
+				BackgroundColor3 = C.Magenta:Lerp(C.Cyan, t),
+				BorderSizePixel = 0,
+			}, barHolder)
+			corner(piece, 2)
+			bars[i] = piece
+			phases[i] = ((seed * 31 + i * 17) % 100) / 100 * math.pi * 2
+		end
+		vizRefs = { container = barHolder, bars = bars, phases = phases, seed = seed % 97 }
+
+		-- Volume slider
+		local muteButton = make("TextButton", {
+			Position = UDim2.fromOffset(14, 148),
+			Size = UDim2.fromOffset(30, 26),
+			BackgroundColor3 = C.SurfaceLight,
+			Text = "🔊",
+			TextColor3 = C.White,
+			TextSize = 14,
+			Font = BOLD,
+		}, nowCard) :: TextButton
+		corner(muteButton, 8)
+		local track = make("Frame", {
+			Position = UDim2.fromOffset(56, 157),
+			Size = UDim2.new(1, -128, 0, 8),
+			BackgroundColor3 = C.SurfaceLight,
+			BorderSizePixel = 0,
+		}, nowCard) :: Frame
+		corner(track, 4)
+		local volFill = make("Frame", {
+			Size = UDim2.fromScale(volume, 1),
+			BackgroundColor3 = C.Cyan,
+			BorderSizePixel = 0,
+		}, track)
+		corner(volFill, 4)
+		local knob = make("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(volume, 0, 0.5, 0),
+			Size = UDim2.fromOffset(16, 16),
+			BackgroundColor3 = C.White,
+			BorderSizePixel = 0,
+			ZIndex = 2,
+		}, track)
+		corner(knob, 8)
+		local percent = label(nowCard, "", UDim2.new(1, -66, 0, 148), UDim2.fromOffset(52, 26), C.Cyan, 11, true)
+		percent.TextXAlignment = Enum.TextXAlignment.Right
+		local hit = make("TextButton", {
+			Name = "VolumeHit",
+			Position = UDim2.fromOffset(56, 148),
+			Size = UDim2.new(1, -128, 0, 26),
+			BackgroundTransparency = 1,
+			Text = "",
+			AutoButtonColor = false,
+		}, nowCard) :: TextButton
+
+		local function refreshVolumeUI()
+			volFill.Size = UDim2.fromScale(volume, 1)
+			knob.Position = UDim2.new(volume, 0, 0.5, 0)
+			percent.Text = string.format("%d%%", math.floor(volume * 100 + 0.5))
+			muteButton.Text = if volume <= 0 then "🔇" elseif volume < 0.5 then "🔉" else "🔊"
+		end
+		refreshVolumeUI()
+
+		local function setFromX(x: number)
+			if not track.Parent or track.AbsoluteSize.X <= 0 then return end
+			local relative = (x - (track.AbsolutePosition.X - gui.AbsolutePosition.X)) / track.AbsoluteSize.X
+			applyVolume(math.clamp(relative, 0, 1))
+			refreshVolumeUI()
+		end
+		sliderRefs = { track = track, setFromX = setFromX }
+
+		hit.InputBegan:Connect(function(input: InputObject)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				sliderDragging = true
+				setFromX(input.Position.X)
+			elseif input.KeyCode == Enum.KeyCode.DPadLeft then
+				applyVolume(volume - 0.1); refreshVolumeUI()
+			elseif input.KeyCode == Enum.KeyCode.DPadRight then
+				applyVolume(volume + 0.1); refreshVolumeUI()
+			end
+		end)
+		muteButton.Activated:Connect(function()
+			applyVolume(if volume > 0 then 0 else (if lastVolume > 0 then lastVolume else 0.8))
+			refreshVolumeUI()
+		end)
+	end
+
+	local function makeTrackCard(track: {any}, parent: Instance?)
+		local id = tostring(track[1])
+		local frame = make("Frame", {
+			Size = UDim2.new(1, -4, 0, 66),
+			BackgroundColor3 = C.Surface,
+			BorderSizePixel = 0,
+		}, parent or content)
+		corner(frame, 10)
+		label(frame, tostring(track[2]), UDim2.fromOffset(12, 8), UDim2.new(1, -176, 0, 22), C.White, 13, true)
+		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(12, 32), UDim2.new(1, -176, 0, 18), C.Muted, 11, false)
+
+		local favorites: any = state.favorites
+		local isFavorite = typeof(favorites) == "table" and favorites[id] == true
+		local star = actionButton(frame, if isFavorite then "★" else "☆", UDim2.new(1, -138, 0.5, -15), UDim2.fromOffset(32, 30), function()
+			act("ToggleFavorite", { trackId = id }, id)
+		end, C.SurfaceLight)
+		star.TextSize = 16
+		star.TextColor3 = if isFavorite then C.Gold else C.Muted
+
+		local disabled, reason = requestsDisabled()
+		actionButton(frame, if disabled then "LOCKED" else "REQUEST", UDim2.new(1, -96, 0.5, -15), UDim2.fromOffset(84, 30), function()
+			if disabled then
+				notify(reason, C.Orange)
+				return
+			end
+			act("RequestTrack", { trackId = id }, id)
+		end, if disabled then C.SurfaceLight else C.Purple)
+		return frame
+	end
+
+	local function getQueue(): {any}
+		local queue = state.queue or state.Queue or {}
+		if typeof(queue) ~= "table" then return {} end
+		return queue
+	end
+
+	local function currentTrackId(now: any): string?
+		local direct = tostring(now.trackId or now.id or "")
+		if TRACK_INDEX[direct] then return direct end
+		for _, track in ipairs(ALL_TRACKS) do
+			if track[2] == now.title then return track[1] :: string end
+		end
+		return nil
+	end
+
+	local function badge(parent: Instance, text: string, color: Color3, position: UDim2, width: number)
+		local chip = make("TextLabel", {
+			Position = position,
+			Size = UDim2.fromOffset(width, 24),
+			BackgroundColor3 = color,
+			Text = text,
+			TextColor3 = C.White,
+			TextSize = 10,
+			Font = BOLD,
+		}, parent)
+		corner(chip, 8)
+		return chip
+	end
+
+	local function renderHome()
+		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
+		sectionLabel("NOW PLAYING")
+		buildNowPlaying()
+
+		-- Playlist type + who selected it
+		local trackId: string? = if now then currentTrackId(now) else nil
+		local genre: any = if trackId then TRACK_GENRE[trackId] else nil
+		local fromPlayer = now ~= nil and now.source == "player"
+		local playlistName = if genre then genre.name else nz(if now then (now.playlist or now.genre) else nil, "Club Mix")
+		local playlistCard = card(76)
+		label(playlistCard, "PLAYLIST", UDim2.fromOffset(12, 6), UDim2.new(1, -120, 0, 16), C.Muted, 9, true)
+		label(playlistCard, tostring(playlistName), UDim2.fromOffset(12, 22), UDim2.new(1, -120, 0, 28), if genre then genre.color else C.Cyan, 16, true)
+		label(playlistCard, if fromPlayer then "Selected by player: " .. nz(now.requestedBy, "a guest") else "Selected by Auto DJ",
+			UDim2.fromOffset(12, 51), UDim2.new(1, -120, 0, 18), C.Muted, 10, false)
+		badge(playlistCard, if fromPlayer then "PLAYER" else "AUTO", if fromPlayer then C.Magenta else C.Purple, UDim2.new(1, -92, 0.5, -12), 80)
+
+		-- Like + skip vote
+		local skip: any = if typeof(state.skip) == "table" then state.skip else {}
+		local votes = tonumber(skip.votes) or 0
+		local needed = tonumber(skip.needed) or 1
+		local voted = skip.voted == true
+		local favorites: any = state.favorites
+		local liked = trackId ~= nil and typeof(favorites) == "table" and favorites[trackId] == true
+		local controls = card(92)
+		label(controls, string.format("Skip votes: %d / %d", votes, needed), UDim2.fromOffset(12, 6), UDim2.new(1, -24, 0, 20), C.Cyan, 11, true)
+		local likeButton = actionButton(controls, if liked then "★ LIKED" else "☆ LIKE", UDim2.fromOffset(12, 40), UDim2.new(0.5, -16, 0, 38), function()
+			if not trackId then
+				notify("This track can't be saved to favorites.", C.Orange)
+				return
+			end
+			act("ToggleFavorite", { trackId = trackId }, trackId)
+		end, C.SurfaceLight)
+		likeButton.TextSize = 12
+		likeButton.TextColor3 = if liked then C.Gold else C.White
+		actionButton(controls, if voted then "VOTED" else "VOTE SKIP", UDim2.new(0.5, 4, 0, 40), UDim2.new(0.5, -16, 0, 38), function()
+			if voted then
+				notify("You already voted to skip this track.", C.Orange)
+				return
+			end
+			act("VoteSkip", {})
+		end, if voted then C.SurfaceLight else C.Purple)
+
+		-- Up next queue box
+		sectionLabel("UP NEXT")
+		local queue = getQueue()
+		local shown = math.min(#queue, 6)
+		local rowHeight = 54
+		local bodyHeight = if #queue == 0 then 50 else shown * rowHeight + (if #queue > shown then 24 else 0)
+		local box = card(40 + bodyHeight)
+		stroke(box, C.Magenta, 1)
+		label(box, if #queue == 0 then "QUEUE" else string.format("QUEUE  •  %d TRACK%s", #queue, if #queue == 1 then "" else "S"),
+			UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 20), C.Cyan, 11, true)
+		if #queue == 0 then
+			label(box, "Nothing queued. The Auto DJ will pick the next track.", UDim2.fromOffset(12, 36), UDim2.new(1, -24, 0, 40), C.Muted, 11, false)
+			return
+		end
+		for index = 1, shown do
+			local item: any = queue[index]
+			local top = 34 + (index - 1) * rowHeight
+			local itemGenre: any = TRACK_GENRE[tostring(item.trackId or item.id or "")]
+			local indexed: any = TRACK_INDEX[tostring(item.trackId or "")]
+			local trackName = nz(item.title, if indexed then tostring(indexed[2]) else nz(item.trackId, "Unknown track"))
+			local isPlayer = item.source == "player"
+			local who = if isPlayer then "by " .. nz(item.requestedBy, "a guest") else "Auto DJ pick"
+			if item.vip == true then who ..= "  •  VIP" end
+			if index > 1 then
+				make("Frame", {
+					Position = UDim2.fromOffset(12, top - 2),
+					Size = UDim2.new(1, -24, 0, 1),
+					BackgroundColor3 = C.SurfaceLight,
+					BorderSizePixel = 0,
+				}, box)
+			end
+			label(box, string.format("%02d  %s", index, trackName), UDim2.fromOffset(12, top + 2), UDim2.new(1, -108, 0, 22), C.White, 12, true)
+			label(box, (if itemGenre then itemGenre.name .. "  •  " else "") .. who .. "  •  " .. formatTime(tonumber(item.duration) or 0),
+				UDim2.fromOffset(12, top + 26), UDim2.new(1, -108, 0, 18), C.Muted, 10, false)
+			badge(box, if isPlayer then "PLAYER" else "AUTO", if isPlayer then C.Magenta else C.Purple, UDim2.new(1, -86, 0, top + 12), 74)
+		end
+		if #queue > shown then
+			label(box, string.format("+ %d more in the queue", #queue - shown), UDim2.fromOffset(12, 34 + shown * rowHeight + 2), UDim2.new(1, -24, 0, 18), C.Muted, 10, true)
+		end
+	end
+
+	local function renderMusic()
+		sectionLabel("NOW PLAYING")
+		buildNowPlaying()
+
+		local statusCard = card(40)
+		local disabled, reason = requestsDisabled()
+		local statusText = reason
+		local statusColor = C.Orange
+		if not disabled then
+			local req: any = if typeof(state.requests) == "table" then state.requests else {}
+			statusText = string.format("Requests used: %d / %d", tonumber(req.used) or 0, tonumber(req.limit) or 0)
+			if state.vip == true then statusText ..= "   •   VIP priority active" end
+			statusColor = C.Cyan
+		elseif state.blocked == true then
+			statusColor = C.Red
+		end
+		label(statusCard, statusText, UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), statusColor, 11, true)
+
+		local favoriteIds: {string} = {}
+		local favorites: any = state.favorites
+		if typeof(favorites) == "table" then
+			for id, flag in pairs(favorites) do
+				if flag == true and TRACK_INDEX[id] then table.insert(favoriteIds, id) end
+			end
+		end
+		table.sort(favoriteIds)
+
+		sectionLabel("YOUR LIBRARY")
+		local favoriteCard = card(62)
+		label(favoriteCard, "★ Favorites", UDim2.fromOffset(12, 7), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
+		label(favoriteCard, string.format("%d saved track%s", #favoriteIds, if #favoriteIds == 1 then "" else "s"), UDim2.fromOffset(12, 31), UDim2.new(1, -130, 0, 17), C.Muted, 10, false)
+		actionButton(favoriteCard, if selectedGenre == "favorites" then "HIDE" else "VIEW TRACKS", UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
+			selectedGenre = if selectedGenre == "favorites" then "" else "favorites"
+			clearContent()
+			renderMusic()
+		end, C.Gold)
+		if selectedGenre == "favorites" then
+			if #favoriteIds == 0 then
+				local empty = card(52)
+				label(empty, "Tap ☆ on any track to save it here.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+			else
+				for _, id in ipairs(favoriteIds) do
+					makeTrackCard(TRACK_INDEX[id])
+				end
+			end
+		end
+
+		sectionLabel("BROWSE GENRES")
+		for _, genre in ipairs(GENRES) do
+			local genreCard = card(62)
+			label(genreCard, genre.name, UDim2.fromOffset(12, 7), UDim2.new(1, -120, 0, 22), genre.color, 13, true)
+			label(genreCard, genre.tagline, UDim2.fromOffset(12, 31), UDim2.new(1, -120, 0, 17), C.Muted, 10, false)
+			actionButton(genreCard, if selectedGenre == genre.id then "HIDE" else "VIEW TRACKS",
+				UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
+					selectedGenre = if selectedGenre == genre.id then "" else genre.id
+					clearContent()
+					renderMusic()
+				end, genre.color)
+			if selectedGenre == genre.id then
+				for _, track in ipairs(genre.tracks) do
+					makeTrackCard(track)
+				end
+			end
+		end
+	end
+
+	local function renderAllTracks()
+		sectionLabel("ALL TRACKS")
+
+		local searchCard = card(52)
+		local searchBox = make("TextBox", {
+			Name = "TrackSearch",
+			Position = UDim2.fromOffset(12, 9),
+			Size = UDim2.new(1, -92, 0, 34),
+			BackgroundColor3 = C.SurfaceLight,
+			TextColor3 = C.White,
+			PlaceholderColor3 = C.Muted,
+			PlaceholderText = "🔍 Search title, artist or genre",
+			Text = trackSearch,
+			TextSize = 12,
+			Font = FONT,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ClearTextOnFocus = false,
+		}, searchCard) :: TextBox
+		corner(searchBox, 8)
+		make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, searchBox)
+
+		-- Genre filter chips
+		local filterCard = card(46)
+		local chips = make("ScrollingFrame", {
+			Name = "GenreFilter",
+			Position = UDim2.fromOffset(8, 0),
+			Size = UDim2.new(1, -16, 1, 0),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollBarThickness = 2,
+			ScrollingDirection = Enum.ScrollingDirection.X,
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.X,
+		}, filterCard) :: ScrollingFrame
+		make("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 6),
+		}, chips)
+		local chipButtons: {[string]: {button: any, color: Color3}} = {}
+		local populate: () -> ()
+		local function refreshChips()
+			for id, entry in pairs(chipButtons) do
+				local active = id == trackGenreFilter
+				entry.button.BackgroundColor3 = if active then entry.color else C.SurfaceLight
+				entry.button.TextColor3 = if active then C.White else C.Muted
+			end
+		end
+		local chipDefs: {any} = { { id = "all", name = "All", color = C.Magenta } }
+		for _, genre in ipairs(GENRES) do
+			table.insert(chipDefs, { id = genre.id, name = genre.name, color = genre.color })
+		end
+		for order, def in ipairs(chipDefs) do
+			local chip = make("TextButton", {
+				Name = "Chip_" .. def.id,
+				AutomaticSize = Enum.AutomaticSize.X,
+				Size = UDim2.new(0, 0, 0, 28),
+				BackgroundColor3 = C.SurfaceLight,
+				Text = def.name,
+				TextColor3 = C.Muted,
+				TextSize = 11,
+				Font = BOLD,
+				LayoutOrder = order,
+			}, chips) :: TextButton
+			corner(chip, 14)
+			make("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) }, chip)
+			chipButtons[def.id] = { button = chip, color = def.color }
+			chip.Activated:Connect(function()
+				trackGenreFilter = def.id
+				refreshChips()
+				populate()
+			end)
+		end
+		refreshChips()
+
+		local countLabel = sectionLabel("")
+		countLabel.TextColor3 = C.Muted
+		countLabel.TextSize = 11
+
+		local results = make("Frame", {
+			Name = "TrackResults",
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+		}, content) :: Frame
+		make("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 9) }, results)
+
+		populate = function()
+			for _, child in ipairs(results:GetChildren()) do
+				if not child:IsA("UIListLayout") then child:Destroy() end
+			end
+			local query = string.lower((string.gsub(trackSearch, "^%s*(.-)%s*$", "%1")))
+			local shown = 0
+			for _, track in ipairs(ALL_TRACKS) do
+				local genre: any = TRACK_GENRE[track[1] :: string]
+				local haystack = string.lower(tostring(track[2]) .. " " .. tostring(track[3]) .. " " .. (if genre then genre.name else ""))
+				local genreOk = trackGenreFilter == "all" or (genre ~= nil and genre.id == trackGenreFilter)
+				if genreOk and (query == "" or string.find(haystack, query, 1, true)) then
+					shown += 1
+					local trackCard = makeTrackCard(track, results)
+					trackCard.LayoutOrder = shown
+				end
+			end
+			local summary = string.format("%d track%s", shown, if shown == 1 then "" else "s")
+			if trackGenreFilter ~= "all" then
+				for _, genre in ipairs(GENRES) do
+					if genre.id == trackGenreFilter then summary ..= " in " .. genre.name end
+				end
+			end
+			if query ~= "" then summary ..= string.format(" matching \"%s\"", query) end
+			countLabel.Text = summary
+			if shown == 0 then
+				local empty = make("Frame", {
+					Size = UDim2.new(1, -4, 0, 52),
+					BackgroundColor3 = C.Surface,
+					BorderSizePixel = 0,
+				}, results)
+				corner(empty, 12)
+				label(empty, "No tracks match your search or filter.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+			end
+		end
+
+		actionButton(searchCard, "CLEAR", UDim2.new(1, -72, 0, 11), UDim2.fromOffset(60, 30), function()
+			trackSearch = ""
+			searchBox.Text = ""
+		end, C.SurfaceLight)
+
+		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+			if searchBox.Text ~= trackSearch then
+				trackSearch = searchBox.Text
+				populate()
+			end
+		end)
+		populate()
+	end
+
+	local function stopPreview()
+		if previewSound then
+			previewSound:Stop()
+			previewSound:Destroy()
+			previewSound = nil
+		end
+		previewId = nil
+	end
+
+	local function refreshAudioTab()
+		if expanded and activeTab == "Audio ID" and renderTabFn then renderTabFn() end
+	end
+
+	local function lookupAudio(rawText: string)
+		if destroyed then return end
+		if os.clock() - lastAudioLookupAt < 1.0 then
+			notify("Please wait before looking up another asset.", C.Orange)
+			return
+		end
+		lastAudioLookupAt = os.clock()
+		if typeof(rawText) ~= "string" or #rawText > 256 then
+			notify("Enter a valid audio asset ID or Creator Hub link.", C.Red)
+			return
+		end
+		if perm() < 1 then
+			notify("Audio asset IDs are staff only.", C.Red)
+			return
+		end
+		local id = parseAssetId(rawText)
+		if not id then
+			notify("Enter a valid audio asset ID or Creator Hub link.", C.Red)
+			return
+		end
+		lookupSerial += 1
+		local serial = lookupSerial
+		audioLookup = { id = id, status = "loading" }
+		refreshAudioTab()
+		task.spawn(function()
+			local ok, info = pcall(function()
+				return MarketplaceService:GetProductInfo(id, Enum.InfoType.Asset)
+			end)
+			if destroyed or serial ~= lookupSerial then return end
+			if not ok or typeof(info) ~= "table" then
+				audioLookup = { id = id, status = "error", message = "Asset not found or unavailable." }
+			elseif info.AssetTypeId ~= Enum.AssetType.Audio.Value then
+				audioLookup = { id = id, status = "error", message = "That asset is not an audio file." }
+			else
+				local creator = if typeof(info.Creator) == "table" then tostring(info.Creator.Name or "Unknown") else "Unknown"
+				local assetName = tostring(info.Name or "Untitled audio")
+				creator = string.sub(string.gsub(creator, "%c", ""), 1, 80)
+				assetName = string.sub(string.gsub(assetName, "%c", ""), 1, 120)
+				audioLookup = { id = id, status = "ok", name = assetName, creator = creator }
+			end
+			refreshAudioTab()
+		end)
+	end
+
+	local function togglePreview(id: number)
+		if previewId == id then
+			stopPreview()
+			refreshAudioTab()
+			return
+		end
+		stopPreview()
+		local sound = Instance.new("Sound")
+		sound.Name = "AudioPreview"
+		sound.SoundId = "rbxassetid://" .. tostring(id)
+		sound.Volume = volume
+		sound.Parent = gui
+		previewSound = sound
+		previewId = id
+		sound.Ended:Connect(function()
+			if previewSound == sound then
+				stopPreview()
+				refreshAudioTab()
+			end
+		end)
+		sound:Play()
+		task.delay(10, function()
+			if previewSound == sound and not sound.IsLoaded then
+				stopPreview()
+				notify("Audio could not be loaded. It may be private or restricted.", C.Red)
+				refreshAudioTab()
+			end
+		end)
+		refreshAudioTab()
+	end
+
+	local function renderAudioId()
+		sectionLabel("CREATOR HUB AUDIO")
+		if perm() < 1 then
+			local locked = card(56)
+			label(locked, "🔒 Staff only. Audio asset IDs can only be used by DJs and staff.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Orange, 11, true)
+			return
+		end
+		local info = card(84)
+		label(info, "Play any Roblox audio by asset ID.", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.White, 13, true)
+		label(info, "Paste an audio ID or a Creator Hub link, look it up, preview it privately, then request it. Only audio this experience is allowed to use will play.",
+			UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 46), C.Muted, 10, false)
+
+		local inputCard = card(96)
+		local box = make("TextBox", {
+			Name = "AudioIdInput",
+			Position = UDim2.fromOffset(12, 10),
+			Size = UDim2.new(1, -24, 0, 34),
+			BackgroundColor3 = C.SurfaceLight,
+			TextColor3 = C.White,
+			PlaceholderColor3 = C.Muted,
+			PlaceholderText = "Audio asset ID or Creator Hub link",
+			Text = audioInput,
+			TextSize = 12,
+			Font = FONT,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ClearTextOnFocus = false,
+		}, inputCard) :: TextBox
+		corner(box, 8)
+		make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, box)
+		box:GetPropertyChangedSignal("Text"):Connect(function() audioInput = box.Text end)
+		box.FocusLost:Connect(function(enterPressed)
+			if enterPressed then lookupAudio(box.Text) end
+		end)
+		actionButton(inputCard, "LOOK UP", UDim2.fromOffset(12, 54), UDim2.new(0.5, -16, 0, 32), function()
+			lookupAudio(box.Text)
+		end, C.Magenta)
+		actionButton(inputCard, "CLEAR", UDim2.new(0.5, 4, 0, 54), UDim2.new(0.5, -16, 0, 32), function()
+			stopPreview()
+			audioInput = ""
+			audioLookup = nil
+			lookupSerial += 1
+			refreshAudioTab()
+		end, C.SurfaceLight)
+
+		local result = audioLookup
+		if not result then return end
+		sectionLabel("RESULT")
+		if result.status == "loading" then
+			local loading = card(52)
+			label(loading, "Looking up asset " .. tostring(result.id) .. "…", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Cyan, 11, true)
+		elseif result.status == "error" then
+			local failed = card(56)
+			label(failed, tostring(result.message), UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Red, 11, true)
+		else
+			local id = tonumber(result.id) or 0
+			local found = card(128)
+			label(found, tostring(result.name), UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.White, 13, true)
+			label(found, "by " .. tostring(result.creator) .. "  •  ID " .. tostring(id), UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
+			local previewing = previewId == id
+			actionButton(found, if previewing then "■ STOP" else "▶ PREVIEW", UDim2.fromOffset(12, 70), UDim2.new(0.5, -16, 0, 34), function()
+				togglePreview(id)
+			end, if previewing then C.Orange else C.Purple)
+			local disabled, reason = requestsDisabled()
+			actionButton(found, if disabled then "LOCKED" else "REQUEST", UDim2.new(0.5, 4, 0, 70), UDim2.new(0.5, -16, 0, 34), function()
+				if disabled then
+					notify(reason, C.Orange)
+					return
+				end
+				stopPreview()
+				local title = tostring(result.name)
+				if typeof(Network.RequestAudioAsset) == "function" then
+					callNetwork("RequestAudioAsset", id, title)
+				else
+					send("RequestAudioAsset", { assetId = id, title = title })
+				end
+			end, if disabled then C.SurfaceLight else C.Magenta)
+		end
+	end
+
+	local function renderDJ()
+		local level = perm()
+		sectionLabel("DJ BOOTH")
+		buildNowPlaying()
+
+		if level >= 1 then
+			local controls = card(58)
+			actionButton(controls, "DJ SKIP", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 34), function()
+				act("DJSkip", {})
+			end, C.Magenta)
+
+			sectionLabel("STAFF CONTROLS")
+			local staff = card(58)
+			local locked = state.locked == true
+			actionButton(staff, if locked then "UNLOCK REQUESTS" else "LOCK REQUESTS", UDim2.fromOffset(12, 12),
+				if level >= 2 then UDim2.new(0.5, -16, 0, 34) else UDim2.new(1, -24, 0, 34), function()
+					act("DJToggleLock", {})
+				end, if locked then C.Orange else C.Purple)
+			if level >= 2 then
+				actionButton(staff, "CLEAR QUEUE", UDim2.new(0.5, 4, 0, 12), UDim2.new(0.5, -16, 0, 34), function()
+					act("DJClearQueue", {})
+				end, C.Red)
+			end
+		else
+			local note = card(48)
+			label(note, "Vote to skip the current song from the Home tab.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+		end
+
+		sectionLabel("UP NEXT")
+		local queue = getQueue()
+		if #queue == 0 then
+			local empty = card(56)
+			label(empty, "The request queue is empty.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 12, false)
+			return
+		end
+		for index, item: any in ipairs(queue) do
+			local qcard = card(64)
+			local textWidth = if level >= 1 then -100 else -24
+			local trackName = nz(item.title, nz(item.trackId, "Unknown track"))
+			local who = if item.source == "player" then "Requested by " .. nz(item.requestedBy, "a guest") else "Auto DJ pick"
+			if item.vip == true then who ..= "  •  VIP" end
+			label(qcard, string.format("%02d  %s", index, trackName), UDim2.fromOffset(12, 7), UDim2.new(1, textWidth, 0, 22), C.White, 12, true)
+			label(qcard, who .. "  •  " .. formatTime(tonumber(item.duration) or 0), UDim2.fromOffset(12, 33), UDim2.new(1, textWidth, 0, 17), C.Muted, 10, false)
+			if level >= 1 then
+				local queueId = tostring(item.id)
+				if index > 1 then
+					local up = actionButton(qcard, "▲", UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
+						act("DJMoveUp", { queueId = queueId }, queueId)
+					end, C.Purple)
+					up.TextSize = 14
+				end
+				local remove = actionButton(qcard, "✕", UDim2.new(1, -48, 0.5, -15), UDim2.fromOffset(36, 30), function()
+					act("DJRemove", { queueId = queueId }, queueId)
+				end, C.Red)
+				remove.TextSize = 14
+			end
+		end
+	end
+
+	local function renderModeration()
+		local level = perm()
+		sectionLabel("MODERATION")
+		local info = card(56)
+		label(info, if level >= 2 then "Block requests, grant VIP, or purge a player's queued songs." else "Roster view only. Admins can moderate players.",
+			UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+
+		local roster: any = state.players
+		if typeof(roster) ~= "table" or #roster == 0 then
+			local empty = card(56)
+			label(empty, "No players to show.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 12, false)
+			return
+		end
+
+		for _, p: any in ipairs(roster) do
+			local showButtons = level >= 2 and p.canMod == true
+			local pcard = card(if showButtons then 100 else 64)
+			label(pcard, string.format("%s  (@%s)", nz(p.displayName, "Player"), nz(p.name, "?")), UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 22), C.White, 13, true)
+
+			local bits = { nz(p.rank, "GUEST") }
+			if p.vip == true then table.insert(bits, if p.tempVip == true then "VIP (staff-granted)" else "VIP") end
+			table.insert(bits, tostring(tonumber(p.requests) or 0) .. " queued")
+			if p.blocked == true then table.insert(bits, "BLOCKED") end
+			label(pcard, table.concat(bits, "  •  "), UDim2.fromOffset(12, 31), UDim2.new(1, -24, 0, 18), if p.blocked == true then C.Red else C.Muted, 10, false)
+
+			if showButtons then
+				local userId = tonumber(p.userId) or 0
+				local isBlocked = p.blocked == true
+				local isTempVip = p.tempVip == true
+				actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0, 12, 1, -40), UDim2.new(1 / 3, -16, 0, 30), function()
+					act("ModBlockUser", { userId = userId, blocked = not isBlocked }, userId, not isBlocked)
+				end, if isBlocked then C.Green else C.Red)
+				actionButton(pcard, if isTempVip then "REMOVE VIP" else "GIVE VIP", UDim2.new(1 / 3, 12, 1, -40), UDim2.new(1 / 3, -16, 0, 30), function()
+					act("ModSetVip", { userId = userId, vip = not isTempVip }, userId, not isTempVip)
+				end, C.Purple)
+				actionButton(pcard, "PURGE QUEUE", UDim2.new(2 / 3, 12, 1, -40), UDim2.new(1 / 3, -16, 0, 30), function()
+					act("ModPurgeUser", { userId = userId }, userId)
+				end, C.Orange)
+			end
+		end
+	end
+
+	local function renderTipJar()
+		sectionLabel("SUPPORT THE STAGE")
+		local info = card(68)
+		label(info, "Tips help keep the island lights on.", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.White, 13, true)
+		label(info, "Choose a contribution below. Purchases require configured Developer Product IDs.", UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 28), C.Muted, 10, false)
+		for _, item in ipairs(DONATIONS) do
+			local donationCard = card(76)
+			label(donationCard, item.label .. "  •  " .. tostring(item.amount) .. " Robux", UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
+			label(donationCard, item.perk, UDim2.fromOffset(12, 34), UDim2.new(1, -130, 0, 20), C.Muted, 10, false)
+			actionButton(donationCard, "TIP", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
+				if item.productId <= 0 then notify("Configure this Developer Product ID first.", C.Red); return end
+				MarketplaceService:PromptProductPurchase(player, item.productId)
+			end, C.Magenta)
+		end
+	end
+
+	local function renderShop()
+		sectionLabel("ISLAND ITEM SHOP")
+		for _, item in ipairs(SHOP) do
+			local shopCard = card(88)
+			label(shopCard, item.name, UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), C.White, 13, true)
+			label(shopCard, item.desc, UDim2.fromOffset(12, 32), UDim2.new(1, -130, 0, 30), C.Muted, 10, false)
+			label(shopCard, if item.kind == "GamePass" then item.rarity .. " • Roblox Game Pass" else item.rarity .. " • " .. tostring(item.price) .. " coins",
+				UDim2.fromOffset(12, 64), UDim2.new(1, -130, 0, 16), C.Gold, 9, true)
+			actionButton(shopCard, "GET", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
+				local itemId = item.id
+				if item.kind == "GamePass" and itemId <= 0 then
+					local passKey = item.passKey or "vip"
+					if passKey == "sultan" then
+						itemId = tonumber(state.sultanGamePassId) or 0
+					elseif passKey == "vvip" then
+						itemId = tonumber(state.vvipGamePassId) or 0
+					else
+						itemId = tonumber(state.vipGamePassId) or 0
+					end
+				end
+				if itemId <= 0 then notify("This item is not configured for purchase yet.", C.Red); return end
+				if item.kind == "GamePass" then
+					MarketplaceService:PromptGamePassPurchase(player, itemId)
+				else
+					MarketplaceService:PromptProductPurchase(player, itemId)
+				end
+			end, C.Purple)
+		end
+	end
+
+	local function renderRewards()
+		sectionLabel("DAILY LOGIN REWARDS")
+		local streak = tonumber(state.loginStreak or state.streak or 1) or 1
+		local claimedToday = state.claimedToday == true
+		local info = card(66)
+		label(info, "Current login streak: " .. tostring(streak) .. (if streak == 1 then " day" else " days"), UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.Gold, 14, true)
+		label(info, if claimedToday then "Today's reward is claimed. Come back tomorrow!" else "Your Day " .. tostring(streak) .. " reward is ready to claim.",
+			UDim2.fromOffset(12, 34), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
+		for _, reward in ipairs(REWARDS) do
+			local status = "LOCKED"
+			if reward.day < streak or (reward.day == streak and claimedToday) then
+				status = "CLAIMED"
+			elseif reward.day == streak then
+				status = "CLAIM"
+			end
+			local ready = status == "CLAIM"
+			local rewardCard = card(62)
+			label(rewardCard, "DAY " .. reward.day .. "  •  " .. reward.label, UDim2.fromOffset(12, 0), UDim2.new(1, -120, 1, 0),
+				if reward.day == streak then C.Gold else C.White, 12, true)
+			actionButton(rewardCard, status, UDim2.new(1, -104, 0.5, -15), UDim2.fromOffset(92, 30), function()
+				if not ready then
+					notify(if status == "CLAIMED" then "You already claimed this reward." else "This reward isn't available yet.", C.Orange)
+					return
+				end
+				act("ClaimDailyReward", { day = reward.day }, reward.day)
+			end, if ready then C.Green else C.SurfaceLight)
+		end
+	end
+
+	local function renderTagCollection()
+		sectionLabel("TITLE TAG COLLECTION")
+		local equipped = state.equippedTitleTag or state.equippedTag or ""
+		local serverOwned = if typeof(state.ownedTags) == "table" then state.ownedTags else nil
+		for _, tag in ipairs(TAGS) do
+			-- The server is authoritative: tags bought in the shop or earned via rewards appear here.
+			local isOwned = if serverOwned then serverOwned[tag.id] == true else tag.owned
+			local tagCard = card(72)
+			label(tagCard, tag.label, UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), tag.a, 14, true)
+			label(tagCard, tag.source, UDim2.fromOffset(12, 35), UDim2.new(1, -130, 0, 18), C.Muted, 10, false)
+			local buttonText = if equipped == tag.id then "EQUIPPED" elseif isOwned then "EQUIP" else "LOCKED"
+			actionButton(tagCard, buttonText, UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
+				if not isOwned then notify("Unlock this title tag first.", C.Red); return end
+				callNetwork("EquipTitleTag", tag.id)
+				if typeof(Network.EquipTitleTag) ~= "function" then send("EquipTitleTag", {tagId=tag.id}) end
+			end, isOwned and C.Purple or C.SurfaceLight)
+		end
+	end
+
+	local function titleSlotInfo()
+		local ts: any = if typeof(state.titleSlots) == "table" then state.titleSlots else {}
+		local unlocked = math.clamp(math.floor(tonumber(ts.unlocked) or 1), 1, 3)
+		local active = math.clamp(math.floor(tonumber(ts.active) or 1), 1, 3)
+		local slots: any = if typeof(ts.slots) == "table" then ts.slots else {}
+		local function slotOf(index: number): {[string]: any}
+			local data = slots[index] or slots[tostring(index)]
+			if index == 1 and data == nil and nz(state.customTitle, "") ~= "" then
+				data = { text = state.customTitle, color = state.customTitleColor, style = state.customTitleStyle }
+			end
+			return normalizeTitle(data)
+		end
+		return unlocked, active, slotOf, ts
+	end
+
+	local function titleSlotPrice(slot: number, ts: any): number
+		local prices: any = if typeof(ts.prices) == "table" then ts.prices else {}
+		return tonumber(prices[slot] or prices[tostring(slot)]) or TITLE_SLOT_PRICES[slot] or 0
+	end
+
+	local function buyTitleSlot(slot: number)
+		local unlockedNow, _, _, ts = titleSlotInfo()
+		if slot > unlockedNow + 1 then
+			notify("Unlock slot " .. tostring(unlockedNow + 1) .. " first.", C.Orange)
+			return
+		end
+		local products: any = if typeof(ts.products) == "table" then ts.products else {}
+		local productId = tonumber(products[slot] or products[tostring(slot)]) or TITLE_SLOT_PRODUCTS[slot] or 0
+		if productId <= 0 then
+			notify("Configure this slot's Developer Product ID first.", C.Red)
+			return
+		end
+		MarketplaceService:PromptProductPurchase(player, productId)
+	end
+
+	local function refreshTitleTab()
+		if renderTabFn then renderTabFn() end
+	end
+
+	-- Horizontal row of selectable chips. Returns the row so callers can rebuild it.
+	local function chipRow(parent: Instance, y: number, options: {any}, getSelected: () -> string, onPick: (string) -> (), tint: ((any) -> Color3?)?)
+		local row = make("ScrollingFrame", {
+			Position = UDim2.fromOffset(12, y),
+			Size = UDim2.new(1, -24, 0, 30),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollBarThickness = 0,
+			ScrollingDirection = Enum.ScrollingDirection.X,
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.X,
+		}, parent) :: ScrollingFrame
+		make("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 6),
+		}, row)
+		local buttons: {[string]: {button: any, tint: Color3}} = {}
+		local function refresh()
+			for id, entry in pairs(buttons) do
+				local on = id == getSelected()
+				entry.button.BackgroundColor3 = if on then C.Magenta else C.SurfaceLight
+				entry.button.TextColor3 = if on then C.White else entry.tint
+			end
+		end
+		for order, option in ipairs(options) do
+			local color = (if tint then tint(option) else nil) or C.Muted
+			local chip = make("TextButton", {
+				AutomaticSize = Enum.AutomaticSize.X,
+				Size = UDim2.new(0, 0, 0, 26),
+				BackgroundColor3 = C.SurfaceLight,
+				Text = option.name,
+				TextColor3 = color,
+				TextSize = 10,
+				Font = BOLD,
+				LayoutOrder = order,
+			}, row) :: TextButton
+			corner(chip, 13)
+			make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, chip)
+			buttons[option.id] = { button = chip, tint = color }
+			chip.Activated:Connect(function()
+				onPick(option.id)
+				refresh()
+			end)
+		end
+		refresh()
+		return row
+	end
+
+	local function stepper(parent: Instance, y: number, text: string, get: () -> number, set: (number) -> (), minValue: number, maxValue: number, step: number, unit: string)
+		label(parent, text, UDim2.fromOffset(12, y), UDim2.new(1, -190, 0, 26), C.Cyan, 10, true)
+		local valueLabel = label(parent, "", UDim2.new(1, -124, 0, y), UDim2.fromOffset(76, 26), C.White, 11, true)
+		valueLabel.TextXAlignment = Enum.TextXAlignment.Center
+		local function show() valueLabel.Text = string.format("%.2f %s", get(), unit) end
+		local function change(direction: number)
+			local value = math.clamp(math.floor((get() + direction * step) / step + 0.5) * step, minValue, maxValue)
+			set(value)
+			show()
+		end
+		actionButton(parent, "−", UDim2.new(1, -162, 0, y), UDim2.fromOffset(34, 26), function() change(-1) end, C.SurfaceLight)
+		actionButton(parent, "+", UDim2.new(1, -44, 0, y), UDim2.fromOffset(34, 26), function() change(1) end, C.SurfaceLight)
+		show()
+	end
+
+	local function saveTitleDraft(draft: any)
+		local unlocked = titleSlotInfo()
+		if draft.slot > unlocked then
+			notify("Unlock this slot first.", C.Red)
+			return
+		end
+		if nz(draft.text, "") == "" then
+			notify("Enter a title first.", C.Orange)
+			return
+		end
+		local payload = {
+			slot = draft.slot,
+			text = draft.text,
+			effect = draft.effect,
+			set = draft.set,
+			colors = titleColorHex(draft.effect, draft.set),
+			font = draft.font,
+			style = draft.style,
+			heightOffset = draft.height,
+			viewDistance = draft.distance,
+			visible = true,
+		}
+		if typeof(Network.SaveTitleSlot) == "function" then
+			callNetwork("SaveTitleSlot", payload)
+		elseif typeof(Network.SaveCustomTitle) == "function" and draft.slot == 1 then
+			-- Older servers only understand a fixed color name and basic style.
+			callNetwork("SaveCustomTitle", draft.text, if draft.effect == "fixed" then draft.set else "gold", draft.style, true)
+		else
+			send("SaveTitleSlot", payload)
+		end
+	end
+
+	local function renderTitleEditor()
+		local unlocked, _, slotOf = titleSlotInfo()
+		if titleEditSlot > unlocked then titleEditSlot = 1 end
+		if not titleDraft or titleDraft.slot ~= titleEditSlot then
+			local loaded: any = slotOf(titleEditSlot)
+			loaded.slot = titleEditSlot
+			titleDraft = loaded
+		end
+		local draft: any = titleDraft
+
+		sectionLabel("CUSTOM TITLE")
+		local slotCard = card(48)
+		for i = 1, 3 do
+			local isLocked = i > unlocked
+			actionButton(slotCard, (if isLocked then "🔒 " else "") .. "SLOT " .. i, UDim2.new((i - 1) / 3, 8, 0, 9), UDim2.new(1 / 3, -12, 0, 30), function()
+				if isLocked then
+					notify("Slot " .. i .. " is locked. Unlock it from the MANAGE view.", C.Orange)
+					return
+				end
+				titleEditSlot = i
+				titleDraft = nil
+				refreshTitleTab()
+			end, if i == titleEditSlot then C.Magenta elseif isLocked then C.SurfaceLight else C.Purple)
+		end
+
+		-- Live style preview
+		local previewCard = card(90)
+		label(previewCard, "PREVIEW  •  slot " .. tostring(titleEditSlot), UDim2.fromOffset(12, 6), UDim2.new(1, -24, 0, 14), C.Muted, 9, true)
+		local previewLabel = make("TextLabel", {
+			Position = UDim2.fromOffset(12, 22),
+			Size = UDim2.new(1, -24, 0, 42),
+			BackgroundTransparency = 1,
+			TextSize = 26,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+		}, previewCard) :: TextLabel
+		local previewHint = label(previewCard, "Preview only until you press SAVE TITLE", UDim2.fromOffset(12, 68), UDim2.new(1, -24, 0, 16), C.Muted, 9, false)
+		previewHint.TextXAlignment = Enum.TextXAlignment.Center
+		local previewUpdate: (number) -> () = function(_) end
+		table.insert(titleAnimators, function(t) previewUpdate(t) end)
+		local function refreshPreview()
+			previewUpdate = styleTitleLabel(previewLabel, draft)
+			previewUpdate(os.clock())
+		end
+		refreshPreview()
+
+		local form = card(390)
+		label(form, "Title text (24 characters max)", UDim2.fromOffset(12, 6), UDim2.new(1, -24, 0, 18), C.Muted, 10, true)
+		local titleInput = make("TextBox", {
+			Position = UDim2.fromOffset(12, 26),
+			Size = UDim2.new(1, -24, 0, 34),
+			BackgroundColor3 = C.SurfaceLight,
+			TextColor3 = C.White,
+			PlaceholderColor3 = C.Muted,
+			PlaceholderText = "Enter a custom title",
+			Text = draft.text,
+			TextSize = 12,
+			Font = FONT,
+			ClearTextOnFocus = false,
+		}, form) :: TextBox
+		corner(titleInput, 8)
+		titleInput:GetPropertyChangedSignal("Text"):Connect(function()
+			local text = titleInput.Text
+			local length = utf8.len(text)
+			if length and length > 24 then
+				titleInput.Text = string.sub(text, 1, (utf8.offset(text, 25) or (#text + 1)) - 1)
+				return
+			end
+			draft.text = text
+			refreshPreview()
+		end)
+
+		label(form, "Color effect", UDim2.fromOffset(12, 66), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
+		local setRow: Instance? = nil
+		local function buildSetRow()
+			if setRow then setRow:Destroy() end
+			local effect = findById(TITLE_EFFECTS, draft.effect)
+			setRow = chipRow(form, 134, effect.sets, function() return draft.set end, function(id)
+				draft.set = id
+				refreshPreview()
+			end, function(option) return option.color or option.a end)
+		end
+		chipRow(form, 84, TITLE_EFFECTS, function() return draft.effect end, function(id)
+			draft.effect = id
+			draft.set = findById(TITLE_EFFECTS, id).sets[1].id
+			buildSetRow()
+			refreshPreview()
+		end)
+		label(form, "Color set", UDim2.fromOffset(12, 116), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
+		buildSetRow()
+
+		label(form, "Text face", UDim2.fromOffset(12, 168), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
+		chipRow(form, 186, TITLE_FONTS, function() return draft.font end, function(id)
+			draft.font = id
+			refreshPreview()
+		end)
+		label(form, "Text style", UDim2.fromOffset(12, 220), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
+		local styleOptions = {}
+		for _, styleId in ipairs(TITLE_STYLES) do
+			table.insert(styleOptions, { id = styleId, name = string.upper(string.sub(styleId, 1, 1)) .. string.sub(styleId, 2) })
+		end
+		chipRow(form, 238, styleOptions, function() return draft.style end, function(id)
+			draft.style = id
+			refreshPreview()
+		end)
+
+		stepper(form, 278, "Height offset (above head)", function() return draft.height end, function(v) draft.height = v end, 0, 8, 0.25, "studs")
+		stepper(form, 310, "View distance", function() return draft.distance end, function(v) draft.distance = v end, 20, 200, 10, "studs")
+
+		actionButton(form, "SAVE TITLE", UDim2.fromOffset(12, 346), UDim2.new(0.5, -16, 0, 34), function()
+			saveTitleDraft(draft)
+		end, C.Magenta)
+		actionButton(form, "RESET", UDim2.new(0.5, 4, 0, 346), UDim2.new(0.5, -16, 0, 34), function()
+			titleDraft = nil
+			refreshTitleTab()
+		end, C.SurfaceLight)
+	end
+
+	local function renderTitleManage()
+		local unlocked, active, slotOf, ts = titleSlotInfo()
+		local shown = ts.visible ~= false
+		sectionLabel("MANAGE TITLES")
+		local info = card(78)
+		label(info, "Slot 1 is free. Slots 2 and 3 are unlocked with Robux.", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 20), C.White, 12, true)
+		label(info, "Equip the slot you want above your avatar, edit it, or clear it.", UDim2.fromOffset(12, 30), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
+		actionButton(info, if shown then "HIDE MY TITLE" else "SHOW MY TITLE", UDim2.fromOffset(12, 48), UDim2.fromOffset(130, 24), function()
+			act("SetTitleVisible", { visible = not shown }, not shown)
+		end, C.SurfaceLight)
+
+		for i = 1, 3 do
+			local isLocked = i > unlocked
+			local data: any = slotOf(i)
+			local hasTitle = nz(data.text, "") ~= ""
+			local slotCard = card(122)
+			label(slotCard, "SLOT " .. tostring(i) .. (if i == 1 then "  •  FREE" else ""), UDim2.fromOffset(12, 6), UDim2.new(1, -130, 0, 18), C.Muted, 10, true)
+			if active == i and not isLocked then
+				badge(slotCard, "ACTIVE", C.Green, UDim2.new(1, -82, 0, 6), 70)
+			end
+			if isLocked then
+				label(slotCard, "🔒 Locked", UDim2.fromOffset(12, 28), UDim2.new(1, -24, 0, 30), C.Muted, 16, true)
+				label(slotCard, string.format("Unlock for %d Robux", titleSlotPrice(i, ts)), UDim2.fromOffset(12, 60), UDim2.new(1, -24, 0, 18), C.Gold, 11, true)
+				actionButton(slotCard, string.format("BUY SLOT  •  R$ %d", titleSlotPrice(i, ts)), UDim2.fromOffset(12, 84), UDim2.new(1, -24, 0, 30), function()
+					buyTitleSlot(i)
+				end, C.Magenta)
+			else
+				local previewLabel = make("TextLabel", {
+					Position = UDim2.fromOffset(12, 26),
+					Size = UDim2.new(1, -24, 0, 32),
+					BackgroundTransparency = 1,
+					TextSize = 20,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+				}, slotCard) :: TextLabel
+				if hasTitle then
+					local update = styleTitleLabel(previewLabel, data)
+					update(os.clock())
+					table.insert(titleAnimators, update)
+				else
+					previewLabel.Font = FONT
+					previewLabel.Text = "Empty slot"
+					previewLabel.TextColor3 = C.Muted
+				end
+				local effect = findById(TITLE_EFFECTS, data.effect)
+				local setName = titleSetFor(data.effect, data.set).name
+				label(slotCard, string.format("%s (%s)  •  height %.2f  •  view %d studs", effect.name, setName, data.height, math.floor(data.distance)),
+					UDim2.fromOffset(12, 58), UDim2.new(1, -24, 0, 16), C.Muted, 9, false)
+				actionButton(slotCard, if active == i then "EQUIPPED" else "EQUIP", UDim2.fromOffset(12, 82), UDim2.new(1 / 3, -12, 0, 30), function()
+					if not hasTitle then
+						notify("Save a title in this slot first.", C.Orange)
+						return
+					end
+					act("SelectTitleSlot", { slot = i }, i)
+				end, if active == i then C.SurfaceLight else C.Purple)
+				actionButton(slotCard, "EDIT", UDim2.new(1 / 3, 2, 0, 82), UDim2.new(1 / 3, -8, 0, 30), function()
+					titleEditSlot = i
+					titleDraft = nil
+					titleSub = "editor"
+					refreshTitleTab()
+				end, C.Magenta)
+				actionButton(slotCard, "CLEAR", UDim2.new(2 / 3, 0, 0, 82), UDim2.new(1 / 3, -12, 0, 30), function()
+					if not hasTitle then
+						notify("This slot is already empty.", C.Orange)
+						return
+					end
+					if titleDraft and titleDraft.slot == i then titleDraft = nil end
+					act("ClearTitleSlot", { slot = i }, i)
+				end, C.Red)
+			end
+		end
+	end
+
+	local function renderTags()
+		local seg = card(48)
+		for i, def in ipairs({ { id = "collection", name = "TAGS" }, { id = "editor", name = "CUSTOM" }, { id = "manage", name = "MANAGE" } }) do
+			actionButton(seg, def.name, UDim2.new((i - 1) / 3, 8, 0, 9), UDim2.new(1 / 3, -12, 0, 30), function()
+				titleSub = def.id
+				refreshTitleTab()
+			end, if titleSub == def.id then C.Magenta else C.SurfaceLight)
+		end
+		if titleSub == "editor" then
+			renderTitleEditor()
+		elseif titleSub == "manage" then
+			renderTitleManage()
+		else
+			renderTagCollection()
+		end
+	end
+
+	local function renderCommunity()
+		sectionLabel("SUNSET STAGE COMMUNITY")
+		local groupId = tonumber(state.groupId) or 0
+		if groupId <= 0 then
+			local config = ReplicatedStorage:FindFirstChild("ClubMusicConfig")
+			if config then
+				groupId = tonumber(config:GetAttribute("GroupId")) or 0
+			end
+		end
+		local groupCard = card(108)
+		label(groupCard, "JOIN THE CLUB", UDim2.fromOffset(12, 9), UDim2.new(1, -24, 0, 22), C.Gold, 14, true)
+		label(groupCard, "Join the Roblox group to connect with the Sunset Stage community.", UDim2.fromOffset(12, 36), UDim2.new(1, -24, 0, 34), C.Muted, 10, false)
+		actionButton(groupCard, "OPEN GROUP", UDim2.fromOffset(12, 72), UDim2.new(1, -24, 0, 26), function()
+			if groupId <= 0 then notify("Configure CONFIG.GroupId on the server first.", C.Red); return end
+			local ok, err = pcall(function()
+				GroupService:PromptJoinAsync(groupId)
+			end)
+			if not ok then
+				warn("[ClubMusic UI] Group prompt: " .. tostring(err))
+				notify("Could not open group prompt.", C.Red)
+			end
+		end, C.Purple)
+		local profile: any = if typeof(state.profile) == "table" then state.profile else {}
+		local profileCard = card(122)
+		label(profileCard, "YOUR CLUB PROFILE", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 20), C.Cyan, 12, true)
+		label(profileCard, "Rank: " .. nz(state.rank, "GUEST") .. "     VIP: " .. (if state.vip == true then "Yes" else "No"),
+			UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 20), C.White, 11, true)
+		label(profileCard, "Tickets: " .. tostring(profile.tickets or state.tickets or 0) ..
+			"     Coins: " .. tostring(profile.coins or state.coins or 0), UDim2.fromOffset(12, 56), UDim2.new(1, -24, 0, 20), C.White, 11, false)
+		label(profileCard, "Glowsticks: " .. tostring(profile.glowsticks or state.glowsticks or 0) ..
+			"     Skip tokens: " .. tostring(profile.skipTokens or state.skipTokens or 0), UDim2.fromOffset(12, 80), UDim2.new(1, -24, 0, 20), C.Muted, 10, false)
+		label(profileCard, "Neon trail: " .. (if state.neonTrail == true then "Unlocked" else "Locked"),
+			UDim2.fromOffset(12, 100), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
+
+		local perks: any = if typeof(state.vipPerks) == "table" then state.vipPerks else {}
+		local passPerks: any = if typeof(state.passPerks) == "table" then state.passPerks else {}
+		local tier = tonumber(state.passTier) or 0
+		local vipId = tonumber(state.vipGamePassId) or 0
+		local vvipId = tonumber(state.vvipGamePassId) or 0
+		local sultanId = tonumber(state.sultanGamePassId) or 0
+		local passCard = card(244)
+		label(passCard, "ISLAND MEMBERSHIP", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.Gold, 14, true)
+		label(passCard, "Current tier: " .. nz(state.passName, if tier >= 3 then "TIKI TIDE SULTAN" elseif tier == 2 then "VVIP" elseif tier == 1 then "VIP" else "GUEST"),
+			UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 20), C.White, 11, true)
+		local baseSlots = tonumber(perks.baseSlots) or 2
+		local baseCooldown = tonumber(perks.baseCooldown) or 8
+		local vip = if typeof(passPerks.vip) == "table" then passPerks.vip else {}
+		local vvip = if typeof(passPerks.vvip) == "table" then passPerks.vvip else {}
+		local sultan = if typeof(passPerks.sultan) == "table" then passPerks.sultan else {}
+		label(passCard, string.format("VIP  •  %d slots  •  %ds cooldown  •  priority requests",
+			type(vip.slots) == "number" and vip.slots or (tonumber(perks.slots) or 4),
+			type(vip.cooldown) == "number" and vip.cooldown or (tonumber(perks.cooldown) or 3)),
+			UDim2.fromOffset(12, 58), UDim2.new(1, -24, 0, 22), C.Muted, 10, false)
+		label(passCard, string.format("VVIP  •  %d slots  •  %ds cooldown  •  elevated priority",
+			type(vvip.slots) == "number" and vvip.slots or 6,
+			type(vvip.cooldown) == "number" and vvip.cooldown or 2),
+			UDim2.fromOffset(12, 84), UDim2.new(1, -24, 0, 22), C.Cyan, 10, false)
+		label(passCard, string.format("TIKI TIDE SULTAN  •  %d slots  •  %ds cooldown  •  highest priority",
+			type(sultan.slots) == "number" and sultan.slots or 8,
+			type(sultan.cooldown) == "number" and sultan.cooldown or 1),
+			UDim2.fromOffset(12, 110), UDim2.new(1, -24, 0, 22), C.Gold, 10, true)
+		label(passCard, string.format("Guest baseline: %d slots and %ds cooldown. Higher passes include lower-tier benefits.",
+			baseSlots, baseCooldown), UDim2.fromOffset(12, 136), UDim2.new(1, -24, 0, 28), C.Muted, 9, false)
+		if tier < 1 and vipId > 0 then
+			actionButton(passCard, "GET VIP", UDim2.new(0, 12, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
+				MarketplaceService:PromptGamePassPurchase(player, vipId)
+			end, C.Magenta)
+		end
+		if tier < 2 and vvipId > 0 then
+			actionButton(passCard, "GET VVIP", UDim2.new(0.345, 0, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
+				MarketplaceService:PromptGamePassPurchase(player, vvipId)
+			end, C.Cyan)
+		end
+		if tier < 3 and sultanId > 0 then
+			actionButton(passCard, "GET SULTAN", UDim2.new(0.69, 0, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
+				MarketplaceService:PromptGamePassPurchase(player, sultanId)
+			end, C.Gold)
+		end
+	end
+
+	local renderers: {[string]: () -> ()} = {
+		["Home"] = renderHome,
+		["Music"] = renderMusic,
+		["All Tracks"] = renderAllTracks,
+		["Audio ID"] = renderAudioId,
+		["DJ Booth"] = renderDJ,
+		["Tip Jar"] = renderTipJar,
+		["Item Shop"] = renderShop,
+		["Daily Rewards"] = renderRewards,
+		["Title Tag"] = renderTags,
+		["Community"] = renderCommunity,
+		["Moderation"] = renderModeration,
+	}
+
+	local function refreshNav()
+		local moderationButton = navButtons["Moderation"]
+		if moderationButton then moderationButton.Visible = perm() >= 1 end
+		local audioButton = navButtons["Audio ID"]
+		if audioButton then audioButton.Visible = perm() >= 1 end
+		if (activeTab == "Moderation" or activeTab == "Audio ID") and perm() < 1 then activeTab = "Home" end
+	end
+
+	local function renderTab()
+		refreshNav()
+		clearContent()
+		local renderer = renderers[activeTab]
+		if renderer then renderer() end
+		for name, button in pairs(navButtons) do
+			button.BackgroundColor3 = if name == activeTab then C.Magenta else C.SurfaceLight
+			button.TextColor3 = C.White
+		end
+	end
+
+	renderTabFn = renderTab
+
+	for index, tabName in ipairs(tabs) do
+		local button = make("TextButton", {
+			Name = tabName:gsub("%s","") .. "Tab",
+			Size = UDim2.fromOffset(if tabName == "Daily Rewards" then 112 else 94, 34),
+			BackgroundColor3 = if tabName == activeTab then C.Magenta else C.SurfaceLight,
+			Text = tabName,
+			TextColor3 = C.White,
+			TextSize = 10,
+			Font = BOLD,
+			LayoutOrder = index,
+		}, nav) :: TextButton
+		corner(button, 9)
+		navButtons[tabName] = button
+		if tabName == "Moderation" or tabName == "Audio ID" then button.Visible = false end
+		button.Activated:Connect(function()
+			activeTab = tabName
+			renderTab()
+		end)
+	end
+
+	local function applyState(newState: any)
+		if destroyed or typeof(newState) ~= "table" then return end
+		local cleanState = sanitizeStateValue(newState, 0, {})
+		if typeof(cleanState) ~= "table" then return end
+		state = cleanState
+		syncElapsed()
+		updateHud()
+		if not destroyed then renderTab() end
+	end
+
+	applyStateFn = applyState
+
+	local function open()
+		if destroyed then return end
+		expanded = true
+		shade.Visible = true
+		panel.Visible = true
+		toggleButton.Visible = false
+		panel.Size = UDim2.new(panelTarget.X.Scale * 0.95, 0, panelTarget.Y.Scale * 0.95, 0)
+		TweenService:Create(panel, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = panelTarget,
+		}):Play()
+		renderTab()
+	end
+
+	local function close()
+		if destroyed then return end
+		stopPreview()
+		expanded = false
+		shade.Visible = false
+		panel.Visible = false
+		toggleButton.Visible = true
+	end
+
+	toggleButton.Activated:Connect(open)
+	hud.Activated:Connect(function()
+		if expanded then close() else open() end
+	end)
+	closeButton.Activated:Connect(close)
+	shade.Activated:Connect(close)
+
+	-- Applies the compact device profile (re-runs on resize, rotation and input-device changes).
+	local function applyLayout()
+		local camera = workspace.CurrentCamera
+		local viewport = if camera then camera.ViewportSize else Vector2.new(1280, 720)
+		currentDevice = detectDevice(viewport)
+		local profile = PROFILES[currentDevice]
+
+		local fit = math.clamp(math.min(viewport.X / profile.refX, viewport.Y / profile.refY), profile.minF, 1)
+		layoutScale = profile.base * fit
+		panelScale.Scale = layoutScale
+
+		sizeConstraint.MinSize = profile.min
+		sizeConstraint.MaxSize = profile.max
+		-- UIScale shrinks the panel, so the fractional size is divided by it to keep the intended screen share.
+		panelTarget = UDim2.new(profile.w / layoutScale, 0, profile.h / layoutScale, 0)
+		if expanded then panel.Size = panelTarget end
+
+		toggleButton.Size = UDim2.fromOffset(profile.toggle, profile.toggle)
+		toggleButton.Position = profile.togglePos
+		toggleButton.TextSize = math.floor(profile.toggle * 0.52)
+
+		hudScale.Scale = layoutScale
+		hudConstraint.MaxSize = Vector2.new(400, 38)
+		hud.Size = UDim2.new(0.92 / layoutScale, 0, 0, 38)
+		hud.Position = UDim2.new(0.5, 0, 0, profile.hudTop)
+		hudBottom = profile.hudTop + math.floor(38 * layoutScale) + 8
+	end
+
+	local cameraConnection: RBXScriptConnection? = nil
+	local function bindCamera()
+		if cameraConnection then cameraConnection:Disconnect(); cameraConnection = nil end
+		local camera = workspace.CurrentCamera
+		if camera then
+			cameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyLayout)
+			table.insert(connections, cameraConnection)
+		end
+		applyLayout()
+	end
+	bindCamera()
+	table.insert(connections, UserInputService.LastInputTypeChanged:Connect(applyLayout))
+	table.insert(connections, workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCamera))
+
+	table.insert(connections, UserInputService.InputBegan:Connect(function(input, processed)
+		if processed then return end
+		if input.KeyCode == Enum.KeyCode.M then
+			if expanded then close() else open() end
+		elseif input.KeyCode == Enum.KeyCode.ButtonY and not expanded then
+			open()
+		elseif input.KeyCode == Enum.KeyCode.ButtonB and expanded then
+			close()
+		end
+	end))
+
+	if typeof(Network.OnStateChanged) == "function" then
+		local connection = Network.OnStateChanged(applyState)
+		if typeof(connection) == "RBXScriptConnection" then
+			table.insert(connections, connection)
+		elseif typeof(connection) == "table" and typeof(connection.Disconnect) == "function" then
+			-- Supports custom connection objects returned by alternate network modules.
+			table.insert(connections, {
+				Connected = true,
+				Disconnect = function() connection:Disconnect() end,
+			} :: any)
+		end
+	end
+
+	if typeof(Network.GetState) == "function" then
+		local ok, initialState = pcall(Network.GetState)
+		if ok and typeof(initialState) == "table" then applyState(initialState) end
+	end
+	syncElapsed()
+
+	task.spawn(function()
+		while not destroyed do
+			task.wait(1)
+			updateProgress()
+			updateHud()
+		end
+	end)
+
+	-- Volume slider dragging
+	table.insert(connections, UserInputService.InputChanged:Connect(function(input)
+		if not sliderDragging then return end
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			local refs = sliderRefs
+			if refs and refs.track.Parent then refs.setFromX(input.Position.X) end
+		end
+	end))
+	table.insert(connections, UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			sliderDragging = false
+		end
+	end))
+
+	-- Audio visualizer (~30 fps) for the panel and the top bar HUD. Uses Network.GetLoudness() (0-1, or
+	-- PlaybackLoudness 0-1000) when provided, otherwise an animated beat pattern scaled by the volume slider.
+	local vizClock = 0
+	table.insert(connections, RunService.Heartbeat:Connect(function(dt)
+		vizClock += dt
+		if vizClock < 1 / 30 or destroyed then return end
+		vizClock = 0
+
+		local playing = typeof(state.nowPlaying) == "table"
+		local t = os.clock()
+		local energy = 0.1
+		if playing then
+			local loud: number? = nil
+			if typeof(Network.GetLoudness) == "function" then
+				local ok, value = pcall(Network.GetLoudness)
+				if ok and typeof(value) == "number" then
+					loud = if value > 1 then value / 600 else value
+				end
+			end
+			energy = if loud then math.clamp(loud, 0, 1) else 0.55 + 0.45 * (math.abs(math.sin(t * 2.2)) ^ 4)
+		end
+		local level = if volume <= 0 then 0 else 0.25 + 0.75 * volume
+
+		for i, piece in ipairs(hudBars) do
+			local wave = 0.5 + 0.5 * math.sin(t * (3 + i * 1.3) + i * 1.7)
+			piece.Size = UDim2.new(0, 3, math.clamp(0.12 + 0.88 * energy * level * wave, 0.12, 1), 0)
+		end
+
+		if expanded then
+			for _, update in ipairs(titleAnimators) do update(t) end
+		end
+
+		local refs = vizRefs
+		if expanded and refs and refs.container.Parent then
+			for i, piece in ipairs(refs.bars) do
+				local wave = 0.5 + 0.5 * math.sin(t * (2 + (i % 5) * 0.7) + refs.phases[i])
+				local noise = math.noise(i * 0.43 + refs.seed, t * 1.3) * 0.5 + 0.5
+				local height = 0.08 + 0.92 * energy * level * (0.5 * wave + 0.5 * noise)
+				piece.Size = UDim2.new(1 / #refs.bars, -2, math.clamp(height, 0.06, 1), 0)
+			end
+		end
+	end))
+
+	renderTab()
+
+	local mounted = {
+		Gui = gui,
+		Notify = notify,
+		Open = open,
+		Close = close,
+		Destroy = function()
+			if destroyed then return end
+			destroyed = true
+			lookupSerial += 1
+			if previewSound then
+				pcall(function() previewSound:Stop(); previewSound:Destroy() end)
+				previewSound = nil
+				previewId = nil
+			end
+			for _, connection in ipairs(connections) do
+				pcall(function()
+					if connection.Connected then connection:Disconnect() end
+				end)
+			end
+			table.clear(connections)
+			if gui.Parent then gui:Destroy() end
+		end,
+	}
+
+	gui.Destroying:Connect(function()
+		if not destroyed then
+			destroyed = true
+			lookupSerial += 1
+			if previewSound then
+				pcall(function() previewSound:Stop(); previewSound:Destroy() end)
+				previewSound = nil
+				previewId = nil
+			end
+			for _, connection in ipairs(connections) do
+				pcall(function() if connection.Connected then connection:Disconnect() end end)
+			end
+			table.clear(connections)
+		end
+	end)
+
+	return mounted
+end
+
+return Renderer
