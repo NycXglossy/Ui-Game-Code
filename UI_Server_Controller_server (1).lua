@@ -2132,6 +2132,10 @@ local function handleAction(player: Player, action: any, payload: any)
 			table.insert(ALL_TRACK_IDS, trackId)
 			table.sort(ALL_TRACK_IDS)
 		end
+		local publishOk, published = globalInvoke("PublishCatalogChange")
+		if not publishOk or published ~= true then
+			warn("[ClubMusic] Catalog add saved locally; cross-server invalidation publish failed.")
+		end
 		notify(player, message, "ok")
 		publishState(nil)
 		return
@@ -2161,6 +2165,10 @@ local function handleAction(player: Player, action: any, payload: any)
 		TRACK_BY_ID[trackId] = nil
 		for index, id in ipairs(ALL_TRACK_IDS) do
 			if id == trackId then table.remove(ALL_TRACK_IDS, index); break end
+		end
+		local publishOk, published = globalInvoke("PublishCatalogChange")
+		if not publishOk or published ~= true then
+			warn("[ClubMusic] Catalog removal saved locally; cross-server invalidation publish failed.")
 		end
 		notify(player, message, "ok")
 		publishState(nil)
@@ -2823,8 +2831,55 @@ end
 -- Apply validated cross-server events to this server's local state. The API
 -- folder can be created slightly after this controller starts, so attach both
 -- immediately and through ServerStorage.ChildAdded for startup-order recovery.
+local lastCatalogRefreshAt = 0
+local catalogRefreshBusy = false
+
+local function refreshLocalCatalog(): boolean
+	if catalogRefreshBusy or not catalogStorageReady then return false end
+	catalogRefreshBusy = true
+	local refreshed = false
+	local ok, err = pcall(function()
+		if not waitForDataStoreBudget(5) then return end
+		if not MusicCatalogService:Refresh() then return end
+		local nextTracks: {[string]: Track} = {}
+		local nextIds: {string} = {}
+		for _, catalogTrack in ipairs(MusicCatalogService:GetAllTracks()) do
+			local track: Track = {
+				id = catalogTrack.id,
+				genreId = catalogTrack.genreId,
+				title = catalogTrack.title,
+				artist = catalogTrack.artist,
+				duration = catalogTrack.duration,
+				genre = catalogTrack.genre,
+				assetId = catalogTrack.assetId,
+				soundId = catalogTrack.soundId,
+			}
+			nextTracks[track.id] = track
+			table.insert(nextIds, track.id)
+		end
+		table.sort(nextIds)
+		table.clear(TRACK_BY_ID)
+		for id, track in pairs(nextTracks) do TRACK_BY_ID[id] = track end
+		table.clear(ALL_TRACK_IDS)
+		for _, id in ipairs(nextIds) do table.insert(ALL_TRACK_IDS, id) end
+		refreshed = true
+	end)
+	catalogRefreshBusy = false
+	if not ok then warn("[ClubMusic] Catalog refresh failed: " .. tostring(err)) end
+	if refreshed then
+		lastCatalogRefreshAt = os.clock()
+		publishState(nil)
+	end
+	return refreshed
+end
+
 local function handleGlobalMessage(message: any)
 	if typeof(message) ~= "table" then return end
+	if message.kind == "Catalog" then
+		if os.clock() - lastCatalogRefreshAt < 3 then return end
+		task.spawn(refreshLocalCatalog)
+		return
+	end
 	if message.kind == "XPBoost" and (message.multiplier == 1 or message.multiplier == 2 or message.multiplier == 4)
 		and isFiniteNumber(message.expiresAt) and message.expiresAt >= 0 then
 		setGlobalXPState(message.multiplier, message.expiresAt, message.lowerExpiresAt)
@@ -2914,6 +2969,17 @@ attachGlobalEvent(globalEventObject)
 if globalApi and globalApi:IsA("Folder") then watchGlobalApi(globalApi) end
 ServerStorage.ChildAdded:Connect(function(child)
 	if child.Name == "ClubMusicGlobalAPI" and child:IsA("Folder") then watchGlobalApi(child) end
+end)
+
+-- MessagingService invalidations are best-effort. A low-frequency, jittered
+-- reconciliation repairs missed messages without making the catalog a hot DataStore path.
+task.spawn(function()
+	while script.Parent do
+		task.wait(180 + math.random(0, 30))
+		if catalogStorageReady and os.clock() - lastCatalogRefreshAt >= 150 then
+			refreshLocalCatalog()
+		end
+	end
 end)
 
 local function settlePlayerXP(player: Player, nowClock: number): boolean
