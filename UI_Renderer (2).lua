@@ -1035,12 +1035,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Size = UDim2.new(1, -4, 0, height or 72),
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
-			ClipsDescendants = true,
 		}, content) :: Frame
 		corner(frame, 15)
 		local outline = stroke(frame, C.SurfaceLight, 1)
 		outline.Transparency = 0.34
-		local surfaceGradient = make("UIGradient", {
+		make("UIGradient", {
 			Color = ColorSequence.new({
 				ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 34, 48)),
 				ColorSequenceKeypoint.new(1, C.Surface),
