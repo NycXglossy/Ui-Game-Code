@@ -36,11 +36,13 @@ The original standalone `Music System` is **not** a runtime dependency. It creat
 
 These legacy source files can remain in the repository for reference. Their presence in the repository does not mean they should be inserted into the live Roblox hierarchy.
 
-## Cross-server pause and resume
+## Cross-server playback controls
 
-Staff pause/resume actions are sent through the existing `ClubMusic_Global_Service` DJ topic using MessagingService. The originating controller applies the change locally; the global service publishes a validated `SetPlaybackPaused` payload; other server controllers receive it through the existing global event bridge and pause or resume their own `ServerMusicSound`. The originating server ignores its own echoed message to avoid applying the action twice.
+Pause, resume, and restart are now recorded in the existing global-control DataStore under a revisioned `playbackControl` record before the MessagingService notification is sent. Each receiving controller applies only revisions newer than its last applied revision. A low-frequency reconciliation loop re-reads the durable record so servers recover missed notifications; a restart revision is treated as a one-shot action per server. The originating controller records the returned revision to avoid replaying its own restart during reconciliation.
 
-A publishing bug previously placed the durable request-lock DataStore write inside the `SetPlaybackPaused` branch. Pause/resume therefore attempted to read a nonexistent `payload.locked` value and returned before publishing. The write now runs only for `SetRequestLock`; pause/resume validates and publishes its boolean `paused` value directly. Pause/resume still depends on MessagingService delivery and reports a warning when publication fails; it is not a durable, missed-message-reconciled global playback state.
+MessagingService remains the fast path; durable reconciliation is the recovery path. Restart means restart each server's locally current track at position zero. It does **not** synchronize queue contents, track identity, or exact playback position across servers. Pause/resume applies to each server's own current track. New local tracks preserve the current global paused state.
+
+The earlier request-lock persistence bug is also corrected: its DataStore write remains exclusively in the `SetRequestLock` branch.
 
 ## SoundService model integration
 
