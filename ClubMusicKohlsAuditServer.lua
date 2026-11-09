@@ -5,6 +5,9 @@
 --
 -- This addon is observational only. It does not grant/revoke roles, ban players,
 -- invoke ClubMusic actions, or synchronize Kohl's roles into ClubMusic permissions.
+--
+-- ClubMusic command outcomes are logged by the shared addon, which has access
+-- to the actual ClubMusic bridge response. postCommand cannot establish success.
 
 return function(_K: any)
 	local hooks = _K and _K.Hook
@@ -37,46 +40,6 @@ return function(_K: any)
 			warn("[ClubMusic Kohl's Audit] Could not connect " .. hookName .. ": " .. tostring(err))
 		end
 	end
-
-	local function actorUserId(command: any): number?
-		if typeof(command) ~= "table" then return nil end
-		local from = command.from
-		if typeof(from) == "number" and from > 0 and from % 1 == 0 and from <= 9007199254740991 then
-			return from
-		end
-		if typeof(from) == "Instance" and from:IsA("Player") then
-			return from.UserId
-		end
-		return nil
-	end
-
-	local CLUB_MUSIC_ALIASES: {[string]: boolean} = {
-		["clubmusic-skip"] = true,
-		["cmskip"] = true,
-		["clubmusic-pause"] = true,
-		["cmpause"] = true,
-		["clubmusic-restart"] = true,
-		["cmrestart"] = true,
-		["clubmusic-lock"] = true,
-		["cmlock"] = true,
-		["clubmusic-clearqueue"] = true,
-		["cmclear"] = true,
-		["clubmusic-status"] = true,
-		["cmstatus"] = true,
-		["clubmusic-queue"] = true,
-		["cmqueue"] = true,
-		["clubmusic-remove"] = true,
-		["cmremove"] = true,
-	}
-
-	connectHook("postCommand", function(command: any)
-		if typeof(command) ~= "table" then return end
-		local alias = command.alias
-		if typeof(alias) ~= "string" or not CLUB_MUSIC_ALIASES[string.lower(alias)] then return end
-		local userId = actorUserId(command)
-		local safeAlias = string.sub(alias, 1, 40)
-		writeLog("ClubMusic admin command executed: " .. safeAlias, "COMMAND", userId)
-	end)
 
 	local function safeRoleLabel(role: any): string
 		if typeof(role) ~= "table" then return "unknown" end
