@@ -1034,7 +1034,19 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local nowCard = card(182)
 		local live = typeof(state.nowPlaying) == "table"
 		label(nowCard, nz(now.title, "The stage is warming up"), UDim2.fromOffset(14, 8), UDim2.new(1, -116, 0, 24), C.White, 16, true)
-		badge(nowCard, if live then "ON AIR" else "STANDBY", if live then C.Green else C.SurfaceLight, UDim2.new(1, -92, 0, 8), 78)
+		local liveColor = if live then C.Green else C.SurfaceLight
+		local liveBadge = make("TextLabel", {
+			Position = UDim2.new(1, -92, 0, 8),
+			Size = UDim2.fromOffset(78, 24),
+			BackgroundColor3 = liveColor:Lerp(C.Base, 0.22),
+			Text = if live then "ON AIR" else "STANDBY",
+			TextColor3 = liveColor:Lerp(C.White, 0.35),
+			TextSize = 9,
+			Font = BOLD,
+		}, nowCard)
+		corner(liveBadge, 8)
+		local liveBadgeStroke = stroke(liveBadge, liveColor, 1)
+		liveBadgeStroke.Transparency = 0.55
 		make("Frame", {Name="PlayerAccent", Position=UDim2.fromOffset(14, 58), Size=UDim2.new(1, -28, 0, 2), BackgroundColor3=C.Gold, BackgroundTransparency=0.48, BorderSizePixel=0}, nowCard)
 		local detail = nz(now.artist, "Sunset Stage Club")
 		if now.source == "player" and nz(now.requestedBy, "") ~= "" then
