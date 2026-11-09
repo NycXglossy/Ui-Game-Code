@@ -3330,12 +3330,18 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			PlaceholderText = "Enter a custom title",
 			Text = draft.text,
 			TextSize = if compactTitleEditor then 11 else 12,
+			TextScaled = true,
+			TextWrapped = false,
 			Font = FONT,
 			ClearTextOnFocus = false,
 			Selectable = true,
 			Active = true,
 		}, form) :: TextBox
 		corner(titleInput, 9)
+		make("UITextSizeConstraint", {
+			MinTextSize = if compactTitleEditor then 10 else 11,
+			MaxTextSize = if compactTitleEditor then 12 else 13,
+		}, titleInput)
 		-- Controller navigation flows from the selected slot directly into title editing.
 		local selectedSlotButton = slotButtons[titleEditSlot]
 		if selectedSlotButton then
@@ -3382,6 +3388,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Active = true,
 		}, form) :: TextBox
 		corner(presetSearch, 7)
+		presetSearch.TextScaled = true
+		presetSearch.TextWrapped = false
+		make("UITextSizeConstraint", {
+			MinTextSize = 9,
+			MaxTextSize = if compactTitleEditor then 10 else 11,
+		}, presetSearch)
 
 		local families = {
 			{ id = "all", name = "All colors" },
@@ -3407,6 +3419,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local initialEffect = findById(TITLE_EFFECTS, draft.effect)
 		local initialPreset = findById(initialEffect.sets, draft.set)
 		local selectedPreset = label(form, "SELECTED  •  " .. string.upper(initialPreset.name), UDim2.fromOffset(12, 234), UDim2.new(1, -24, 0, 16), initialPreset.color or initialPreset.a or C.Gold, 10, true)
+		selectedPreset.TextScaled = true
+		selectedPreset.TextTruncate = Enum.TextTruncate.AtEnd
+		make("UITextSizeConstraint", { MinTextSize = 8, MaxTextSize = 10 }, selectedPreset)
 		local setRow: Instance? = nil
 		local familyRow: Instance? = nil
 		local effectRow: Instance? = nil
