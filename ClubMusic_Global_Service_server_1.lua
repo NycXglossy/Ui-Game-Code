@@ -242,9 +242,9 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): b
 	if command == "SetRequestLock" then
 		if typeof(payload.locked) ~= "boolean" then return false end
 		cleanPayload.locked = payload.locked
-	elseif command == "SetPlaybackPaused" then
-		if typeof(payload.paused) ~= "boolean" then return false end
-		cleanPayload.paused = payload.paused
+		-- Persist request-lock state only for SetRequestLock. Previously this
+		-- block was accidentally nested under SetPlaybackPaused, where it read
+		-- a nil payload.locked and prevented pause/resume publication.
 		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
 		if not budgetShared or not budgetAllowed then
 			warn("[ClubMusic Global] Global request lock change rejected: shared DataStore budget unavailable.")
@@ -253,23 +253,26 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): b
 		local stored, storeResult = pcall(function()
 			return globalControlStore:UpdateAsync("requestLock", function(old)
 				local state = if typeof(old) == "table" then table.clone(old) else {}
-				state.locked = payload.locked
+				state.locked = cleanPayload.locked
 				state.updatedAt = os.time()
 				state.updatedBy = math.floor(actorUserId)
 				return state
 			end)
 		end)
-		if not stored or typeof(storeResult) ~= "table" or storeResult.locked ~= payload.locked then
+		if not stored or typeof(storeResult) ~= "table" or storeResult.locked ~= cleanPayload.locked then
 			warn("[ClubMusic Global] Could not persist global request lock: " .. tostring(storeResult))
 			return false
 		end
+	elseif command == "SetPlaybackPaused" then
+		if typeof(payload.paused) ~= "boolean" then return false end
+		cleanPayload.paused = payload.paused
 	end
 	local published = publishTopic(CONFIG.Topics.DJ, {
 		kind = "DJ", command = command, payload = cleanPayload,
 		actorUserId = math.floor(actorUserId),
 	})
-	-- SetRequestLock is durable; a missed notification is recovered by polling.
-	-- Return success after persistence even if MessagingService is unavailable.
+	-- Request-lock state is durable; a missed notification is recovered by polling.
+	-- Other DJ commands require successful MessagingService publication.
 	if command == "SetRequestLock" then return true end
 	return published
 end
