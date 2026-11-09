@@ -652,7 +652,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	DJPlayPlaylist = 2, DJStopPlaylist = 1,
 	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
 	ModBlockUser = 0.5, ModSetVip = 0.5, ModPurgeUser = 0.5,
-	ClaimDailyReward = 1, EquipTitleTag = 0.5, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
+	ClaimDailyReward = 1, EquipTitleTag = 0.5, BuyTitleTag = 1, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
 	SaveTitleSlot = CONFIG.SaveTitleCooldownSeconds, SelectTitleSlot = 0.3,
 	ClearTitleSlot = 0.5, SetTitleVisible = 0.3,
 }
@@ -1778,6 +1778,7 @@ local function snapshotFor(player: Player)
 		rank = getRank(player),
 		perm = level,
 		vip = vip,
+		customTitleUnlocked = isSultan(player),
 		queue = safeQueue,
 		nowPlaying = {
 			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
@@ -2530,6 +2531,10 @@ end
 local function saveTitleSlot(player: Player, slotNumber: number, data: any, visible: boolean): boolean
 	local profile = profiles[player.UserId]
 	if not profile then return false end
+	if not isSultan(player) then
+		notify(player, "Custom titles are exclusive to Tiki Tide Sultan members.", "warn")
+		return false
+	end
 	if slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return false end
 	if slotNumber > profile.unlockedSlots then
 		notify(player, "That title slot is locked.", "warn")
@@ -3211,6 +3216,29 @@ local function handleAction(player: Player, action: any, payload: any)
 		return
 	end
 
+	if action == "BuyTitleTag" then
+		local tagId = payload.tagId
+		local prices = { bass = 150, sunset = 250, tiki = 400 }
+		local price = if typeof(tagId) == "string" then prices[tagId] else nil
+		local profile = profiles[player.UserId]
+		if not profile or not price then return end
+		if profile.ownedTags[tagId] == true then
+			notify(player, "You already own this title tag.", "info")
+			return
+		end
+		if profile.tickets < price then
+			notify(player, string.format("You need %d Tickets to unlock this title tag.", price), "warn")
+			return
+		end
+		profile.tickets -= price
+		profile.ownedTags[tagId] = true
+		player:SetAttribute("Tickets", profile.tickets)
+		scheduleProfileSave(player)
+		notify(player, tagId == "bass" and "Bass Head unlocked!" or tagId == "sunset" and "Sunset Soul unlocked!" or "Tiki Legend unlocked!", "ok")
+		publishState(player)
+		return
+	end
+
 	if action == "EquipTitleTag" then
 		local tagId = payload.tagId
 		if not isValidString(tagId, 24) or TAGS[tagId] ~= true then return end
@@ -3285,6 +3313,7 @@ local function handleAction(player: Player, action: any, payload: any)
 	end
 
 	if action == "SelectTitleSlot" then
+		if not isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		local profile = profiles[player.UserId]
@@ -3301,6 +3330,7 @@ local function handleAction(player: Player, action: any, payload: any)
 	end
 
 	if action == "ClearTitleSlot" then
+		if not isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		local profile = profiles[player.UserId]
@@ -3316,6 +3346,7 @@ local function handleAction(player: Player, action: any, payload: any)
 	end
 
 	if action == "SetTitleVisible" then
+		if not isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
 		if typeof(payload.visible) ~= "boolean" then return end
 		local profile = profiles[player.UserId]
 		if not profile then return end
