@@ -546,15 +546,28 @@ local function waitForDataStoreBudget(maxWaitSeconds: number): boolean
 	end
 end
 
--- Load the persisted custom catalog only after the shared DataStore budget gate
--- is available. A failed load leaves the built-in catalog readable but disables writes.
-local catalogStorageReady = MusicCatalogService:Initialize(CONFIG.StudioUseDataStore, function()
-	return waitForDataStoreBudget(5)
-end)
+-- Initialize storage with bounded retries. The services leave their initialization
+-- state retryable after transient budget/DataStore failures; built-in catalog tracks
+-- remain available even when persistent custom storage cannot be initialized.
+local function initializeStorageWithRetries(service: any, label: string): boolean
+	local delays = {0, 1, 2, 4}
+	for attempt, delaySeconds in ipairs(delays) do
+		if delaySeconds > 0 then task.wait(delaySeconds) end
+		local ok, ready = pcall(function()
+			return service:Initialize(CONFIG.StudioUseDataStore, function()
+				return waitForDataStoreBudget(5)
+			end)
+		end)
+		if ok and ready == true then return true end
+		warn(string.format("[ClubMusic] %s initialization attempt %d/%d failed: %s",
+			label, attempt, #delays, if ok then "storage not ready" else tostring(ready)))
+	end
+	return false
+end
+
+local catalogStorageReady = initializeStorageWithRetries(MusicCatalogService, "MusicCatalogService")
 local playlistRefreshAt = 0
-local playlistStorageReady = MusicPlaylistService:Initialize(CONFIG.StudioUseDataStore, function()
-	return waitForDataStoreBudget(5)
-end)
+local playlistStorageReady = initializeStorageWithRetries(MusicPlaylistService, "MusicPlaylistService")
 if not playlistStorageReady then
 	warn("[ClubMusic] Persistent playlists unavailable; playlist management is disabled for this server.")
 end
