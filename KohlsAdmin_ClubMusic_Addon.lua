@@ -104,7 +104,11 @@ return function(_K: any)
 			return bridge:Invoke(caller, operation, argument)
 		end)
 		if not ok then
-			return finish(context, operation, "error", "Bridge invocation failed: " .. tostring(accepted))
+			-- Keep implementation details in the server Output, not in a command
+			-- response visible to every caller with access to Kohl's Admin.
+			warn("[ClubMusic Kohl's Admin] Bridge invocation failed for operation="
+				.. operation .. ": " .. tostring(accepted))
+			return finish(context, operation, "error", "ClubMusic bridge invocation failed. Check the server Output for details.")
 		end
 
 		if accepted ~= true then
