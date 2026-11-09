@@ -70,3 +70,29 @@ The network API is `UI_Network.GetMusicCatalog(query, genreId, offset, limit)`. 
 - No new catalog browsing UI has been added yet. The network API is ready for the renderer to consume in a separate UI change.
 - No playlist manager, automatic rotation rules, favorites migration, or five child manager modules have been introduced.
 - No live Roblox Studio, multiplayer, audio-permission, or exploit-client test was run as part of this repository change.
+
+
+## Persistent staff-managed catalog storage (next stage)
+
+The catalog service now supports a bounded persistent overlay stored separately
+from player profiles in DataStore `ClubMusic_Catalog_v1`, key `custom_tracks`.
+
+### Staff operations
+
+- `CatalogAddAudio`: staff supplies an audio asset ID and a genre ID. The server checks staff permission, optional audio allowlist, rate limits, audio type, and actual server-side loadability/duration before saving. The server derives the title and creator from Marketplace metadata; client-supplied title/artist/duration are never accepted.
+- `CatalogRemoveTrack`: staff can remove only custom catalog entries. A track cannot be removed while it is currently playing or still queued.
+- Custom tracks use stable IDs `custom-<assetId>`, carry their approved `rbxassetid://` sound ID, and become eligible for normal catalog requests and automatic selection after successful save.
+- Storage is capped at 200 custom entries. DataStore `UpdateAsync` performs atomic add/remove operations. Failed writes do not update the server's in-memory catalog.
+- Storage loads at server startup through the existing shared DataStore budget gate. If loading fails, built-in songs remain available, but custom catalog mutation is disabled for that server to avoid overwriting unknown persisted state.
+- Studio remains session-only when `StudioUseDataStore=false`; set it true only when Studio API access and intentional live-store testing are configured.
+
+### Network API
+
+`UI_Network.CatalogAddAudio(assetId, genreId)` and
+`UI_Network.CatalogRemoveTrack(trackId)` are available. Server-side staff checks
+remain authoritative; client wrappers are not security boundaries.
+
+### Important limits
+
+- This stage persists approved catalog metadata and asset IDs. It does not create a new catalog editor screen; a staff-facing add/remove UI can be connected to the existing Audio ID and All Tracks tabs in a separate renderer change.
+- DataStore writes use the shared budget gate and atomic `UpdateAsync`. Roblox Studio/live DataStore behavior still requires a controlled runtime test.
