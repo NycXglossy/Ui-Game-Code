@@ -2275,6 +2275,12 @@ local function findTarget(actor: Player, userId: any): Player?
 end
 
 local function purgeUserEntries(userId: number): number
+	if globalQueueMode then
+		local callOk, purged, state = globalInvoke("PurgeGlobalUserQueueEntries", userId)
+		if callOk and purged == true and typeof(state) == "table" then applyGlobalQueueState(state); return 1 end
+		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		return 0
+	end
 	local removed = 0
 	for index = #queue, 1, -1 do
 		local entry = queue[index]
@@ -2613,7 +2619,8 @@ local function handleAction(player: Player, action: any, payload: any)
 		local vip = isVip(player)
 		local entry = makeEntry(track, "player", player)
 		if globalQueueMode then
-			local queued, queueError = if enqueueGlobalQueueEntry then enqueueGlobalQueueEntry(entry) else false, "Global queue is not ready."
+			local queued, queueError = false, "Global queue is not ready."
+			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
 			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
 		else
 			table.insert(queue, insertIndex(passTier(player)), entry)
@@ -2793,11 +2800,15 @@ local function handleAction(player: Player, action: any, payload: any)
 		if not isStaff(player) then return end
 		local id = payload.queueId
 		if not isValidString(id, 64) then return end
-		local index = findQueueIndex(id)
-		if index and index > 1 then
-			queue[index], queue[index - 1] = queue[index - 1], queue[index]
-			publishState(nil)
+		if globalQueueMode then
+			local callOk, moved, state = globalInvoke("MoveUpGlobalQueueEntry", id)
+			if callOk and moved == true and typeof(state) == "table" then applyGlobalQueueState(state)
+			elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		else
+			local index = findQueueIndex(id)
+			if index and index > 1 then queue[index], queue[index - 1] = queue[index - 1], queue[index] end
 		end
+		publishState(nil)
 		return
 	end
 
@@ -2805,13 +2816,15 @@ local function handleAction(player: Player, action: any, payload: any)
 		if not isStaff(player) then return end
 		local id = payload.queueId
 		if not isValidString(id, 64) then return end
-		local index = findQueueIndex(id)
-		if index then
-			releaseSlot(queue[index])
-			table.remove(queue, index)
-			topUpAuto()
-			publishState(nil)
+		if globalQueueMode then
+			local callOk, removed, state = globalInvoke("RemoveGlobalQueueEntry", id)
+			if callOk and removed == true and typeof(state) == "table" then applyGlobalQueueState(state); topUpAuto()
+			elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		else
+			local index = findQueueIndex(id)
+			if index then releaseSlot(queue[index]); table.remove(queue, index); topUpAuto() end
 		end
+		publishState(nil)
 		return
 	end
 
@@ -2876,10 +2889,16 @@ local function handleAction(player: Player, action: any, payload: any)
 
 	if action == "DJClearQueue" then
 		if not isAdmin(player) then return end
-		for _, entry in ipairs(queue) do releaseSlot(entry) end
-		table.clear(queue)
-		topUpAuto()
-		globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
+		if globalQueueMode then
+			local callOk, cleared, state = globalInvoke("ClearGlobalQueue")
+			if not callOk or cleared ~= true then notify(player, "The shared queue could not be cleared.", "warn"); return end
+			if typeof(state) == "table" then applyGlobalQueueState(state) end
+			topUpAuto()
+		else
+			for _, entry in ipairs(queue) do releaseSlot(entry) end
+			table.clear(queue); topUpAuto()
+			globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
+		end
 		notify(player, "Queue cleared.", "ok")
 		publishState(nil)
 		return
