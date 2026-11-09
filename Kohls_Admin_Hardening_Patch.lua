@@ -167,9 +167,21 @@ local newRemote = [=[	elseif event == "KDelete" and f.getPower(plr) > 4 then
 serverSource = replaceLiteral(serverSource, oldRemote, newRemote, "privileged delete/paste validation")
 mainModule.Source = serverSource
 
+-- Repair the packaged Explorer LocalScript's ContentProvider argument.
+-- PreloadAsync accepts an array of content IDs/Instances, not one string.
+local getSelection = selected:FindFirstChild("GetSelection", true)
+assert(getSelection and getSelection:IsA("LocalScript"),
+	"Could not find Explorer.GetSelection LocalScript; refusing an incomplete patch.")
+local selectionSource = getSelection.Source
+local oldPreload = "game:GetService('ContentProvider'):PreloadAsync(iconMap)"
+local newPreload = "game:GetService('ContentProvider'):PreloadAsync({iconMap})"
+selectionSource = replaceLiteral(selectionSource, oldPreload, newPreload, "Explorer ContentProvider PreloadAsync argument")
+getSelection.Source = selectionSource
+
 print("Kohl's Admin hardening patch applied:")
 print("- External asset auto-update/fallback disabled; bundled MainModule is pinned.")
 print("- Loader validates local module presence and initialize() API.")
 print("- KDelete validates the supplied Instance.")
 print("- KPaste validates payload types, all source Instances, and limits batches to 100.")
+print("- Explorer GetSelection passes an array to ContentProvider:PreloadAsync.")
 print("Review/disable the high-power script/localscript commands separately if dynamic code execution is not required.")
