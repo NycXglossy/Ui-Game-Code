@@ -2974,6 +2974,24 @@ local function handleAction(player: Player, action: any, payload: any)
 		if nowPlaying.trackId == trackId then
 			notify(player, "That track is currently playing. Remove it after playback ends.", "warn"); return
 		end
+		if globalQueueMode then
+			-- The local queue is only a mirror in global mode. Read the authoritative
+			-- snapshot before deleting so a just-enqueued shared entry cannot be missed
+			-- merely because this server has not received its queue notification yet.
+			local readCallOk, readOk, sharedState = globalInvoke("GetGlobalQueueState")
+			if not readCallOk or readOk ~= true or typeof(sharedState) ~= "table"
+				or typeof(sharedState.queue) ~= "table" or typeof(sharedState.current) ~= "table" then
+				notify(player, "The shared queue could not be verified; track was not removed.", "warn"); return
+			end
+			if sharedState.current.trackId == trackId then
+				notify(player, "That track is currently playing across servers. Remove it after playback ends.", "warn"); return
+			end
+			for _, queued in ipairs(sharedState.queue) do
+				if typeof(queued) == "table" and queued.trackId == trackId then
+					notify(player, "That track is in the shared queue. Remove it from the queue first.", "warn"); return
+				end
+			end
+		end
 		for _, queued in ipairs(queue) do
 			if queued.trackId == trackId then
 				notify(player, "That track is queued. Remove it from the queue first.", "warn"); return
