@@ -1860,27 +1860,45 @@ enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
 	return true, nil
 end
 
-local function advance(expectedGeneration: number?): boolean
+local function advance(expectedGeneration: number?): (boolean, string?)
 	-- Every transition is synchronous and generation-checked. This prevents the
 	-- duration clock and playback watchdog from advancing the same track twice.
-	if transitionInProgress then return false end
-	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then return false end
+	if transitionInProgress then return false, "A track transition is already in progress." end
+	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then
+		return false, "The current track changed before the transition started."
+	end
 	transitionInProgress = true
 	if globalQueueMode then
-		local playlistFallback = nextPlaylistTrack()
-		local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
-		local callOk, advanced, state, message = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
-		if callOk and advanced == true and typeof(state) == "table" then
-			applyGlobalQueueState(state)
+		local function attemptGlobalAdvance(): (boolean, string?)
+			local playlistFallback = nextPlaylistTrack()
+			local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
+			local callOk, advanced, state, message = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
+			if callOk and advanced == true and typeof(state) == "table" then
+				if not applyGlobalQueueState(state) then
+					return false, "The shared transition was accepted, but its state snapshot could not be applied."
+				end
+				return true, nil
+			end
+			return false, tostring(message or (if callOk then "The shared queue rejected the transition." else "The shared queue service is unavailable."))
+		end
+		local advanced, reason = attemptGlobalAdvance()
+		-- A different server may win the compare-and-swap between our last
+		-- snapshot and this request. Refresh the authoritative revision and retry
+		-- exactly once for that known conflict; never retry budget/storage failures.
+		if not advanced and reason == "Track already advanced by another server." then
+			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			advanced, reason = attemptGlobalAdvance()
+		end
+		if advanced then
 			transitionInProgress = false
 			topUpAuto()
 			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			return true
+			return true, nil
 		end
 		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 		transitionInProgress = false
-		if message and tostring(message) ~= "" then warn("[ClubMusic] Global transition was not applied: " .. tostring(message)) end
-		return false
+		warn("[ClubMusic] Global transition was not applied: " .. tostring(reason))
+		return false, reason
 	end
 	local ok, err = pcall(function()
 		local nextEntry = queueManager:PopNext()
@@ -1890,8 +1908,11 @@ local function advance(expectedGeneration: number?): boolean
 		topUpAuto()
 	end)
 	transitionInProgress = false
-	if not ok then warn("[ClubMusic] Track transition failed: " .. tostring(err)); return false end
-	return true
+	if not ok then
+		warn("[ClubMusic] Track transition failed: " .. tostring(err))
+		return false, "The local track transition failed."
+	end
+	return true, nil
 end
 
 -- Boot: start with an auto-selected track and a visible auto queue.
@@ -3333,8 +3354,12 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 	if action == "DJSkip" then
 		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
-		local advanced = advance()
-		if not advanced then notify(player, "The shared track transition could not be confirmed.", "warn"); return false, "The track transition could not be confirmed." end
+		local advanced, transitionError = advance()
+		if not advanced then
+			local reason = tostring(transitionError or "The shared track transition could not be confirmed.")
+			notify(player, reason, "warn")
+			return false, reason
+		end
 		if not globalQueueMode then globalInvoke("PublishDJCommand", "Skip", {}, player.UserId) end
 		notify(player, "Track skipped.", "ok")
 		publishState(nil)
