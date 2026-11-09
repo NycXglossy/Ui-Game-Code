@@ -344,9 +344,8 @@ end
 
 function MusicGlobalQueueService:Clear(): (boolean, State?, string?)
 	return transact(function(state)
-		if #state.queue == 0 and state.autoQueueHold then
-			return false, "The global queue is already empty."
-		end
+		-- Clearing an already-empty held queue is an idempotent success.
+		-- Keep the hold set so Auto DJ cannot refill it before the next track.
 		table.clear(state.queue)
 		-- Prevent Auto DJ from immediately repopulating the queue. Advance
 		-- releases this hold atomically when the current track changes.
