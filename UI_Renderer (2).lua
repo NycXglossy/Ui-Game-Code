@@ -455,6 +455,19 @@ local function buildNativeIcon(parent: Instance, kind: string, color: Color3, zI
 		part("NoteHeadLeft",.25,.78,.27,.19,0); part("NoteHeadRight",.57,.78,.27,.19,0)
 	elseif kind == "close" then
 		part("SlashA",.5,.5,.78,.09,45); part("SlashB",.5,.5,.78,.09,-45)
+	elseif kind == "up" or kind == "down" then
+		local direction = if kind == "up" then -1 else 1
+		part("ArrowLeft",.37,.5,.10,.42,45 * direction)
+		part("ArrowRight",.63,.5,.10,.42,-45 * direction)
+	elseif kind == "minus" then
+		part("MinusBar",.5,.5,.72,.10,0)
+	elseif kind == "star" then
+		for i = 1, 5 do
+			local angle = (i - 1) * 72 - 90
+			local radians = math.rad(angle)
+			local x, y = .5 + math.cos(radians) * .22, .5 + math.sin(radians) * .22
+			part("StarRay"..i, x, y, .11, .38, angle + 90)
+		end
 	elseif kind == "volume" then
 		part("SpeakerBody",.25,.5,.20,.34,0); part("SpeakerConeA",.43,.39,.10,.36,-45); part("SpeakerConeB",.43,.61,.10,.36,45)
 		local a=part("SoundArcA",.70,.5,.075,.36,0); local b=part("SoundArcB",.82,.5,.075,.58,0)
@@ -1194,11 +1207,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function actionButton(parent: Instance, text: string, position: UDim2, size: UDim2, callback: () -> (), color: Color3?)
+		local iconKind = if text == "★" or text == "☆" then "star"
+			elseif text == "▲" or text == "↑" then "up"
+			elseif text == "▼" or text == "↓" then "down"
+			elseif text == "✕" then "close"
+			elseif text == "−" then "minus" else nil
 		local button = make("TextButton", {
 			Position = position,
 			Size = size,
 			BackgroundColor3 = color or C.Magenta,
-			Text = text,
+			Text = if iconKind then "" else text,
 			TextColor3 = C.White,
 			TextSize = 12,
 			Font = BOLD,
@@ -1206,6 +1224,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Selectable = true,
 		}, parent) :: TextButton
 		corner(button, 12)
+		if iconKind then buildNativeIcon(button, iconKind, C.White, 2) end
 		local outline = stroke(button, color or C.Magenta, 1)
 		outline.Transparency = 0.64
 		bindFocusFeedback(button, outline, color or C.Magenta)
