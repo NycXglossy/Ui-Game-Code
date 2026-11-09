@@ -173,6 +173,20 @@ local function sanitizeStoredTrack(value: any): Track?
 		assetId=assetId, soundId="rbxassetid://" .. tostring(assetId), artworkAssetId=artworkAssetId}
 end
 
+local function hasValidStoredCatalogRecords(stored: any): boolean
+	if stored == nil then return true end
+	if not hasValidStoredCatalogShape(stored) then return false end
+	for _, rawTrack in ipairs(stored.tracks) do
+		local clean = sanitizeStoredTrack(rawTrack)
+		if not clean then
+			return false
+		end
+		if TRACK_BY_ID[clean.id] then
+			return false
+		end
+	end
+	return true
+end
 
 function MusicCatalogService:Initialize(studioUseDataStore: boolean?, budgetCallback: (() -> boolean)?): boolean
 	if storageInitialized then return storageReady end
@@ -199,8 +213,8 @@ function MusicCatalogService:Initialize(studioUseDataStore: boolean?, budgetCall
 		storageInitializing = false
 		return false
 	end
-	if not hasValidStoredCatalogShape(stored) then
-		warn("[ClubMusic Catalog] Initialization refused malformed persisted catalog data; retry after recovery.")
+	if not hasValidStoredCatalogRecords(stored) then
+		warn("[ClubMusic Catalog] Initialization refused malformed catalog records; persisted data was not loaded.")
 		storageInitializing = false
 		storageReady = false
 		storageInitialized = false
@@ -244,9 +258,9 @@ function MusicCatalogService:Refresh(budgetCallback: (() -> boolean)?): boolean
 		warn("[ClubMusic Catalog] Cross-server refresh failed: " .. tostring(stored))
 		return false
 	end
-	if not hasValidStoredCatalogShape(stored) then
+	if not hasValidStoredCatalogRecords(stored) then
 		storageWriteBusy = false
-		warn("[ClubMusic Catalog] Refresh refused malformed persisted catalog data; last-known-good cache preserved.")
+		warn("[ClubMusic Catalog] Refresh refused malformed catalog records; last-known-good cache preserved.")
 		return false
 	end
 	local loaded: {[string]: Track} = {}
