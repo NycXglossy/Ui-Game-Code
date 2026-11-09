@@ -1363,30 +1363,41 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local id = tostring(track[1])
 		local canRemove = allowCatalogRemoval == true and perm() >= 1 and string.sub(id, 1, 7) == "custom-"
 		local canAddToPlaylist = targetPlaylistId ~= nil and perm() >= 1
+		local compact = currentDevice == "Mobile"
 		local frame = make("Frame", {
-			Size = UDim2.new(1, -4, 0, 66),
+			Size = UDim2.new(1, -4, 0, if compact then 84 else 66),
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
 		}, parent or content)
 		corner(frame, 13)
-		stroke(frame, C.SurfaceLight, 1)
-		make("Frame", {Name="TrackAccent", Position=UDim2.fromOffset(0,12), Size=UDim2.fromOffset(2,42), BackgroundColor3=C.Gold, BackgroundTransparency=0.28, BorderSizePixel=0}, frame)
-		local textWidth = if canAddToPlaylist then (if canRemove then -330 else -250) else (if canRemove then -250 else -176)
-		label(frame, tostring(track[2]), UDim2.fromOffset(12, 8), UDim2.new(1, textWidth, 0, 22), C.White, 13, true)
-		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(12, 32), UDim2.new(1, textWidth, 0, 18), C.Muted, 11, false)
+		local trackStroke = stroke(frame, C.SurfaceLight, 1)
+		trackStroke.Transparency = 0.38
+		make("Frame", {Name="TrackAccent", Position=UDim2.fromOffset(0, if compact then 8 else 12), Size=UDim2.fromOffset(2, if compact then 68 else 42), BackgroundColor3=C.Gold, BackgroundTransparency=0.28, BorderSizePixel=0}, frame)
+
+		local titleInset = if compact then (if string.sub(id, 1, 7) == "custom-" then -76 else -14) else (if canAddToPlaylist then (if canRemove then -330 else -250) else (if canRemove then -250 else -176))
+		local artistInset = if compact then -14 else titleInset
+		label(frame, tostring(track[2]), UDim2.fromOffset(12, if compact then 4 else 8), UDim2.new(1, titleInset, 0, 22), C.White, 13, true)
+		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(12, if compact then 25 else 32), UDim2.new(1, artistInset, 0, 18), C.Muted, 11, false)
 
 		local favorites: any = state.favorites
 		local isFavorite = typeof(favorites) == "table" and favorites[id] == true
-		local starPosition = if canAddToPlaylist then (if canRemove then -282 else -202) else (if canRemove then -202 else -138)
-		local requestPosition = if canAddToPlaylist then (if canRemove then -240 else -160) else (if canRemove then -160 else -96)
-		local star = actionButton(frame, if isFavorite then "★" else "☆", UDim2.new(1, starPosition, 0.5, -15), UDim2.fromOffset(32, 30), function()
+		local starPosition = if compact then
+			(if canAddToPlaylist then (if canRemove then -218 else -150) else (if canRemove then -166 else -98))
+		else (if canAddToPlaylist then (if canRemove then -282 else -202) else (if canRemove then -202 else -138))
+		local requestPosition = if compact then
+			(if canAddToPlaylist then (if canRemove then -184 else -116) else (if canRemove then -132 else -8))
+		else (if canAddToPlaylist then (if canRemove then -240 else -160) else (if canRemove then -160 else -96))
+		local buttonY = if compact then 49 else 18
+		local starWidth = if compact then (if canAddToPlaylist or canRemove then 28 else 32) else 32
+		local star = actionButton(frame, if isFavorite then "★" else "☆", UDim2.new(1, starPosition, 0, buttonY), UDim2.fromOffset(starWidth, 30), function()
 			act("ToggleFavorite", { trackId = id }, id)
 		end, C.SurfaceLight)
 		star.TextSize = 16
 		star.TextColor3 = if isFavorite then C.Gold else C.Muted
 
 		local disabled, reason = requestsDisabled()
-		actionButton(frame, if disabled then "LOCKED" else "REQUEST", UDim2.new(1, requestPosition, 0.5, -15), UDim2.fromOffset(84, 30), function()
+		local requestWidth = if compact then (if canAddToPlaylist then 68 elseif canRemove then 72 else 82) else 84
+		actionButton(frame, if disabled then "LOCKED" else "REQUEST", UDim2.new(1, requestPosition, 0, buttonY), UDim2.fromOffset(requestWidth, 30), function()
 			if disabled then
 				notify(reason, C.Orange)
 				return
@@ -1395,7 +1406,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end, if disabled then C.SurfaceLight else C.Purple)
 
 		if canAddToPlaylist then
-			actionButton(frame, "ADD", UDim2.new(1, if canRemove then -148 else -72, 0.5, -15), UDim2.fromOffset(66, 30), function()
+			local addPosition = if compact then (if canRemove then -112 else -58) else (if canRemove then -148 else -72)
+			local addWidth = if compact then (if canRemove then 48 else 50) else 66
+			actionButton(frame, "ADD", UDim2.new(1, addPosition, 0, buttonY), UDim2.fromOffset(addWidth, 30), function()
 				send("PlaylistAddTrack", {playlistId = targetPlaylistId, trackId = id})
 				notify("Adding track to selected playlist…", C.Cyan)
 				task.delay(1.1, function()
@@ -1406,7 +1419,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		if canRemove then
 			local removeButton: TextButton
-			removeButton = actionButton(frame, "REMOVE", UDim2.new(1, -72, 0.5, -15), UDim2.fromOffset(66, 30), function()
+			local removePosition = if compact then -58 else -72
+			local removeWidth = if compact then 52 else 66
+			removeButton = actionButton(frame, "REMOVE", UDim2.new(1, removePosition, 0, buttonY), UDim2.fromOffset(removeWidth, 30), function()
 				if pendingCatalogRemoval ~= id then
 					pendingCatalogRemoval = id
 					removeButton.Text = "CONFIRM?"
