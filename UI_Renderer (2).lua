@@ -3399,32 +3399,40 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local unlocked, active, slotOf, ts = titleSlotInfo()
 		local shown = ts.visible ~= false
 		sectionLabel("MANAGE TITLES")
-		local info = card(78)
-		label(info, "Slot 1 is free. Slots 2 and 3 are unlocked with Robux.", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 20), C.White, 12, true)
-		label(info, "Equip the slot you want above your avatar, edit it, or clear it.", UDim2.fromOffset(12, 30), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
-		actionButton(info, if shown then "HIDE MY TITLE" else "SHOW MY TITLE", UDim2.fromOffset(12, 48), UDim2.fromOffset(130, 24), function()
+		local info = card(88)
+		label(info, "YOUR OVERHEAD TITLE", UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 17), C.Cyan, 10, true)
+		local activeData: any = slotOf(active)
+		local activeName = nz(activeData.text, "") ~= "" and activeData.text or "No title equipped"
+		label(info, activeName, UDim2.fromOffset(12, 26), UDim2.new(1, -150, 0, 22), C.White, 13, true)
+		label(info, string.format("SLOT %d  •  %s", active, if shown then "VISIBLE ABOVE AVATAR" else "CURRENTLY HIDDEN"),
+			UDim2.fromOffset(12, 51), UDim2.new(1, -150, 0, 17), if shown then C.Green else C.Muted, 9, true)
+		actionButton(info, if shown then "HIDE TITLE" else "SHOW TITLE", UDim2.new(1, -132, 0, 27), UDim2.fromOffset(120, 30), function()
 			act("SetTitleVisible", { visible = not shown }, not shown)
-		end, C.SurfaceLight)
+		end, if shown then C.SurfaceLight else C.Purple)
 
+		sectionLabel("SAVED TITLE SLOTS")
 		for i = 1, 3 do
 			local isLocked = i > unlocked
 			local data: any = slotOf(i)
 			local hasTitle = nz(data.text, "") ~= ""
-			local slotCard = card(122)
-			label(slotCard, "SLOT " .. tostring(i) .. (if i == 1 then "  •  FREE" else ""), UDim2.fromOffset(12, 6), UDim2.new(1, -130, 0, 18), C.Muted, 10, true)
+			local slotCard = card(132)
+			local slotHeading = "SLOT " .. tostring(i) .. (if i == 1 then "  •  FREE" else "")
+			label(slotCard, slotHeading, UDim2.fromOffset(12, 6), UDim2.new(1, -145, 0, 18), C.Muted, 10, true)
 			if active == i and not isLocked then
-				badge(slotCard, "ACTIVE", C.Green, UDim2.new(1, -82, 0, 6), 70)
+				badge(slotCard, "EQUIPPED", C.Green, UDim2.new(1, -94, 0, 5), 82)
+			elseif not isLocked and hasTitle then
+				badge(slotCard, "SAVED", C.Cyan, UDim2.new(1, -82, 0, 5), 70)
 			end
 			if isLocked then
-				label(slotCard, "🔒 Locked", UDim2.fromOffset(12, 28), UDim2.new(1, -24, 0, 30), C.Muted, 16, true)
-				label(slotCard, string.format("Unlock for %d Robux", titleSlotPrice(i, ts)), UDim2.fromOffset(12, 60), UDim2.new(1, -24, 0, 18), C.Gold, 11, true)
-				actionButton(slotCard, string.format("BUY SLOT  •  R$ %d", titleSlotPrice(i, ts)), UDim2.fromOffset(12, 84), UDim2.new(1, -24, 0, 30), function()
+				label(slotCard, "🔒  SLOT LOCKED", UDim2.fromOffset(12, 29), UDim2.new(1, -24, 0, 24), C.Muted, 14, true)
+				label(slotCard, string.format("Unlock this extra slot for %d Robux", titleSlotPrice(i, ts)), UDim2.fromOffset(12, 57), UDim2.new(1, -24, 0, 18), C.Gold, 10, true)
+				actionButton(slotCard, string.format("UNLOCK SLOT  •  R$ %d", titleSlotPrice(i, ts)), UDim2.fromOffset(12, 91), UDim2.new(1, -24, 0, 30), function()
 					buyTitleSlot(i)
 				end, C.Magenta)
 			else
 				local previewLabel = make("TextLabel", {
-					Position = UDim2.fromOffset(12, 26),
-					Size = UDim2.new(1, -24, 0, 32),
+					Position = UDim2.fromOffset(12, 27),
+					Size = UDim2.new(1, -24, 0, 34),
 					BackgroundTransparency = 1,
 					TextSize = 20,
 					TextXAlignment = Enum.TextXAlignment.Left,
@@ -3436,27 +3444,30 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					table.insert(titleAnimators, update)
 				else
 					previewLabel.Font = FONT
-					previewLabel.Text = "Empty slot"
+					previewLabel.Text = "No title saved in this slot"
 					previewLabel.TextColor3 = C.Muted
+					previewLabel.TextSize = 12
 				end
 				local effect = findById(TITLE_EFFECTS, data.effect)
 				local setName = titleSetFor(data.effect, data.set).name
-				label(slotCard, string.format("%s (%s)  •  height %.2f  •  view %d studs", effect.name, setName, data.height, math.floor(data.distance)),
-					UDim2.fromOffset(12, 58), UDim2.new(1, -24, 0, 16), C.Muted, 9, false)
-				actionButton(slotCard, if active == i then "EQUIPPED" else "EQUIP", UDim2.fromOffset(12, 82), UDim2.new(1 / 3, -12, 0, 30), function()
+				local detail = if hasTitle
+					then string.format("%s  •  %s  •  %.2f height  •  %d studs", effect.name, setName, data.height, math.floor(data.distance))
+					else "Create a custom title to fill this slot"
+				label(slotCard, detail, UDim2.fromOffset(12, 64), UDim2.new(1, -24, 0, 16), C.Muted, 9, false)
+				actionButton(slotCard, if active == i then "EQUIPPED" else "EQUIP", UDim2.fromOffset(12, 94), UDim2.new(1 / 3, -12, 0, 28), function()
 					if not hasTitle then
 						notify("Save a title in this slot first.", C.Orange)
 						return
 					end
 					act("SelectTitleSlot", { slot = i }, i)
 				end, if active == i then C.SurfaceLight else C.Purple)
-				actionButton(slotCard, "EDIT", UDim2.new(1 / 3, 2, 0, 82), UDim2.new(1 / 3, -8, 0, 30), function()
+				actionButton(slotCard, if hasTitle then "EDIT" else "CREATE", UDim2.new(1 / 3, 2, 0, 94), UDim2.new(1 / 3, -8, 0, 28), function()
 					titleEditSlot = i
 					titleDraft = nil
 					titleSub = "editor"
 					refreshTitleTab()
 				end, C.Magenta)
-				actionButton(slotCard, "CLEAR", UDim2.new(2 / 3, 0, 0, 82), UDim2.new(1 / 3, -12, 0, 30), function()
+				actionButton(slotCard, "CLEAR", UDim2.new(2 / 3, 0, 0, 94), UDim2.new(1 / 3, -12, 0, 28), function()
 					if not hasTitle then
 						notify("This slot is already empty.", C.Orange)
 						return
