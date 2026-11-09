@@ -1567,6 +1567,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		requestCatalogPage = function(offset: number)
 			if destroyed then return end
+			pendingCatalogRemoval = nil
 			catalogRequestSerial += 1
 			local serial = catalogRequestSerial
 			countLabel.Text = "Loading catalog…"
