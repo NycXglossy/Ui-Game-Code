@@ -1548,7 +1548,8 @@ local function advance(expectedGeneration: number?): boolean
 	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then return false end
 	transitionInProgress = true
 	if globalQueueMode then
-		local fallback = makeEntry(pickAutoTrack(), "auto", nil)
+		local playlistFallback = nextPlaylistTrack()
+		local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
 		local callOk, advanced, state, message = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
 		if callOk and advanced == true and typeof(state) == "table" then
 			applyGlobalQueueState(state)
@@ -1591,7 +1592,8 @@ task.spawn(function()
 		return
 	end
 	if nowPlaying.trackId == "" then
-		local fallback = makeEntry(pickAutoTrack(), "auto", nil)
+		local playlistFallback = nextPlaylistTrack()
+		local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
 		local callOk, advanced, state = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
 		if callOk and advanced == true and typeof(state) == "table" then applyGlobalQueueState(state)
 		elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
@@ -2329,8 +2331,10 @@ end
 
 local function purgeUserEntries(userId: number): number
 	if globalQueueMode then
+		local removedCount = 0
+		for _, entry in ipairs(queue) do if entry.source == "player" and entry.userId == userId then removedCount += 1 end end
 		local callOk, purged, state = globalInvoke("PurgeGlobalUserQueueEntries", userId)
-		if callOk and purged == true and typeof(state) == "table" then applyGlobalQueueState(state); return 1 end
+		if callOk and purged == true and typeof(state) == "table" then applyGlobalQueueState(state); return removedCount end
 		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 		return 0
 	end
