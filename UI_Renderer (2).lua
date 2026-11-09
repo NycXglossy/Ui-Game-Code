@@ -975,7 +975,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	-- Volume is a client-side setting. It is forwarded to Network.SetVolume if provided,
-	-- otherwise to a SoundGroup named "ClubMusic" in SoundService (if one exists).
+	-- otherwise to the canonical SoundGroup named "MusicGroup" in SoundService (if one exists).
 	local function applyVolume(value: number)
 		volume = math.clamp(value, 0, 1)
 		if volume > 0 then lastVolume = volume end
@@ -984,7 +984,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if typeof(Network.SetVolume) == "function" then
 			pcall(Network.SetVolume, volume)
 		else
-			local group = SoundService:FindFirstChild("ClubMusic")
+			local group = SoundService:FindFirstChild("MusicGroup")
 			if group and group:IsA("SoundGroup") then group.Volume = volume end
 		end
 	end
