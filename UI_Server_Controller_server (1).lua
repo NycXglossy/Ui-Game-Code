@@ -725,6 +725,9 @@ local MusicQueueManager = queueManagerRequireResult
 local queueManager: any = nil
 local globalQueueMode = false
 local globalTrackRevision = 0
+-- Queue mutations have their own revision, independent of playback transitions.
+-- This prevents delayed MessagingService snapshots from restoring an older queue.
+local globalQueueRevision = 0
 local globalQueueSyncBusy = false
 local publishState: (Player?) -> () = function(_player: Player?) end
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
@@ -1706,11 +1709,14 @@ end
 local function applyGlobalQueueState(state: any): boolean
 	if typeof(state) ~= "table" or typeof(state.queue) ~= "table"
 		or typeof(state.playback) ~= "table" then return false end
-	-- Global snapshots can arrive out of order through MessagingService and
-	-- reconciliation reads. Never let an older track revision roll playback back.
+	-- Queue and playback revisions are separate monotonic counters. A snapshot
+	-- must be fresh for both dimensions before it can replace the local mirror.
+	local queueRevision = tonumber(state.revision)
 	local revision = tonumber(state.playback.trackRevision)
+	if not isFiniteNumber(queueRevision) or queueRevision < 0 or queueRevision % 1 ~= 0
+		or queueRevision > 9007199254740991 or queueRevision < globalQueueRevision then return false end
 	if not isFiniteNumber(revision) or revision < 0 or revision % 1 ~= 0
-		or revision < globalTrackRevision then return false end
+		or revision > 9007199254740991 or revision < globalTrackRevision then return false end
 	if typeof(state.rotation) == "table" and state.rotation.enabled == true
 		and typeof(state.rotation.trackIds) == "table" then
 		activePlaylistId = tostring(state.rotation.id)
@@ -1799,6 +1805,7 @@ local function applyGlobalQueueState(state: any): boolean
 		playbackPaused = true
 		globalTrackRevision = revision
 	end
+	globalQueueRevision = queueRevision
 	return true
 end
 
