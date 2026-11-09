@@ -1035,10 +1035,39 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Size = UDim2.new(1, -4, 0, height or 72),
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
+			ClipsDescendants = true,
 		}, content) :: Frame
 		corner(frame, 15)
-		stroke(frame, C.SurfaceLight, 1)
-		make("Frame", {Name="AccentEdge", Position=UDim2.fromOffset(0,14), Size=UDim2.fromOffset(2,math.max(18,(height or 72)-28)), BackgroundColor3=C.Gold, BackgroundTransparency=0.22, BorderSizePixel=0}, frame)
+		local outline = stroke(frame, C.SurfaceLight, 1)
+		outline.Transparency = 0.34
+		local surfaceGradient = make("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 34, 48)),
+				ColorSequenceKeypoint.new(1, C.Surface),
+			}),
+			Rotation = 90,
+		}, frame)
+		-- Restrained top sheen and a rounded champagne accent; no drop shadow.
+		make("Frame", {
+			Name = "CardTopSheen",
+			Position = UDim2.fromOffset(14, 0),
+			Size = UDim2.new(1, -28, 0, 1),
+			BackgroundColor3 = C.White,
+			BackgroundTransparency = 0.91,
+			BorderSizePixel = 0,
+		}, frame)
+		local accent = make("Frame", {
+			Name = "AccentEdge",
+			Position = UDim2.fromOffset(0, 14),
+			Size = UDim2.fromOffset(3, math.max(18, (height or 72) - 28)),
+			BackgroundColor3 = C.Gold,
+			BorderSizePixel = 0,
+		}, frame)
+		corner(accent, 2)
+		make("UIGradient", {
+			Color = ColorSequence.new(C.Gold, C.Magenta),
+			Rotation = 90,
+		}, accent)
 		return frame
 	end
 
@@ -1069,8 +1098,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			AutoButtonColor = true,
 		}, parent) :: TextButton
 		corner(button, 11)
-		local outline = stroke(button, C.White, 1)
-		outline.Transparency = 0.9
+		local outline = stroke(button, color or C.Magenta, 1)
+		outline.Transparency = 0.64
+		make("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, (color or C.Magenta):Lerp(C.White, 0.10)),
+				ColorSequenceKeypoint.new(1, (color or C.Magenta):Lerp(C.Base, 0.20)),
+			}),
+			Rotation = 90,
+		}, button)
 		button.Activated:Connect(callback)
 		return button
 	end
