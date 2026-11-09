@@ -1064,12 +1064,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return heading
 	end
 
-	local function card(height: number?): Frame
+	local function card(height: number?, parent: Instance?): Frame
 		local frame = make("Frame", {
 			Size = UDim2.new(1, -4, 0, height or 72),
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
-		}, content) :: Frame
+		}, parent or content) :: Frame
 		corner(frame, 15)
 		local outline = stroke(frame, C.SurfaceLight, 1)
 		outline.Transparency = 0.34
@@ -1204,11 +1204,51 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		notify("Reloading song…", C.Cyan)
 	end
 
-	local function buildNowPlaying()
+	local function buildNowPlaying(parent: Instance?, artworkMode: boolean?)
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
-		local nowCard = card(182)
+		local showArtwork = artworkMode == true
+		local leftInset = if showArtwork then 108 else 14
+		local rightInset = if showArtwork then 122 else 28
+		local nowCard = card(if showArtwork then 210 else 182, parent)
 		local live = typeof(state.nowPlaying) == "table"
-		label(nowCard, nz(now.title, "The stage is warming up"), UDim2.fromOffset(14, 8), UDim2.new(1, -116, 0, 24), C.White, 16, true)
+		if showArtwork then
+			local genre = TRACK_GENRE[currentTrackId(now) or ""]
+			local tint = if genre then genre.color else C.Magenta
+			local art = make("Frame", {
+				Name = "NowPlayingArtwork",
+				Position = UDim2.fromOffset(14, 72),
+				Size = UDim2.fromOffset(82, 82),
+				BackgroundColor3 = C.Base,
+				BorderSizePixel = 0,
+			}, nowCard)
+			corner(art, 13)
+			stroke(art, tint, 1.4).Transparency = 0.2
+			make("UIGradient", {
+				Color = ColorSequence.new(tint:Lerp(C.Base, 0.12), C.Base),
+				Rotation = 135,
+			}, art)
+			local vinyl = make("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.48),
+				Size = UDim2.fromOffset(54, 54),
+				BackgroundColor3 = C.Base,
+				BorderSizePixel = 0,
+			}, art)
+			corner(vinyl, 27)
+			stroke(vinyl, tint, 1.2).Transparency = 0.18
+			local center = make("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(15, 15),
+				BackgroundColor3 = tint,
+				BorderSizePixel = 0,
+			}, vinyl)
+			corner(center, 8)
+			label(art, if genre then string.upper(string.sub(genre.name, 1, 12)) else "SUNSET MIX",
+				UDim2.new(0, 4, 1, -19), UDim2.new(1, -8, 0, 14), C.White, 8, true)
+		end
+
+		label(nowCard, nz(now.title, "The stage is warming up"), UDim2.fromOffset(leftInset, 8), UDim2.new(1, -(rightInset + 88), 0, 24), C.White, 16, true)
 		local liveColor = if live then C.Green else C.SurfaceLight
 		local liveBadge = make("TextLabel", {
 			Position = UDim2.new(1, -92, 0, 8),
@@ -1222,15 +1262,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		corner(liveBadge, 8)
 		local liveBadgeStroke = stroke(liveBadge, liveColor, 1)
 		liveBadgeStroke.Transparency = 0.55
-		make("Frame", {Name="PlayerAccent", Position=UDim2.fromOffset(14, 58), Size=UDim2.new(1, -28, 0, 2), BackgroundColor3=C.Gold, BackgroundTransparency=0.48, BorderSizePixel=0}, nowCard)
+		make("Frame", {Name="PlayerAccent", Position=UDim2.fromOffset(leftInset, 58), Size=UDim2.new(1, -(leftInset + 14), 0, 2), BackgroundColor3=C.Gold, BackgroundTransparency=0.48, BorderSizePixel=0}, nowCard)
 		local detail = nz(now.artist, "Sunset Stage Club")
 		if now.source == "player" and nz(now.requestedBy, "") ~= "" then
 			detail ..= "  •  requested by " .. tostring(now.requestedBy)
 		end
-		label(nowCard, detail, UDim2.fromOffset(14, 34), UDim2.new(1, -28, 0, 18), C.Muted, 11, false)
+		label(nowCard, detail, UDim2.fromOffset(leftInset, 34), UDim2.new(1, -(leftInset + 14), 0, 18), C.Muted, 11, false)
 		local bar = make("Frame", {
-			Position = UDim2.fromOffset(14, 66),
-			Size = UDim2.new(1, -28, 0, 6),
+			Position = UDim2.fromOffset(leftInset, 66),
+			Size = UDim2.new(1, -(leftInset + 14), 0, 6),
 			BackgroundColor3 = C.SurfaceLight,
 			BorderSizePixel = 0,
 		}, nowCard)
@@ -1241,7 +1281,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BorderSizePixel = 0,
 		}, bar)
 		corner(fill, 3)
-		local timeLabel = label(nowCard, "0:00 / 0:00", UDim2.fromOffset(14, 78), UDim2.new(1, -140, 0, 22), C.Gold, 10, true)
+		local timeLabel = label(nowCard, "0:00 / 0:00", UDim2.fromOffset(leftInset, 78), UDim2.new(1, -220, 0, 22), C.Gold, 10, true)
 		progressRefs = { fill = fill, timeLabel = timeLabel, duration = math.max(1, tonumber(now.duration) or 1) }
 		updateProgress()
 
@@ -1251,8 +1291,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- Audio visualizer
 		local vizFrame = make("Frame", {
 			Name = "Visualizer",
-			Position = UDim2.fromOffset(14, 106),
-			Size = UDim2.new(1, -28, 0, 32),
+			Position = UDim2.fromOffset(leftInset, 106),
+			Size = UDim2.new(1, -(leftInset + 14), 0, 32),
 			BackgroundColor3 = C.Base,
 			BorderSizePixel = 0,
 		}, nowCard)
@@ -1286,7 +1326,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		-- Volume slider
 		local muteButton = make("TextButton", {
-			Position = UDim2.fromOffset(14, 148),
+			Position = UDim2.fromOffset(leftInset, 148),
 			Size = UDim2.fromOffset(30, 26),
 			BackgroundColor3 = C.SurfaceLight,
 			Text = "🔊",
@@ -1296,8 +1336,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		}, nowCard) :: TextButton
 		corner(muteButton, 8)
 		local track = make("Frame", {
-			Position = UDim2.fromOffset(56, 157),
-			Size = UDim2.new(1, -128, 0, 8),
+			Position = UDim2.fromOffset(leftInset + 42, 157),
+			Size = UDim2.new(1, -(leftInset + 128), 0, 8),
 			BackgroundColor3 = C.SurfaceLight,
 			BorderSizePixel = 0,
 		}, nowCard) :: Frame
@@ -1321,8 +1361,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		percent.TextXAlignment = Enum.TextXAlignment.Right
 		local hit = make("TextButton", {
 			Name = "VolumeHit",
-			Position = UDim2.fromOffset(56, 148),
-			Size = UDim2.new(1, -128, 0, 26),
+			Position = UDim2.fromOffset(leftInset + 42, 148),
+			Size = UDim2.new(1, -(leftInset + 128), 0, 26),
 			BackgroundTransparency = 1,
 			Text = "",
 			AutoButtonColor = false,
@@ -1474,8 +1514,65 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function renderHome()
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
-		sectionLabel("NOW PLAYING")
-		buildNowPlaying()
+		sectionLabel("NOW PLAYING  /  LIVE QUEUE")
+
+		local widePlayer = currentDevice ~= "Mobile" and content.AbsoluteSize.X >= 620
+		local playerRow = make("Frame", {
+			Name = "PlayerQueueLayout",
+			Size = UDim2.new(1, -4, 0, if widePlayer then 210 else 386),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+		}, content)
+		local playerColumn = make("Frame", {
+			Position = UDim2.fromScale(0, 0),
+			Size = if widePlayer then UDim2.new(0.57, -5, 1, 0) else UDim2.new(1, 0, 0, 182),
+			BackgroundTransparency = 1,
+		}, playerRow)
+		local queueColumn = make("Frame", {
+			Position = if widePlayer then UDim2.new(0.57, 5, 0, 0) else UDim2.new(0, 0, 0, 194),
+			Size = if widePlayer then UDim2.new(0.43, -1, 1, 0) else UDim2.new(1, 0, 0, 182),
+			BackgroundTransparency = 1,
+		}, playerRow)
+		buildNowPlaying(playerColumn, widePlayer)
+
+		local queue = getQueue()
+		local queueCard = card( if widePlayer then 210 else 182, queueColumn)
+		stroke(queueCard, C.Magenta, 1).Transparency = 0.35
+		label(queueCard, "UP NEXT", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 18), C.Cyan, 10, true)
+		label(queueCard, string.format("%d TRACK%s IN QUEUE", #queue, if #queue == 1 then "" else "S"),
+			UDim2.fromOffset(12, 26), UDim2.new(1, -24, 0, 15), C.Muted, 8, true)
+		if #queue == 0 then
+			label(queueCard, "Nothing queued. Auto DJ will select the next track.",
+				UDim2.fromOffset(12, 62), UDim2.new(1, -24, 0, 48), C.Muted, 11, false)
+		else
+			local shown = math.min(#queue, 3)
+			for index = 1, shown do
+				local item: any = queue[index]
+				local top = 46 + (index - 1) * 45
+				local itemGenre: any = TRACK_GENRE[tostring(item.trackId or item.id or "")]
+				local indexed: any = TRACK_INDEX[tostring(item.trackId or "")]
+				local trackName = nz(item.title, if indexed then tostring(indexed[2]) else nz(item.trackId, "Unknown track"))
+				local isPlayer = item.source == "player"
+				if index > 1 then
+					make("Frame", {
+						Position = UDim2.fromOffset(12, top - 3),
+						Size = UDim2.new(1, -24, 0, 1),
+						BackgroundColor3 = C.SurfaceLight,
+						BorderSizePixel = 0,
+					}, queueCard)
+				end
+				label(queueCard, string.format("%02d  %s", index, trackName),
+					UDim2.fromOffset(12, top), UDim2.new(1, -24, 0, 19), C.White, 10, true)
+				local sourceText = if isPlayer then "PLAYER REQUEST" else "AUTO DJ"
+				if item.vip == true then sourceText ..= "  •  VIP" end
+				label(queueCard, (if itemGenre then itemGenre.name .. "  •  " else "") .. sourceText .. "  •  " .. formatTime(tonumber(item.duration) or 0),
+					UDim2.fromOffset(12, top + 19), UDim2.new(1, -24, 0, 15), if isPlayer then C.Magenta else C.Muted, 8, false)
+			end
+			if #queue > shown then
+				label(queueCard, string.format("+ %d MORE TRACKS", #queue - shown),
+					UDim2.new(0, 12, 1, -20), UDim2.new(1, -24, 0, 14), C.Cyan, 8, true)
+			end
+		end
 
 		-- Playlist type + who selected it
 		local trackId: string? = if now then currentTrackId(now) else nil
@@ -1514,46 +1611,6 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 			act("VoteSkip", {})
 		end, if voted then C.SurfaceLight else C.Purple)
-
-		-- Up next queue box
-		sectionLabel("UP NEXT")
-		local queue = getQueue()
-		local shown = math.min(#queue, 6)
-		local rowHeight = 54
-		local bodyHeight = if #queue == 0 then 50 else shown * rowHeight + (if #queue > shown then 24 else 0)
-		local box = card(40 + bodyHeight)
-		stroke(box, C.Magenta, 1)
-		label(box, if #queue == 0 then "QUEUE" else string.format("QUEUE  •  %d TRACK%s", #queue, if #queue == 1 then "" else "S"),
-			UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 20), C.Cyan, 11, true)
-		if #queue == 0 then
-			label(box, "Nothing queued. The Auto DJ will pick the next track.", UDim2.fromOffset(12, 36), UDim2.new(1, -24, 0, 40), C.Muted, 11, false)
-			return
-		end
-		for index = 1, shown do
-			local item: any = queue[index]
-			local top = 34 + (index - 1) * rowHeight
-			local itemGenre: any = TRACK_GENRE[tostring(item.trackId or item.id or "")]
-			local indexed: any = TRACK_INDEX[tostring(item.trackId or "")]
-			local trackName = nz(item.title, if indexed then tostring(indexed[2]) else nz(item.trackId, "Unknown track"))
-			local isPlayer = item.source == "player"
-			local who = if isPlayer then "by " .. nz(item.requestedBy, "a guest") else "Auto DJ pick"
-			if item.vip == true then who ..= "  •  VIP" end
-			if index > 1 then
-				make("Frame", {
-					Position = UDim2.fromOffset(12, top - 2),
-					Size = UDim2.new(1, -24, 0, 1),
-					BackgroundColor3 = C.SurfaceLight,
-					BorderSizePixel = 0,
-				}, box)
-			end
-			label(box, string.format("%02d  %s", index, trackName), UDim2.fromOffset(12, top + 2), UDim2.new(1, -108, 0, 22), C.White, 12, true)
-			label(box, (if itemGenre then itemGenre.name .. "  •  " else "") .. who .. "  •  " .. formatTime(tonumber(item.duration) or 0),
-				UDim2.fromOffset(12, top + 26), UDim2.new(1, -108, 0, 18), C.Muted, 10, false)
-			badge(box, if isPlayer then "PLAYER" else "AUTO", if isPlayer then C.Magenta else C.Purple, UDim2.new(1, -86, 0, top + 12), 74)
-		end
-		if #queue > shown then
-			label(box, string.format("+ %d more in the queue", #queue - shown), UDim2.fromOffset(12, 34 + shown * rowHeight + 2), UDim2.new(1, -24, 0, 18), C.Muted, 10, true)
-		end
 	end
 
 	local function renderMusic()
