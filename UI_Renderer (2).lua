@@ -1584,10 +1584,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		table.sort(favoriteIds)
 
 		sectionLabel("YOUR LIBRARY")
-		local favoriteCard = card(62)
-		label(favoriteCard, "★ Favorites", UDim2.fromOffset(12, 7), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
-		label(favoriteCard, string.format("%d saved track%s", #favoriteIds, if #favoriteIds == 1 then "" else "s"), UDim2.fromOffset(12, 31), UDim2.new(1, -130, 0, 17), C.Muted, 10, false)
-		actionButton(favoriteCard, if selectedGenre == "favorites" then "HIDE" else "VIEW TRACKS", UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
+		local compactMusic = currentDevice == "Mobile"
+		local favoriteCard = card(if compactMusic then 76 else 62)
+		label(favoriteCard, "★ Favorites", UDim2.fromOffset(12, if compactMusic then 5 else 7), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
+		label(favoriteCard, string.format("%d saved track%s", #favoriteIds, if #favoriteIds == 1 then "" else "s"), UDim2.fromOffset(12, if compactMusic then 27 else 31), UDim2.new(1, -130, 0, 17), C.Muted, 10, false)
+		actionButton(favoriteCard, if selectedGenre == "favorites" then "HIDE" else "VIEW TRACKS",
+			if compactMusic then UDim2.new(1, -112, 0, 42) else UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
 			selectedGenre = if selectedGenre == "favorites" then "" else "favorites"
 			clearContent()
 			renderMusic()
@@ -1605,11 +1607,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		sectionLabel("BROWSE GENRES")
 		for _, genre in ipairs(GENRES) do
-			local genreCard = card(62)
-			label(genreCard, genre.name, UDim2.fromOffset(12, 7), UDim2.new(1, -120, 0, 22), genre.color, 13, true)
-			label(genreCard, genre.tagline, UDim2.fromOffset(12, 31), UDim2.new(1, -120, 0, 17), C.Muted, 10, false)
+			local genreCard = card(if compactMusic then 76 else 62)
+			label(genreCard, genre.name, UDim2.fromOffset(12, if compactMusic then 5 else 7), UDim2.new(1, -120, 0, 22), genre.color, 13, true)
+			label(genreCard, genre.tagline, UDim2.fromOffset(12, if compactMusic then 27 else 31), UDim2.new(1, -120, 0, 17), C.Muted, 10, false)
 			actionButton(genreCard, if selectedGenre == genre.id then "HIDE" else "VIEW TRACKS",
-				UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
+				if compactMusic then UDim2.new(1, -112, 0, 42) else UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
 					selectedGenre = if selectedGenre == genre.id then "" else genre.id
 					clearContent()
 					renderMusic()
