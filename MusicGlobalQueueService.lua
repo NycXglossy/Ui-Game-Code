@@ -346,7 +346,19 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 			return false, "Track already advanced by another server."
 		end
 		local nextEntry = table.remove(state.queue, 1)
-		if not nextEntry then nextEntry = fallback end
+		if not nextEntry then
+			if state.rotation.enabled then
+				local expectedId = state.rotation.trackIds[state.rotation.cursor]
+				if not fallback or fallback.source ~= "playlist" or fallback.trackId ~= expectedId then
+					return false, "A playlist track must be selected from the active global rotation."
+				end
+				state.rotation.cursor += 1
+				if state.rotation.cursor > #state.rotation.trackIds then state.rotation.cursor = 1 end
+			else
+				if fallback and fallback.source == "playlist" then return false, "Global playlist rotation is not active." end
+			end
+			nextEntry = fallback
+		end
 		if not nextEntry then return false, "No valid next track is available." end
 		state.current = cloneEntry(nextEntry)
 		state.playback.paused = false
