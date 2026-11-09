@@ -17,7 +17,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FOLDER_NAME = "ClubMusicRemotes"
 local REMOTE_TIMEOUT = 3
-local READY_TIMEOUT = 30
+local READY_TIMEOUT = 45
 local MAX_STATE_DEPTH = 8
 local MAX_STATE_ENTRIES = 2500
 local MAX_NOTICE_TEXT = 400
