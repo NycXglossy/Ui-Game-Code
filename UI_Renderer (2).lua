@@ -3203,10 +3203,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local draft: any = titleDraft
 
 		sectionLabel("CUSTOM TITLE")
-		local slotCard = card(48)
+		local slotCard = card(56)
+		label(slotCard, "EDITING SLOT", UDim2.fromOffset(12, 1), UDim2.new(1, -24, 0, 14), C.Muted, 9, true)
 		for i = 1, 3 do
 			local isLocked = i > unlocked
-			actionButton(slotCard, (if isLocked then "🔒 " else "") .. "SLOT " .. i, UDim2.new((i - 1) / 3, 8, 0, 9), UDim2.new(1 / 3, -12, 0, 30), function()
+			actionButton(slotCard, (if isLocked then "🔒 " else "") .. "SLOT " .. i, UDim2.new((i - 1) / 3, 8, 0, 19), UDim2.new(1 / 3, -12, 0, 29), function()
 				if isLocked then
 					notify("Slot " .. i .. " is locked. Unlock it from the MANAGE view.", C.Orange)
 					return
@@ -3218,16 +3219,29 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 
 		-- Live style preview
-		local previewCard = card(90)
-		label(previewCard, "PREVIEW  •  slot " .. tostring(titleEditSlot), UDim2.fromOffset(12, 6), UDim2.new(1, -24, 0, 14), C.Muted, 9, true)
+		local previewCard = card(108)
+		label(previewCard, "LIVE PREVIEW", UDim2.fromOffset(12, 5), UDim2.new(1, -110, 0, 15), C.Muted, 9, true)
+		local previewSlot = label(previewCard, "SLOT " .. tostring(titleEditSlot) .. "  •  UNSAVED", UDim2.new(1, -116, 0, 5), UDim2.fromOffset(104, 15), C.Gold, 8, true)
+		previewSlot.TextXAlignment = Enum.TextXAlignment.Right
+		local previewStage = make("Frame", {
+			Name = "TitlePreviewStage",
+			Position = UDim2.fromOffset(9, 24),
+			Size = UDim2.new(1, -18, 0, 52),
+			BackgroundColor3 = C.SurfaceLight,
+			BackgroundTransparency = 0.28,
+			BorderSizePixel = 0,
+		}, previewCard) :: Frame
+		corner(previewStage, 11)
+		local previewStageStroke = stroke(previewStage, C.SurfaceLight, 1)
+		previewStageStroke.Transparency = 0.35
 		local previewLabel = make("TextLabel", {
-			Position = UDim2.fromOffset(12, 22),
-			Size = UDim2.new(1, -24, 0, 42),
+			Position = UDim2.fromOffset(8, 3),
+			Size = UDim2.new(1, -16, 1, -6),
 			BackgroundTransparency = 1,
 			TextSize = 26,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 		}, previewCard) :: TextLabel
-		local previewHint = label(previewCard, "Preview only until you press SAVE TITLE", UDim2.fromOffset(12, 68), UDim2.new(1, -24, 0, 16), C.Muted, 9, false)
+		local previewHint = label(previewCard, "Changes appear here before you save", UDim2.fromOffset(12, 80), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
 		previewHint.TextXAlignment = Enum.TextXAlignment.Center
 		local previewUpdate: (number) -> () = function(_) end
 		table.insert(titleAnimators, function(t) previewUpdate(t) end)
@@ -3332,12 +3346,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			buildSetRow()
 		end)
 		chipRow(form, 84, TITLE_EFFECTS, function() return draft.effect end, function(id)
+			local firstPreset = findById(TITLE_EFFECTS, id).sets[1]
 			draft.effect = id
-			draft.set = findById(TITLE_EFFECTS, id).sets[1].id
+			draft.set = firstPreset.id
 			selectedFamily = "all"
 			presetSearch.Text = ""
-			selectedPreset.Text = "SELECTED  •  " .. string.upper(draft.set)
-			selectedPreset.TextColor3 = C.Gold
+			selectedPreset.Text = "SELECTED  •  " .. string.upper(firstPreset.name)
+			selectedPreset.TextColor3 = firstPreset.color or firstPreset.a or C.Gold
 			buildSetRow()
 			refreshPreview()
 		end)
