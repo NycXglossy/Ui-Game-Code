@@ -1516,7 +1516,10 @@ local function applyGlobalQueueState(state: any): boolean
 	else
 		if nowPlaying.trackId ~= "" then
 			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
-			nowPlaying.elapsed = 0; stopServerMusic()
+			nowPlaying.genre = ""; nowPlaying.duration = 1; nowPlaying.elapsed = 0
+			nowPlaying.dj = "Automated Selector"; nowPlaying.source = "auto"
+			nowPlaying.requestedBy = "Auto DJ"; nowPlaying.vip = false; nowPlaying.soundId = ""
+			stopServerMusic(); musicSound.SoundId = ""
 		end
 		playbackPaused = true
 		globalTrackRevision = revision
@@ -2686,7 +2689,8 @@ local function handleAction(player: Player, action: any, payload: any)
 		local vip = isVip(player)
 		local entry = makeEntry(track, "player", player)
 		if globalQueueMode then
-			local queued, queueError = false, "Global queue is not ready."
+			local queued: boolean = false
+			local queueError: string? = "Global queue is not ready."
 			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
 			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
 		else
