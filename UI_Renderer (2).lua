@@ -1,7 +1,7 @@
 --!strict
 -- UI_Renderer
 -- Place as ModuleScript: ReplicatedStorage/UI_Renderer
--- Complete native Roblox client UI for Sunset Stage Club.
+-- Complete native Roblox client UI for Firebeach Music Festival Club.
 -- Privileged actions are delegated to UI_Network / UI_Server_Controller.
 
 local Players = game:GetService("Players")
@@ -567,11 +567,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		refs.timeLabel.Text = formatTime(elapsed) .. " / " .. formatTime(refs.duration)
 	end
 
-	local oldGui = playerGui:FindFirstChild("SunsetStageClubUI")
+	local oldGui = playerGui:FindFirstChild("FirebeachMusicFestivalClubUI")
 	if oldGui then oldGui:Destroy() end
+	local legacyGui = playerGui:FindFirstChild("SunsetStageClubUI")
+	if legacyGui then legacyGui:Destroy() end
 
 	local gui = make("ScreenGui", {
-		Name = "SunsetStageClubUI",
+		Name = "FirebeachMusicFestivalClubUI",
 		ResetOnSpawn = false,
 		IgnoreGuiInset = false,
 		DisplayOrder = 40,
@@ -766,7 +768,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
 		if now then
 			hudTitle.Text = "♫  " .. nz(now.title, "Unknown track")
-			hudArtist.Text = nz(now.artist, "Sunset Stage Club")
+			hudArtist.Text = nz(now.artist, "Firebeach Music Festival")
 			local duration = math.max(1, tonumber(now.duration) or 1)
 			local elapsed = interpolatedElapsed(duration)
 			hudFill.Size = UDim2.fromScale(math.clamp(elapsed / duration, 0, 1), 1)
@@ -820,7 +822,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local header = make("Frame", {
 		Name = "Header",
-		Size = UDim2.new(1, 0, 0, 68),
+		Size = UDim2.new(1, 0, 0, 76),
 		BackgroundColor3 = C.Surface,
 		BorderSizePixel = 0,
 	}, panel) :: Frame
@@ -841,26 +843,40 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		BackgroundColor3 = C.Surface,
 		BorderSizePixel = 0,
 	}, header)
+	-- Native geometric festival mark avoids emoji and font-glyph dependencies.
+	local brandMark = make("Frame", {
+		Name = "FestivalMark", Position = UDim2.fromOffset(14, 15),
+		Size = UDim2.fromOffset(42, 42), BackgroundColor3 = C.SurfaceLight,
+		BorderSizePixel = 0,
+	}, header)
+	corner(brandMark, 13)
+	stroke(brandMark, C.Gold, 1).Transparency = 0.35
+	for index, height in ipairs({13, 23, 17}) do
+		local bar = make("Frame", {
+			Name = "SoundBar" .. tostring(index), AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.25 + (index - 1) * 0.25, 0, 0.5, 0),
+			Size = UDim2.fromOffset(4, height),
+			BackgroundColor3 = if index == 2 then C.Gold else C.Cyan,
+			BorderSizePixel = 0,
+		}, brandMark)
+		corner(bar, 3)
+	end
 	local title = make("TextLabel", {
-		Position = UDim2.fromOffset(18, 8),
-		Size = UDim2.new(1, -90, 0, 28),
-		BackgroundTransparency = 1,
-		Text = "SUNSET STAGE  ✦  CLUB",
-		TextColor3 = C.White,
-		TextSize = 18,
-		Font = BOLD,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, header)
+		Name = "FestivalTitle", Position = UDim2.fromOffset(66, 10),
+		Size = UDim2.new(1, -154, 0, 30), BackgroundTransparency = 1,
+		Text = "FIREBEACH MUSIC FESTIVAL CLUB", TextColor3 = C.White,
+		TextSize = 20, TextScaled = true, Font = BOLD,
+		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
+	}, header) :: TextLabel
+	make("UITextSizeConstraint", {MinTextSize = 11, MaxTextSize = 20}, title)
 	local subtitle = make("TextLabel", {
-		Position = UDim2.fromOffset(19, 37),
-		Size = UDim2.new(1, -100, 0, 18),
-		BackgroundTransparency = 1,
-		Text = "TROPICAL SOUND • LIVE COMMUNITY",
-		TextColor3 = C.Cyan,
-		TextSize = 9,
-		Font = BOLD,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		Name = "FestivalSubtitle", Position = UDim2.fromOffset(67, 42),
+		Size = UDim2.new(1, -154, 0, 17), BackgroundTransparency = 1,
+		Text = "LIVE MUSIC  •  COMMUNITY  •  FESTIVAL", TextColor3 = C.Cyan,
+		TextSize = 9, TextScaled = true, Font = BOLD,
+		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
 	}, header)
+	make("UITextSizeConstraint", {MinTextSize = 7, MaxTextSize = 10}, subtitle)
 	local closeButton = make("TextButton", {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -12, 0, 12),
@@ -875,7 +891,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local nav = make("ScrollingFrame", {
 		Name = "Navigation",
-		Position = UDim2.fromOffset(0, 68),
+		Position = UDim2.fromOffset(0, 76),
 		Size = UDim2.new(1, 0, 0, 46),
 		BackgroundColor3 = C.Surface,
 		BorderSizePixel = 0,
@@ -898,8 +914,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local content = make("ScrollingFrame", {
 		Name = "Content",
-		Position = UDim2.fromOffset(12, 122),
-		Size = UDim2.new(1, -24, 1, -134),
+		Position = UDim2.fromOffset(12, 130),
+		Size = UDim2.new(1, -24, 1, -142),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ScrollBarThickness = 4,
@@ -3092,7 +3108,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function renderCommunity()
-		sectionLabel("SUNSET STAGE COMMUNITY")
+		sectionLabel("FIREBEACH MUSIC FESTIVAL COMMUNITY")
 		local groupId = tonumber(state.groupId) or 0
 		if groupId <= 0 then
 			local config = ReplicatedStorage:FindFirstChild("ClubMusicConfig")
