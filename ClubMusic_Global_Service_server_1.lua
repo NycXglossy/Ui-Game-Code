@@ -38,6 +38,7 @@ local CONFIG = {
 		DJ = "ClubMusic_Global_DJ_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
+		Queue = "ClubMusic_Global_Queue_v1",
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -398,8 +399,8 @@ end
 -- Global queue API: every mutation is atomic in the shared DataStore.
 -- Controller callers still perform role, moderation, catalog, and request-limit checks.
 bindFunction("GetGlobalQueueState", function()
-	if not SERVICE_ENABLED or not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	return MusicGlobalQueueService:GetSnapshot()
 end)
 
@@ -407,7 +408,7 @@ bindFunction("EnqueueGlobalQueueEntry", function(entry: any, playerQueueCap: any
 	if not SERVICE_ENABLED or not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	local ok, state, message = MusicGlobalQueueService:Enqueue(entry, playerQueueCap)
-	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
+	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
 	return ok, state, message
 end)
 
@@ -573,6 +574,13 @@ local function onCatalog(message)
 	globalEventBindable:Fire({kind = "Catalog", senderJob = data.senderJob, at = data.at})
 end
 
+local function onQueueChanged(message)
+	local data = if typeof(message) == "table" then message.Data else nil
+	if not validEnvelope(data) or data.kind ~= "QueueChanged" or not finiteNumber(data.revision) then return end
+	if not unseen(data.id) then return end
+	globalEventBindable:Fire({kind = "QueueChanged", revision = math.floor(data.revision), senderJob = data.senderJob})
+end
+
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	task.spawn(function()
 		while SERVICE_ENABLED do
@@ -593,6 +601,7 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.DJ, onDJ)
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
+	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
 else
 	warn("[ClubMusic Global] Disabled in Studio or by configuration; local UI controller remains fully functional.")
 end
