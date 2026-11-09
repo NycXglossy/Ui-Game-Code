@@ -89,9 +89,9 @@ local REWARDS = {
 	{day=4,label="Song Skip Token"},{day=5,label="250 Coins"},{day=6,label="Neon Trail"},{day=7,label="Exclusive Title Tag"},
 }
 local TAGS = {
-	{id="vip",label="VIP",source="VIP Pass",owned=true,a=Color3.fromRGB(244,114,182),b=Color3.fromRGB(217,70,239)},
-	{id="party",label="Party Animal",source="Dance 10 hours",owned=true,a=Color3.fromRGB(251,146,60),b=Color3.fromRGB(252,211,77)},
-	{id="wave",label="Wave Rider",source="Login streak",owned=true,a=Color3.fromRGB(103,232,249),b=Color3.fromRGB(14,165,233)},
+	{id="vip",label="VIP",source="VIP Pass",owned=false,a=Color3.fromRGB(244,114,182),b=Color3.fromRGB(217,70,239)},
+	{id="party",label="Party Animal",source="Dance 10 hours",owned=false,a=Color3.fromRGB(251,146,60),b=Color3.fromRGB(252,211,77)},
+	{id="wave",label="Wave Rider",source="Login streak",owned=false,a=Color3.fromRGB(103,232,249),b=Color3.fromRGB(14,165,233)},
 	{id="tiki",label="Tiki Legend",source="Shop",owned=false,price=400,a=Color3.fromRGB(252,211,77),b=Color3.fromRGB(239,68,68)},
 	{id="sunset",label="Sunset Soul",source="Shop",owned=false,price=250,a=Color3.fromRGB(236,72,153),b=Color3.fromRGB(253,224,71)},
 	{id="bass",label="Bass Head",source="Shop",owned=false,price=150,a=Color3.fromRGB(167,139,250),b=Color3.fromRGB(99,102,241)},
@@ -2962,7 +2962,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		label(intro, "Custom titles remain managed separately in the CUSTOM and MANAGE tabs.", UDim2.fromOffset(12, 25), UDim2.new(1, -24, 0, 18), C.Muted, 9, false)
 		for _, tag in ipairs(TAGS) do
 			-- The server is authoritative: tags bought in the shop or earned via rewards appear here.
-			local isOwned = if serverOwned then serverOwned[tag.id] == true else tag.owned
+			local isOwned = if serverOwned then serverOwned[tag.id] == true else false
 			local tagCard = card(72)
 			label(tagCard, tag.label, UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), tag.a, 14, true)
 			label(tagCard, tag.source, UDim2.fromOffset(12, 35), UDim2.new(1, -130, 0, 18), C.Muted, 10, false)
