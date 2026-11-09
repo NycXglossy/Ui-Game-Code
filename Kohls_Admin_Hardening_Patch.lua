@@ -1,7 +1,8 @@
 --!strict
 -- Kohl's Admin hardening patch
--- Run from Roblox Studio's Command Bar with the Kohl's Admin model/folder selected.
--- This patch intentionally does NOT merge Kohl's Admin permissions with ClubMusic.
+-- Run from Roblox Studio's Command Bar with the Kohl's Admin root selected.
+-- Apply to a BACKUP copy first. This patch does not merge Kohl's Admin permissions
+-- with ClubMusic and does not remove the optional high-power script commands.
 
 local Selection = game:GetService("Selection")
 local selected = Selection:Get()[1]
@@ -42,12 +43,12 @@ if CONFIG then
 	if legacy ~= nil then
 		LEGACY = legacy
 	end
-end
-local MAIN_MODULE_NAME = if LEGACY then "MainModuleLegacy" else "MainModule"]=]
-local newConfig = [=[-- Security hardening: load only the reviewed, bundled MainModule.
--- Do not fetch executable code from Creator Store or an external asset at runtime.
-local Package = script.Parent
+end]=]
+local newConfig = [=[local Package = script.Parent
+
+-- Security hardening: runtime code is loaded only from this bundled package.
 local LEGACY = false
+local MAIN_MODULE_NAME = "MainModule"
 
 local CONFIG = Package:FindFirstChild("Config")
 if CONFIG then
@@ -56,7 +57,19 @@ if CONFIG then
 		LEGACY = legacy
 	end
 end]=]
-loaderSource = replaceLiteral(loaderSource, oldConfig, newConfig, "loader auto-update configuration")
+loaderSource = replaceLiteral(loaderSource, oldConfig, newConfig, "loader configuration")
+loaderSource = replaceLiteral(
+	loaderSource,
+	"local legacyConfig = CONFIG:FindFirstChild(\"Legacy\")",
+	"local legacyConfig = CONFIG and CONFIG:FindFirstChild(\"Legacy\")",
+	"optional legacy configuration"
+)
+loaderSource = replaceLiteral(
+	loaderSource,
+	"\tif LEGACY then\n\t\t_G.KAU = true",
+	"\tif LEGACY then\n\t\tassert(legacyConfig, \"Legacy mode requested but Config.Legacy is missing.\")\n\t\t_G.KAU = true",
+	"legacy configuration validation"
+)
 
 local oldLoad = [=[	local localMainModule = script:FindFirstChild(MAIN_MODULE_NAME) or MAIN_MODULE_ID
 
@@ -114,6 +127,7 @@ local newLoad = [=[	local localMainModule = script:FindFirstChild(MAIN_MODULE_NA
 	end]=]
 loaderSource = replaceLiteral(loaderSource, oldLoad, newLoad, "local-only module loading")
 assert(not string.find(loaderSource, "InsertService", 1, true), "External asset loading reference remains in Loader.")
+assert(not string.find(loaderSource, "MAIN_MODULE_ID", 1, true), "External MainModule asset ID remains in Loader.")
 loader.Source = loaderSource
 
 local serverSource = mainModule.Source
@@ -127,15 +141,19 @@ local oldRemote = [=[	elseif event == "KDelete" and arguments and f.getPower(plr
 			end
 		end]=]
 local newRemote = [=[	elseif event == "KDelete" and f.getPower(plr) > 4 then
-		-- Validate the client-supplied instance before invoking a destructive operation.
-		if typeof(arguments) == "Instance" and arguments.Parent ~= nil then
+		-- Validate the client-supplied Instance before destructive operations.
+		if typeof(arguments) == "Instance"
+			and arguments.Parent ~= nil
+			and arguments:IsDescendantOf(game)
+		then
 			arguments:Destroy()
 		end
 	elseif event == "KPaste" and f.getPower(plr) > 4 then
-		-- Reject malformed payloads and oversized batches before making any changes.
+		-- Validate the full payload before making any changes.
 		if type(arguments) ~= "table"
 			or type(arguments[1]) ~= "table"
 			or typeof(arguments[2]) ~= "Instance"
+			or not arguments[2]:IsDescendantOf(game)
 			or (arguments[3] ~= nil and type(arguments[3]) ~= "boolean")
 		then
 			return
@@ -149,9 +167,11 @@ local newRemote = [=[	elseif event == "KDelete" and f.getPower(plr) > 4 then
 			return
 		end
 
-		-- Validate the entire batch first so malformed entries cannot cause partial moves.
 		for index = 1, count do
-			if typeof(sources[index]) ~= "Instance" or sources[index].Parent == nil then
+			if typeof(sources[index]) ~= "Instance"
+				or sources[index].Parent == nil
+				or not sources[index]:IsDescendantOf(game)
+			then
 				return
 			end
 		end
@@ -168,8 +188,10 @@ serverSource = replaceLiteral(serverSource, oldRemote, newRemote, "privileged de
 mainModule.Source = serverSource
 
 print("Kohl's Admin hardening patch applied:")
-print("- External asset auto-update/fallback disabled; bundled MainModule is pinned.")
-print("- Loader validates local module presence and initialize() API.")
-print("- KDelete validates the supplied Instance.")
-print("- KPaste validates payload types, all source Instances, and limits batches to 100.")
-print("Review/disable the high-power script/localscript commands separately if dynamic code execution is not required.")
+print("- External auto-update and Creator Store fallback removed from Loader.")
+print("- Loader requires only the bundled MainModule and validates initialize().")
+print("- Legacy configuration is checked before use.")
+print("- KDelete and KPaste validate live Instances and payload shape.")
+print("- KPaste batches are limited to 100 Instances.")
+print("NOTE: Dynamic script/localscript execution remains a separate high-impact feature; review or disable it if not required.")
+print("NOTE: This patch does not replace a complete audit or add general RemoteEvent rate limiting.")
