@@ -183,8 +183,17 @@ function ServerEvent(plr: Player, event, arguments, uID)
 		return
 	end
 	uID, event = event:match("(%d*)(.+)")
-	if type(event) ~= "string" or not remoteEventCooldowns[event] or not allowRemoteEvent(plr, event) then
+	if type(event) ~= "string" then
 		return
+	end
+	if event == "KuID" then
+		if uID ~= "" or not allowRemoteEvent(plr, event) then
+			return
+		end
+	else
+		if uID ~= f.uID or not remoteEventCooldowns[event] or not allowRemoteEvent(plr, event) then
+			return
+		end
 	end]=]
 serverSource = replaceLiteral(serverSource, oldHandler, newHandler, "RemoteEvent rate limiting and event allowlist")
 
