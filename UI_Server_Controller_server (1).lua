@@ -1869,36 +1869,47 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 	end
 	transitionInProgress = true
 	if globalQueueMode then
-		local function attemptGlobalAdvance(): (boolean, string?)
-			local playlistFallback = nextPlaylistTrack()
-			local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
-			local callOk, advanced, state, message = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
-			if callOk and advanced == true and typeof(state) == "table" then
-				if not applyGlobalQueueState(state) then
-					return false, "The shared transition was accepted, but its state snapshot could not be applied."
+		-- Always release the transition lock, including when fallback selection,
+		-- state synchronization, or post-transition queue maintenance throws.
+		local branchOk, advanced, reason = pcall(function(): (boolean, string?)
+			local function attemptGlobalAdvance(): (boolean, string?)
+				local playlistFallback = nextPlaylistTrack()
+				local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
+				local callOk, didAdvance, state, message = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
+				if callOk and didAdvance == true and typeof(state) == "table" then
+					if not applyGlobalQueueState(state) then
+						return false, "The shared transition was accepted, but its state snapshot could not be applied."
+					end
+					return true, nil
 				end
-				return true, nil
+				return false, tostring(message or (if callOk then "The shared queue rejected the transition." else "The shared queue service is unavailable."))
 			end
-			return false, tostring(message or (if callOk then "The shared queue rejected the transition." else "The shared queue service is unavailable."))
-		end
-		local advanced, reason = attemptGlobalAdvance()
-		-- A different server may win the compare-and-swap between our last
-		-- snapshot and this request. Refresh the authoritative revision and retry
-		-- exactly once for that known conflict; never retry budget/storage failures.
-		if not advanced and reason == "Track already advanced by another server." then
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			advanced, reason = attemptGlobalAdvance()
-		end
-		if advanced then
-			transitionInProgress = false
-			topUpAuto()
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			return true, nil
-		end
-		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			local didAdvance, failureReason = attemptGlobalAdvance()
+			-- A different server may win the compare-and-swap between our last
+			-- snapshot and this request. Refresh and retry once for that conflict only.
+			if not didAdvance and failureReason == "Track already advanced by another server." then
+				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				didAdvance, failureReason = attemptGlobalAdvance()
+			end
+			if didAdvance then
+				topUpAuto()
+				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			else
+				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			end
+			return didAdvance, failureReason
+		end)
 		transitionInProgress = false
-		warn("[ClubMusic] Global transition was not applied: " .. tostring(reason))
-		return false, reason
+		if not branchOk then
+			local failure = "Global track transition failed unexpectedly: " .. tostring(advanced)
+			warn("[ClubMusic] " .. failure)
+			return false, failure
+		end
+		if not advanced then
+			warn("[ClubMusic] Global transition was not applied: " .. tostring(reason))
+			return false, reason
+		end
+		return true, nil
 	end
 	local ok, err = pcall(function()
 		local nextEntry = queueManager:PopNext()
