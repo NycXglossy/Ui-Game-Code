@@ -3236,9 +3236,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		sectionLabel("CUSTOM TITLE")
 		local slotCard = card(56)
 		label(slotCard, "EDITING SLOT", UDim2.fromOffset(12, 1), UDim2.new(1, -24, 0, 14), C.Muted, 9, true)
+		local slotButtons: {TextButton} = {}
 		for i = 1, 3 do
 			local isLocked = i > unlocked
-			actionButton(slotCard, (if isLocked then "🔒 " else "") .. "SLOT " .. i, UDim2.new((i - 1) / 3, 8, 0, 19), UDim2.new(1 / 3, -12, 0, 29), function()
+			local slotButton = actionButton(slotCard, (if isLocked then "🔒 " else "") .. "SLOT " .. i, UDim2.new((i - 1) / 3, 8, 0, 19), UDim2.new(1 / 3, -12, 0, 29), function()
 				if isLocked then
 					notify("Slot " .. i .. " is locked. Unlock it from the MANAGE view.", C.Orange)
 					return
@@ -3247,6 +3248,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				titleDraft = nil
 				refreshTitleTab()
 			end, if i == titleEditSlot then C.Magenta elseif isLocked then C.SurfaceLight else C.Purple)
+			table.insert(slotButtons, slotButton)
+		end
+		for i, slotButton in ipairs(slotButtons) do
+			slotButton.NextSelectionLeft = slotButtons[math.max(1, i - 1)]
+			slotButton.NextSelectionRight = slotButtons[math.min(#slotButtons, i + 1)]
 		end
 
 		-- Live style preview
@@ -3304,6 +3310,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Active = true,
 		}, form) :: TextBox
 		corner(titleInput, 9)
+		-- Controller navigation flows from the selected slot directly into title editing.
+		local selectedSlotButton = slotButtons[titleEditSlot]
+		if selectedSlotButton then
+			selectedSlotButton.NextSelectionDown = titleInput
+			titleInput.NextSelectionUp = selectedSlotButton
+		end
 		local titleInputStroke = stroke(titleInput, C.SurfaceLight, 1)
 		titleInputStroke.Transparency = 0.38
 		titleInput.Focused:Connect(function()
