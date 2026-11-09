@@ -122,6 +122,15 @@ sample list.
 - Results are paginated in pages of 30; the UI does not request the entire
   catalog at once.
 - Custom entries are identified with a CUSTOM badge.
+
+- Staff see a two-step REMOVE / CONFIRM? control on custom catalog entries in
+  All Tracks. The existing server-side removal action still checks staff
+  authorization, persistence availability, and whether the track is currently
+  playing or queued; the client confirmation is only a usability safeguard.
+- After a removal request, the renderer refreshes the current catalog page.
+  A rejected removal remains visible in the catalog and the server notification
+  explains the restriction.
+
 - Catalog results are validated before they are rendered and merged into the
   renderer's track index so existing favorite/request presentation can use
   stable catalog IDs.
