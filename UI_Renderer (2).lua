@@ -1214,17 +1214,18 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
 		local showArtwork = artworkMode == true
 		local expandedArtwork = expandedMode == true
-		local leftInset = if showArtwork then 108 else 14
-		local rightInset = if showArtwork then 122 else 28
-		local nowCard = card(if expandedArtwork then 228 elseif showArtwork then 210 else 182, parent)
+		local stackedArtwork = expandedArtwork and currentDevice == "Mobile"
+		local leftInset = if stackedArtwork then 14 elseif showArtwork then 108 else 14
+		local rightInset = if stackedArtwork then 14 elseif showArtwork then 122 else 28
+		local nowCard = card(if stackedArtwork then 354 elseif expandedArtwork then 228 elseif showArtwork then 210 else 182, parent)
 		local live = typeof(state.nowPlaying) == "table"
 		if showArtwork then
 			local genre = TRACK_GENRE[currentTrackId(now) or ""]
 			local tint = if genre then genre.color else C.Magenta
 			local art = make("Frame", {
 				Name = "NowPlayingArtwork",
-				Position = UDim2.fromOffset(14, 72),
-				Size = UDim2.fromOffset(if expandedArtwork then 112 else 82, if expandedArtwork then 112 else 82),
+				Position = if stackedArtwork then UDim2.new(0.5, -44, 0, 34) else UDim2.fromOffset(14, 72),
+				Size = UDim2.fromOffset(if stackedArtwork then 88 elseif expandedArtwork then 112 else 82, if stackedArtwork then 88 elseif expandedArtwork then 112 else 82),
 				BackgroundColor3 = C.Base,
 				BorderSizePixel = 0,
 			}, nowCard)
@@ -1260,7 +1261,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 		end
 
-		label(nowCard, nz(now.title, "The stage is warming up"), UDim2.fromOffset(leftInset, 8), UDim2.new(1, -(rightInset + 88), 0, 24), C.White, 16, true)
+		label(nowCard, nz(now.title, "The stage is warming up"), if stackedArtwork then UDim2.fromOffset(12, 130) else UDim2.fromOffset(leftInset, 8), if stackedArtwork then UDim2.new(1, -24, 0, 25) else UDim2.new(1, -(rightInset + 88), 0, 24), C.White, if stackedArtwork then 15 else 16, true)
 		local liveColor = if live then C.Green else C.SurfaceLight
 		local liveBadge = make("TextLabel", {
 			Position = UDim2.new(1, -92, 0, 8),
@@ -1274,14 +1275,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		corner(liveBadge, 8)
 		local liveBadgeStroke = stroke(liveBadge, liveColor, 1)
 		liveBadgeStroke.Transparency = 0.55
-		make("Frame", {Name="PlayerAccent", Position=UDim2.fromOffset(leftInset, 58), Size=UDim2.new(1, -(leftInset + 14), 0, 2), BackgroundColor3=C.Gold, BackgroundTransparency=0.48, BorderSizePixel=0}, nowCard)
+		make("Frame", {Name="PlayerAccent", Position=if stackedArtwork then UDim2.fromOffset(12, 184) else UDim2.fromOffset(leftInset, 58), Size=UDim2.new(1, -(leftInset + 14), 0, 2), BackgroundColor3=C.Gold, BackgroundTransparency=0.48, BorderSizePixel=0}, nowCard)
 		local detail = nz(now.artist, "Sunset Stage Club")
 		if now.source == "player" and nz(now.requestedBy, "") ~= "" then
 			detail ..= "  •  requested by " .. tostring(now.requestedBy)
 		end
-		label(nowCard, detail, UDim2.fromOffset(leftInset, 34), UDim2.new(1, -(leftInset + 14), 0, 18), C.Muted, 11, false)
+		label(nowCard, detail, if stackedArtwork then UDim2.fromOffset(12, 156) else UDim2.fromOffset(leftInset, 34), UDim2.new(1, -(leftInset + 14), 0, 18), C.Muted, 11, false)
 		local bar = make("Frame", {
-			Position = UDim2.fromOffset(leftInset, 66),
+			Position = UDim2.fromOffset(leftInset, if stackedArtwork then 196 else 66),
 			Size = UDim2.new(1, -(leftInset + 14), 0, 6),
 			BackgroundColor3 = C.SurfaceLight,
 			BorderSizePixel = 0,
@@ -1293,17 +1294,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BorderSizePixel = 0,
 		}, bar)
 		corner(fill, 3)
-		local timeLabel = label(nowCard, "0:00 / 0:00", UDim2.fromOffset(leftInset, 78), UDim2.new(1, -220, 0, 22), C.Gold, 10, true)
+		local timeLabel = label(nowCard, "0:00 / 0:00", UDim2.fromOffset(leftInset, if stackedArtwork then 207 else 78), UDim2.new(1, if stackedArtwork then -120 else -220, 0, 22), C.Gold, 10, true)
 		progressRefs = { fill = fill, timeLabel = timeLabel, duration = math.max(1, tonumber(now.duration) or 1) }
 		updateProgress()
 
 		-- Reload song button
-		actionButton(nowCard, "↻ RELOAD", UDim2.new(1, -108, 0, 77), UDim2.fromOffset(94, 22), reloadSong, C.Purple)
+		actionButton(nowCard, "↻ RELOAD", UDim2.new(1, -108, 0, if stackedArtwork then 207 else 77), UDim2.fromOffset(94, 22), reloadSong, C.Purple)
 
 		-- Audio visualizer
 		local vizFrame = make("Frame", {
 			Name = "Visualizer",
-			Position = UDim2.fromOffset(leftInset, 106),
+			Position = UDim2.fromOffset(leftInset, if stackedArtwork then 236 else 106),
 			Size = UDim2.new(1, -(leftInset + 14), 0, 32),
 			BackgroundColor3 = C.Base,
 			BorderSizePixel = 0,
@@ -1338,7 +1339,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		-- Volume slider
 		local muteButton = make("TextButton", {
-			Position = UDim2.fromOffset(leftInset, 148),
+			Position = UDim2.fromOffset(leftInset, if stackedArtwork then 282 else 148),
 			Size = UDim2.fromOffset(30, 26),
 			BackgroundColor3 = C.SurfaceLight,
 			Text = "🔊",
@@ -1348,7 +1349,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		}, nowCard) :: TextButton
 		corner(muteButton, 8)
 		local track = make("Frame", {
-			Position = UDim2.fromOffset(leftInset + 42, 157),
+			Position = UDim2.fromOffset(leftInset + 42, if stackedArtwork then 291 else 157),
 			Size = UDim2.new(1, -(leftInset + 128), 0, 8),
 			BackgroundColor3 = C.SurfaceLight,
 			BorderSizePixel = 0,
@@ -1369,11 +1370,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			ZIndex = 2,
 		}, track)
 		corner(knob, 8)
-		local percent = label(nowCard, "", UDim2.new(1, -66, 0, 148), UDim2.fromOffset(52, 26), C.Cyan, 11, true)
+		local percent = label(nowCard, "", UDim2.new(1, -66, 0, if stackedArtwork then 282 else 148), UDim2.fromOffset(52, 26), C.Cyan, 11, true)
 		percent.TextXAlignment = Enum.TextXAlignment.Right
 		local hit = make("TextButton", {
 			Name = "VolumeHit",
-			Position = UDim2.fromOffset(leftInset + 42, 148),
+			Position = UDim2.fromOffset(leftInset + 42, if stackedArtwork then 282 else 148),
 			Size = UDim2.new(1, -(leftInset + 128), 0, 26),
 			BackgroundTransparency = 1,
 			Text = "",
