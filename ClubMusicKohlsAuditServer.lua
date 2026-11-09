@@ -61,6 +61,8 @@ return function(_K: any)
 		["cmlock"] = true,
 		["clubmusic-clearqueue"] = true,
 		["cmclear"] = true,
+		["clubmusic-status"] = true,
+		["cmstatus"] = true,
 	}
 
 	connectHook("postCommand", function(command: any)
