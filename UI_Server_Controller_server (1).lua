@@ -2848,11 +2848,14 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	local actionTimesByPlayer = if trustedAdminCommand == true then lastAdminActionByType else lastActionByType
 	local actionTimes = actionTimesByPlayer[userId]
 	if not actionTimes then actionTimes = {}; actionTimesByPlayer[userId] = actionTimes end
-	local actionCooldown = ACTION_COOLDOWNS[action] or 0.2
+	-- Admin actions rely on the dedicated cross-command throttle below rather
+	-- than the longer UI cooldowns (0.5-1s). This keeps staff controls responsive
+	-- while still preventing rapid repeats; shared token/global budgets remain active.
+	local actionCooldown = if trustedAdminCommand == true then 0.12 else (ACTION_COOLDOWNS[action] or 0.2)
 	local previousAction = actionTimes[action] or 0
 	if previousAction > 0 and now - previousAction < actionCooldown then
 		return false, if trustedAdminCommand == true
-			then "That ClubMusic admin command is cooling down. Try again shortly."
+			then "That ClubMusic admin command is cooling down. Wait a moment and retry."
 			else "That ClubMusic action is cooling down."
 	end
 
