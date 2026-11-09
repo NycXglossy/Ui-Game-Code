@@ -57,6 +57,7 @@ local GENRES = {
 
 local TRACK_INDEX: {[string]: any} = {}
 local TRACK_GENRE: {[string]: any} = {}
+local TRACK_ARTWORK: {[string]: number} = {}
 local ALL_TRACKS: {any} = {}
 for _, genre in ipairs(GENRES) do
 	for _, track in ipairs(genre.tracks) do
@@ -500,6 +501,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local sliderDragging = false
 	local lastReload = 0
 	local audioInput = ""
+	local artworkInput = ""
 	local audioLookup: {[string]: any}? = nil
 	local catalogGenreId = "exclusive"
 	local lookupSerial = 0
@@ -1227,6 +1229,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			}, nowCard)
 			corner(art, 13)
 			stroke(art, tint, 1.4).Transparency = 0.2
+			local artworkId = tonumber(now.artworkAssetId) or TRACK_ARTWORK[currentTrackId(now) or ""]
+			if artworkId and artworkId > 0 then
+				make("ImageLabel", {Name="CatalogArtwork", Size=UDim2.fromScale(1, 1), BackgroundTransparency=1, Image="rbxassetid://" .. tostring(artworkId), ScaleType=Enum.ScaleType.Crop, ZIndex=5}, art)
+			end
 			make("UIGradient", {
 				Color = ColorSequence.new(tint:Lerp(C.Base, 0.12), C.Base),
 				Rotation = 135,
@@ -1419,10 +1425,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		trackStroke.Transparency = 0.38
 		make("Frame", {Name="TrackAccent", Position=UDim2.fromOffset(0, if compact then 8 else 12), Size=UDim2.fromOffset(2, if compact then 68 else 42), BackgroundColor3=C.Gold, BackgroundTransparency=0.28, BorderSizePixel=0}, frame)
 
-		local titleInset = if compact then (if string.sub(id, 1, 7) == "custom-" then -76 else -14) else (if canAddToPlaylist then (if canRemove then -330 else -250) else (if canRemove then -250 else -176))
-		local artistInset = if compact then -14 else titleInset
-		label(frame, tostring(track[2]), UDim2.fromOffset(12, if compact then 4 else 8), UDim2.new(1, titleInset, 0, 22), C.White, 13, true)
-		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(12, if compact then 25 else 32), UDim2.new(1, artistInset, 0, 18), C.Muted, 11, false)
+		local artworkId = TRACK_ARTWORK[id]
+		local textX = if artworkId then 66 else 12
+		local artworkWidth = if artworkId then 54 else 0
+		local titleInset = (if compact then (if string.sub(id, 1, 7) == "custom-" then -76 else -14) else (if canAddToPlaylist then (if canRemove then -330 else -250) else (if canRemove then -250 else -176))) - artworkWidth
+		local artistInset = if compact then -14 - artworkWidth else titleInset
+		if artworkId then
+			local cover = make("ImageLabel", {Name="CatalogArtwork", Position=UDim2.fromOffset(12, 8), Size=UDim2.fromOffset(46, 46), BackgroundColor3=C.Base, BorderSizePixel=0, Image="rbxassetid://" .. tostring(artworkId), ScaleType=Enum.ScaleType.Crop}, frame)
+			corner(cover, 8)
+		end
+		label(frame, tostring(track[2]), UDim2.fromOffset(textX, if compact then 4 else 8), UDim2.new(1, titleInset, 0, 22), C.White, 13, true)
+		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(textX, if compact then 25 else 32), UDim2.new(1, artistInset, 0, 18), C.Muted, 11, false)
 
 		local favorites: any = state.favorites
 		local isFavorite = typeof(favorites) == "table" and favorites[id] == true
@@ -1980,6 +1993,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					and typeof(entry.title) == "string" and typeof(entry.artist) == "string"
 					and typeof(entry.duration) == "number" then
 					local trackId = entry.id
+					if typeof(entry.artworkAssetId) == "number" and entry.artworkAssetId > 0 then
+						TRACK_ARTWORK[trackId] = entry.artworkAssetId
+					else
+						TRACK_ARTWORK[trackId] = nil
+					end
 					local tuple = TRACK_INDEX[trackId]
 					if not tuple then
 						tuple = {trackId, entry.title, entry.artist, entry.duration}
@@ -2218,6 +2236,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		actionButton(inputCard, "CLEAR", UDim2.new(0.5, 4, 0, 54), UDim2.new(0.5, -16, 0, 32), function()
 			stopPreview()
 			audioInput = ""
+			artworkInput = ""
 			audioLookup = nil
 			lookupSerial += 1
 			refreshAudioTab()
@@ -2234,7 +2253,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			label(failed, tostring(result.message), UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Red, 11, true)
 		else
 			local id = tonumber(result.id) or 0
-			local found = card(176)
+			local found = card(218)
 			label(found, tostring(result.name), UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.White, 13, true)
 			label(found, "by " .. tostring(result.creator) .. "  •  ID " .. tostring(id), UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
 			local previewing = previewId == id
@@ -2269,13 +2288,27 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				catalogGenreId = GENRES[currentIndex].id
 				refreshAudioTab()
 			end, C.SurfaceLight)
+			local artworkBox = make("TextBox", {
+				Name="CatalogArtworkAssetId", Position=UDim2.fromOffset(12, 160), Size=UDim2.new(1, -24, 0, 30),
+				BackgroundColor3=C.SurfaceLight, TextColor3=C.White, PlaceholderColor3=C.Muted,
+				PlaceholderText="Optional cover image asset ID (Roblox image/decal)", Text=artworkInput,
+				TextSize=10, Font=FONT, TextXAlignment=Enum.TextXAlignment.Left, ClearTextOnFocus=false,
+			}, found) :: TextBox
+			corner(artworkBox, 8)
+			make("UIPadding", {PaddingLeft=UDim.new(0, 9), PaddingRight=UDim.new(0, 9)}, artworkBox)
+			artworkBox:GetPropertyChangedSignal("Text"):Connect(function() artworkInput = string.sub(artworkBox.Text, 1, 128) end)
 			actionButton(found, "SAVE TO CATALOG", UDim2.new(0.5, 4, 0, 116), UDim2.new(0.5, -16, 0, 34), function()
 				if typeof(Network.Send) ~= "function" then
 					notify("Catalog storage network is unavailable.", C.Red)
 					return
 				end
-				send("CatalogAddAudio", {assetId = id, genreId = catalogGenreId})
-				notify("Submitting audio for server validation and catalog storage…", C.Cyan)
+				local artworkId = if string.gsub(artworkInput, "%s", "") == "" then nil else parseAssetId(artworkInput)
+				if artworkInput ~= "" and not artworkId then
+					notify("Enter a valid Roblox image asset ID or Creator Hub link.", C.Red)
+					return
+				end
+				send("CatalogAddAudio", {assetId = id, genreId = catalogGenreId, artworkAssetId = artworkId})
+				notify("Submitting audio and optional cover art for server validation and catalog storage…", C.Cyan)
 			end, C.Cyan)
 		end
 	end
