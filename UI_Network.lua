@@ -39,6 +39,8 @@ local noticeEvent = Instance.new("BindableEvent")
 -- Must stay aligned with UI_Renderer_Secure.lua and the server handleAction().
 local ALLOWED_ACTIONS: {[string]: boolean} = {
 	RequestTrack = true,
+	CatalogAddAudio = true,
+	CatalogRemoveTrack = true,
 	RequestAudioAsset = true,
 	ReloadSong = true,
 	ToggleFavorite = true,
@@ -66,6 +68,8 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 -- client spam; the server remains authoritative and independently enforces them.
 local ACTION_COOLDOWNS: {[string]: number} = {
 	RequestTrack = 0.5,
+	CatalogAddAudio = 10,
+	CatalogRemoveTrack = 2,
 	RequestAudioAsset = 10,
 	ReloadSong = 3,
 	ToggleFavorite = 0.2,
@@ -361,6 +365,15 @@ end
 -- hardened server controller's handleAction() contract.
 function Network.RequestTrack(trackId: string)
 	Network.Send("RequestTrack", {trackId = trackId})
+end
+
+-- Staff-only on the server; these methods only request catalog mutations.
+function Network.CatalogAddAudio(assetId: number, genreId: string)
+	Network.Send("CatalogAddAudio", {assetId = assetId, genreId = genreId})
+end
+
+function Network.CatalogRemoveTrack(trackId: string)
+	Network.Send("CatalogRemoveTrack", {trackId = trackId})
 end
 
 function Network.ToggleFavorite(trackId: string)
