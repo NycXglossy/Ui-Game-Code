@@ -3470,8 +3470,13 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	if action == "DJClearQueue" then
 		if not isAdmin(player) then return false, "ClubMusic administrator permission is required." end
 		if globalQueueMode then
-			local callOk, cleared, state = globalInvoke("ClearGlobalQueue")
-			if not callOk or cleared ~= true then notify(player, "The shared queue could not be cleared.", "warn"); return false, "The shared queue could not be cleared." end
+			local callOk, cleared, state, message = globalInvoke("ClearGlobalQueue")
+			if not callOk or cleared ~= true then
+				local reason = tostring(message or "The shared queue service did not confirm the clear.")
+				warn("[ClubMusic] Shared queue clear failed: " .. reason)
+				notify(player, reason, "warn")
+				return false, reason
+			end
 			if typeof(state) == "table" then applyGlobalQueueState(state) end
 		else
 			queueManager:Clear(true)
