@@ -2621,6 +2621,17 @@ local function handleAction(player: Player, action: any, payload: any)
 		if artworkAssetId ~= nil and (typeof(artworkAssetId) ~= "number" or artworkAssetId ~= artworkAssetId or artworkAssetId % 1 ~= 0 or artworkAssetId <= 0 or artworkAssetId > 9007199254740991) then
 			notify(player, "Artwork must be a valid Roblox image asset ID.", "warn"); return
 		end
+		if artworkAssetId ~= nil then
+			local artworkInfoOk, artworkInfo = pcall(function()
+				return MarketplaceService:GetProductInfo(artworkAssetId, Enum.InfoType.Asset)
+			end)
+			local imageType = Enum.AssetType.Image.Value
+			local decalType = Enum.AssetType.Decal.Value
+			if not artworkInfoOk or typeof(artworkInfo) ~= "table"
+				or (artworkInfo.AssetTypeId ~= imageType and artworkInfo.AssetTypeId ~= decalType) then
+				notify(player, "That artwork ID is not an accessible Roblox image or decal asset.", "warn"); return
+			end
+		end
 		if CONFIG.RestrictAudioToAllowlist and not table.find(CONFIG.AllowedAudioAssetIds, assetId) then
 			notify(player, "That audio asset is not on the approved list.", "warn"); return
 		end
