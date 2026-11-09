@@ -499,6 +499,7 @@ local queue: {QueueEntry} = {}
 local globalQueueMode = false
 local globalTrackRevision = 0
 local globalQueueSyncBusy = false
+local publishState: (Player?) -> ()
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
 local activePlaylistId: string? = nil
@@ -1288,17 +1289,23 @@ local function topUpAuto()
 	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
 		guard += 1
 		local playlistTrack = nextPlaylistTrack()
+		local entry: QueueEntry
 		if playlistTrack then
-			table.insert(queue, makeEntry(playlistTrack, "playlist", nil))
+			entry = makeEntry(playlistTrack, "playlist", nil)
 		else
 			if activePlaylistId then
 				warn("[ClubMusic] Active playlist has no playable catalog tracks; returning to Auto DJ.")
-				activePlaylistId = nil
-				activePlaylistName = ""
-				table.clear(activePlaylistTracks)
-				activePlaylistCursor = 1
+				activePlaylistId = nil; activePlaylistName = ""
+				table.clear(activePlaylistTracks); activePlaylistCursor = 1
 			end
-			table.insert(queue, makeEntry(pickAutoTrack(), "auto", nil))
+			entry = makeEntry(pickAutoTrack(), "auto", nil)
+		end
+		if globalQueueMode then
+			if not enqueueGlobalQueueEntry then break end
+			local queued = enqueueGlobalQueueEntry(entry)
+			if not queued then break end
+		else
+			table.insert(queue, entry)
 		end
 	end
 end
@@ -1440,7 +1447,7 @@ local function applyGlobalQueueState(state: any): boolean
 	local revision = tonumber(state.playback.trackRevision) or 0
 	local current = state.current
 	if typeof(current) == "table" and typeof(current.trackId) == "string" then
-		if revision ~= globalTrackRevision or nowPlaying.trackId ~= current.trackId then
+		if nowPlaying.trackId ~= current.trackId then
 			local entry: QueueEntry = {
 				id = tostring(current.id), trackId = current.trackId, title = tostring(current.title),
 				artist = tostring(current.artist), duration = tonumber(current.duration) or 1,
@@ -1450,8 +1457,8 @@ local function applyGlobalQueueState(state: any): boolean
 				soundId = tostring(current.soundId or ""),
 			}
 			setNowPlaying(entry)
-			globalTrackRevision = revision
 		end
+		globalTrackRevision = revision
 		local positionCallOk, position = globalInvoke("GetGlobalPlaybackPosition", state)
 		if positionCallOk and isFiniteNumber(position) then
 			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
@@ -1745,7 +1752,7 @@ local function flushPendingState()
 	end
 end
 
-local function publishState(player: Player?)
+publishState = function(player: Player?)
 	if player then
 		pendingStatePlayers[player.UserId] = true
 	else
@@ -2605,8 +2612,13 @@ local function handleAction(player: Player, action: any, payload: any)
 
 		local vip = isVip(player)
 		local entry = makeEntry(track, "player", player)
-		table.insert(queue, insertIndex(passTier(player)), entry)
-		requestCounts[player.UserId] = count + 1
+		if globalQueueMode then
+			local queued, queueError = if enqueueGlobalQueueEntry then enqueueGlobalQueueEntry(entry) else false, "Global queue is not ready."
+			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
+		else
+			table.insert(queue, insertIndex(passTier(player)), entry)
+			requestCounts[player.UserId] = count + 1
+		end
 		lastRequestAt[player.UserId] = now
 		notify(player, if vip and CONFIG.VipPriority then "Requested with VIP priority!" else "Track requested!", "ok")
 		publishState(nil)
@@ -2700,8 +2712,13 @@ local function handleAction(player: Player, action: any, payload: any)
 			genre = "Creator Hub Audio",
 		}, "player", player)
 		entry.soundId = "rbxassetid://" .. tostring(assetId)
-		table.insert(queue, insertIndex(passTier(player)), entry)
-		requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
+		if globalQueueMode then
+			local queued, queueError = if enqueueGlobalQueueEntry then enqueueGlobalQueueEntry(entry) else false, "Global queue is not ready."
+			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
+		else
+			table.insert(queue, insertIndex(passTier(player)), entry)
+			requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
+		end
 		lastRequestAt[player.UserId] = recheckNow
 		notify(player, "Audio queued: " .. titleOrError, "ok")
 		publishState(nil)
