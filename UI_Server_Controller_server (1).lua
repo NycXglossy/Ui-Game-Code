@@ -2817,7 +2817,7 @@ end
 
 -- Actions -----------------------------------------------------------------------------
 
-local function handleAction(player: Player, action: any, payload: any): (boolean, string?)
+local function handleAction(player: Player, action: any, payload: any): (boolean?, string?)
 	if player.Parent ~= Players then return false, "The caller is no longer in this server." end
 	-- Validate the small, fixed remote contract before spending shared-service
 	-- budget or forwarding attacker-controlled action values across the server bridge.
