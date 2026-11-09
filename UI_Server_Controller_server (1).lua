@@ -1558,6 +1558,19 @@ task.spawn(function()
 		elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 	end
 	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+	topUpAuto()
+end)
+
+-- MessagingService is a fast invalidation path; periodic snapshots repair missed
+-- notifications and correct playback drift without making per-second DataStore reads.
+task.spawn(function()
+	while script.Parent do
+		task.wait(20)
+		if globalQueueMode then
+			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			if #queue < CONFIG.AutoQueueTarget then topUpAuto() end
+		end
+	end
 end)
 
 -- Skip voting ---------------------------------------------------------------------
