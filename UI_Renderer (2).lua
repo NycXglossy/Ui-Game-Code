@@ -3107,6 +3107,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Padding = UDim.new(0, 6),
 		}, row)
 		local buttons: {[string]: {button: any, tint: Color3}} = {}
+		local navigationButtons: {TextButton} = {}
 		local function refresh()
 			for id, entry in pairs(buttons) do
 				local on = id == getSelected()
@@ -3152,10 +3153,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end)
 			make("UIPadding", { PaddingLeft = UDim.new(0, 11), PaddingRight = UDim.new(0, 11) }, chip)
 			buttons[option.id] = { button = chip, tint = color }
+			table.insert(navigationButtons, chip)
 			chip.Activated:Connect(function()
 				onPick(option.id)
 				refresh()
 			end)
+		end
+		-- Keep controller and keyboard focus within the horizontal chip row.
+		-- SelectionGained above scrolls long rows so the focused chip stays visible.
+		for index, chip in ipairs(navigationButtons) do
+			chip.NextSelectionLeft = navigationButtons[math.max(1, index - 1)]
+			chip.NextSelectionRight = navigationButtons[math.min(#navigationButtons, index + 1)]
 		end
 		refresh()
 		return row
