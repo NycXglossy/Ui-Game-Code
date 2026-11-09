@@ -95,10 +95,23 @@ end
 function MusicPlaylistService:Refresh(budgetCallback: (() -> boolean)?): boolean
  if not ready then return false end
  if not persistent then return true end
- if busy or (budgetCallback and not budgetCallback()) then return false end
+ if busy then return false end
+ -- Serialize refresh reads with mutations so a stale GetAsync cannot replace a
+ -- newer in-memory playlist list after a successful UpdateAsync.
+ busy = true
+ if budgetCallback and not budgetCallback() then
+  busy = false
+  return false
+ end
  local ok, data = pcall(function() return store:GetAsync(KEY) end)
- if not ok then warn("[ClubMusic Playlists] Refresh failed: " .. tostring(data)); return false end
- playlists = sanitize(data); return true
+ if not ok then
+  busy = false
+  warn("[ClubMusic Playlists] Refresh failed: " .. tostring(data))
+  return false
+ end
+ playlists = sanitize(data)
+ busy = false
+ return true
 end
 
 local function applyMutation(self, mutate: ({Playlist}) -> (boolean, string)): (boolean, string)
