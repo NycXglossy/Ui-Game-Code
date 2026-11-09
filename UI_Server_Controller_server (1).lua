@@ -725,6 +725,8 @@ local MusicQueueManager = queueManagerRequireResult
 local queueManager: any = nil
 local globalQueueMode = false
 local globalTrackRevision = 0
+local globalRestartRevision = 0
+local autoQueueHold = false
 -- Queue mutations have their own revision, independent of playback transitions.
 -- This prevents delayed MessagingService snapshots from restoring an older queue.
 local globalQueueRevision = 0
@@ -1553,6 +1555,7 @@ local function nextPlaylistTrack(): Track?
 end
 
 local function topUpAuto()
+	if autoQueueHold then return end
 	local guard = 0
 	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
 		guard += 1
@@ -1688,6 +1691,7 @@ local transitionInProgress = false
 
 local function setNowPlaying(entry: QueueEntry)
 	playbackGeneration += 1
+	autoQueueHold = false
 	nowPlaying.trackId = entry.trackId
 	nowPlaying.title = entry.title
 	nowPlaying.artist = entry.artist
@@ -1756,7 +1760,9 @@ local function applyGlobalQueueState(state: any): boolean
 			requestCounts[entry.userId] = (requestCounts[entry.userId] or 0) + 1
 		end
 	end
-	local previousTrackRevision = globalTrackRevision
+	local previousRestartRevision = globalRestartRevision
+	local restartRevision = tonumber(state.playback.restartRevision) or 0
+	if not isFiniteNumber(restartRevision) or restartRevision < 0 or restartRevision % 1 ~= 0 then return false end
 	local current = state.current
 	if typeof(current) == "table" and typeof(current.trackId) == "string" then
 		if nowPlaying.trackId ~= current.trackId then
@@ -1773,7 +1779,7 @@ local function applyGlobalQueueState(state: any): boolean
 		local positionCallOk, position = globalInvoke("GetGlobalPlaybackPosition", state)
 		if positionCallOk and isFiniteNumber(position) then
 			local synchronizedPosition = math.clamp(position, 0, nowPlaying.duration)
-			local restartObserved = revision > previousTrackRevision
+			local restartObserved = restartRevision > previousRestartRevision
 				and synchronizedPosition <= 0.25
 				and musicSound.SoundId == nowPlaying.soundId
 				and musicSound.TimePosition > 1
@@ -1798,6 +1804,7 @@ local function applyGlobalQueueState(state: any): boolean
 			end)
 		end
 		globalTrackRevision = revision
+		globalRestartRevision = restartRevision
 	else
 		if nowPlaying.trackId ~= "" then
 			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
@@ -1808,7 +1815,9 @@ local function applyGlobalQueueState(state: any): boolean
 		end
 		playbackPaused = true
 		globalTrackRevision = revision
+		globalRestartRevision = restartRevision
 	end
+	autoQueueHold = state.autoQueueHold == true
 	globalQueueRevision = queueRevision
 	return true
 end
@@ -3464,9 +3473,9 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			local callOk, cleared, state = globalInvoke("ClearGlobalQueue")
 			if not callOk or cleared ~= true then notify(player, "The shared queue could not be cleared.", "warn"); return false, "The shared queue could not be cleared." end
 			if typeof(state) == "table" then applyGlobalQueueState(state) end
-			topUpAuto()
 		else
-			queueManager:Clear(true); topUpAuto()
+			queueManager:Clear(true)
+			autoQueueHold = true
 			globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
 		end
 		notify(player, "Queue cleared.", "ok")
