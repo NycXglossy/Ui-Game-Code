@@ -237,6 +237,13 @@ function Network.Init(): boolean
 		if not foundFolder or not foundFolder:IsA("Folder") then
 			error("Waiting for ReplicatedStorage.ClubMusicRemotes; the server controller may still be starting.")
 		end
+		local readyStartedAt = os.clock()
+		while foundFolder:GetAttribute("Ready") ~= true do
+			if os.clock() - readyStartedAt >= REMOTE_TIMEOUT then
+				error("ClubMusicRemotes exists but the server controller has not finished initializing.")
+			end
+			task.wait(0.1)
+		end
 
 		local action = waitForRemote(foundFolder, "RequestAction", "RemoteEvent") :: RemoteEvent
 		local stateRemote = waitForRemote(foundFolder, "StateChanged", "RemoteEvent") :: RemoteEvent
