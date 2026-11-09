@@ -122,6 +122,8 @@ end
 
 local remotes = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicRemotes") :: Folder
 remotes:SetAttribute("Ready", false)
+remotes:SetAttribute("StartupStage", "LoadingStorageModules")
+remotes:SetAttribute("StartupError", nil)
 local actionRemote = getOrCreate(remotes, "RemoteEvent", "RequestAction") :: RemoteEvent
 local stateRemote = getOrCreate(remotes, "RemoteEvent", "StateChanged") :: RemoteEvent
 local noticeRemote = getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
@@ -136,6 +138,7 @@ assert(catalogModule and catalogModule:IsA("ModuleScript"), "[ClubMusic] Missing
 assert(playlistModule and playlistModule:IsA("ModuleScript"), "[ClubMusic] Missing ServerStorage.MusicPlaylistService ModuleScript.")
 local MusicCatalogService = require(catalogModule)
 local MusicPlaylistService = require(playlistModule)
+remotes:SetAttribute("StartupStage", "InitializingStorage")
 
 type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string? }
 
@@ -544,6 +547,7 @@ for _, catalogTrack in ipairs(MusicCatalogService:GetAllTracks()) do
 	table.insert(ALL_TRACK_IDS, track.id)
 end
 table.sort(ALL_TRACK_IDS)
+remotes:SetAttribute("StartupStage", "BuildingController")
 
 local function consumeActionBudget(userId: number, now: number): boolean
 	local bucket = perPlayerActionBuckets[userId]
@@ -1307,7 +1311,11 @@ local function stopPlaylistRotation(player: Player?)
 	return true
 end
 
+local playbackGeneration = 0
+local transitionInProgress = false
+
 local function setNowPlaying(entry: QueueEntry)
+	playbackGeneration += 1
 	nowPlaying.trackId = entry.trackId
 	nowPlaying.title = entry.title
 	nowPlaying.artist = entry.artist
@@ -1328,15 +1336,28 @@ local function setNowPlaying(entry: QueueEntry)
 	table.clear(skipVotes)
 end
 
-local function advance()
-	local nextEntry = table.remove(queue, 1)
-	if nextEntry then
-		releaseSlot(nextEntry)
-	else
-		nextEntry = makeEntry(pickAutoTrack(), "auto", nil)
+local function advance(expectedGeneration: number?): boolean
+	-- Every transition is synchronous and generation-checked. This prevents the
+	-- duration clock and playback watchdog from advancing the same track twice.
+	if transitionInProgress then return false end
+	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then return false end
+	transitionInProgress = true
+	local ok, err = pcall(function()
+		local nextEntry = table.remove(queue, 1)
+		if nextEntry then
+			releaseSlot(nextEntry)
+		else
+			nextEntry = makeEntry(pickAutoTrack(), "auto", nil)
+		end
+		setNowPlaying(nextEntry :: QueueEntry)
+		topUpAuto()
+	end)
+	transitionInProgress = false
+	if not ok then
+		warn("[ClubMusic] Track transition failed: " .. tostring(err))
+		return false
 	end
-	setNowPlaying(nextEntry :: QueueEntry)
-	topUpAuto()
+	return true
 end
 
 -- Boot: start with an auto-selected track and a visible auto queue.
@@ -2967,6 +2988,7 @@ actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload
 	local ok, err = pcall(handleAction, player, action, payload)
 	if not ok then warn("[ClubMusic] Action handler error: " .. tostring(err)) end
 end)
+remotes:SetAttribute("StartupStage", "Ready")
 remotes:SetAttribute("Ready", true)
 
 -- Releases this server's profile lease after the final save. Ownership is checked
@@ -3367,10 +3389,30 @@ task.spawn(function()
 			nowPlaying.elapsed += 1
 		end
 		ticks += 1
-		if not playbackPaused and nowPlaying.elapsed >= nowPlaying.duration then
-			advance()
-			ticks = 0
-			publishState(nil)
+
+		local currentGeneration = playbackGeneration
+		local shouldAdvance = not playbackPaused and nowPlaying.trackId ~= ""
+			and nowPlaying.elapsed >= nowPlaying.duration
+		if not shouldAdvance and not playbackPaused and nowPlaying.trackId ~= ""
+			and nowPlaying.elapsed >= 15 and not musicSound.IsPlaying then
+			-- IsLoaded/TimeLength distinguishes a confirmed stopped/ended sound from
+			-- an audio asset that is still buffering. If loading never completes,
+			-- the 45-second ceiling prevents a permanently stuck track.
+			local loadedAndKnownLength = false
+			pcall(function()
+				loadedAndKnownLength = musicSound.IsLoaded and musicSound.TimeLength > 0
+			end)
+			shouldAdvance = loadedAndKnownLength or nowPlaying.elapsed >= 45
+			if shouldAdvance then
+				warn("[ClubMusic] Playback watchdog detected a stopped or unplayable track; advancing safely.")
+			end
+		end
+
+		if shouldAdvance then
+			if advance(currentGeneration) then
+				ticks = 0
+				publishState(nil)
+			end
 		elseif ticks >= CONFIG.ResyncSeconds then
 			ticks = 0
 			publishState(nil)
