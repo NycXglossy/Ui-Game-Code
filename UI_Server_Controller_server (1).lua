@@ -1544,7 +1544,7 @@ end
 -- drops stale automatic entries and resumes from the same rotation definition.
 local function syncGlobalPlaylistRotation(): (boolean, string?)
 	if not globalQueueMode then return true, nil end
-	local callOk, changed, state, message
+	local callOk, changed, state, message = false, false, nil, nil
 	if activePlaylistId and #activePlaylistTracks > 0 then
 		local trackIds = {}
 		for _, track in ipairs(activePlaylistTracks) do
