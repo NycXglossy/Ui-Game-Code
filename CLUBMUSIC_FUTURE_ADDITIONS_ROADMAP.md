@@ -1,9 +1,26 @@
 # ClubMusic Future Additions Roadmap
 
-**Status:** Planning document — proposed work only; none of the items below should be treated as implemented merely because they appear here.  
+**Status:** Living implementation roadmap — updated 2026-11-09. Checkboxes distinguish implemented source changes from work that still requires runtime verification. A checked item is not a production-release certification.  
 **Target branch:** `audit/hardened-clubmusic-2026-11-08`
 
 This roadmap records potential additions for the existing ClubMusic architecture. It is intentionally designed to preserve the current LocalScripts, remote contract, server authority, profile and receipt systems, moderation, titles, XP, and cross-server service.
+
+## Current implementation snapshot (2026-11-09)
+
+This section supersedes older status wording elsewhere in this document where the repository has since changed. Status is based on committed source changes and source review, not an independent Roblox runtime test.
+
+| Area | Current status | Evidence / remaining caveat |
+|---|---|---|
+| Queue manager | **Integrated** | `MusicQueueManager` is adapted to the controller-owned queue; preserve a single queue authority. |
+| Other four managers | **Not integrated** | Playback, validation, skip-vote, and playlist managers still require compatibility work; do not activate legacy state owners blindly. |
+| Catalog | **Implemented, evolving** | `MusicCatalogService` exists; schema consistency, playlist refresh, and catalog-removal protections have received refinements. |
+| HUD | **Refined** | Festival-style HUD and live playing/paused/standby status are implemented in source; device-layout testing remains. |
+| Genre/catalog UI | **Partially implemented** | Genre filtering includes `Other`; verify search, pagination, empty states, and full device behavior. |
+| Textface/title customization | **Implemented in source** | The expanded font-style choices and server validation exist; continue permission and UI regression checks. |
+| Security | **Improved, not release-verified** | Remote validation order, bounded payload checks, action budgets, and player-leave cleanup are present. Exploit testing remains. |
+| Global queue | **Partially hardened** | Shared queue integration and stale-revision protections exist; catalog deletion still has a snapshot-check concurrency gap. |
+| Playlist watchdog/transitions | **Implemented in source** | Bounded watchdog and double-advance safeguards are present; runtime recovery tests remain. |
+| Persistence and cross-server delivery | **Not fully verified** | Studio memory mode does not prove live DataStore, MessagingService, or receipt behavior. |
 
 ## Architecture rules for every future addition
 
@@ -17,6 +34,8 @@ This roadmap records potential additions for the existing ClubMusic architecture
 8. Do not add an audio-count feature based on `Audio Sound Count 1.rbxm`: that asset is a Sound instance named `ServerMusicSound`, not a counter script or module.
 
 ## Phase 0 — Complete the manager integration
+
+**Current status: Partial — `MusicQueueManager` is integrated; the other four managers remain compatibility work.**
 
 **Priority: Critical · Prerequisite for later music features**
 
@@ -39,6 +58,8 @@ This roadmap records potential additions for the existing ClubMusic architecture
 
 ## Phase 1 — Security, reliability, and regression testing
 
+**Current status: In progress — multiple source-level hardening changes are committed; runtime and adversarial test evidence is still outstanding.**
+
 **Priority: Critical · Complete before production release**
 
 - [ ] Build a regression matrix for all existing features: requests, queue operations, DJ controls, skip voting, moderation, VIP tiers, titles, XP, purchases, and profile persistence.
@@ -59,6 +80,8 @@ This roadmap records potential additions for the existing ClubMusic architecture
 
 ## Phase 2 — Music configuration and operational controls
 
+**Current status: Not started as a centralized configuration phase.**
+
 **Priority: High**
 
 - [ ] Add a server-only `MusicConfiguration` ModuleScript for queue limits, tier priorities, cooldowns, vote thresholds, retry limits, default volume, playlist options, and optional audio allowlist policy.
@@ -72,6 +95,8 @@ This roadmap records potential additions for the existing ClubMusic architecture
 **Exit criteria:** settings are centralized, validated, documented, and do not bypass server-side enforcement.
 
 ## Phase 3 — Advanced DJ and staff tools
+
+**Current status: Partial — existing controller actions and permission enforcement provide a foundation; remaining tools and audit coverage need verification.**
 
 **Priority: High**
 
@@ -89,6 +114,8 @@ This roadmap records potential additions for the existing ClubMusic architecture
 
 ## Phase 4 — Player-facing music experience
 
+**Current status: Partial — genre/catalog improvements, title styling, and the festival playback HUD have landed; remaining experience and device regression work is open.**
+
 **Priority: Medium**
 
 - [ ] Add a searchable, curated music catalog with title, artist, genre, and category metadata where available.
@@ -105,6 +132,8 @@ This roadmap records potential additions for the existing ClubMusic architecture
 
 ## Phase 5 — Playlist and playback intelligence
 
+**Current status: Partial — watchdog and transition safeguards are implemented in source; full rotation and failure-path behavior still needs testing.**
+
 **Priority: Medium**
 
 - [ ] Add curated playlist definitions and validate every track before it can be selected.
@@ -119,6 +148,8 @@ This roadmap records potential additions for the existing ClubMusic architecture
 **Exit criteria:** playlist rotation is deterministic enough to debug, bounded, and cannot bypass audio validation or staff restrictions.
 
 ## Phase 6 — Cross-server coordination and recovery
+
+**Current status: Partial — shared queue and revision protections exist; idempotency, recovery, and atomic catalog concurrency remain open.**
 
 **Priority: Medium · Depends on an explicit playback topology decision**
 
@@ -135,6 +166,8 @@ This roadmap records potential additions for the existing ClubMusic architecture
 **Exit criteria:** documented delivery guarantees and tested recovery behavior; no false claim of durable or globally synchronized playback.
 
 ## Phase 7 — Analytics and observability
+
+**Current status: Not implemented; retain as future work.**
 
 **Priority: Medium to Low**
 
@@ -180,22 +213,24 @@ Before production release, verify:
 
 ## Current known limitations to carry forward
 
-- The five manager module source files were not present in the repository tree at the time this roadmap was written; their actual implementations and APIs remain unverified.
-- The supplied `Music Module` currently has an empty music list.
-- The source system's separate role system should not become a second permission authority.
+- `MusicQueueManager` is integrated, but the other four manager modules remain unintegrated pending dependency, API, and state-ownership review.
+- The supplied `Music Module` has an empty music list; do not assume it supplies a production catalog.
+- The source system's separate role system must not become a second permission authority.
 - The global DJ MessagingService path is best-effort, not a durable globally synchronized playback queue.
+- Global catalog removal currently relies on an authoritative snapshot check; it is not an atomic reservation against a concurrent enqueue. Treat this as an open consistency risk.
+- `RestrictAudioToAllowlist` is not enabled by default; server-side audio inspection is not equivalent to a strict catalog allowlist.
 - The `Audio Sound Count 1.rbxm` asset is a Sound named `ServerMusicSound`, not an audio counter implementation.
-- The existing integration documentation reports source-level review only; Roblox Studio multiplayer, live DataStore, Marketplace, MessagingService, and exploit-client tests remain necessary.
+- Recent security and UI work has received source-level review/commit verification only. Roblox Studio multiplayer, mobile/console layout, live DataStore, Marketplace, MessagingService failure/replay, and exploit-client tests remain necessary.
 
-## Suggested implementation order
+## Updated implementation order
 
-1. Complete and review the five-manager integration.
-2. Complete security, compatibility, and runtime regression testing.
-3. Add centralized music configuration and playback recovery.
-4. Add advanced DJ/staff controls and audit logging.
-5. Add player catalog, favorites, and Now Playing improvements.
-6. Add playlist intelligence.
-7. Decide and implement any stronger cross-server synchronization guarantees.
-8. Add bounded analytics and operational dashboards.
+1. **Close high-risk consistency gaps:** design atomic global catalog-removal protection that blocks concurrent enqueue safely; do not ship a partial lock/reservation design.
+2. **Complete Phase 1 testing:** exercise malformed/replayed requests, simultaneous queue changes, player departure, stale/duplicate/out-of-order cross-server commands, and service outages.
+3. **Finish manager compatibility review:** integrate only the useful behavior from the remaining four managers without duplicate state, remotes, or permission authorities.
+4. **Run UI regression:** verify HUD and full-screen UI on desktop, mobile, tablet, gamepad/console, and supported VR presentation.
+5. **Add centralized configuration and recovery controls** after existing behavior has regression coverage.
+6. **Finish staff tools and player experience** with bounded audit history and accessible error/empty/loading states.
+7. **Verify playlist and cross-server recovery guarantees** against live-like DataStore and MessagingService conditions.
+8. **Add bounded analytics** only after operational reliability is established.
 
-Do not implement every item at once. Each phase should be reviewed, tested, and committed independently on the working branch before proceeding.
+Do not implement every item at once. Each phase should be reviewed, tested, and committed independently on the working branch. Mark a checkbox complete only when its stated exit criteria have evidence; source code existing is not proof of runtime correctness.
