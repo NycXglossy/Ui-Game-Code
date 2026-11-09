@@ -3820,6 +3820,13 @@ local function refreshLocalCatalog(): boolean
 		for id, track in pairs(nextTracks) do TRACK_BY_ID[id] = track end
 		table.clear(ALL_TRACK_IDS)
 		for _, id in ipairs(nextIds) do table.insert(ALL_TRACK_IDS, id) end
+
+		-- Catalog invalidation can remove tracks referenced by an active playlist.
+		-- Rebuild the in-memory playable view without mutating the saved playlist:
+		-- stale IDs remain available if a track is restored in a later catalog sync.
+		if activePlaylistId then
+			reloadActivePlaylist()
+		end
 		refreshed = true
 	end)
 	catalogRefreshBusy = false
