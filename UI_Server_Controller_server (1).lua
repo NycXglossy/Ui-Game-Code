@@ -1621,8 +1621,15 @@ task.spawn(function()
 	while script.Parent do
 		task.wait(20)
 		if globalQueueMode then
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			if #queue < CONFIG.AutoQueueTarget then topUpAuto() end
+			local synchronized = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
+			if synchronized and nowPlaying.trackId == "" then
+				local playlistFallback = nextPlaylistTrack()
+				local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
+				local callOk, advanced, state = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
+				if callOk and advanced == true and typeof(state) == "table" then applyGlobalQueueState(state)
+				elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			end
+			if synchronized and #queue < CONFIG.AutoQueueTarget then topUpAuto() end
 		end
 	end
 end)
