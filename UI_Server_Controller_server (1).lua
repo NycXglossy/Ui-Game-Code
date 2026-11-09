@@ -346,7 +346,6 @@ end
 
 local function startServerMusic(soundId: any)
 	stopServerMusic()
-	playbackPaused = false
 	if typeof(soundId) ~= "string" or #soundId > 64
 		or not string.match(soundId, "^rbxassetid://%d+$") then
 		musicSound.SoundId = ""
@@ -356,6 +355,7 @@ local function startServerMusic(soundId: any)
 	musicSound.TimePosition = 0
 	local ok, err = pcall(function()
 		musicSound:Play()
+		if playbackPaused then musicSound:Pause() end
 	end)
 	if not ok then
 		warn("[ClubMusic] Server playback could not start: " .. tostring(err))
@@ -3177,6 +3177,29 @@ local function refreshLocalCatalog(): boolean
 	return refreshed
 end
 
+local lastGlobalPlaybackRevision = 0
+
+local function applyGlobalPlaybackControl(command: string, payload: any): boolean
+	if typeof(payload) ~= "table" or not isFiniteNumber(payload.revision) or payload.revision < 1 then return false end
+	local revision = math.floor(payload.revision)
+	if revision <= lastGlobalPlaybackRevision then return false end
+	if command == "SetPlaybackPaused" then
+		if typeof(payload.paused) ~= "boolean" then return false end
+		playbackPaused = payload.paused
+		pcall(function()
+			if playbackPaused then musicSound:Pause() else musicSound:Resume() end
+		end)
+	elseif command == "Restart" then
+		nowPlaying.elapsed = 0
+		playbackPaused = false
+		startServerMusic(nowPlaying.soundId)
+	else
+		return false
+	end
+	lastGlobalPlaybackRevision = revision
+	return true
+end
+
 local function handleGlobalMessage(message: any)
 	if typeof(message) ~= "table" then return end
 	if message.kind == "Catalog" then
@@ -3231,18 +3254,14 @@ local function handleGlobalMessage(message: any)
 			if changed then
 				broadcast(if requestsLocked then "Song requests are globally locked." else "Song requests are globally open.", "info")
 			end
-		elseif message.command == "SetPlaybackPaused" and typeof(message.payload) == "table"
-			and typeof(message.payload.paused) == "boolean" then
-			playbackPaused = message.payload.paused
-			pcall(function()
-				if playbackPaused then musicSound:Pause() else musicSound:Resume() end
-			end)
-			broadcast(if playbackPaused then "Music was paused globally." else "Music was resumed globally.", "info")
-		elseif message.command == "Restart" then
-			nowPlaying.elapsed = 0
-			playbackPaused = false
-			startServerMusic(nowPlaying.soundId)
-			broadcast("The current track was restarted globally.", "info")
+		elseif message.command == "SetPlaybackPaused" or message.command == "Restart" then
+			if applyGlobalPlaybackControl(message.command, message.payload) then
+				if message.command == "SetPlaybackPaused" then
+					broadcast(if playbackPaused then "Music was paused globally." else "Music was resumed globally.", "info")
+				else
+					broadcast("The current track was restarted globally.", "info")
+				end
+			end
 		end
 		publishState(nil)
 	end
