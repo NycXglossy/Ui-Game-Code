@@ -185,3 +185,75 @@ MessagingService delivery test, live DataStore test, Luau typecheck, or
 exploit-client test has been run. Validate add/remove propagation with at
 least two live test servers and confirm behavior during MessagingService
 outage and DataStore budget exhaustion before release.
+
+
+## Persistent staff playlist management
+
+The next catalog stage adds `MusicPlaylistService.lua`, a server-only
+ModuleScript installed at `ServerStorage/MusicPlaylistService`.
+
+### What it supports
+
+- Staff can create and delete named playlists from the All Tracks screen.
+- Staff can select a playlist and add catalog tracks to it.
+- Playlist service operations also support removing a track and moving a track
+  to a requested position.
+- Playlist names are 2–32 characters; names are unique without regard to case.
+- Limits: 30 playlists, 100 tracks per playlist, and no duplicate track IDs
+  within a playlist.
+- Playlists are stored separately from player profiles and catalog entries in
+  DataStore `ClubMusic_Playlists_v1`, key `playlists`.
+- Mutations use `UpdateAsync` and update the in-memory copy only after the
+  persistent update succeeds. Concurrent edits are applied against the latest
+  stored list.
+- Studio uses session-only playlists while `StudioUseDataStore=false`.
+- The client receives a detached, read-only playlist list. All mutations pass
+  through the existing action RemoteEvent and server-side staff authorization.
+- The All Tracks tab now provides staff playlist creation, selection, deletion,
+  and an ADD control on catalog entries when a playlist is selected.
+
+### API and architecture
+
+- `MusicPlaylistService:Create(name)`
+- `MusicPlaylistService:Delete(playlistId)`
+- `MusicPlaylistService:AddTrack(playlistId, trackId)`
+- `MusicPlaylistService:RemoveTrack(playlistId, trackId)`
+- `MusicPlaylistService:MoveTrack(playlistId, trackId, position)`
+- `MusicPlaylistService:GetAll()`
+- `UI_Network.GetMusicPlaylists()` provides a bounded read-only remote call.
+- `UI_Network.PlaylistCreate/Delete/AddTrack/RemoveTrack/MoveTrack` send
+  mutation requests through the existing network layer.
+
+The controller verifies that added track IDs exist in its current trusted
+catalog. Playlist data is metadata only: this stage does not automatically
+start playlists, modify the active queue, bypass VIP request priority, or
+grant DJ privileges. Playlist playback/rotation remains a separate future
+feature and must be explicitly connected to the controller's existing
+playback lifecycle.
+
+### Installation
+
+1. Create a **ModuleScript** named `MusicPlaylistService` under
+   `ServerStorage`.
+2. Paste the complete contents of `MusicPlaylistService.lua` from this branch.
+3. Keep the existing `MusicCatalogService` ModuleScript in ServerStorage.
+4. Keep the updated controller, network module, and renderer in their existing
+   locations. The controller creates `GetMusicPlaylists` under
+   `ClubMusicRemotes` at runtime.
+5. Do not install the original source system's separate remotes or role system.
+
+### Current boundaries and verification
+
+- Playlist reads refresh the persistent store on a bounded interval (at most
+  once per five seconds per server when clients request the list), so changes
+  made on another server converge without trusting client-supplied playlist
+  data. This is not instant MessagingService synchronization.
+- Playlist mutations fail closed if initialization or DataStore writes fail.
+- Deleting a catalog track does not currently cascade-delete its ID from
+  playlists; stale IDs are harmless metadata and are not playable/requestable
+  through the controller unless the track exists in the trusted catalog.
+- This repository change has been committed and fetched again for source
+  verification. No Roblox Studio execution, Luau typecheck, live DataStore
+  concurrency test, or exploit-client test has been performed. Test creation,
+  selection, adding/removing/reordering, deletion, DataStore outage, and
+  concurrent edits in a private test experience before release.
