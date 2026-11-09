@@ -1196,7 +1196,7 @@ end
 local function makeEntry(track: Track, source: string, player: Player?): QueueEntry
 	queueCounter += 1
 	return {
-		id = (if player then tostring(player.UserId) else "auto") .. "-" .. tostring(queueCounter),
+		id = "cm-" .. HttpService:GenerateGUID(false),
 		trackId = track.id,
 		title = track.title,
 		artist = track.artist,
