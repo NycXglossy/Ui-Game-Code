@@ -3845,9 +3845,23 @@ adminBridge.OnInvoke = function(caller: any, operation: any): (boolean, string)
 	if typeof(operation) ~= "string" or #operation > 32 then
 		return false, "Invalid ClubMusic admin operation."
 	end
+	if not isStaff(caller) then return false, "ClubMusic staff permission is required." end
+	-- Read-only status is intentionally separate from handleAction: it does not
+	-- mutate playback, queue state, cooldowns, or shared DataStore records.
+	if operation == "Status" then
+		local currentTitle = if typeof(nowPlaying.title) == "string" and nowPlaying.title ~= "" then nowPlaying.title else "Nothing playing"
+		local currentArtist = if typeof(nowPlaying.artist) == "string" then nowPlaying.artist else ""
+		local playbackLabel = if playbackPaused then "PAUSED" else "PLAYING"
+		local requestLabel = if requestsLocked then "LOCKED" else "OPEN"
+		local queueModeLabel = if globalQueueMode then "GLOBAL" else "LOCAL"
+		local queueCount = #queue
+		local elapsed = math.max(0, math.floor(tonumber(nowPlaying.elapsed) or 0))
+		local duration = math.max(0, math.floor(tonumber(nowPlaying.duration) or 0))
+		local trackLabel = currentTitle .. (if currentArtist ~= "" then " — " .. currentArtist else "")
+		return true, string.sub(string.format("ClubMusic: %s | %s | Requests %s | Queue %d (%s) | %ds/%ds", trackLabel, playbackLabel, requestLabel, queueCount, queueModeLabel, elapsed, duration), 1, 450)
+	end
 	local action = ADMIN_BRIDGE_ACTIONS[operation]
 	if not action then return false, "That ClubMusic admin operation is not exposed." end
-	if not isStaff(caller) then return false, "ClubMusic staff permission is required." end
 	if action == "DJClearQueue" and not isAdmin(caller) then
 		return false, "ClubMusic administrator permission is required to clear the queue."
 	end
