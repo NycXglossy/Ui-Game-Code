@@ -31,6 +31,7 @@ local receivedState = false
 
 local actionRemote: RemoteEvent? = nil
 local catalogFunction: RemoteFunction? = nil
+local playlistFunction: RemoteFunction? = nil
 local currentState: {[string]: any} = {}
 local connections: {RBXScriptConnection} = {}
 local stateEvent = Instance.new("BindableEvent")
@@ -41,6 +42,11 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	RequestTrack = true,
 	CatalogAddAudio = true,
 	CatalogRemoveTrack = true,
+	PlaylistCreate = true,
+	PlaylistDelete = true,
+	PlaylistAddTrack = true,
+	PlaylistRemoveTrack = true,
+	PlaylistMoveTrack = true,
 	RequestAudioAsset = true,
 	ReloadSong = true,
 	ToggleFavorite = true,
@@ -70,6 +76,11 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	RequestTrack = 0.5,
 	CatalogAddAudio = 10,
 	CatalogRemoveTrack = 2,
+	PlaylistCreate = 2,
+	PlaylistDelete = 1,
+	PlaylistAddTrack = 0.5,
+	PlaylistRemoveTrack = 0.5,
+	PlaylistMoveTrack = 0.5,
 	RequestAudioAsset = 10,
 	ReloadSong = 3,
 	ToggleFavorite = 0.2,
@@ -226,10 +237,12 @@ function Network.Init(): boolean
 		local noticeRemote = waitForRemote(foundFolder, "Notice", "RemoteEvent") :: RemoteEvent
 		local stateFunction = waitForRemote(foundFolder, "GetState", "RemoteFunction") :: RemoteFunction
 		local musicCatalogFunction = waitForRemote(foundFolder, "GetMusicCatalog", "RemoteFunction") :: RemoteFunction
+		local musicPlaylistFunction = waitForRemote(foundFolder, "GetMusicPlaylists", "RemoteFunction") :: RemoteFunction
 
 		-- Subscribe before the initial snapshot request so no push update is missed.
 		actionRemote = action
 		catalogFunction = musicCatalogFunction
+		playlistFunction = musicPlaylistFunction
 		table.insert(connections, stateRemote.OnClientEvent:Connect(applyState))
 		table.insert(connections, noticeRemote.OnClientEvent:Connect(applyNotice))
 
@@ -269,6 +282,7 @@ function Network.Destroy()
 	table.clear(connections)
 	actionRemote = nil
 	catalogFunction = nil
+	playlistFunction = nil
 	table.clear(lastActionSend)
 	currentState = {}
 	if stateEvent then stateEvent:Destroy() end
@@ -304,6 +318,37 @@ function Network.GetMusicCatalog(query: string?, genreId: string?, offset: numbe
 		return nil
 	end
 	return safeClone(result)
+end
+
+function Network.GetMusicPlaylists()
+	if destroyed or not initialized then
+		if not Network.Init() then return nil end
+	end
+	local remote = playlistFunction
+	if remote == nil or remote.Parent == nil then return nil end
+	local ok, result = pcall(function() return remote:InvokeServer() end)
+	if not ok or typeof(result) ~= "table" then return nil end
+	return safeClone(result)
+end
+
+function Network.PlaylistCreate(name: string)
+	Network.Send("PlaylistCreate", {name = name})
+end
+
+function Network.PlaylistDelete(playlistId: string)
+	Network.Send("PlaylistDelete", {playlistId = playlistId})
+end
+
+function Network.PlaylistAddTrack(playlistId: string, trackId: string)
+	Network.Send("PlaylistAddTrack", {playlistId = playlistId, trackId = trackId})
+end
+
+function Network.PlaylistRemoveTrack(playlistId: string, trackId: string)
+	Network.Send("PlaylistRemoveTrack", {playlistId = playlistId, trackId = trackId})
+end
+
+function Network.PlaylistMoveTrack(playlistId: string, trackId: string, position: number)
+	Network.Send("PlaylistMoveTrack", {playlistId = playlistId, trackId = trackId, position = position})
 end
 
 function Network.OnStateChanged(callback: (any) -> ()): RBXScriptConnection
