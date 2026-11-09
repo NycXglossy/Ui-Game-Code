@@ -1215,7 +1215,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local showArtwork = artworkMode == true
 		local leftInset = if showArtwork then 108 else 14
 		local rightInset = if showArtwork then 122 else 28
-		local nowCard = card(if showArtwork then 210 else 182, parent)
+		local nowCard = card(if showArtwork then 228 else 182, parent)
 		local live = typeof(state.nowPlaying) == "table"
 		if showArtwork then
 			local genre = TRACK_GENRE[currentTrackId(now) or ""]
@@ -1223,7 +1223,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local art = make("Frame", {
 				Name = "NowPlayingArtwork",
 				Position = UDim2.fromOffset(14, 72),
-				Size = UDim2.fromOffset(82, 82),
+				Size = UDim2.fromOffset(112, 112),
 				BackgroundColor3 = C.Base,
 				BorderSizePixel = 0,
 			}, nowCard)
@@ -1632,9 +1632,63 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function renderMusic()
-		sectionLabel("NOW PLAYING")
-		buildNowPlaying()
+		sectionLabel("NOW PLAYING  /  LISTENING ROOM")
+		buildNowPlaying(content, true)
 
+		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
+		local staffLevel = perm()
+		if staffLevel >= 1 then
+			local playbackControls = card(88)
+			label(playbackControls, "GLOBAL PLAYBACK", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 15), C.Muted, 9, true)
+			local controlGap = 8
+			local controlWidth = UDim2.new(1/3, -((controlGap * 2) / 3) - 8, 0, 38)
+			actionButton(playbackControls, if now.paused == true then "▶ RESUME" else "Ⅱ PAUSE",
+				UDim2.fromOffset(12, 30), controlWidth, function()
+				act("DJPause", {})
+				end, C.Purple)
+			actionButton(playbackControls, "↻ RESTART",
+				UDim2.new(1/3, 2, 0, 30), controlWidth, function()
+				act("DJRestart", {})
+				end, C.Cyan)
+			actionButton(playbackControls, "» SKIP",
+				UDim2.new(2/3, -8, 0, 30), controlWidth, function()
+				act("DJSkip", {})
+				end, C.Magenta)
+		end
+
+		sectionLabel("LIVE QUEUE  /  " .. tostring(#getQueue()) .. " TRACKS")
+		local liveQueue = getQueue()
+		if #liveQueue == 0 then
+			local emptyQueue = card(58)
+			label(emptyQueue, "The queue is clear. Auto DJ will choose the next track.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+		else
+			for index, item: any in ipairs(liveQueue) do
+				local queueCard = card(64)
+				local queueId = tostring(item.id or "")
+				local trackName = nz(item.title, nz(item.trackId, "Unknown track"))
+				local requestedBy = if item.source == "player" then "REQUESTED BY " .. string.upper(nz(item.requestedBy, "GUEST")) else "AUTO DJ"
+				if item.vip == true then requestedBy ..= "  •  VIP" end
+				local actionInset = if staffLevel >= 1 then 104 else 12
+				label(queueCard, string.format("%02d  %s", index, trackName),
+					UDim2.fromOffset(12, 7), UDim2.new(1, -actionInset - 12, 0, 22), C.White, 11, true)
+				label(queueCard, requestedBy .. "  •  " .. formatTime(tonumber(item.duration) or 0),
+					UDim2.fromOffset(12, 34), UDim2.new(1, -actionInset - 12, 0, 16), if item.source == "player" then C.Magenta else C.Muted, 8, false)
+				if staffLevel >= 1 and queueId ~= "" then
+					if index > 1 then
+						local moveUp = actionButton(queueCard, "▲", UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
+							act("DJMoveUp", {queueId = queueId}, queueId)
+						end, C.Purple)
+						moveUp.TextSize = 13
+					end
+					local remove = actionButton(queueCard, "✕", UDim2.new(1, -48, 0.5, -15), UDim2.fromOffset(36, 30), function()
+						act("DJRemove", {queueId = queueId}, queueId)
+					end, C.Red)
+					remove.TextSize = 13
+				end
+			end
+		end
+
+		sectionLabel("REQUEST STATUS")
 		local statusCard = card(48)
 		local disabled, reason = requestsDisabled()
 		local statusText = reason
