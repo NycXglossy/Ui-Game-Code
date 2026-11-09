@@ -1209,13 +1209,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local currentTrackId: any
 
-	local function buildNowPlaying(parent: Instance?, artworkMode: boolean?)
+	local function buildNowPlaying(parent: Instance?, artworkMode: boolean?, expandedMode: boolean?)
 		parent = parent or content
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
 		local showArtwork = artworkMode == true
+		local expandedArtwork = expandedMode == true
 		local leftInset = if showArtwork then 108 else 14
 		local rightInset = if showArtwork then 122 else 28
-		local nowCard = card(if showArtwork then 228 else 182, parent)
+		local nowCard = card(if expandedArtwork then 228 elseif showArtwork then 210 else 182, parent)
 		local live = typeof(state.nowPlaying) == "table"
 		if showArtwork then
 			local genre = TRACK_GENRE[currentTrackId(now) or ""]
@@ -1223,7 +1224,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local art = make("Frame", {
 				Name = "NowPlayingArtwork",
 				Position = UDim2.fromOffset(14, 72),
-				Size = UDim2.fromOffset(112, 112),
+				Size = UDim2.fromOffset(if expandedArtwork then 112 else 82, if expandedArtwork then 112 else 82),
 				BackgroundColor3 = C.Base,
 				BorderSizePixel = 0,
 			}, nowCard)
@@ -1633,7 +1634,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function renderMusic()
 		sectionLabel("NOW PLAYING  /  LISTENING ROOM")
-		buildNowPlaying(content, true)
+		buildNowPlaying(content, true, true)
 
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
 		local staffLevel = perm()
