@@ -298,7 +298,8 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): b
 		actorUserId = math.floor(actorUserId),
 	})
 	-- Pause/resume and restart are durable; polling repairs missed MessagingService events.
-	if command == "SetRequestLock" or command == "SetPlaybackPaused" or command == "Restart" then return true end
+	if command == "SetRequestLock" then return true end
+	if command == "SetPlaybackPaused" or command == "Restart" then return true, cleanPayload.revision end
 	return published
 end
 
