@@ -673,15 +673,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Name = "TopBarHUD",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 8),
-		Size = UDim2.new(0.92, 0, 0, 38),
-		BackgroundColor3 = C.Surface,
-		BackgroundTransparency = 0,
+		Size = UDim2.new(0.94, 0, 0, 42),
+		BackgroundColor3 = Color3.fromRGB(17, 19, 29),
+		BackgroundTransparency = 0.04,
 		Text = "",
 		AutoButtonColor = false,
 	}, gui) :: TextButton
-	corner(hud, 14)
-	stroke(hud, C.Magenta, 1.5)
-	local hudConstraint = make("UISizeConstraint", { MaxSize = Vector2.new(400, 38) }, hud)
+	corner(hud, 15)
+	local hudOutline = stroke(hud, C.Gold, 1)
+	hudOutline.Transparency = 0.28
+	make("UIGradient", {Rotation=0, Color=ColorSequence.new(Color3.fromRGB(28,25,39), Color3.fromRGB(17,21,31))}, hud)
+	local hudConstraint = make("UISizeConstraint", { MaxSize = Vector2.new(560, 42) }, hud)
 	local hudScale = make("UIScale", { Scale = 1 }, hud)
 	local hudBars: {any} = {}
 	local hudBarHolder = make("Frame", {
@@ -706,7 +708,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		BackgroundTransparency = 1,
 		Text = "",
 		TextColor3 = C.White,
-		TextSize = 12,
+		TextSize = 13,
 		Font = BOLD,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
@@ -2032,45 +2034,64 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function renderModeration()
 		local level = perm()
 		sectionLabel("MODERATION")
-		local info = card(56)
-		label(info, if level >= 2 then "Block requests, grant VIP, or purge a player's queued songs." else "Roster view only. Admins can moderate players.",
-			UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
-
 		local roster: any = state.players
-		if typeof(roster) ~= "table" or #roster == 0 then
-			local empty = card(56)
-			label(empty, "No players to show.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 12, false)
+		if typeof(roster) ~= "table" then roster = {} end
+
+		local summary = card(82)
+		local manageable = 0
+		local blockedCount = 0
+		for _, entry: any in ipairs(roster) do
+			if entry.canMod == true and level >= 2 then manageable += 1 end
+			if entry.blocked == true then blockedCount += 1 end
+		end
+		label(summary, "LIVE PLAYER ROSTER", UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 18), C.Gold, 11, true)
+		label(summary, string.format("%d online   •   %d blocked   •   %d manageable", #roster, blockedCount, manageable), UDim2.fromOffset(14, 29), UDim2.new(1, -28, 0, 17), C.White, 11, false)
+		local search = make("TextBox", {Name="RosterSearch", Position=UDim2.fromOffset(12,52), Size=UDim2.new(1,-24,0,24), BackgroundColor3=Color3.fromRGB(13,16,24), TextColor3=C.White, PlaceholderColor3=C.Muted, PlaceholderText="Search display name, username or ID", Text="", TextSize=10, Font=FONT, ClearTextOnFocus=false, TextXAlignment=Enum.TextXAlignment.Left}, summary)
+		corner(search, 8)
+		local searchStroke = stroke(search, C.SurfaceLight, 1)
+		searchStroke.Transparency = 0.25
+		if #roster == 0 then
+			local empty = card(64)
+			label(empty, "No players are currently available in the roster.", UDim2.fromOffset(14,0), UDim2.new(1,-28,1,0), C.Muted, 12, false)
 			return
 		end
-
+		local rosterCards: {Frame} = {}
 		for _, p: any in ipairs(roster) do
 			local showButtons = level >= 2 and p.canMod == true
-			local pcard = card(if showButtons then 100 else 64)
-			label(pcard, string.format("%s  (@%s)", nz(p.displayName, "Player"), nz(p.name, "?")), UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 22), C.White, 13, true)
-
-			local bits = { nz(p.rank, "GUEST") }
-			if p.vip == true then table.insert(bits, if p.tempVip == true then "VIP (staff-granted)" else "VIP") end
+			local pcard = card(if showButtons then 112 else 68)
+			table.insert(rosterCards, pcard)
+			local displayName = nz(p.displayName, "Player")
+			local username = nz(p.name, "?")
+			local userId = tonumber(p.userId) or 0
+			pcard:SetAttribute("RosterSearchKey", string.lower(displayName .. " " .. username .. " " .. tostring(userId)))
+			label(pcard, displayName, UDim2.fromOffset(13,7), UDim2.new(1,-26,0,20), C.White, 13, true)
+			label(pcard, "@" .. username .. "   •   ID " .. tostring(userId), UDim2.fromOffset(13,27), UDim2.new(1,-26,0,15), C.Muted, 9, false)
+			local bits = {nz(p.rank, "GUEST")}
+			if p.vip == true then table.insert(bits, if p.tempVip == true then "TEMP VIP" else "VIP") end
 			table.insert(bits, tostring(tonumber(p.requests) or 0) .. " queued")
-			if p.blocked == true then table.insert(bits, "BLOCKED") end
-			label(pcard, table.concat(bits, "  •  "), UDim2.fromOffset(12, 31), UDim2.new(1, -24, 0, 18), if p.blocked == true then C.Red else C.Muted, 10, false)
-
+			if p.blocked == true then table.insert(bits, "REQUESTS BLOCKED") end
+			label(pcard, table.concat(bits, "   •   "), UDim2.fromOffset(13,45), UDim2.new(1,-26,0,17), if p.blocked == true then C.Red else C.Gold, 9, false)
 			if showButtons then
-				local userId = tonumber(p.userId) or 0
 				local isBlocked = p.blocked == true
 				local isTempVip = p.tempVip == true
-				actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0, 12, 1, -40), UDim2.new(1 / 3, -16, 0, 30), function()
-					act("ModBlockUser", { userId = userId, blocked = not isBlocked }, userId, not isBlocked)
-				end, if isBlocked then C.Green else C.Red)
-				actionButton(pcard, if isTempVip then "REMOVE VIP" else "GIVE VIP", UDim2.new(1 / 3, 12, 1, -40), UDim2.new(1 / 3, -16, 0, 30), function()
-					act("ModSetVip", { userId = userId, vip = not isTempVip }, userId, not isTempVip)
-				end, C.Purple)
-				actionButton(pcard, "PURGE QUEUE", UDim2.new(2 / 3, 12, 1, -40), UDim2.new(1 / 3, -16, 0, 30), function()
-					act("ModPurgeUser", { userId = userId }, userId)
-				end, C.Orange)
+				local buttonY = 76
+				local buttonWidth = UDim2.new(1/3,-16,0,27)
+				local blockButton = actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0,12,0,buttonY), buttonWidth, function() act("ModBlockUser", {userId=userId, blocked=not isBlocked}, userId, not isBlocked) end, if isBlocked then C.Green else C.Red)
+				local vipButton = actionButton(pcard, if isTempVip then "REMOVE VIP" else "GIVE VIP", UDim2.new(1/3,6,0,buttonY), buttonWidth, function() act("ModSetVip", {userId=userId, vip=not isTempVip}, userId, not isTempVip) end, C.Purple)
+				local purgeButton = actionButton(pcard, "PURGE QUEUE", UDim2.new(2/3,0,0,buttonY), buttonWidth, function() act("ModPurgeUser", {userId=userId}, userId) end, C.Orange)
+				blockButton.TextSize = 9
+				vipButton.TextSize = 9
+				purgeButton.TextSize = 9
 			end
 		end
+		search:GetPropertyChangedSignal("Text"):Connect(function()
+			local query = string.lower(string.sub(search.Text,1,40))
+			for _, rosterCard in ipairs(rosterCards) do
+				local key = rosterCard:GetAttribute("RosterSearchKey")
+				rosterCard.Visible = query == "" or (typeof(key) == "string" and string.find(key,query,1,true) ~= nil)
+			end
+		end)
 	end
-
 	local function renderXPBoosts()
 		sectionLabel("PLAYER PROGRESSION")
 		local xp = math.max(0, math.floor(tonumber(state.xp) or 0))
@@ -2761,10 +2782,18 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		toggleButton.TextSize = math.floor(profile.toggle * 0.52)
 
 		hudScale.Scale = layoutScale
-		hudConstraint.MaxSize = Vector2.new(400, 38)
-		hud.Size = UDim2.new(0.92 / layoutScale, 0, 0, 38)
+		hudConstraint.MaxSize = Vector2.new(math.clamp(viewport.X - 20, 260, 560), 42)
+		hud.Size = UDim2.new(0.96 / layoutScale, 0, 0, 42)
+		hudTitle.TextSize = if viewport.X < 430 then 11 else 13
+		hudArtist.TextSize = if viewport.X < 430 then 9 else 10
+		hudTime.TextSize = if viewport.X < 430 then 9 else 10
+		hudStatus.TextSize = if viewport.X < 430 then 8 else 9
+		hudTitle.Size = UDim2.new(1, if viewport.X < 430 then -132 else -158, 0, 18)
+		hudArtist.Size = UDim2.new(1, if viewport.X < 430 then -132 else -158, 0, 13)
+		hudTime.Size = UDim2.fromOffset(if viewport.X < 430 then 82 else 102, 16)
+		hudStatus.Size = UDim2.fromOffset(if viewport.X < 430 then 82 else 102, 13)
 		hud.Position = UDim2.new(0.5, 0, 0, profile.hudTop)
-		hudBottom = profile.hudTop + math.floor(38 * layoutScale) + 8
+		hudBottom = profile.hudTop + math.floor(42 * layoutScale) + 8
 	end
 
 	local cameraConnection: RBXScriptConnection? = nil
