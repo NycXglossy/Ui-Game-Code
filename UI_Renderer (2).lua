@@ -1953,26 +1953,32 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 						if selected and #entry.trackIds > 0 then
 							for trackIndex, trackId in ipairs(entry.trackIds) do
 								if typeof(trackId) == "string" then
-									local trackRow = card(34)
+									local trackRow = card(if compactPlaylist then 62 else 34)
 									trackRow.Parent = playlistList
 									trackRow.LayoutOrder = order * 102 + trackIndex
 									local indexedTrack: any = TRACK_INDEX[trackId]
 									local displayName = if indexedTrack then tostring(indexedTrack[2]) else trackId
 									label(trackRow, tostring(trackIndex) .. ". " .. displayName,
-										UDim2.fromOffset(8, 0), UDim2.new(1, -148, 1, 0), C.Muted, 10, false)
-									actionButton(trackRow, "↑", UDim2.new(1, -136, 0, 3), UDim2.fromOffset(36, 28), function()
+										UDim2.fromOffset(8, if compactPlaylist then 3 else 0),
+										if compactPlaylist then UDim2.new(1, -16, 0, 22) else UDim2.new(1, -148, 1, 0), C.Muted, 10, false)
+									local moveY = if compactPlaylist then 30 else 3
+								local moveWidth = if compactPlaylist then UDim2.new(0.34, -8, 0, 27) else UDim2.fromOffset(36, 28)
+								actionButton(trackRow, "↑", if compactPlaylist then UDim2.fromOffset(8, moveY) else UDim2.new(1, -136, 0, moveY), moveWidth, function()
 										if trackIndex > 1 then
 											send("PlaylistMoveTrack", {playlistId=entry.id, trackId=trackId, position=trackIndex-1})
 											task.delay(1.1, function() if not destroyed then renderTab() end end)
 										end
 									end, C.SurfaceLight)
-									actionButton(trackRow, "↓", UDim2.new(1, -94, 0, 3), UDim2.fromOffset(36, 28), function()
+									actionButton(trackRow, "↓", if compactPlaylist then UDim2.new(0.34, 0, 0, moveY) else UDim2.new(1, -94, 0, moveY),
+										if compactPlaylist then UDim2.new(0.34, -8, 0, 27) else UDim2.fromOffset(36, 28), function()
 										if trackIndex < #entry.trackIds then
 											send("PlaylistMoveTrack", {playlistId=entry.id, trackId=trackId, position=trackIndex+1})
 											task.delay(1.1, function() if not destroyed then renderTab() end end)
 										end
 									end, C.SurfaceLight)
-									actionButton(trackRow, "REMOVE", UDim2.new(1, -54, 0, 3), UDim2.fromOffset(50, 28), function()
+									actionButton(trackRow, "REMOVE",
+										if compactPlaylist then UDim2.new(0.68, 0, 0, moveY) else UDim2.new(1, -54, 0, moveY),
+										if compactPlaylist then UDim2.new(0.32, -8, 0, 27) else UDim2.fromOffset(50, 28), function()
 										send("PlaylistRemoveTrack", {playlistId=entry.id, trackId=trackId})
 										task.delay(1.1, function() if not destroyed then renderTab() end end)
 									end, C.Red)
