@@ -281,7 +281,12 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): b
 				local revision = if finiteNumber(state.revision) and state.revision >= 0 then math.floor(state.revision) else 0
 				state.revision = revision + 1
 				state.command = command
-				state.paused = if command == "SetPlaybackPaused" then cleanPayload.paused else false
+				state.paused = if command == "SetPlaybackPaused" then cleanPayload.paused else (state.paused == true)
+				if command == "SetPlaybackPaused" then
+					state.pauseRevision = state.revision
+				else
+					state.restartRevision = state.revision
+				end
 				state.updatedAt = os.time()
 				state.updatedBy = math.floor(actorUserId)
 				return state
@@ -525,28 +530,36 @@ else
 	warn("[ClubMusic Global] Disabled in Studio or by configuration; local UI controller remains fully functional.")
 end
 
--- Reconcile durable playback controls independently of MessagingService delivery.
--- Each controller applies a revision once; a missed restart is replayed on next poll.
+-- Reconcile both the latest pause state and the latest restart independently.
+-- Emit in revision order so an older pause cannot override a newer restart (or vice versa).
 task.spawn(function()
 	while true do
-		task.wait(20 + math.random(0, 5))
 		if SERVICE_ENABLED then
 			local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
 			if allowed and shared then
 				local ok, state = pcall(function() return globalControlStore:GetAsync("playbackControl") end)
-				if ok and typeof(state) == "table" and finiteNumber(state.revision)
-					and (state.command == "SetPlaybackPaused" or state.command == "Restart")
-					and typeof(state.paused) == "boolean" then
-					globalEventBindable:Fire({
-						kind = "DJ", command = state.command,
-						payload = {revision = math.floor(state.revision), paused = state.paused},
-						actorUserId = if finiteNumber(state.updatedBy) then state.updatedBy else 0,
-					})
+				if ok and typeof(state) == "table" and finiteNumber(state.revision) then
+					local events = {}
+					if finiteNumber(state.restartRevision) and state.restartRevision > 0 then
+						table.insert(events, {revision = math.floor(state.restartRevision), command = "Restart"})
+					end
+					if finiteNumber(state.pauseRevision) and state.pauseRevision > 0 and typeof(state.paused) == "boolean" then
+						table.insert(events, {revision = math.floor(state.pauseRevision), command = "SetPlaybackPaused", paused = state.paused})
+					end
+					table.sort(events, function(a, b) return a.revision < b.revision end)
+					for _, event in ipairs(events) do
+						globalEventBindable:Fire({
+							kind = "DJ", command = event.command,
+							payload = {revision = event.revision, paused = event.paused},
+							actorUserId = if finiteNumber(state.updatedBy) then state.updatedBy else 0,
+						})
+					end
 				elseif not ok then
 					warn("[ClubMusic Global] Playback-control reconciliation read failed: " .. tostring(state))
 				end
 			end
 		end
+		task.wait(30 + math.random(0, 10))
 	end
 end)
 
