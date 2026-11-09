@@ -3205,6 +3205,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		decrement.NextSelectionRight = increment
 		increment.NextSelectionLeft = decrement
 		show()
+		return decrement, increment
 	end
 
 	local function saveTitleDraft(draft: any)
@@ -3474,9 +3475,23 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			refreshPreview()
 		end)
 		refreshChipNavigation()
+		local firstEffectChip = effectRow and effectRow:FindFirstChildWhichIsA("TextButton")
+		if firstEffectChip then
+			titleInput.NextSelectionDown = firstEffectChip
+			firstEffectChip.NextSelectionUp = titleInput
+		end
 
-		stepper(form, 366, "Height offset (above head)", function() return draft.height end, function(v) draft.height = v end, 0, 8, 0.25, "studs")
-		stepper(form, 398, "View distance", function() return draft.distance end, function(v) draft.distance = v end, 20, 200, 10, "studs")
+		local heightDown, heightUp = stepper(form, 366, "Height offset (above head)", function() return draft.height end, function(v) draft.height = v end, 0, 8, 0.25, "studs")
+		local distanceDown, distanceUp = stepper(form, 398, "View distance", function() return draft.distance end, function(v) draft.distance = v end, 20, 200, 10, "studs")
+		local firstStyleChip = styleRow and styleRow:FindFirstChildWhichIsA("TextButton")
+		if firstStyleChip and heightDown then
+			firstStyleChip.NextSelectionDown = heightDown
+			heightDown.NextSelectionUp = firstStyleChip
+		end
+		if heightUp and distanceDown then
+			heightUp.NextSelectionDown = distanceDown
+			distanceDown.NextSelectionUp = heightUp
+		end
 
 		local saveButton = actionButton(form, "SAVE TITLE", UDim2.fromOffset(12, 434), UDim2.new(0.5, -16, 0, 36), function()
 			saveTitleDraft(draft)
@@ -3488,6 +3503,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- Keep the primary and secondary actions paired for predictable controller navigation.
 		saveButton.NextSelectionRight = resetButton
 		resetButton.NextSelectionLeft = saveButton
+		if distanceUp then
+			distanceUp.NextSelectionDown = saveButton
+			saveButton.NextSelectionUp = distanceUp
+		end
 		if compactTitleEditor then
 			for _, button in ipairs({ saveButton, resetButton }) do
 				button.TextSize = 10
