@@ -17,6 +17,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FOLDER_NAME = "ClubMusicRemotes"
 local REMOTE_TIMEOUT = 3
+local READY_TIMEOUT = 30
 local MAX_STATE_DEPTH = 8
 local MAX_STATE_ENTRIES = 2500
 local MAX_NOTICE_TEXT = 400
@@ -29,6 +30,7 @@ local initializing = false
 local destroyed = false
 local receivedState = false
 local lastInitWarningAt = 0
+local lastInitError = "Not initialized yet."
 
 local actionRemote: RemoteEvent? = nil
 local catalogFunction: RemoteFunction? = nil
@@ -226,6 +228,10 @@ local function waitForRemote(folder: Instance, name: string, className: string):
 	return child
 end
 
+function Network.GetInitError(): string
+	return lastInitError
+end
+
 function Network.Init(): boolean
 	if destroyed then return false end
 	if initialized then return true end
@@ -239,8 +245,11 @@ function Network.Init(): boolean
 		end
 		local readyStartedAt = os.clock()
 		while foundFolder:GetAttribute("Ready") ~= true do
-			if os.clock() - readyStartedAt >= REMOTE_TIMEOUT then
-				error("ClubMusicRemotes exists but the server controller has not finished initializing.")
+			if os.clock() - readyStartedAt >= READY_TIMEOUT then
+				local stage = foundFolder:GetAttribute("StartupStage")
+				local startupError = foundFolder:GetAttribute("StartupError")
+				error(("ClubMusicRemotes is still not ready after %d seconds (server stage: %s; server error: %s).")
+					:format(READY_TIMEOUT, tostring(stage or "unknown"), tostring(startupError or "none reported")))
 			end
 			task.wait(0.1)
 		end
@@ -275,6 +284,7 @@ function Network.Init(): boolean
 
 	initializing = false
 	if not ok then
+		lastInitError = tostring(err)
 		for _, connection in ipairs(connections) do connection:Disconnect() end
 		table.clear(connections)
 		actionRemote = nil
@@ -287,6 +297,7 @@ function Network.Init(): boolean
 		end
 		return false
 	end
+	lastInitError = ""
 	return true
 end
 
