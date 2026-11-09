@@ -107,3 +107,36 @@ remain authoritative; client wrappers are not security boundaries.
 - Built-in tracks remain code-defined. Custom tracks are persisted independently from player profile data and are merged into server-side track lookup, automatic selection, and catalog search.
 - A successful write is immediately reflected in the current server. Other already-running servers load the persisted change on their next restart; cross-server live catalog invalidation is not implemented yet.
 - If catalog loading fails at startup, built-in playback remains available and persistent catalog mutation fails closed for that server. Failed writes never mutate the in-memory catalog.
+
+
+## Catalog browsing UI integration
+
+The All Tracks tab now reads the server-owned catalog through
+`UI_Network.GetMusicCatalog` rather than relying only on its original local
+sample list.
+
+- Displays built-in and persisted custom tracks returned by the server.
+- Search is performed against the canonical server catalog (title, artist,
+  genre), with a short client debounce.
+- Genre chips are sent as server-side filters.
+- Results are paginated in pages of 30; the UI does not request the entire
+  catalog at once.
+- Custom entries are identified with a CUSTOM badge.
+- Catalog results are validated before they are rendered and merged into the
+  renderer's track index so existing favorite/request presentation can use
+  stable catalog IDs.
+- Requests still go through the existing `RequestTrack` server action.
+  Browsing never queues a song and does not grant permissions.
+
+The server catalog read remains read-only and retains the controller's existing
+per-player cooldown and shared state-query budget. This change does not alter
+DataStore persistence, the queue, VIP priority, moderation, or playback.
+
+### Verification status
+
+- GitHub writes completed on the working branch and the changed renderer was
+  fetched again for verification.
+- No Roblox Studio execution, Luau typecheck, live DataStore test, multiplayer
+  session, or exploit-client test has been performed. Validate catalog search,
+  genre filtering, page navigation, custom-track display, and ordinary song
+  requests in a private Studio test before release.
