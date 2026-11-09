@@ -16,7 +16,7 @@ The original standalone `Music System` is **not** a runtime dependency. It creat
 | Persistent playlists | `ServerStorage/MusicPlaylistService` | Legacy `MusicPlaylistManager` is not loaded; its static playlist source is incompatible with the persistent playlist service. |
 | Queue, per-player limits, VIP/VVIP/Sultan priority | `UI_Server_Controller` | `MusicQueueManager` is reference-only; do not create a second queue. |
 | Playback clock, pause, restart, track transitions | `UI_Server_Controller` | `MusicPlaybackManager` is reference-only; it broadcasts through legacy remotes that do not exist in the secured transport. |
-| Server audio | Controller-owned `SoundService.ServerMusicSound` in `SoundGroup.ClubMusic` | `ServerMusicAudioHandler` is not loaded; it creates a competing `MusicGroup` and assumes legacy playback ownership. |
+| Server audio | Controller-owned `SoundService.ServerMusicSound` routed through the supplied `SoundService.MusicGroup` | `ServerMusicAudioHandler` is not loaded; the controller directly owns playback and does not create a competing handler. |
 | Audio ID inspection and request validation | Controller validation, rate limits, and protected MarketplaceService inspection | `MusicValidationService` is reference-only; it dynamically requires a separate `RoleSystem` and uses a different configuration contract. |
 | Skip voting | Controller-owned skip vote state and handlers | `MusicSkipVoteManager` is reference-only; its current implementation has an ineffective stale-timer comparison and does not enforce voter eligibility in `CastVote`. |
 | Role and permission checks | Existing controller VIP/VVIP/Sultan/staff/group/pass logic | `Music Role System` must not be installed as a second authority. |
@@ -29,10 +29,23 @@ The original standalone `Music System` is **not** a runtime dependency. It creat
 - **Do not install** the legacy `Music Role System`; it would create a second role hierarchy and permission source.
 - **Do not install** the legacy `Music Storage Handle`. It caches Sound instances under `ReplicatedStorage.MusicStorage`, which is not the private server-side metadata store used by this architecture.
 - **Do not install** the legacy `Music Module` as a second catalog source. Its current list is empty, and the authoritative catalog is `MusicCatalogService`.
-- **Do not import** the legacy `Music Group.rbxm` or legacy RemoteEvent models. The controller creates and owns `SoundService.ClubMusic` and the `ReplicatedStorage.ClubMusicRemotes` contract.
-- **Do not import** `Audio Sound Count 1.rbxm`. It is excluded; the controller creates `ServerMusicSound` itself when needed.
+- **Use the supplied** `Music Group.rbxm` instance as `SoundService.MusicGroup`. The controller now reuses it as the canonical SoundGroup; the UI renderer's volume slider targets this exact group.
+- **Use the supplied** `Audio Sound Count 1.rbxm` instance as `SoundService.ServerMusicSound`. It is a Sound instance, not a counter script. The controller reuses it for playback and marks it with `ManagedByClubMusicController = true`.
+- The controller publishes `SoundService.ActiveMusicSoundCount` (0 or 1) to represent whether its single managed playback Sound is currently playing. This is not a count of client-local audio previews.
+- If an older `SoundService.ClubMusic` SoundGroup exists, the controller migrates SoundService sounds routed through it to `MusicGroup` and removes the obsolete group. The remote contract remains `ReplicatedStorage.ClubMusicRemotes`.
 
 These legacy source files can remain in the repository for reference. Their presence in the repository does not mean they should be inserted into the live Roblox hierarchy.
+
+## SoundService model integration
+
+Place both supplied instances directly under `SoundService`:
+
+- `MusicGroup` — a `SoundGroup` used by `ServerMusicSound` and by the UI's local volume slider.
+- `ServerMusicSound` — the one server-owned `Sound` used for all authoritative music playback.
+
+The controller reuses these instances by exact name and class. It assigns `ServerMusicSound.SoundGroup = MusicGroup`, configures the playback properties, and never creates a parallel playback Sound when the supplied instance is present. The renderer updates `MusicGroup.Volume` locally for the player's own volume preference; it does not send a volume command to the server or change other players' volume.
+
+The controller exposes `SoundService.ActiveMusicSoundCount` as a replicated attribute: `1` while the managed server music Sound is playing, otherwise `0`. The original Audio Sound Count model does not implement counting by itself. Local audio previews are client-owned and intentionally excluded from this server playback count.
 
 ## Roblox Studio placement
 
