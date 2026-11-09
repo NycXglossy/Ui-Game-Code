@@ -38,7 +38,7 @@ These legacy source files can remain in the repository for reference. Their pres
 
 ## Cross-server playback controls
 
-Pause, resume, and restart are now recorded in the existing global-control DataStore under a revisioned `playbackControl` record before the MessagingService notification is sent. Each receiving controller applies only revisions newer than its last applied revision. A low-frequency reconciliation loop re-reads the durable record so servers recover missed notifications; a restart revision is treated as a one-shot action per server. The originating controller records the returned revision to avoid replaying its own restart during reconciliation.
+Pause, resume, and restart are recorded in the existing global-control DataStore under a revisioned `playbackControl` record before MessagingService notification. Pause state and the latest restart are retained as separate revisions, so a later pause does not erase a restart that another server missed. Each receiving controller applies only revisions newer than its last applied revision, in revision order. A low-frequency reconciliation loop reads the durable record immediately and then approximately every 30–40 seconds. The originating controller records the returned revision to avoid replaying its own restart during reconciliation.
 
 MessagingService remains the fast path; durable reconciliation is the recovery path. Restart means restart each server's locally current track at position zero. It does **not** synchronize queue contents, track identity, or exact playback position across servers. Pause/resume applies to each server's own current track. New local tracks preserve the current global paused state.
 
