@@ -61,7 +61,8 @@ local CONFIG = {
 	MaxMessageBytes = 4096,
 }
 
-local SERVICE_ENABLED = CONFIG.Enabled and (not RunService:IsStudio() or CONFIG.EnableInStudio)
+local IS_STUDIO = RunService:IsStudio()
+local SERVICE_ENABLED = CONFIG.Enabled and (not IS_STUDIO or CONFIG.EnableInStudio)
 local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false)
 local budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
 local moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
@@ -632,7 +633,13 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
 	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
 else
-	warn("[ClubMusic Global] Disabled in Studio or by configuration; local UI controller remains fully functional.")
+	if not CONFIG.Enabled then
+		warn("[ClubMusic Global] Cross-server service is disabled by CONFIG.Enabled=false; local UI controller remains fully functional.")
+	elseif IS_STUDIO and not CONFIG.EnableInStudio then
+		warn("[ClubMusic Global] Studio isolation is active (EnableInStudio=false). Local commands work only in this server. For an intentional cross-server Studio test, set EnableInStudio=true in this script and enable Studio Access to API Services for the published experience; use a dedicated test universe.")
+	else
+		warn("[ClubMusic Global] Cross-server service is unavailable because its configuration did not enable it; local UI controller remains fully functional.")
+	end
 end
 
 -- Reconcile both the latest pause state and the latest restart independently.
