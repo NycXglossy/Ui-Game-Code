@@ -258,3 +258,70 @@ playback lifecycle.
   concurrency test, or exploit-client test has been performed. Test creation,
   selection, adding/removing/reordering, deletion, DataStore outage, and
   concurrent edits in a private test experience before release.
+
+
+## Playlist playback rotation and startup recovery
+
+### Playlist playback
+
+Staff can now press **PLAY** on a saved playlist. The controller:
+- Validates staff permission and the playlist ID on the server.
+- Resolves each playlist track against the current trusted catalog; stale or
+  removed catalog IDs are skipped.
+- Leaves the currently playing track untouched and fills the automatic queue
+  with the selected playlist in its saved order.
+- Repeats the playlist from its first track after the last track.
+- Keeps player requests ahead of playlist/automatic entries, preserving the
+  existing guest/VIP/VVIP/Tiki Tide Sultan request priority rules.
+- Refreshes queued playlist entries after staff edits the active playlist.
+- Stops playlist rotation if the active playlist is deleted or has no valid
+  tracks. **STOP** returns automatic queue filling to the normal Auto DJ.
+- Does not make playlist playback a staff permission grant; only staff can
+  start or stop rotation.
+
+Playlist rotation is per server in this stage. It is not synchronized across
+all live servers, and the playlist does not interrupt the current track. Global
+DJ command synchronization continues to follow the existing best-effort
+MessagingService behavior.
+
+### Remote startup race correction
+
+The previous client startup expected `ReplicatedStorage.ClubMusicRemotes`
+within a single 30-second wait and aborted the bootstrap after one failed
+initialization. This could fail when the server controller had not published
+its remotes yet, or if the controller was blocked loading its required storage
+modules.
+
+The controller now creates the remote folder and all remote instances before
+loading the catalog/playlist modules, sets the folder attribute `Ready=false`,
+and changes it to `Ready=true` only after the server handlers are connected.
+The client network waits for this readiness marker, uses short bounded waits,
+and throttles repeated startup warnings. The bootstrap retries initialization
+up to 20 times with three-second spacing before reporting a final actionable
+error instead of exiting on the first race.
+
+If the folder never becomes ready, verify all of these exact placements:
+- `ServerScriptService/UI_Server_Controller` — enabled Script using the
+  updated controller source.
+- `ServerStorage/MusicCatalogService` — ModuleScript containing
+  `MusicCatalogService.lua`.
+- `ServerStorage/MusicPlaylistService` — ModuleScript containing
+  `MusicPlaylistService.lua`.
+- `ServerStorage/ClubMusic_ReceiptHash` — ModuleScript required by the
+  controller.
+- `ReplicatedStorage/UI_Network` — updated ModuleScript.
+- `ReplicatedStorage/UI_Renderer` — updated ModuleScript.
+- `StarterPlayer/StarterPlayerScripts/ClubMusicBootstrap` — updated LocalScript.
+
+Do not manually create a second `ClubMusicRemotes` folder. The controller
+creates and owns that folder and its remote instances.
+
+### Verification boundary
+
+Source changes were committed and fetched again. No Roblox Studio runtime,
+server/client startup race, playlist DataStore test, live multiplayer playback,
+or Luau typecheck was executed here. Test with the exact installation above:
+start the client before/after the server controller, temporarily delay a
+required ModuleScript, play/stop a playlist, finish the current track, enqueue
+player requests at each tier, edit/delete the active playlist, and verify
+normal Auto DJ resumes after STOP.
