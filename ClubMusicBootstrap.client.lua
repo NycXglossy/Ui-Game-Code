@@ -139,11 +139,22 @@ if typeof(Renderer.Mount) ~= "function" then
 	return
 end
 
--- The hardened UI_Network returns false when remotes are unavailable. Do not
--- mount a UI that cannot communicate with the authoritative server.
-local initOk, initResult = pcall(Network.Init)
-if not initOk or initResult ~= true then
-	fail("Network initialization failed. Confirm UI_Server_Controller is running and created ClubMusicRemotes.")
+-- The server may need time to start its controller and publish remotes.
+-- Retry in bounded intervals instead of terminating the entire UI on one race.
+local networkReady = false
+local lastInitError = ""
+for attempt = 1, 20 do
+	if cleaned then return end
+	local initOk, initResult = pcall(Network.Init)
+	if initOk and initResult == true then
+		networkReady = true
+		break
+	end
+	lastInitError = if initOk then "server remotes are not ready yet" else tostring(initResult)
+	if attempt < 20 then task.wait(3) end
+end
+if not networkReady then
+	fail("Network initialization did not complete after 20 attempts. Verify ServerScriptService.UI_Server_Controller is enabled and that ServerStorage contains MusicCatalogService, MusicPlaylistService, and ClubMusic_ReceiptHash. Last error: " .. string.sub(lastInitError, 1, 220))
 	return
 end
 ownsNetwork = true
