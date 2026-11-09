@@ -151,7 +151,7 @@ local function detached(state: State): State
 	return result
 end
 
-local function transact(mutator: (State) -> boolean): (boolean, State?, string?)
+local function transact(mutator: (State) -> (boolean, string?)): (boolean, State?, string?)
 	local accepted = false
 	local reason = "Shared queue update was rejected."
 	local ok, result = pcall(function()
@@ -159,7 +159,7 @@ local function transact(mutator: (State) -> boolean): (boolean, State?, string?)
 			accepted = false
 			reason = "Shared queue update was rejected."
 			local state = sanitizeState(old)
-			local changed = mutator(state)
+			local changed, message = mutator(state)
 			if changed then
 				state.revision += 1
 				state.updatedAt = os.time()
@@ -167,6 +167,7 @@ local function transact(mutator: (State) -> boolean): (boolean, State?, string?)
 				reason = ""
 				return state
 			end
+			reason = message or reason
 			return old or state
 		end)
 	end)
@@ -192,15 +193,15 @@ function MusicGlobalQueueService:Enqueue(rawEntry: any, maxPlayerRequests: numbe
 	if not entry then return false, nil, "Invalid queue entry." end
 	local playerCap = if finite(maxPlayerRequests) then math.clamp(math.floor(maxPlayerRequests), 1, MAX_QUEUE) else MAX_QUEUE
 	return transact(function(state)
-		if #state.queue >= MAX_QUEUE then reason = "Global queue is full." return false end
-		if state.current and state.current.trackId == entry.trackId then reason = "That track is already playing globally." return false end
+		if #state.queue >= MAX_QUEUE then return false, "Global queue is full." end
+		if state.current and state.current.trackId == entry.trackId then return false, "That track is already playing globally." end
 		for _, queued in ipairs(state.queue) do
-			if queued.id == entry.id or queued.trackId == entry.trackId then reason = "That track is already queued globally." return false end
+			if queued.id == entry.id or queued.trackId == entry.trackId then return false, "That track is already queued globally." end
 		end
 		if entry.source == "player" then
 			local count = 0
 			for _, queued in ipairs(state.queue) do if queued.source == "player" then count += 1 end end
-			if count >= playerCap then reason = "The global player-request queue is full." return false end
+			if count >= playerCap then return false, "The global player-request queue is full." end
 		end
 		local index = #state.queue + 1
 		if entry.source == "player" then
@@ -223,14 +224,13 @@ function MusicGlobalQueueService:Remove(entryId: any): (boolean, State?, string?
 		for index, entry in ipairs(state.queue) do
 			if entry.id == entryId then table.remove(state.queue, index); return true end
 		end
-		reason = "Queue entry was not found."
-		return false
+		return false, "Queue entry was not found."
 	end)
 end
 
 function MusicGlobalQueueService:Clear(): (boolean, State?, string?)
 	return transact(function(state)
-		if #state.queue == 0 then reason = "The global queue is already empty." return false end
+		if #state.queue == 0 then return false, "The global queue is already empty." end
 		table.clear(state.queue)
 		return true
 	end)
@@ -243,12 +243,11 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 	local fallback = sanitizeEntry(fallbackEntry)
 	return transact(function(state)
 		if state.playback.trackRevision ~= math.floor(expectedTrackRevision) then
-			reason = "Track already advanced by another server."
-			return false
+			return false, "Track already advanced by another server."
 		end
 		local nextEntry = table.remove(state.queue, 1)
 		if not nextEntry then nextEntry = fallback end
-		if not nextEntry then reason = "No valid next track is available." return false end
+		if not nextEntry then return false, "No valid next track is available." end
 		state.current = cloneEntry(nextEntry)
 		state.playback.paused = false
 		state.playback.position = 0
@@ -265,8 +264,7 @@ function MusicGlobalQueueService:SetPlayback(paused: any, position: any, expecte
 	end
 	return transact(function(state)
 		if state.playback.trackRevision ~= math.floor(expectedTrackRevision) or not state.current then
-			reason = "The global current track changed; refresh and retry."
-			return false
+			return false, "The global current track changed; refresh and retry."
 		end
 		state.playback.position = if restart then 0 else math.clamp(position, 0, state.current.duration)
 		state.playback.paused = if restart then false else paused
