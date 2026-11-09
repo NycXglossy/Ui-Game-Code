@@ -70,10 +70,28 @@ return function(_K: any)
 		return message
 	end
 
+	-- Read-only inspection has a separate, lightweight throttle because Status and
+	-- Queue intentionally bypass mutation cooldowns in the controller. This keeps
+	-- repeated queue refreshes from becoming an avoidable server workload.
+	local INSPECTION_COOLDOWN_SECONDS = 1.5
+	local lastInspectionAt: {[number]: number} = {}
+	game:GetService("Players").PlayerRemoving:Connect(function(player: Player)
+		lastInspectionAt[player.UserId] = nil
+	end)
+
 	local function submit(context: any, operation: string, argument: string?): string?
 		local caller = context and context.fromPlayer
 		if typeof(caller) ~= "Instance" or not caller:IsA("Player") then
 			return finish(context, operation, "rejected", "This command requires an online player caller.")
+		end
+
+		if operation == "Status" or operation == "Queue" then
+			local now = os.clock()
+			local previous = lastInspectionAt[caller.UserId] or 0
+			if previous > 0 and now - previous < INSPECTION_COOLDOWN_SECONDS then
+				return finish(context, operation, "rejected", "ClubMusic inspection is cooling down. Try again shortly.")
+			end
+			lastInspectionAt[caller.UserId] = now
 		end
 
 		local serverStorage = game:GetService("ServerStorage")
