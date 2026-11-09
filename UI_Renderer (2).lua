@@ -912,7 +912,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	}, content)
 
 	local navButtons: {[string]: TextButton} = {}
+	local navIconLabels: {[string]: TextLabel} = {}
+	local navTextLabels: {[string]: TextLabel} = {}
+	local navIconBadges: {[string]: Frame} = {}
 	local tabs = {"Home","Music","All Tracks","Audio ID","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Moderation"}
+	local NAV_ICONS: {[string]: string} = {
+		["Home"] = "⌂", ["Music"] = "♫", ["All Tracks"] = "≋",
+		["Audio ID"] = "♪", ["DJ Booth"] = "◉", ["XP & Boosts"] = "✧",
+		["Tip Jar"] = "◇", ["Item Shop"] = "✦", ["Daily Rewards"] = "▣",
+		["Title Tag"] = "✳", ["Community"] = "◎", ["Moderation"] = "◆",
+	}
 
 	local function clearContent()
 		progressRefs = nil
@@ -2704,9 +2713,34 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if renderer then renderer() end
 		for name, button in pairs(navButtons) do
 			local selected = name == activeTab
-			button.BackgroundColor3 = if selected then C.Gold else C.SurfaceLight
-			button.TextColor3 = if selected then C.Base else C.Muted
-			button.TextSize = if selected then 12 else 11
+			button.BackgroundColor3 = if selected then Color3.fromRGB(57, 49, 37) else Color3.fromRGB(25, 30, 43)
+			button.BackgroundTransparency = if selected then 0 else 0.08
+			local outline = button:FindFirstChildOfClass("UIStroke")
+			if outline then
+				outline.Color = if selected then C.Gold else C.SurfaceLight
+				outline.Transparency = if selected then 0.12 else 0.58
+				outline.Thickness = if selected then 1.4 else 1
+			end
+			local iconLabel = navIconLabels[name]
+			local iconBadge = navIconBadges[name]
+			local textLabel = navTextLabels[name]
+			if iconLabel then
+				iconLabel.TextColor3 = if selected then C.Gold else C.Muted
+				iconLabel.TextSize = if selected then 18 else 17
+			end
+			if iconBadge then
+				iconBadge.BackgroundColor3 = if selected then Color3.fromRGB(76, 63, 43) else Color3.fromRGB(35, 41, 55)
+				local badgeStroke = iconBadge:FindFirstChildOfClass("UIStroke")
+				if badgeStroke then
+					badgeStroke.Color = if selected then C.Gold else C.SurfaceLight
+					badgeStroke.Transparency = if selected then 0.25 else 0.72
+				end
+			end
+			if textLabel then
+				textLabel.TextColor3 = if selected then C.Gold else C.White
+				textLabel.Font = if selected then BOLD else FONT
+				textLabel.TextSize = if selected then 12 else 11
+			end
 		end
 		applyMenuTypography()
 	end
@@ -2716,18 +2750,54 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	for index, tabName in ipairs(tabs) do
 		local button = make("TextButton", {
 			Name = tabName:gsub("%s","") .. "Tab",
-			Size = UDim2.fromOffset(if tabName == "Daily Rewards" then 112 else 94, 34),
-			BackgroundColor3 = if tabName == activeTab then C.Gold else C.SurfaceLight,
-			Text = tabName,
-			TextColor3 = if tabName == activeTab then C.Base else C.Muted,
-			TextSize = 10,
-			Font = BOLD,
+			Size = UDim2.fromOffset(116, 38),
+			BackgroundColor3 = Color3.fromRGB(25, 30, 43),
+			BackgroundTransparency = 0.08,
+			Text = "",
+			AutoButtonColor = true,
 			LayoutOrder = index,
 		}, nav) :: TextButton
-		corner(button, 11)
+		corner(button, 12)
 		local navStroke = stroke(button, C.Gold, 1)
-		navStroke.Transparency = 0.88
+		navStroke.Transparency = 0.58
+		local iconBadge = make("Frame", {
+			Name = "IconBadge",
+			Position = UDim2.fromOffset(7, 6),
+			Size = UDim2.fromOffset(26, 26),
+			BackgroundColor3 = Color3.fromRGB(35, 41, 55),
+			BorderSizePixel = 0,
+		}, button) :: Frame
+		corner(iconBadge, 9)
+		local badgeStroke = stroke(iconBadge, C.SurfaceLight, 1)
+		badgeStroke.Transparency = 0.72
+		local iconLabel = make("TextLabel", {
+			Name = "NavIcon",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Text = NAV_ICONS[tabName] or "•",
+			TextColor3 = C.Muted,
+			TextSize = 17,
+			Font = BOLD,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			TextYAlignment = Enum.TextYAlignment.Center,
+		}, iconBadge) :: TextLabel
+		local textLabel = make("TextLabel", {
+			Name = "NavLabel",
+			Position = UDim2.fromOffset(39, 0),
+			Size = UDim2.new(1, -45, 1, 0),
+			BackgroundTransparency = 1,
+			Text = tabName,
+			TextColor3 = C.White,
+			TextSize = 11,
+			Font = FONT,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+		}, button) :: TextLabel
 		navButtons[tabName] = button
+		navIconLabels[tabName] = iconLabel
+		navTextLabels[tabName] = textLabel
+		navIconBadges[tabName] = iconBadge
 		if tabName == "Moderation" or tabName == "Audio ID" then button.Visible = false end
 		button.Activated:Connect(function()
 			activeTab = tabName
@@ -2796,6 +2866,27 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		toggleButton.Size = UDim2.fromOffset(profile.toggle, profile.toggle)
 		toggleButton.Position = profile.togglePos
 		toggleButton.TextSize = math.floor(profile.toggle * 0.52)
+		local compactNav = currentDevice == "Mobile" or currentDevice == "Tablet"
+		local navHeight = if compactNav then 36 else 40
+		local iconSize = if currentDevice == "Mobile" then 23 elseif currentDevice == "Tablet" then 25 else 27
+		local badgeOffset = if compactNav then 6 else 7
+		for name, button in pairs(navButtons) do
+			local width = if compactNav then 108 else 120
+			if name == "Daily Rewards" or name == "XP & Boosts" then width += 12 end
+			button.Size = UDim2.fromOffset(width, navHeight)
+			local badge = navIconBadges[name]
+			local glyph = navIconLabels[name]
+			local textLabel = navTextLabels[name]
+			if badge then
+				badge.Position = UDim2.fromOffset(badgeOffset, math.floor((navHeight - iconSize) / 2))
+				badge.Size = UDim2.fromOffset(iconSize, iconSize)
+			end
+			if glyph then glyph.TextSize = if compactNav then 16 else 18 end
+			if textLabel then
+				textLabel.Position = UDim2.fromOffset(badgeOffset + iconSize + 7, 0)
+				textLabel.Size = UDim2.new(1, -(badgeOffset + iconSize + 13), 1, 0)
+			end
+		end
 
 		hudScale.Scale = layoutScale
 		hudConstraint.MaxSize = Vector2.new(math.clamp(viewport.X - 20, 260, 560), 42)
