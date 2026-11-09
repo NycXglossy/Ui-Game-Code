@@ -491,6 +491,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local catalogOffset = 0
 	local catalogHasMore = false
 	local catalogRequestSerial = 0
+	local pendingCatalogRemoval: string? = nil
 	local requestCatalogPage: (number) -> ()
 	local volume = 0.8
 	local lastVolume = 0.8
@@ -1142,33 +1143,56 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end)
 	end
 
-	local function makeTrackCard(track: {any}, parent: Instance?)
+	local function makeTrackCard(track: {any}, parent: Instance?, allowCatalogRemoval: boolean?)
 		local id = tostring(track[1])
+		local canRemove = allowCatalogRemoval == true and perm() >= 1 and string.sub(id, 1, 7) == "custom-"
 		local frame = make("Frame", {
 			Size = UDim2.new(1, -4, 0, 66),
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
 		}, parent or content)
 		corner(frame, 10)
-		label(frame, tostring(track[2]), UDim2.fromOffset(12, 8), UDim2.new(1, -176, 0, 22), C.White, 13, true)
-		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(12, 32), UDim2.new(1, -176, 0, 18), C.Muted, 11, false)
+		local textWidth = if canRemove then -250 else -176
+		label(frame, tostring(track[2]), UDim2.fromOffset(12, 8), UDim2.new(1, textWidth, 0, 22), C.White, 13, true)
+		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(12, 32), UDim2.new(1, textWidth, 0, 18), C.Muted, 11, false)
 
 		local favorites: any = state.favorites
 		local isFavorite = typeof(favorites) == "table" and favorites[id] == true
-		local star = actionButton(frame, if isFavorite then "★" else "☆", UDim2.new(1, -138, 0.5, -15), UDim2.fromOffset(32, 30), function()
+		local starPosition = if canRemove then -202 else -138
+		local requestPosition = if canRemove then -160 else -96
+		local star = actionButton(frame, if isFavorite then "★" else "☆", UDim2.new(1, starPosition, 0.5, -15), UDim2.fromOffset(32, 30), function()
 			act("ToggleFavorite", { trackId = id }, id)
 		end, C.SurfaceLight)
 		star.TextSize = 16
 		star.TextColor3 = if isFavorite then C.Gold else C.Muted
 
 		local disabled, reason = requestsDisabled()
-		actionButton(frame, if disabled then "LOCKED" else "REQUEST", UDim2.new(1, -96, 0.5, -15), UDim2.fromOffset(84, 30), function()
+		actionButton(frame, if disabled then "LOCKED" else "REQUEST", UDim2.new(1, requestPosition, 0.5, -15), UDim2.fromOffset(84, 30), function()
 			if disabled then
 				notify(reason, C.Orange)
 				return
 			end
 			act("RequestTrack", { trackId = id }, id)
 		end, if disabled then C.SurfaceLight else C.Purple)
+
+		if canRemove then
+			local removeButton: TextButton
+			removeButton = actionButton(frame, "REMOVE", UDim2.new(1, -72, 0.5, -15), UDim2.fromOffset(66, 30), function()
+				if pendingCatalogRemoval ~= id then
+					pendingCatalogRemoval = id
+					removeButton.Text = "CONFIRM?"
+					notify("Click CONFIRM? again to remove this custom catalog track.", C.Orange)
+					return
+				end
+				pendingCatalogRemoval = nil
+				removeButton.Text = "SENT"
+				send("CatalogRemoveTrack", {trackId = id})
+				notify("Removal request sent. The server will reject removal if the track is playing or queued.", C.Cyan)
+				task.delay(1.1, function()
+					if not destroyed and requestCatalogPage then requestCatalogPage(catalogOffset) end
+				end)
+			end, C.Red)
+		end
 		return frame
 	end
 
@@ -1494,12 +1518,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 						TRACK_GENRE[trackId] = genreInfo
 					end
 					shown += 1
-					local trackCard = makeTrackCard(tuple, results)
+					local trackCard = makeTrackCard(tuple, results, true)
 					trackCard.LayoutOrder = shown
 					if string.sub(trackId, 1, 7) == "custom-" then
 						local customLabel = make("TextLabel", {
 							Name = "CustomCatalogBadge",
-							Position = UDim2.new(1, -176, 0, 7),
+							Position = UDim2.new(1, if perm() >= 1 then -250 else -176, 0, 7),
 							Size = UDim2.fromOffset(48, 16),
 							BackgroundColor3 = C.Cyan,
 							Text = "CUSTOM",
