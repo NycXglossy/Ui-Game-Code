@@ -420,6 +420,22 @@ bindFunction("RemoveGlobalQueueEntry", function(entryId: any)
 	return ok, state, message
 end)
 
+bindFunction("MoveUpGlobalQueueEntry", function(entryId: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
+	local ok, state, message = MusicGlobalQueueService:MoveUp(entryId)
+	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
+bindFunction("PurgeGlobalUserQueueEntries", function(userId: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
+	local ok, state, message = MusicGlobalQueueService:RemoveUserEntries(userId)
+	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
 bindFunction("ClearGlobalQueue", function()
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
