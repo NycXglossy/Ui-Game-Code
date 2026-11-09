@@ -3482,9 +3482,12 @@ local function handleAction(player: Player, action: any, payload: any)
 		local visible = payload.visible
 
 		if typeof(rawText) ~= "string" then return end
-		local rawLength = utf8.len(rawText)
-		if not rawLength or rawLength > MAX_CUSTOM_TITLE_LENGTH then
-			notify(player, "Title must be 24 characters or fewer.", "warn")
+		-- Match the extended title-slot path: trim first, then enforce the
+		-- character limit against the exact text that will be filtered and saved.
+		local trimmedText = string.match(rawText, "^%s*(.-)%s*$") or ""
+		local rawLength = utf8.len(trimmedText)
+		if not rawLength or rawLength < 1 or rawLength > MAX_CUSTOM_TITLE_LENGTH then
+			notify(player, "Title must be 1-24 characters.", "warn")
 			return
 		end
 		if typeof(colorKey) ~= "string" or TITLE_COLORS[colorKey] ~= true then return end
@@ -3493,7 +3496,7 @@ local function handleAction(player: Player, action: any, payload: any)
 
 		local existing = profile.titleSlots[1]
 		local ok = saveTitleSlot(player, 1, {
-			text = string.match(rawText, "^%s*(.-)%s*$") or "",
+			text = trimmedText,
 			effect = "fixed",
 			set = colorKey,
 			font = if existing then existing.font else "gotham",
