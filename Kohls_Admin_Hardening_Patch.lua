@@ -214,7 +214,7 @@ serverSource = replaceLiteral(
 serverSource = replaceLiteral(
 	serverSource,
 	"if plr == pl and a == f.uID .. \"KCam\" then",
-	"local function isSafeCameraCFrame(value)\n\\tif typeof(value) ~= \"CFrame\" then return false end\n\\tlocal components = { value:GetComponents() }\n\\tfor _, component in ipairs(components) do\n\\t\\tif component ~= component or component == math.huge or component == -math.huge then return false end\n\\tend\n\\tlocal position = value.Position\n\\treturn math.abs(position.X) <= 100000 and math.abs(position.Y) <= 100000 and math.abs(position.Z) <= 100000\nend\nif plr == pl and a == f.uID .. \"KCam\" and isSafeCameraCFrame(b) then",
+	"local function isSafeCameraCFrame(value)\n\tif typeof(value) ~= \"CFrame\" then return false end\n\tlocal components = { value:GetComponents() }\n\tfor _, component in ipairs(components) do\n\t\tif component ~= component or component == math.huge or component == -math.huge then return false end\n\tend\n\tlocal position = value.Position\n\treturn math.abs(position.X) <= 100000 and math.abs(position.Y) <= 100000 and math.abs(position.Z) <= 100000\nend\nif plr == pl and a == f.uID .. \"KCam\" and isSafeCameraCFrame(b) then",
 	"KCam finite and bounded CFrame validation"
 )
 
