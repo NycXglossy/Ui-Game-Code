@@ -712,6 +712,17 @@ type PendingReceiptMemory = { profile: Profile, productData: {[string]: any} }
 local receiptMemoryPending: {[string]: PendingReceiptMemory} = {}
 local receiptMemoryApplied: {[string]: Profile} = {}
 local queue: {QueueEntry} = {}
+local ServerStorageForQueue = game:GetService("ServerStorage")
+local queueManagerModule = ServerStorageForQueue:WaitForChild("MusicQueueManager", 20)
+if not queueManagerModule or not queueManagerModule:IsA("ModuleScript") then
+	error("[ClubMusic] Missing ServerStorage.MusicQueueManager ModuleScript.")
+end
+local queueManagerRequireOk, queueManagerRequireResult = pcall(require, queueManagerModule)
+if not queueManagerRequireOk then
+	error("[ClubMusic] MusicQueueManager failed to load: " .. tostring(queueManagerRequireResult))
+end
+local MusicQueueManager = queueManagerRequireResult
+local queueManager: any = nil
 local globalQueueMode = false
 local globalTrackRevision = 0
 local globalQueueSyncBusy = false
@@ -1464,6 +1475,10 @@ local function releaseSlot(entry: QueueEntry)
 	end
 end
 
+-- The manager is an adapter over this controller-owned table. It never creates a
+-- parallel queue and all request-slot accounting remains in releaseSlot above.
+queueManager = MusicQueueManager.new(queue, releaseSlot)
+
 local function countPlayerEntries(): number
 	local n = 0
 	for _, entry in ipairs(queue) do
@@ -1551,15 +1566,13 @@ local function topUpAuto()
 			local queued = enqueueGlobalQueueEntry(entry)
 			if not queued then break end
 		else
-			table.insert(queue, entry)
+			queueManager:Insert(#queue + 1, entry)
 		end
 	end
 end
 
 local function clearAutomaticQueue()
-	for index = #queue, 1, -1 do
-		if queue[index].source ~= "player" then table.remove(queue, index) end
-	end
+	queueManager:ClearAutomatic()
 end
 
 local function reloadActivePlaylist(): boolean
@@ -1859,8 +1872,8 @@ local function advance(expectedGeneration: number?): boolean
 		return false
 	end
 	local ok, err = pcall(function()
-		local nextEntry = table.remove(queue, 1)
-		if nextEntry then releaseSlot(nextEntry)
+		local nextEntry = queueManager:PopNext()
+		if nextEntry then
 		else nextEntry = makeEntry(pickAutoTrack(), "auto", nil) end
 		setNowPlaying(nextEntry :: QueueEntry)
 		topUpAuto()
@@ -2671,8 +2684,7 @@ local function purgeUserEntries(userId: number): number
 	for index = #queue, 1, -1 do
 		local entry = queue[index]
 		if entry.source == "player" and entry.userId == userId then
-			releaseSlot(entry)
-			table.remove(queue, index)
+			queueManager:RemoveAt(index, true)
 			removed += 1
 		end
 	end
@@ -3038,7 +3050,7 @@ local function handleAction(player: Player, action: any, payload: any)
 			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
 			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
 		else
-			table.insert(queue, insertIndex(passTier(player)), entry)
+			queueManager:Insert(insertIndex(passTier(player)), entry)
 			requestCounts[player.UserId] = count + 1
 		end
 		lastRequestAt[player.UserId] = now
@@ -3239,7 +3251,7 @@ local function handleAction(player: Player, action: any, payload: any)
 			elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 		else
 			local index = findQueueIndex(id)
-			if index then releaseSlot(queue[index]); table.remove(queue, index); topUpAuto() end
+			if index then queueManager:RemoveAt(index, true); topUpAuto() end
 		end
 		publishState(nil)
 		return
@@ -3320,8 +3332,7 @@ local function handleAction(player: Player, action: any, payload: any)
 			if typeof(state) == "table" then applyGlobalQueueState(state) end
 			topUpAuto()
 		else
-			for _, entry in ipairs(queue) do releaseSlot(entry) end
-			table.clear(queue); topUpAuto()
+			queueManager:Clear(true); topUpAuto()
 			globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
 		end
 		notify(player, "Queue cleared.", "ok")
@@ -3899,8 +3910,7 @@ local function handleGlobalMessage(message: any)
 			advance()
 			broadcast("A global DJ command skipped the current track.", "info")
 		elseif message.command == "ClearQueue" then
-			for _, entry in ipairs(queue) do releaseSlot(entry) end
-			table.clear(queue)
+			queueManager:Clear(true)
 			topUpAuto()
 			broadcast("The request queue was globally cleared.", "info")
 		elseif message.command == "SetRequestLock" and typeof(message.payload) == "table"
