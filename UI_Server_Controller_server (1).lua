@@ -336,6 +336,7 @@ refreshActiveMusicSoundCount()
 musicSound:GetPropertyChangedSignal("Playing"):Connect(refreshActiveMusicSoundCount)
 
 local playbackPaused = false
+local lastGlobalPlaybackRevision = 0
 
 local function stopServerMusic()
 	pcall(function()
@@ -2704,7 +2705,10 @@ local function handleAction(player: Player, action: any, payload: any)
 			pcall(function() musicSound:Pause() end)
 			notify(player, "Music paused.", "ok")
 		end
-		local globalOk, globalPublished = globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused}, player.UserId)
+		local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused}, player.UserId)
+		if globalOk and globalPublished == true and isFiniteNumber(globalRevision) then
+			lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision))
+		end
 		if not globalOk or globalPublished ~= true then
 			notify(player, "Playback changed on this server, but cross-server sync is unavailable.", "warn")
 		end
@@ -2722,7 +2726,10 @@ local function handleAction(player: Player, action: any, payload: any)
 		playbackPaused = false
 		local soundId = nowPlaying.soundId
 		startServerMusic(soundId)
-		local globalOk, globalPublished = globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
+		local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
+		if globalOk and globalPublished == true and isFiniteNumber(globalRevision) then
+			lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision))
+		end
 		if not globalOk or globalPublished ~= true then
 			notify(player, "Track restarted here, but cross-server sync is unavailable.", "warn")
 		else
@@ -3176,8 +3183,6 @@ local function refreshLocalCatalog(): boolean
 	end
 	return refreshed
 end
-
-local lastGlobalPlaybackRevision = 0
 
 local function applyGlobalPlaybackControl(command: string, payload: any): boolean
 	if typeof(payload) ~= "table" or not isFiniteNumber(payload.revision) or payload.revision < 1 then return false end
