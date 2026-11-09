@@ -1018,16 +1018,38 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function sectionLabel(text: string)
-		return make("TextLabel", {
+		-- Compact editorial section heading with a restrained accent rule.
+		-- Kept at the same 30px layout height so existing tab spacing is unchanged.
+		local heading = make("Frame", {
+			Name = "SectionHeading",
 			Size = UDim2.new(1, -4, 0, 30),
 			BackgroundTransparency = 1,
-			Text = string.upper(text),
-			TextColor3 = C.Gold,
-			TextSize = 11,
-			Font = BOLD,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextYAlignment = Enum.TextYAlignment.Center,
-		}, content)
+		}, content) :: Frame
+		local marker = make("Frame", {
+			Name = "SectionMarker",
+			Position = UDim2.fromOffset(1, 8),
+			Size = UDim2.fromOffset(3, 14),
+			BackgroundColor3 = C.Gold,
+			BorderSizePixel = 0,
+		}, heading)
+		corner(marker, 2)
+		label(heading, string.upper(text), UDim2.fromOffset(11, 0), UDim2.new(1, -18, 0, 25), C.Gold, 11, true)
+		local rule = make("Frame", {
+			Name = "SectionRule",
+			Position = UDim2.fromOffset(11, 26),
+			Size = UDim2.new(1, -18, 0, 1),
+			BackgroundColor3 = C.SurfaceLight,
+			BackgroundTransparency = 0.28,
+			BorderSizePixel = 0,
+		}, heading)
+		make("Frame", {
+			Name = "SectionRuleAccent",
+			Size = UDim2.new(0, 34, 1, 0),
+			BackgroundColor3 = C.Gold,
+			BackgroundTransparency = 0.12,
+			BorderSizePixel = 0,
+		}, rule)
+		return heading
 	end
 
 	local function card(height: number?): Frame
@@ -1106,7 +1128,20 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			}),
 			Rotation = 90,
 		}, button)
-		button.Activated:Connect(callback)
+		-- Subtle native interaction feedback; the original activation callback is untouched.
+		local scale = make("UIScale", {Scale = 1}, button) :: UIScale
+		local function animateScale(target: number, duration: number)
+			TweenService:Create(scale, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = target}):Play()
+		end
+		button.MouseEnter:Connect(function() animateScale(1.025, 0.12) end)
+		button.MouseLeave:Connect(function() animateScale(1, 0.12) end)
+		button.Activated:Connect(function()
+			animateScale(0.985, 0.06)
+			callback()
+			task.delay(0.07, function()
+				if button.Parent then animateScale(1, 0.12) end
+			end)
+		end)
 		return button
 	end
 
