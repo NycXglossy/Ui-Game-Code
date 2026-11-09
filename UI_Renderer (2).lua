@@ -1205,6 +1205,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		notify("Reloading song…", C.Cyan)
 	end
 
+	local currentTrackId: any
+
 	local function buildNowPlaying(parent: Instance?, artworkMode: boolean?)
 		parent = parent or content
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
@@ -1489,7 +1491,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return queue
 	end
 
-	local function currentTrackId(now: any): string?
+	currentTrackId = function(now: any): string?
 		local direct = tostring(now.trackId or now.id or "")
 		if TRACK_INDEX[direct] then return direct end
 		for _, track in ipairs(ALL_TRACKS) do
