@@ -235,7 +235,7 @@ local function publishTopic(topic: string, payload: {[string]: any}): boolean
 end
 
 local allowedDJCommands = {Skip = true, ClearQueue = true, SetRequestLock = true, SetPlaybackPaused = true, Restart = true}
-local function publishDJCommand(command: any, payload: any, actorUserId: any): boolean
+local function publishDJCommand(command: any, payload: any, actorUserId: any): (boolean, number?)
 	if not SERVICE_ENABLED or not allowedDJCommands[command] or not finiteNumber(actorUserId) then return false end
 	if typeof(payload) ~= "table" then payload = {} end
 	local cleanPayload = {}
