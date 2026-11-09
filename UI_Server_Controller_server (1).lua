@@ -106,79 +106,25 @@ local CONFIG = {
 	TitleSlotPrices = { [2] = 99, [3] = 199 } :: {[number]: number}, -- Display only; set to match the products.
 }
 
-local TRACKS: {[string]: {[string]: {title: string, artist: string, duration: number, genre: string}}} = {
-	hiphop = {
-		["hh-0"]={title="Palm Tree Freestyle",artist="Lil Coconut",duration=184,genre="Hip Hop / Rap"},
-		["hh-1"]={title="Tide Money",artist="MC Lagoon",duration=201,genre="Hip Hop / Rap"},
-		["hh-2"]={title="Boardwalk Bounce",artist="Kid Kahuna",duration=176,genre="Hip Hop / Rap"},
-		["hh-3"]={title="Sandcastle Kings",artist="Reef Gang",duration=213,genre="Hip Hop / Rap"},
-		["hh-4"]={title="Midnight Luau",artist="Big Pineapple",duration=195,genre="Hip Hop / Rap"},
-		["hh-5"]={title="Wave Check",artist="Yung Tsunami",duration=168,genre="Hip Hop / Rap"},
-	},
-	rnb = {
-		["rnb-0"]={title="Golden Hour Love",artist="Coral Rose",duration=224,genre="R&B / Soul"},
-		["rnb-1"]={title="Slow Tide",artist="Marina Soul",duration=241,genre="R&B / Soul"},
-		["rnb-2"]={title="Tiki Torch Serenade",artist="D'Angelo Bay",duration=232,genre="R&B / Soul"},
-		["rnb-3"]={title="Velvet Shoreline",artist="Honey Kai",duration=207,genre="R&B / Soul"},
-		["rnb-4"]={title="Lantern Light",artist="Nalu & The Keys",duration=219,genre="R&B / Soul"},
-	},
-	rock = {
-		["rk-0"]={title="Volcano Riff",artist="The Lava Kings",duration=238,genre="Rock"},
-		["rk-1"]={title="Surf's Up Anthem",artist="Riptide Rebels",duration=199,genre="Rock"},
-		["rk-2"]={title="Driftwood Highway",artist="Saltwater Saints",duration=262,genre="Rock"},
-		["rk-3"]={title="Thunder on the Bay",artist="Coral Crush",duration=221,genre="Rock"},
-	},
-	kpop = {
-		["kp-0"]={title="SUMMER GLITCH",artist="NEONWAVE",duration=192,genre="K-Pop"},
-		["kp-1"]={title="Pink Horizon",artist="STARR1SE",duration=205,genre="K-Pop"},
-		["kp-2"]={title="Island Signal",artist="LUMI-9",duration=187,genre="K-Pop"},
-		["kp-3"]={title="Heartbeat Lagoon",artist="KORAL",duration=199,genre="K-Pop"},
-		["kp-4"]={title="Firework Kiss",artist="AURA X",duration=181,genre="K-Pop"},
-	},
-	latin = {
-		["lt-0"]={title="Playa Caliente",artist="DJ Mango",duration=214,genre="Latin Music"},
-		["lt-1"]={title="Bailando en la Arena",artist="Sol y Mar",duration=228,genre="Latin Music"},
-		["lt-2"]={title="Noche Tropical",artist="La Ola",duration=203,genre="Latin Music"},
-		["lt-3"]={title="Fuego Lento",artist="Rey Coco",duration=197,genre="Latin Music"},
-	},
-	edm = {
-		["edm-0"]={title="Sunset Overdrive",artist="Aqualux",duration=246,genre="EDM"},
-		["edm-1"]={title="Neon Coastline",artist="VOLTA",duration=233,genre="EDM"},
-		["edm-2"]={title="Tidal Drop",artist="Prism Reef",duration=258,genre="EDM"},
-		["edm-3"]={title="Laser Lagoon",artist="Kairo",duration=219,genre="EDM"},
-		["edm-4"]={title="Afterglow Rave",artist="SKYE.EXE",duration=271,genre="EDM"},
-		["edm-5"]={title="Bassquake Beach",artist="Subduction",duration=205,genre="EDM"},
-	},
-	country = {
-		["ct-0"]={title="Beach Truck Blues",artist="Dusty Shores",duration=212,genre="Country"},
-		["ct-1"]={title="Sunburnt Sweetheart",artist="Cody Cove",duration=198,genre="Country"},
-		["ct-2"]={title="Barefoot Rodeo",artist="The Palm Ranch",duration=205,genre="Country"},
-	},
-	pop = {
-		["pop-0"]={title="Electric Paradise",artist="Mia Lumen",duration=189,genre="Pop"},
-		["pop-1"]={title="Coconut Crush",artist="Jade Rivers",duration=176,genre="Pop"},
-		["pop-2"]={title="Ocean Eyes Tonight",artist="Leo Starr",duration=201,genre="Pop"},
-		["pop-3"]={title="Glow Up Summer",artist="Nova Bay",duration=183,genre="Pop"},
-		["pop-4"]={title="Postcard Heart",artist="Kenna Blue",duration=194,genre="Pop"},
-	},
-	exclusive = {
-		["ex-0"]={title="Sunset Stage Anthem",artist="Club Resident",duration=262,genre="Club Exclusives"},
-		["ex-1"]={title="Tiki Torch Theory",artist="Club Resident ft. VOLTA",duration=238,genre="Club Exclusives"},
-		["ex-2"]={title="Low-Poly Paradise",artist="Pixel Palms",duration=224,genre="Club Exclusives"},
-		["ex-3"]={title="Mainstage Moonrise",artist="The Owners",duration=289,genre="Club Exclusives"},
-	},
-}
+-- The catalog is server-owned. The controller remains the only authority
+-- for request limits, moderation, queue priority, and playback.
+local MusicCatalogService = require(game:GetService("ServerStorage"):WaitForChild("MusicCatalogService"))
 
 type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string }
 
--- Flat lookup so the "All Tracks" tab and favorites can reference any track by id.
 local TRACK_BY_ID: {[string]: Track} = {}
 local ALL_TRACK_IDS: {string} = {}
-for genreId, list in pairs(TRACKS) do
-	for id, t in pairs(list) do
-		TRACK_BY_ID[id] = { id = id, genreId = genreId, title = t.title, artist = t.artist, duration = t.duration, genre = t.genre }
-		table.insert(ALL_TRACK_IDS, id)
-	end
+for _, catalogTrack in ipairs(MusicCatalogService:GetAllTracks()) do
+	local track: Track = {
+		id = catalogTrack.id,
+		genreId = catalogTrack.genreId,
+		title = catalogTrack.title,
+		artist = catalogTrack.artist,
+		duration = catalogTrack.duration,
+		genre = catalogTrack.genre,
+	}
+	TRACK_BY_ID[track.id] = track
+	table.insert(ALL_TRACK_IDS, track.id)
 end
 table.sort(ALL_TRACK_IDS)
 
@@ -333,6 +279,7 @@ local actionRemote = getOrCreate(remotes, "RemoteEvent", "RequestAction") :: Rem
 local stateRemote = getOrCreate(remotes, "RemoteEvent", "StateChanged") :: RemoteEvent
 local noticeRemote = getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
 local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: RemoteFunction
+local catalogFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
 
 -- One server-owned Sound drives the entire server. This replaces the source
 -- system's second remote/event architecture and keeps playback under this controller.
@@ -513,6 +460,7 @@ local reloadNonce: {[number]: number} = {}
 local pendingAudio: {[number]: boolean} = {}
 local lastActionByType: {[number]: {[string]: number}} = {}
 local lastStateInvoke: {[number]: number} = {}
+local lastCatalogInvoke: {[number]: number} = {}
 local lastAudioInspection: {[number]: number} = {}
 local audioInspectionCount = 0
 local profileWriteLocks: {[number]: boolean} = {}
@@ -2645,6 +2593,35 @@ local function handleAction(player: Player, action: any, payload: any)
 		publishState(player)
 		return
 	end
+end
+
+catalogFunction.OnServerInvoke = function(player: Player, query: any, genreId: any, offset: any, limit: any)
+	if player.Parent ~= Players then return nil end
+	local now = os.clock()
+	if not consumeToken(globalStateQueryBucket, now, 1) then return nil end
+	local sharedStateCallOk, sharedStateAllowed = globalInvoke("ConsumeStateBudget", player.UserId)
+	if RunService:IsStudio() then
+		if sharedStateCallOk and sharedStateAllowed == false then return nil end
+	else
+		if not sharedStateCallOk or sharedStateAllowed ~= true then return nil end
+	end
+	local previous = lastCatalogInvoke[player.UserId] or 0
+	if previous > 0 and now - previous < 0.75 then return nil end
+	lastCatalogInvoke[player.UserId] = now
+
+	if query ~= nil and (typeof(query) ~= "string" or #query > 48) then return nil end
+	if genreId ~= nil and (typeof(genreId) ~= "string" or #genreId > 24) then return nil end
+	if offset ~= nil and (typeof(offset) ~= "number" or offset ~= offset or offset % 1 ~= 0) then return nil end
+	if limit ~= nil and (typeof(limit) ~= "number" or limit ~= limit or limit % 1 ~= 0) then return nil end
+
+	local ok, result = pcall(function()
+		return MusicCatalogService:GetCatalog(query or "", genreId or "", offset or 0, limit or 30)
+	end)
+	if not ok then
+		warn("[ClubMusic] GetMusicCatalog failed for " .. player.Name .. ": " .. tostring(result))
+		return nil
+	end
+	return result
 end
 
 stateFunction.OnServerInvoke = function(player: Player)
