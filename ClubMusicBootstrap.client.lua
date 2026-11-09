@@ -143,7 +143,7 @@ end
 -- Retry in bounded intervals instead of terminating the entire UI on one race.
 local networkReady = false
 local lastInitError = ""
-for attempt = 1, 20 do
+for attempt = 1, 2 do
 	if cleaned then return end
 	local initOk, initResult = pcall(Network.Init)
 	if initOk and initResult == true then
@@ -151,10 +151,10 @@ for attempt = 1, 20 do
 		break
 	end
 	lastInitError = if initOk then (if typeof(Network.GetInitError) == "function" then Network.GetInitError() else "server remotes are not ready yet") else tostring(initResult)
-	if attempt < 20 then task.wait(3) end
+	if attempt < 2 then task.wait(3) end
 end
 if not networkReady then
-	fail("Network initialization did not complete after 20 attempts. Verify ServerScriptService.UI_Server_Controller is enabled and that ServerStorage contains MusicCatalogService, MusicPlaylistService, and ClubMusic_ReceiptHash. Last error: " .. string.sub(lastInitError, 1, 220))
+	fail("Network initialization did not complete after 2 attempts. Verify ServerScriptService.UI_Server_Controller is enabled and that ServerStorage contains MusicCatalogService, MusicPlaylistService, and ClubMusic_ReceiptHash. Last error: " .. string.sub(lastInitError, 1, 220))
 	return
 end
 ownsNetwork = true
