@@ -948,17 +948,26 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function updateHud()
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
 		if now then
+			local paused = playbackIsPaused()
+			hudEyebrow.Text = if paused then "FIREBEACH  /  PLAYBACK PAUSED" else "FIREBEACH  /  NOW PLAYING"
+			hudEyebrow.TextColor3 = if paused then C.Orange else C.Cyan
 			hudTitle.Text = "♫  " .. nz(now.title, "Unknown track")
 			hudArtist.Text = nz(now.artist, "Firebeach Music Festival")
 			local duration = math.max(1, tonumber(now.duration) or 1)
 			local elapsed = interpolatedElapsed(duration)
 			hudFill.Size = UDim2.fromScale(math.clamp(elapsed / duration, 0, 1), 1)
 			hudTime.Text = formatTime(elapsed) .. " / " .. formatTime(duration)
+			hudTime.TextColor3 = if paused then C.Orange else C.Gold
+			hudFill.BackgroundColor3 = if paused then C.Orange else C.Gold
 		else
+			hudEyebrow.Text = "FIREBEACH  /  STAGE STANDBY"
+			hudEyebrow.TextColor3 = C.Muted
 			hudTitle.Text = "♫  The stage is warming up"
 			hudArtist.Text = "Sunset Stage Club"
 			hudFill.Size = UDim2.fromScale(0, 1)
 			hudTime.Text = ""
+			hudTime.TextColor3 = C.Gold
+			hudFill.BackgroundColor3 = C.Gold
 		end
 		if state.blocked == true then
 			hudStatus.Text = "Requests off"
