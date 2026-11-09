@@ -492,6 +492,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local catalogHasMore = false
 	local catalogRequestSerial = 0
 	local pendingCatalogRemoval: string? = nil
+	local selectedPlaylistId: string? = nil
 	local requestCatalogPage: (number) -> ()
 	local volume = 0.8
 	local lastVolume = 0.8
@@ -1143,23 +1144,24 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end)
 	end
 
-	local function makeTrackCard(track: {any}, parent: Instance?, allowCatalogRemoval: boolean?)
+	local function makeTrackCard(track: {any}, parent: Instance?, allowCatalogRemoval: boolean?, targetPlaylistId: string?)
 		local id = tostring(track[1])
 		local canRemove = allowCatalogRemoval == true and perm() >= 1 and string.sub(id, 1, 7) == "custom-"
+		local canAddToPlaylist = targetPlaylistId ~= nil and perm() >= 1
 		local frame = make("Frame", {
 			Size = UDim2.new(1, -4, 0, 66),
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
 		}, parent or content)
 		corner(frame, 10)
-		local textWidth = if canRemove then -250 else -176
+		local textWidth = if canAddToPlaylist then (if canRemove then -330 else -250) else (if canRemove then -250 else -176)
 		label(frame, tostring(track[2]), UDim2.fromOffset(12, 8), UDim2.new(1, textWidth, 0, 22), C.White, 13, true)
 		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(12, 32), UDim2.new(1, textWidth, 0, 18), C.Muted, 11, false)
 
 		local favorites: any = state.favorites
 		local isFavorite = typeof(favorites) == "table" and favorites[id] == true
-		local starPosition = if canRemove then -202 else -138
-		local requestPosition = if canRemove then -160 else -96
+		local starPosition = if canAddToPlaylist then (if canRemove then -282 else -202) else (if canRemove then -202 else -138)
+		local requestPosition = if canAddToPlaylist then (if canRemove then -240 else -160) else (if canRemove then -160 else -96)
 		local star = actionButton(frame, if isFavorite then "★" else "☆", UDim2.new(1, starPosition, 0.5, -15), UDim2.fromOffset(32, 30), function()
 			act("ToggleFavorite", { trackId = id }, id)
 		end, C.SurfaceLight)
@@ -1174,6 +1176,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 			act("RequestTrack", { trackId = id }, id)
 		end, if disabled then C.SurfaceLight else C.Purple)
+
+		if canAddToPlaylist then
+			actionButton(frame, "ADD", UDim2.new(1, if canRemove then -148 else -72, 0.5, -15), UDim2.fromOffset(66, 30), function()
+				send("PlaylistAddTrack", {playlistId = targetPlaylistId, trackId = id})
+				notify("Adding track to selected playlist…", C.Cyan)
+			end, C.Green)
+		end
 
 		if canRemove then
 			local removeButton: TextButton
@@ -1378,6 +1387,73 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function renderAllTracks()
 		sectionLabel("ALL TRACKS")
 
+		if perm() >= 1 then
+			sectionLabel("STAFF PLAYLISTS")
+			local createCard = card(48)
+			local playlistNameBox = make("TextBox", {
+				Name = "NewPlaylistName", Position = UDim2.fromOffset(10, 8),
+				Size = UDim2.new(1, -112, 0, 32), BackgroundColor3 = C.SurfaceLight,
+				TextColor3 = C.White, PlaceholderColor3 = C.Muted,
+				PlaceholderText = "New playlist name (2–32 characters)", Text = "",
+				TextSize = 11, Font = FONT, TextXAlignment = Enum.TextXAlignment.Left,
+				ClearTextOnFocus = false,
+			}, createCard) :: TextBox
+			corner(playlistNameBox, 8)
+			make("UIPadding", {PaddingLeft=UDim.new(0,9)}, playlistNameBox)
+			actionButton(createCard, "CREATE", UDim2.new(1, -94, 0, 8), UDim2.fromOffset(84, 32), function()
+				local name = string.sub(playlistNameBox.Text, 1, 32)
+				if #name < 2 then notify("Enter a playlist name (2–32 characters).", C.Orange); return end
+				send("PlaylistCreate", {name = name})
+				notify("Creating playlist…", C.Cyan)
+				task.delay(1.2, function()
+					if not destroyed then renderTab() end
+				end)
+			end, C.Green)
+
+			local playlistList = make("Frame", {
+				Name = "StaffPlaylistList", Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+			}, content) :: Frame
+			make("UIListLayout", {SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,6)}, playlistList)
+			local playlistStatus = sectionLabel("Loading playlists…")
+			playlistStatus.TextSize = 10
+			task.spawn(function()
+				local ok, entries = pcall(function()
+					if typeof(Network.GetMusicPlaylists) ~= "function" then return nil end
+					return Network.GetMusicPlaylists()
+				end)
+				if destroyed or not playlistList.Parent then return end
+				for _, child in ipairs(playlistList:GetChildren()) do
+					if not child:IsA("UIListLayout") then child:Destroy() end
+				end
+				if not ok or typeof(entries) ~= "table" then
+					playlistStatus.Text = "Playlist storage unavailable."
+					return
+				end
+				playlistStatus.Text = if #entries == 0 then "No saved playlists yet." else "Select a playlist, then use ADD on catalog tracks."
+				for order, entry in ipairs(entries) do
+					if typeof(entry) == "table" and typeof(entry.id) == "string" and typeof(entry.name) == "string"
+						and typeof(entry.trackIds) == "table" then
+						local row = card(40)
+						row.Parent = playlistList
+						row.LayoutOrder = order
+						local selected = selectedPlaylistId == entry.id
+						actionButton(row, (if selected then "SELECTED  " else "SELECT  ") .. entry.name .. "  •  " .. tostring(#entry.trackIds) .. " tracks",
+							UDim2.fromOffset(8, 5), UDim2.new(1, -92, 0, 30), function()
+								selectedPlaylistId = if selectedPlaylistId == entry.id then nil else entry.id
+								renderTab()
+							end, if selected then C.Green else C.SurfaceLight)
+						actionButton(row, "DELETE", UDim2.new(1, -78, 0, 5), UDim2.fromOffset(70, 30), function()
+							send("PlaylistDelete", {playlistId = entry.id})
+							if selectedPlaylistId == entry.id then selectedPlaylistId = nil end
+							notify("Playlist deletion requested…", C.Orange)
+							task.delay(1.2, function() if not destroyed then renderTab() end end)
+						end, C.Red)
+					end
+				end
+			end)
+		end
+
 		local searchCard = card(52)
 		local searchBox = make("TextBox", {
 			Name = "TrackSearch",
@@ -1518,7 +1594,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 						TRACK_GENRE[trackId] = genreInfo
 					end
 					shown += 1
-					local trackCard = makeTrackCard(tuple, results, true)
+					local trackCard = makeTrackCard(tuple, results, true, selectedPlaylistId)
 					trackCard.LayoutOrder = shown
 					if string.sub(trackId, 1, 7) == "custom-" then
 						local customLabel = make("TextLabel", {
