@@ -116,3 +116,33 @@ The patch source was subsequently revised on this audit branch to address the di
 - **KHA-07:** KCam now rejects non-CFrame, non-finite component values, and position coordinates outside ±100,000 studs.
 
 The revised patch is stored at `Kohls_Admin_Hardening_Patch.lua` on this branch. These are source-level corrections only. **KHA-01** (Creator-scoped arbitrary-code execution) and **KHA-06** (full per-command authorization review) remain open; full model inspection and Studio/multiplayer testing remain outstanding. The corrected patch has not been executed against the model.
+
+
+## Remaining-vulnerability correction follow-up — 2026-11-08
+
+The uploaded model XML was subsequently retrieved through its Git blob and the relevant source hierarchy was inspected. The original audit's statement that the binary body was unavailable is superseded: the XML is readable, and the model contains 344 source-bearing items. The entire 344-item source set has **not** yet received a line-by-line security review.
+
+The prior patch had an important targeting defect: it treated `Loader.MainModule` as if it were the legacy server dispatcher. In the actual model, the v3 implementation is `Loader.MainModule`, while the legacy dispatcher is the sibling `Loader.MainModuleLegacy`. The patch has now been corrected to target each module separately and to locate the v3 Creator and LoadScript modules inside the modern MainModule.
+
+### Changes now present in the patch source
+
+- **KHA-01 — arbitrary-code execution:** the v3 Creator `script` and `localscript` command registrations are removed; the underlying `Server.LoadScript` backend is replaced with a fail-closed function; and the legacy native `script`/loadstring command is removed. This disables the bundled arbitrary-source execution paths rather than merely raising their permission level.
+- **KHA-03 — atomicity:** all four modified sources (legacy dispatcher, v3 Creator command module, v3 LoadScript backend, and Loader) are computed before assignment. If a write fails, earlier writes are restored in reverse order.
+- **KHA-06 — remote authorization/validation:** the legacy dispatcher now has a central minimum-power map for KDelete, KPaste, and KUpdate in addition to existing handler-level checks; all non-handshake operations must pass the internal event ID and allowlist/cooldown checks; and command-bar payloads are capped at 512 characters. KDelete/KPaste payload validation and the existing self-scoped/donor-gated handlers remain. This is a material improvement, but dynamically registered response listeners and custom add-ons still require Studio/multiplayer testing, so KHA-06 is **partially addressed, not certified closed**.
+- **KHA-04, KHA-05, KHA-07:** the earlier patch corrections remain: 25-instance/500-descendant paste limits, one paste request per second, 10 delete requests per second, Workspace-only world edits, staged clones, and finite/bounded camera CFrames.
+
+### Current status
+
+| Finding / requirement | Current patch-source status |
+|---|---|
+| KHA-01 bundled Creator/native script execution | Addressed in patch source; Studio verification pending |
+| KHA-02 patched replacement model artifact | Open — original .rbxmx remains unchanged |
+| KHA-03 patch write atomicity | Addressed in patch source |
+| KHA-04 paste/delete throughput | Addressed in patch source; load testing pending |
+| KHA-05 delete/paste target scope | Addressed in patch source; workflow compatibility testing pending |
+| KHA-06 all remote listeners and custom add-ons | Partially addressed; runtime verification remains |
+| KHA-07 KCam finite/bounded values | Addressed in patch source |
+| Full 344-item source review | Open |
+| Roblox Studio, multiplayer, and live testing | Not performed |
+
+The current patch and documentation are on this audit branch. **The patch has not been executed against the model in Roblox Studio, and no patched replacement .rbxmx has been exported.** Do not deploy the original model on the assumption that a GitHub patch file changes the imported place automatically.
