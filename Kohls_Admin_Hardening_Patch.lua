@@ -18,8 +18,10 @@ end
 
 local loader = selected:FindFirstChild("Loader", true)
 assert(loader and loader:IsA("Script"), "Could not find Kohl's Admin Loader Script.")
-local mainModule = loader:FindFirstChild("MainModule") or loader:FindFirstChild("MainModuleLegacy")
+local mainModule = loader:FindFirstChild("MainModule")
 assert(mainModule and mainModule:IsA("ModuleScript"), "Bundled Loader.MainModule is missing; refusing external fallback.")
+local legacyModule = loader:FindFirstChild("MainModuleLegacy")
+assert(legacyModule and legacyModule:IsA("ModuleScript"), "Bundled Loader.MainModuleLegacy is missing; cannot harden the optional legacy path.")
 
 local loaderSource = loader.Source
 local oldConfig = [=[local InsertService = game:GetService("InsertService")
@@ -128,7 +130,7 @@ local newLoad = [=[	local localMainModule = script:FindFirstChild(MAIN_MODULE_NA
 loaderSource = replaceLiteral(loaderSource, oldLoad, newLoad, "local-only module loading")
 assert(not string.find(loaderSource, "InsertService", 1, true), "External asset loading reference remains in Loader.")
 assert(not string.find(loaderSource, "MAIN_MODULE_ID", 1, true), "External MainModule asset ID remains in Loader.")
-local serverSource = mainModule.Source
+local serverSource = legacyModule.Source
 
 -- Rate-limit the shared admin RemoteEvent by player and operation. Preserve
 -- the existing command dispatcher cooldown and use tighter limits for costly actions.
@@ -195,19 +197,27 @@ function ServerEvent(plr: Player, event, arguments, uID)
 	end]=]
 serverSource = replaceLiteral(serverSource, oldHandler, newHandler, "RemoteEvent rate limiting and event allowlist")
 
--- The built-in native loadstring command is distinct from the Creator addon.
--- Keep it available, but require Game Creator power (6), not Owner power (5).
+-- Remove the legacy native loadstring command entirely; power checks are not a sandbox.
 serverSource = replaceLiteral(
 	serverSource,
-	[=[{ "s", "script" },
+	[=[f.addCommand(
+			{ "s", "script" },
 			{ "Creates a script.", "game.Players:Destroy()" },
 			5,
-			{ "string" },]=],
-	[=[{ "s", "script" },
-			{ "Creates a script.", "game.Players:Destroy()" },
-			6,
-			{ "string" },]=],
-	"native script command creator-only permission"
+			{ "string" },
+			function(pl, args)
+				if pcall(loadstring("a=0")) == false then
+					f.Error("LoadString must be enabled to use the script command!", pl)
+				else
+					local success, err = pcall(loadstring(args[1]))
+					if success == false then
+						f.Error("SCRIPT ERROR\\t" .. err, pl)
+					end
+				end
+			end
+		)]=],
+	"",
+	"remove legacy arbitrary-code script command"
 )
 
 -- Validate the client-supplied camera payload before reading LookVector.
@@ -309,22 +319,68 @@ local newRemote = [=[	elseif event == "KDelete" and f.getPower(plr) > 4 then
 			end
 		end]=]
 serverSource = replaceLiteral(serverSource, oldRemote, newRemote, "privileged delete/paste validation")
+-- Remove the v3 Creator script/localscript command registrations.
+local creatorModule = mainModule:FindFirstChild("Creator", true)
+assert(creatorModule and creatorModule:IsA("ModuleScript"), "MainModule.Shared.DefaultCommands.Creator is missing.")
+local creatorSource = creatorModule.Source
+creatorSource = replaceLiteral(creatorSource, "return {", "local creatorCommands = {", "Creator command table")
+creatorSource ..= [=[
+
+for index = #creatorCommands, 1, -1 do
+	local commandName = creatorCommands[index].name
+	if commandName == "script" or commandName == "localscript" then
+		table.remove(creatorCommands, index)
+	end
+end
+return creatorCommands
+]=]
+assert(not string.find(creatorSource, 'name = "script"', 1, true), "Creator script command remains registered.")
+assert(not string.find(creatorSource, 'name = "localscript"', 1, true), "Creator localscript command remains registered.")
+
+-- Disable the underlying FiOne/loadstring runner as defense in depth.
+local loadScriptModule = mainModule:FindFirstChild("LoadScript", true)
+assert(loadScriptModule and loadScriptModule:IsA("ModuleScript"), "MainModule.Server.LoadScript is missing.")
+local loadScriptSource = loadScriptModule.Source
+assert(string.find(loadScriptSource, "script.Loadstring", 1, true), "Unexpected LoadScript implementation; refusing to overwrite.")
+loadScriptSource = [=[--!strict
+-- Security hardening: runtime source execution is disabled.
+return function(...)
+	error("Kohl's Admin script/localscript execution is disabled by the security patch.", 2)
+end
+]=]
+
+-- Bound command-bar payload size before handing text to the command parser.
+serverSource = replaceLiteral(
+	serverSource,
+	'elseif event == "KCmdBar" and type(arguments) == "string" then',
+	'elseif event == "KCmdBar" and type(arguments) == "string" and #arguments <= 512 then',
+	"command bar payload length limit"
+)
+
 -- Source assignment is deferred until every source transformation has passed.
 
--- Commit source changes only after all replacement assertions above succeeded.
--- Roll back the first assignment if the second assignment fails.
-local originalLoaderSource = loader.Source
-local originalServerSource = mainModule.Source
-local moduleWriteOk, moduleWriteError = pcall(function()
-	mainModule.Source = serverSource
-end)
-assert(moduleWriteOk, "Could not write hardened MainModule source: " .. tostring(moduleWriteError))
-local loaderWriteOk, loaderWriteError = pcall(function()
-	loader.Source = loaderSource
-end)
-if not loaderWriteOk then
-	pcall(function() mainModule.Source = originalServerSource end)
-	error("Could not write hardened Loader source; MainModule write was rolled back: " .. tostring(loaderWriteError))
+-- Commit all modified source only after every replacement assertion succeeded.
+-- If any Source write fails, restore every earlier write in reverse order.
+local writes = {
+	{ instance = legacyModule, source = serverSource },
+	{ instance = creatorModule, source = creatorSource },
+	{ instance = loadScriptModule, source = loadScriptSource },
+	{ instance = loader, source = loaderSource },
+}
+local originals = {}
+for index, write in ipairs(writes) do
+	originals[index] = write.instance.Source
+	local ok, writeError = pcall(function()
+		write.instance.Source = write.source
+	end)
+	if not ok then
+		for rollbackIndex = index - 1, 1, -1 do
+			pcall(function()
+				writes[rollbackIndex].instance.Source = originals[rollbackIndex]
+			end)
+		end
+		error("Kohl's Admin patch write failed; earlier source writes were rolled back: " .. tostring(writeError))
+	end
 end
 
 print("Kohl's Admin hardening patch applied:")
@@ -335,12 +391,12 @@ print("- KDelete and KPaste validate live Instances and payload shape.")
 print("- KPaste batches are limited to 25 Workspace Instances and 500 total descendants.")
 print("- Delete/paste targets are restricted to Workspace world-edit objects.")
 print("- Paste clones are staged before parenting to prevent partial clone batches.")
-print("- Source writes are deferred and rolled back if the second write fails.")
+print("- All four source writes are deferred and rolled back on failure.")
 print("- Delete/paste cooldowns are reduced to 10/sec and 1/sec per player respectively.")
 print("- KCam validates finite CFrame components and bounds position coordinates.")
-print("NOTE: Dynamic script/localscript execution remains a separate high-impact feature; review or disable it if not required.")
+print("- Creator script/localscript commands are removed; FiOne/loadstring execution is disabled.")
 print("- Shared admin RemoteEvent operations are allowlisted and rate-limited per player.")
-print("- Native loadstring script command is retained but restricted to Game Creator power (6).")
+print("- Legacy native loadstring script command is removed.")
 print("- KCam validates the client CFrame payload.")
-print("NOTE: The separate Creator addon script/localscript commands remain high-impact and Creator-scoped.")
-print("NOTE: This is targeted hardening, not a complete audit of all embedded commands/remotes.")
+print("- Command-bar payloads are limited to 512 characters.")
+print("NOTE: Review custom add-ons separately; bundled arbitrary-code execution paths are disabled.")
