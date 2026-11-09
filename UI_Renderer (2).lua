@@ -1859,10 +1859,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		if perm() >= 1 then
 			sectionLabel("STAFF PLAYLISTS")
-			local createCard = card(48)
+			local compactPlaylist = currentDevice == "Mobile" or currentDevice == "Tablet"
+			local createCard = card(if compactPlaylist then 86 else 48)
 			local playlistNameBox = make("TextBox", {
 				Name = "NewPlaylistName", Position = UDim2.fromOffset(10, 8),
-				Size = UDim2.new(1, -184, 0, 32), BackgroundColor3 = C.SurfaceLight,
+				Size = if compactPlaylist then UDim2.new(1, -20, 0, 30) else UDim2.new(1, -184, 0, 32),
+				BackgroundColor3 = C.SurfaceLight,
 				TextColor3 = C.White, PlaceholderColor3 = C.Muted,
 				PlaceholderText = "New playlist name (2–32 characters)", Text = "",
 				TextSize = 11, Font = FONT, TextXAlignment = Enum.TextXAlignment.Left,
@@ -1870,7 +1872,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			}, createCard) :: TextBox
 			corner(playlistNameBox, 8)
 			make("UIPadding", {PaddingLeft=UDim.new(0,9)}, playlistNameBox)
-			actionButton(createCard, "CREATE", UDim2.new(1, -94, 0, 8), UDim2.fromOffset(84, 32), function()
+			actionButton(createCard, "CREATE",
+				if compactPlaylist then UDim2.fromOffset(10, 46) else UDim2.new(1, -94, 0, 8),
+				if compactPlaylist then UDim2.new(0.5, -15, 0, 30) else UDim2.fromOffset(84, 32), function()
 				local name = string.sub(playlistNameBox.Text, 1, 32)
 				if #name < 2 then notify("Enter a playlist name (2–32 characters).", C.Orange); return end
 				send("PlaylistCreate", {name = name})
@@ -1879,7 +1883,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					if not destroyed then renderTab() end
 				end)
 			end, C.Green)
-			actionButton(createCard, "STOP", UDim2.new(1, -164, 0, 8), UDim2.fromOffset(62, 32), function()
+			actionButton(createCard, "STOP",
+				if compactPlaylist then UDim2.new(0.5, 5, 0, 46) else UDim2.new(1, -164, 0, 8),
+				if compactPlaylist then UDim2.new(0.5, -15, 0, 30) else UDim2.fromOffset(62, 32), function()
 				send("DJStopPlaylist", {})
 				notify("Stopping playlist rotation…", C.Orange)
 			end, C.Red)
@@ -1919,25 +1925,31 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				for order, entry in ipairs(entries) do
 					if typeof(entry) == "table" and typeof(entry.id) == "string" and typeof(entry.name) == "string"
 						and typeof(entry.trackIds) == "table" then
-						local row = card(40)
+						local row = card(if compactPlaylist then 68 else 40)
 						row.Parent = playlistList
 						row.LayoutOrder = order * 102
 						local selected = selectedPlaylistId == entry.id
 						actionButton(row, (if selected then "SELECTED  " else "SELECT  ") .. entry.name .. "  •  " .. tostring(#entry.trackIds) .. " tracks",
-							UDim2.fromOffset(8, 5), UDim2.new(1, -230, 0, 30), function()
+							UDim2.fromOffset(8, 5),
+							if compactPlaylist then UDim2.new(1, -16, 0, 27) else UDim2.new(1, -230, 0, 30), function()
 								selectedPlaylistId = if selectedPlaylistId == entry.id then nil else entry.id
 								renderTab()
 							end, if selected then C.Green else C.SurfaceLight)
-						actionButton(row, "PLAY", UDim2.new(1, -148, 0, 5), UDim2.fromOffset(64, 30), function()
-							send("DJPlayPlaylist", {playlistId = entry.id})
-							notify("Starting playlist rotation after the current track…", C.Cyan)
-						end, C.Purple)
-						actionButton(row, "DELETE", UDim2.new(1, -78, 0, 5), UDim2.fromOffset(70, 30), function()
-							send("PlaylistDelete", {playlistId = entry.id})
-							if selectedPlaylistId == entry.id then selectedPlaylistId = nil end
-							notify("Playlist deletion requested…", C.Orange)
-							task.delay(1.2, function() if not destroyed then renderTab() end end)
-						end, C.Red)
+						local actionY = if compactPlaylist then 37 else 5
+						actionButton(row, "PLAY",
+							if compactPlaylist then UDim2.fromOffset(8, actionY) else UDim2.new(1, -148, 0, actionY),
+							if compactPlaylist then UDim2.new(0.5, -13, 0, 26) else UDim2.fromOffset(64, 30), function()
+								send("DJPlayPlaylist", {playlistId = entry.id})
+								notify("Starting playlist rotation after the current track…", C.Cyan)
+							end, C.Purple)
+						actionButton(row, "DELETE",
+							if compactPlaylist then UDim2.new(0.5, 5, 0, actionY) else UDim2.new(1, -78, 0, actionY),
+							if compactPlaylist then UDim2.new(0.5, -13, 0, 26) else UDim2.fromOffset(70, 30), function()
+								send("PlaylistDelete", {playlistId = entry.id})
+								if selectedPlaylistId == entry.id then selectedPlaylistId = nil end
+								notify("Playlist deletion requested…", C.Orange)
+								task.delay(1.2, function() if not destroyed then renderTab() end end)
+							end, C.Red)
 						if selected and #entry.trackIds > 0 then
 							for trackIndex, trackId in ipairs(entry.trackIds) do
 								if typeof(trackId) == "string" then
