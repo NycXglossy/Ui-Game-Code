@@ -60,6 +60,10 @@ type State = {
 	updatedBy: number,
 }
 
+local cachedSnapshot: State? = nil
+local cachedSnapshotAt = 0
+local SNAPSHOT_CACHE_SECONDS = 1.25
+
 local function finite(value: any): boolean
 	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
@@ -211,21 +215,35 @@ local function transact(mutator: (State) -> (boolean, string?)): (boolean, State
 		warn("[ClubMusic Global Queue] DataStore transaction failed: " .. tostring(result))
 		return false, nil, "Global queue storage is unavailable. No local-only change was applied."
 	end
+	local snapshot: State? = nil
+	if typeof(result) == "table" then
+		snapshot = detached(sanitizeState(result))
+		cachedSnapshot = snapshot
+		cachedSnapshotAt = os.clock()
+	end
 	if not accepted then
-		local snapshot: State? = nil
-		if typeof(result) == "table" then snapshot = detached(sanitizeState(result)) end
 		return false, snapshot, reason
 	end
-	return true, detached(sanitizeState(result)), nil
+	return true, snapshot, nil
+end
+
+function MusicGlobalQueueService:InvalidateSnapshot()
+	cachedSnapshot = nil
+	cachedSnapshotAt = 0
 end
 
 function MusicGlobalQueueService:GetSnapshot(): (boolean, State?, string?)
+	if cachedSnapshot and os.clock() - cachedSnapshotAt < SNAPSHOT_CACHE_SECONDS then
+		return true, detached(cachedSnapshot), nil
+	end
 	local ok, raw = pcall(function() return STORE:GetAsync(KEY) end)
 	if not ok then
 		warn("[ClubMusic Global Queue] Snapshot read failed: " .. tostring(raw))
 		return false, nil, "Global queue storage is unavailable."
 	end
-	return true, detached(sanitizeState(raw)), nil
+	cachedSnapshot = detached(sanitizeState(raw))
+	cachedSnapshotAt = os.clock()
+	return true, detached(cachedSnapshot), nil
 end
 
 function MusicGlobalQueueService:Enqueue(rawEntry: any, maxPlayerRequests: number?): (boolean, State?, string?)
