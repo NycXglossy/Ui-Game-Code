@@ -2682,6 +2682,21 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if (activeTab == "Moderation" or activeTab == "Audio ID") and perm() < 1 then activeTab = "Home" end
 	end
 
+	local function applyMenuTypography()
+		local scaleByDevice = {Desktop=1.08, Tablet=1.00, Mobile=0.90, Console=1.04, VR=0.96}
+		local textScale = scaleByDevice[currentDevice] or 1
+		for _, item in ipairs(panel:GetDescendants()) do
+			if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
+				local baseSize = item:GetAttribute("ClubBaseTextSize")
+				if typeof(baseSize) ~= "number" then
+					baseSize = item.TextSize
+					item:SetAttribute("ClubBaseTextSize", baseSize)
+				end
+				item.TextSize = math.clamp(math.floor(baseSize * textScale + 0.5), 9, 30)
+				if item:IsA("TextButton") and item.TextScaled then item.TextScaled = false end
+			end
+		end
+	end
 	local function renderTab()
 		refreshNav()
 		clearContent()
@@ -2691,8 +2706,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local selected = name == activeTab
 			button.BackgroundColor3 = if selected then C.Gold else C.SurfaceLight
 			button.TextColor3 = if selected then C.Base else C.Muted
-			button.TextSize = if selected then 11 else 10
+			button.TextSize = if selected then 12 else 11
 		end
+		applyMenuTypography()
 	end
 
 	renderTabFn = renderTab
@@ -2794,6 +2810,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		hudStatus.Size = UDim2.fromOffset(if viewport.X < 430 then 82 else 102, 13)
 		hud.Position = UDim2.new(0.5, 0, 0, profile.hudTop)
 		hudBottom = profile.hudTop + math.floor(42 * layoutScale) + 8
+		if expanded then applyMenuTypography() end
 	end
 
 	local cameraConnection: RBXScriptConnection? = nil
