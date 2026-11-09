@@ -298,9 +298,16 @@ function MusicCatalogService:RemoveCustomTrack(trackId: string): (boolean, strin
 	storageWriteBusy = true
 	local updatedData: any = nil
 	local assetId = current.assetId
+	local invalidStoredCatalog = false
 	local ok, err = pcall(function()
 		updatedData = catalogStore:UpdateAsync(CATALOG_KEY, function(old)
-			local list = if typeof(old) == "table" and typeof(old.tracks) == "table" then table.clone(old.tracks) else {}
+			invalidStoredCatalog = false
+			if old ~= nil and (typeof(old) ~= "table" or typeof(old.tracks) ~= "table") then
+				-- Never replace an unexpected persisted shape with an empty catalog.
+				invalidStoredCatalog = true
+				return old
+			end
+			local list = if typeof(old) == "table" then table.clone(old.tracks) else {}
 			local filtered = {}
 			for _, raw in ipairs(list) do
 				if not (typeof(raw) == "table" and tonumber(raw.assetId) == assetId) then table.insert(filtered, raw) end
@@ -310,6 +317,18 @@ function MusicCatalogService:RemoveCustomTrack(trackId: string): (boolean, strin
 	end)
 	storageWriteBusy = false
 	if not ok then warn("[ClubMusic Catalog] Remove failed: " .. tostring(err)); return false, "Catalog save failed. Track was not removed." end
+	if invalidStoredCatalog then
+		warn("[ClubMusic Catalog] Remove refused because persisted catalog data has an unexpected shape.")
+		return false, "Catalog data needs recovery; no removal was confirmed."
+	end
+	if typeof(updatedData) ~= "table" or typeof(updatedData.tracks) ~= "table" then
+		return false, "Catalog removal could not be confirmed; no local change was applied."
+	end
+	for _, raw in ipairs(updatedData.tracks) do
+		if typeof(raw) == "table" and tonumber(raw.assetId) == assetId then
+			return false, "Catalog removal could not be confirmed; refresh and retry."
+		end
+	end
 	customTracks[trackId] = nil
 	return true, "Track removed from the shared catalog."
 end
