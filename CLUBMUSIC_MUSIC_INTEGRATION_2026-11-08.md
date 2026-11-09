@@ -147,4 +147,21 @@ The local queue remains active in ordinary Studio mode when the global service i
 
 **Important deployment requirements:** install `MusicGlobalQueueService` as a ModuleScript at `ServerStorage/MusicGlobalQueueService`, update `ClubMusic_Global_Service` and `UI_Server_Controller` from this branch, and retain the existing `MusicCatalogService`, `MusicPlaylistService`, and receipt-hash modules. In production, enable the global service and ensure DataStoreService, MemoryStoreService (for shared budgets), and MessagingService are available. Keep `EnableInStudio = false` unless testing in an isolated test universe with Studio API access enabled. Do not mix old controller/global-service scripts with the new versions across active servers during rollout.
 
+## Active global playlist edit synchronization (2026-11-09)
+
+The controller now republishes the active playlist definition through
+`SetGlobalPlaylistRotation` after a staff member adds, removes, or reorders a
+track in that active playlist, and after the active playlist is deleted. The
+shared queue service atomically replaces the rotation and removes stale
+automatic/playlist queue entries while preserving player requests. Each server
+receives the queue invalidation and reconciles from the shared snapshot. If the
+shared update fails, the controller restores its local mirror from the global
+snapshot rather than treating a local edit as authoritative.
+
+This closes the previous gap where playlist start/rotation was global but
+subsequent playlist edits and deletion only changed the initiating server's
+local playlist state. The updated controller is source-reviewed only; verify
+in a two-server test by editing and deleting the currently active playlist
+while observing the other server's queue and next-track order.
+
 **Validation status:** source integration and API wiring are committed, but this environment cannot execute Roblox Luau or run multi-server Studio/live tests. Before release, test two or more servers with simultaneous requests, VIP tier ordering, queue reorder/remove/clear, moderation purge, playlist start/stop and wraparound, skip/Ended races, pause/resume/restart, silent catalog tracks, audio requests, and late joins. Confirm every server reports the same current track and queue revision and that playback position converges. Do not treat a source-level commit as proof of runtime correctness.
