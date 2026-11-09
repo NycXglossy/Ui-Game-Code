@@ -2,50 +2,62 @@
 
 ## Current implementation
 
-The repository contains:
-- The original Kohl's Admin.rbxmx model (unchanged).
-- Kohls_Admin_Hardening_Patch.lua, a Roblox Studio Command Bar patch for the imported model.
+The repository contains the original `Kohl's Admin.rbxmx` and a Studio Command Bar patch at `Kohls_Admin_Hardening_Patch.lua`.
 
-The patch script was compared against the actual uploaded Loader and MainModule source. It includes the following targeted changes:
+The uploaded model's XML source is readable from its Git blob. The patch was corrected to target the model's actual hierarchy:
 
-1. Removes the Loader's runtime external MainModule fetch and Creator Store fallback.
-2. Requires only the bundled local MainModule, fails closed if it is missing, and validates the returned initialize API.
-3. Handles an absent Config safely when resolving legacy configuration and fails closed if legacy mode is selected without its configuration.
-4. Validates KDelete arguments as live Instances belonging to the DataModel before destroying them.
-5. Restricts KDelete and KPaste world edits to Workspace descendants; rejects direct script/module deletion targets.
-6. Validates KPaste as a dense list, caps batches at 25 Instances and 500 total descendants, validates every source before mutation, and stages all clones before parenting them.
-7. Adds per-player cooldowns and an allowlist for the legacy admin RemoteEvent operations, including the initial KuID handshake. KDelete is limited to 10 requests/second and KPaste to 1 request/second per player; the existing command dispatcher cooldown is retained.
-8. Raises the built-in legacy native loadstring script command from power 5 (Owner) to power 6 (Game Creator), keeping the command available only at Game Creator level or above.
-9. Validates KCam CFrame components as finite numbers and bounds the position coordinates before use.
-10. Defers Source writes until every source transformation succeeds and rolls back the MainModule write if the Loader write fails.
+- `Loader` Script
+- `Loader.MainModule` (current v3 package)
+- `Loader.MainModule.Shared.DefaultCommands.Creator`
+- `Loader.MainModule.Server.LoadScript`
+- `Loader.MainModuleLegacy` (optional legacy implementation)
 
-## Dynamic-code findings
+This matters because the v3 MainModule is not the legacy server dispatcher. The legacy RemoteEvent and native command code lives in the sibling `MainModuleLegacy` ModuleScript.
 
-- The newer Creator addon contains script and localscript commands that use Kohl's custom Loadstring/FiOne execution path. The module is explicitly documented in-source as containing dangerous commands restricted to creators and is registered under the Creator command group.
-- The legacy MainModule also contains a separate native loadstring script command. The patch raises that command's required power to 6 (Game Creator), rather than removing it.
-- Both execution paths remain high-impact arbitrary-code capabilities. Do not grant Creator access to accounts that should not be able to run arbitrary server/client code. Disable these commands if your game does not require them.
+## Security changes in the current patch
+
+1. Removes the Loader's external MainModule asset-fetch and Creator Store fallback.
+2. Requires only the bundled local MainModule, fails closed if it is missing, and validates the returned initialization API.
+3. Handles missing legacy Config safely and fails closed if legacy mode is selected without its required configuration.
+4. Adds a per-player operation allowlist and cooldowns for the legacy admin RemoteEvent. The KuID handshake is separately constrained; non-handshake operations must carry the expected internal ID.
+5. Adds a central minimum-power policy for sensitive legacy remote operations: KDelete, KPaste, and KUpdate require Kohl's Admin power 5 or higher. Existing handler-level checks remain.
+6. Limits legacy command-bar remote payloads to 512 characters; command execution continues through Kohl's Admin's command dispatcher and its command permission checks.
+7. Restricts KDelete and KPaste to Workspace descendants; rejects script/module deletion targets and invalid source/destination relationships.
+8. Validates KPaste as a dense list, caps batches at 25 Instances and 500 combined descendants, validates every source before mutation, and stages clones before parenting them.
+9. Removes the legacy native `script`/loadstring command entirely.
+10. Removes the v3 Creator `script` and `localscript` command registrations.
+11. Replaces the v3 `Server.LoadScript` backend with a fail-closed function, disabling the bundled FiOne/loadstring execution path even if another bundled command or add-on tries to call it.
+12. Validates KCam CFrame components as finite numbers and bounds position coordinates to ±100,000 studs.
+13. Computes all modified source strings before writing and applies four Source writes transactionally, rolling back earlier writes if a later write fails.
+
+## Arbitrary-code execution decision
+
+The bundled Kohl's Admin arbitrary-source execution features are intentionally disabled. This is a deliberate security trade-off: the built-in `script` and `localscript` commands are not retained because a Creator-only permission check is not a sandbox. Reviewed, bundled ModuleScripts should be used for supported extensions instead.
+
+This patch cannot prevent a separate custom add-on, third-party package, or another server script from independently implementing dynamic code execution. Review custom add-ons and other installed packages separately.
 
 ## Important boundaries
 
-- The model asset itself is still unchanged. The patch is a Studio-side source transformation; it has not been executed in Roblox Studio and is not yet baked into a replacement .rbxmx.
-- The patch preserves the existing Kohl's Admin power checks for destructive operations and does not merge Kohl's Admin permissions with ClubMusic DJ, moderation, or staff permissions.
-- The RemoteEvent cooldowns are a targeted abuse-control layer, not a substitute for authorization checks in every handler. Some command-specific listeners are registered dynamically; they still need full behavior testing.
-- Workspace-only delete/paste checks are intentionally narrower than general DataModel membership and may affect workflows that previously edited objects outside Workspace; verify expected Kohl's Admin building/copy workflows in Studio.
-- A complete review of all 344 embedded source-bearing items, all third-party dependencies, and all command argument paths remains outstanding.
+- The patch is a Studio-side source transformation. It has been checked against the uploaded XML source anchors, but it has **not** been executed in Roblox Studio and has not been exported into a replacement `.rbxmx`.
+- The original model file in the repository remains unchanged.
+- The legacy RemoteEvent receives stronger per-operation controls, but the complete behavior of every dynamically registered listener and every third-party add-on has not been exhaustively tested. KHA-06 therefore remains partially open pending runtime verification.
+- Workspace-only delete/paste checks are intentionally narrower than general DataModel membership and may affect workflows that edited objects outside Workspace. Verify expected Kohl's Admin building/copy workflows in Studio.
 - No Roblox Studio execution, multiplayer exploit test, or live production test has been performed.
-- This is targeted hardening, not a certification that the entire admin package is safe.
+- This is targeted hardening, not certification that the entire admin package or place is safe.
 
 ## Apply and verify
 
-1. Make a backup of the place/model first.
-2. Import the current Kohl's Admin.rbxmx into Roblox Studio.
+1. Back up the place and imported model.
+2. Import the current `Kohl's Admin.rbxmx` into Roblox Studio.
 3. Select the Kohl's Admin root model/folder in Explorer.
-4. Open View → Command Bar.
-5. Run the complete current contents of Kohls_Admin_Hardening_Patch.lua from this branch.
-6. Confirm the Output reports the loader, legacy configuration, Workspace-scoped delete/paste validation, bounded/staged paste, RemoteEvent rate limiting, Creator-only native script command, and finite/bounded KCam validation edits.
-7. Inspect the Loader source: it should contain no InsertService, LoadAsset, or external MainModule asset ID fallback.
-8. Inspect the server MainModule: KDelete and KPaste should retain their server-side power check and enforce Workspace scope, bounded/staged paste, and per-player cooldowns; ServerEvent should include the event allowlist; KCam should reject non-finite/out-of-bounds CFrames; the legacy script command should require power 6.
-9. Test normal admin startup, legacy mode if used, command bar, delete/copy/paste, camera wind direction, and authorized/unauthorized users in a private test place. Test burst traffic to confirm rate limits do not disrupt normal UI usage.
-10. Save/export the patched model as a new .rbxmx. Keep the original backup until Studio tests pass.
+4. Open View → Command Bar and run the complete current contents of `Kohls_Admin_Hardening_Patch.lua` from this branch.
+5. Confirm the Output reports that Creator script/localscript commands and the legacy native script command are removed, the FiOne/loadstring backend is disabled, and the legacy remote controls are installed.
+6. Inspect the Loader: it should contain no InsertService, LoadAsset, or external MainModule asset ID fallback.
+7. Inspect `MainModule.Shared.DefaultCommands.Creator`: no `script` or `localscript` command entries should remain.
+8. Inspect `MainModule.Server.LoadScript`: it should fail closed and must not require FiOne or compile/execute supplied source.
+9. Inspect `MainModuleLegacy` if legacy mode is retained: its native script command should be absent; KDelete/KPaste should enforce Workspace scope and bounded/staged paste; ServerEvent should enforce its operation allowlist, ID, cooldown, and minimum-power policy.
+10. Test startup, normal moderation/admin commands, command bar, delete/copy/paste, camera wind direction, legacy mode if used, and each privilege tier in a private test place.
+11. Confirm that custom add-ons do not depend on `_K.LoadScript`; any such dependency should fail closed until replaced with reviewed code.
+12. Save/export the patched model as a new `.rbxmx`. Keep the original backup until Studio tests pass.
 
 Do not deploy to the live place until the Studio-side patch and behavior tests pass.
