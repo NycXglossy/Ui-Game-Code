@@ -9,6 +9,8 @@
 --   3. ClubMusic independently checks its own staff/admin rank.
 --   4. The controller applies its existing action budgets, cooldowns, and handlers.
 --
+-- Add custom Kohl's Admin groups named ClubMusic and ClubMusicAdmin in Settings.
+-- Assign ClubMusic only to designated DJ/staff roles and ClubMusicAdmin only to admins.
 -- This addon intentionally exposes a small fixed command set. It does not provide
 -- arbitrary action names, queue IDs, player targets, asset IDs, or raw payloads.
 
@@ -52,9 +54,9 @@ return function(_K: any)
 		})
 	end
 
-	register("clubmusic-skip", "Skip the current ClubMusic track.", "Administration", "Skip", {"cmskip"})
-	register("clubmusic-pause", "Toggle ClubMusic playback pause/resume.", "Administration", "TogglePause", {"cmpause"})
-	register("clubmusic-restart", "Restart the current ClubMusic track.", "Administration", "Restart", {"cmrestart"})
-	register("clubmusic-lock", "Toggle ClubMusic song requests lock.", "Administration", "ToggleRequestLock", {"cmlock"})
-	register("clubmusic-clearqueue", "Clear the ClubMusic request queue (ClubMusic admin required).", "SuperAdmin", "ClearQueue", {"cmclear"})
+	register("clubmusic-skip", "Skip the current ClubMusic track.", "ClubMusic", "Skip", {"cmskip"})
+	register("clubmusic-pause", "Toggle ClubMusic playback pause/resume.", "ClubMusic", "TogglePause", {"cmpause"})
+	register("clubmusic-restart", "Restart the current ClubMusic track.", "ClubMusic", "Restart", {"cmrestart"})
+	register("clubmusic-lock", "Toggle ClubMusic song requests lock.", "ClubMusic", "ToggleRequestLock", {"cmlock"})
+	register("clubmusic-clearqueue", "Clear the ClubMusic request queue (ClubMusic admin required).", "ClubMusicAdmin", "ClearQueue", {"cmclear"})
 end
