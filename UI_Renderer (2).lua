@@ -540,10 +540,25 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 	end
 
+	local function playbackIsPaused(): boolean
+		local np: any = state.nowPlaying
+		return typeof(np) == "table" and np.paused == true
+	end
+
+	local function interpolatedElapsed(duration: number): number
+		local elapsed = elapsedBase
+		-- The server snapshot is authoritative. Do not locally advance the clock
+		-- while paused; resume starts interpolation from the fresh server snapshot.
+		if not playbackIsPaused() then
+			elapsed += math.max(0, os.clock() - baseClock)
+		end
+		return math.clamp(elapsed, 0, duration)
+	end
+
 	local function updateProgress()
 		local refs = progressRefs
 		if not refs or not refs.fill.Parent then return end
-		local elapsed = math.clamp(elapsedBase + (os.clock() - baseClock), 0, refs.duration)
+		local elapsed = interpolatedElapsed(refs.duration)
 		refs.fill.Size = UDim2.new(math.clamp(elapsed / refs.duration, 0, 1), 0, 1, 0)
 		refs.timeLabel.Text = formatTime(elapsed) .. " / " .. formatTime(refs.duration)
 	end
@@ -747,7 +762,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			hudTitle.Text = "♫  " .. nz(now.title, "Unknown track")
 			hudArtist.Text = nz(now.artist, "Sunset Stage Club")
 			local duration = math.max(1, tonumber(now.duration) or 1)
-			local elapsed = math.clamp(elapsedBase + (os.clock() - baseClock), 0, duration)
+			local elapsed = interpolatedElapsed(duration)
 			hudFill.Size = UDim2.fromScale(math.clamp(elapsed / duration, 0, 1), 1)
 			hudTime.Text = formatTime(elapsed) .. " / " .. formatTime(duration)
 		else
@@ -2783,13 +2798,19 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	-- Audio visualizer (~30 fps) for the panel and the top bar HUD. Uses Network.GetLoudness() (0-1, or
 	-- PlaybackLoudness 0-1000) when provided, otherwise an animated beat pattern scaled by the volume slider.
 	local vizClock = 0
+	local visualizerTime = 0
 	table.insert(connections, RunService.Heartbeat:Connect(function(dt)
 		vizClock += dt
 		if vizClock < 1 / 30 or destroyed then return end
+		-- Use accumulated active-playback time instead of wall-clock time so
+		-- the fallback beat animation freezes on pause and continues on resume.
+		if not playbackIsPaused() then
+			visualizerTime += vizClock
+		end
 		vizClock = 0
 
 		local playing = typeof(state.nowPlaying) == "table"
-		local t = os.clock()
+		local t = visualizerTime
 		local energy = 0.1
 		if playing then
 			local loud: number? = nil
