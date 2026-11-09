@@ -211,6 +211,7 @@ ModuleScript installed at `ServerStorage/MusicPlaylistService`.
   through the existing action RemoteEvent and server-side staff authorization.
 - The All Tracks tab now provides staff playlist creation, selection, deletion,
   and an ADD control on catalog entries when a playlist is selected.
+- Selecting a playlist displays its tracks with REMOVE, move-up, and move-down controls.
 
 ### API and architecture
 
