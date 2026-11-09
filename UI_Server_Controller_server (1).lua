@@ -1690,6 +1690,11 @@ end
 local function applyGlobalQueueState(state: any): boolean
 	if typeof(state) ~= "table" or typeof(state.queue) ~= "table"
 		or typeof(state.playback) ~= "table" then return false end
+	-- Global snapshots can arrive out of order through MessagingService and
+	-- reconciliation reads. Never let an older track revision roll playback back.
+	local revision = tonumber(state.playback.trackRevision)
+	if not isFiniteNumber(revision) or revision < 0 or revision % 1 ~= 0
+		or revision < globalTrackRevision then return false end
 	if typeof(state.rotation) == "table" and state.rotation.enabled == true
 		and typeof(state.rotation.trackIds) == "table" then
 		activePlaylistId = tostring(state.rotation.id)
@@ -1725,7 +1730,6 @@ local function applyGlobalQueueState(state: any): boolean
 			requestCounts[entry.userId] = (requestCounts[entry.userId] or 0) + 1
 		end
 	end
-	local revision = tonumber(state.playback.trackRevision) or 0
 	local previousTrackRevision = globalTrackRevision
 	local current = state.current
 	if typeof(current) == "table" and typeof(current.trackId) == "string" then
