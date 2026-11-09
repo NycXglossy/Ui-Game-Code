@@ -4131,6 +4131,9 @@ Players.PlayerRemoving:Connect(function(player)
 	saveQueued[userId] = nil
 	saveAgain[userId] = nil
 	lastStateInvoke[userId] = nil
+	lastCatalogInvoke[userId] = nil
+	lastPlaylistInvoke[userId] = nil
+	pendingStatePlayers[userId] = nil
 	lastAudioInspection[userId] = nil
 	lastReloadAt[userId] = nil
 	reloadNonce[userId] = nil
