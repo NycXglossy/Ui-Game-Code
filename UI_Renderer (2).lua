@@ -1505,6 +1505,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Font = BOLD,
 		}, nowCard) :: TextButton
 		corner(muteButton, 8)
+		local muteOutline = stroke(muteButton, C.Cyan, 1)
+		bindFocusFeedback(muteButton, muteOutline, C.SurfaceLight)
 		local volumeIcon = buildNativeIcon(muteButton, "volume", C.White, 2)
 		local track = make("Frame", {
 			Position = UDim2.fromOffset(leftInset + 42, if stackedArtwork then 291 else 157),
@@ -1534,10 +1536,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Name = "VolumeHit",
 			Position = UDim2.fromOffset(leftInset + 42, if stackedArtwork then 282 else 148),
 			Size = UDim2.new(1, -(leftInset + 128), 0, 26),
-			BackgroundTransparency = 1,
+			BackgroundColor3 = C.SurfaceLight,
+			BackgroundTransparency = 0.82,
 			Text = "",
 			AutoButtonColor = false,
+			Selectable = true,
+			Active = true,
 		}, nowCard) :: TextButton
+		corner(hit, 7)
+		local sliderOutline = stroke(hit, C.Cyan, 1)
+		bindFocusFeedback(hit, sliderOutline, C.SurfaceLight)
 
 		local function refreshVolumeUI()
 			volFill.Size = UDim2.fromScale(volume, 1)
@@ -1561,9 +1569,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				sliderDragging = true
 				setFromX(input.Position.X)
-			elseif input.KeyCode == Enum.KeyCode.DPadLeft then
+			elseif input.KeyCode == Enum.KeyCode.DPadLeft or input.KeyCode == Enum.KeyCode.Left then
 				applyVolume(volume - 0.1); refreshVolumeUI()
-			elseif input.KeyCode == Enum.KeyCode.DPadRight then
+			elseif input.KeyCode == Enum.KeyCode.DPadRight or input.KeyCode == Enum.KeyCode.Right then
 				applyVolume(volume + 0.1); refreshVolumeUI()
 			end
 		end)
