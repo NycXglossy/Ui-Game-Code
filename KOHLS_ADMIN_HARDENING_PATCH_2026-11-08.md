@@ -12,10 +12,12 @@ The patch script was compared against the actual uploaded Loader and MainModule 
 2. Requires only the bundled local MainModule, fails closed if it is missing, and validates the returned initialize API.
 3. Handles an absent Config safely when resolving legacy configuration and fails closed if legacy mode is selected without its configuration.
 4. Validates KDelete arguments as live Instances belonging to the DataModel before destroying them.
-5. Validates KPaste payload structure, destination, move flag, and every source Instance before changing anything; caps each paste batch at 100 Instances.
-6. Adds per-player cooldowns and an allowlist for the legacy admin RemoteEvent operations, including the initial KuID handshake. The existing command dispatcher cooldown is retained.
-7. Raises the built-in legacy native loadstring script command from power 5 (Owner) to power 6 (Game Creator), keeping the command available only at Game Creator level or above.
-8. Validates the KCam response as a CFrame before reading LookVector.
+5. Restricts KDelete and KPaste world edits to Workspace descendants; rejects direct script/module deletion targets.
+6. Validates KPaste as a dense list, caps batches at 25 Instances and 500 total descendants, validates every source before mutation, and stages all clones before parenting them.
+7. Adds per-player cooldowns and an allowlist for the legacy admin RemoteEvent operations, including the initial KuID handshake. KDelete is limited to 10 requests/second and KPaste to 1 request/second per player; the existing command dispatcher cooldown is retained.
+8. Raises the built-in legacy native loadstring script command from power 5 (Owner) to power 6 (Game Creator), keeping the command available only at Game Creator level or above.
+9. Validates KCam CFrame components as finite numbers and bounds the position coordinates before use.
+10. Defers Source writes until every source transformation succeeds and rolls back the MainModule write if the Loader write fails.
 
 ## Dynamic-code findings
 
@@ -28,6 +30,7 @@ The patch script was compared against the actual uploaded Loader and MainModule 
 - The model asset itself is still unchanged. The patch is a Studio-side source transformation; it has not been executed in Roblox Studio and is not yet baked into a replacement .rbxmx.
 - The patch preserves the existing Kohl's Admin power checks for destructive operations and does not merge Kohl's Admin permissions with ClubMusic DJ, moderation, or staff permissions.
 - The RemoteEvent cooldowns are a targeted abuse-control layer, not a substitute for authorization checks in every handler. Some command-specific listeners are registered dynamically; they still need full behavior testing.
+- Workspace-only delete/paste checks are intentionally narrower than general DataModel membership and may affect workflows that previously edited objects outside Workspace; verify expected Kohl's Admin building/copy workflows in Studio.
 - A complete review of all 344 embedded source-bearing items, all third-party dependencies, and all command argument paths remains outstanding.
 - No Roblox Studio execution, multiplayer exploit test, or live production test has been performed.
 - This is targeted hardening, not a certification that the entire admin package is safe.
@@ -39,9 +42,9 @@ The patch script was compared against the actual uploaded Loader and MainModule 
 3. Select the Kohl's Admin root model/folder in Explorer.
 4. Open View → Command Bar.
 5. Run the complete current contents of Kohls_Admin_Hardening_Patch.lua from this branch.
-6. Confirm the Output reports the loader, legacy configuration, delete/paste validation, RemoteEvent rate limiting, Creator-only native script command, and KCam validation edits.
+6. Confirm the Output reports the loader, legacy configuration, Workspace-scoped delete/paste validation, bounded/staged paste, RemoteEvent rate limiting, Creator-only native script command, and finite/bounded KCam validation edits.
 7. Inspect the Loader source: it should contain no InsertService, LoadAsset, or external MainModule asset ID fallback.
-8. Inspect the server MainModule: KDelete and KPaste should retain their server-side power check and include the new argument validation; ServerEvent should include the event allowlist and per-player cooldowns; the legacy script command should require power 6.
+8. Inspect the server MainModule: KDelete and KPaste should retain their server-side power check and enforce Workspace scope, bounded/staged paste, and per-player cooldowns; ServerEvent should include the event allowlist; KCam should reject non-finite/out-of-bounds CFrames; the legacy script command should require power 6.
 9. Test normal admin startup, legacy mode if used, command bar, delete/copy/paste, camera wind direction, and authorized/unauthorized users in a private test place. Test burst traffic to confirm rate limits do not disrupt normal UI usage.
 10. Save/export the patched model as a new .rbxmx. Keep the original backup until Studio tests pass.
 
