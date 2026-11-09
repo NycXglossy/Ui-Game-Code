@@ -459,6 +459,12 @@ local function buildNativeIcon(parent: Instance, kind: string, color: Color3, zI
 		local direction = if kind == "up" then -1 else 1
 		part("ArrowLeft",.37,.5,.10,.42,45 * direction)
 		part("ArrowRight",.63,.5,.10,.42,-45 * direction)
+	elseif kind == "reload" then
+		local arc = make("Frame", {Name="ReloadArc", AnchorPoint=Vector2.new(.5,.5), Position=UDim2.fromScale(.48,.52), Size=UDim2.fromScale(.70,.70), BackgroundTransparency=1, BorderSizePixel=0, ZIndex=root.ZIndex}, root) :: Frame
+		local arcStroke = Instance.new("UIStroke")
+		arcStroke.Color = color; arcStroke.Thickness = 2.2; arcStroke.LineJoinMode = Enum.LineJoinMode.Round; arcStroke.Parent = arc
+		corner(arc, 20)
+		part("ArrowHeadA",.75,.18,.11,.36,45); part("ArrowHeadB",.84,.30,.11,.36,-45)
 	elseif kind == "minus" then
 		part("MinusBar",.5,.5,.72,.10,0)
 	elseif kind == "star" then
@@ -1207,7 +1213,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function actionButton(parent: Instance, text: string, position: UDim2, size: UDim2, callback: () -> (), color: Color3?)
-		local iconKind = if text == "★" or text == "☆" then "star"
+		local iconKind = if text == "↻ RELOAD" then "reload"
+			elseif text == "★" or text == "☆" then "star"
 			elseif text == "▲" or text == "↑" then "up"
 			elseif text == "▼" or text == "↓" then "down"
 			elseif text == "✕" then "close"
@@ -1216,17 +1223,25 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Position = position,
 			Size = size,
 			BackgroundColor3 = color or C.Magenta,
-			Text = if iconKind then "" else text,
+			Text = if iconKind and iconKind ~= "reload" then "" elseif iconKind == "reload" then "RELOAD" else text,
 			TextColor3 = C.White,
 			TextSize = 12,
 			Font = BOLD,
 			AutoButtonColor = false,
 			Selectable = true,
 		}, parent) :: TextButton
-		corner(button, 12)
-		if iconKind then buildNativeIcon(button, iconKind, C.White, 2) end
-		local outline = stroke(button, color or C.Magenta, 1)
-		outline.Transparency = 0.64
+		corner(button, if iconKind == "reload" then 10 else 12)
+		if iconKind == "reload" then
+			local reloadIcon = buildNativeIcon(button, "reload", C.Gold, 2)
+			reloadIcon.Position = UDim2.new(0, 14, 0.5, 0)
+			reloadIcon.Size = UDim2.fromOffset(15, 15)
+			button.TextXAlignment = Enum.TextXAlignment.Left
+			make("UIPadding", {PaddingLeft=UDim.new(0, 27), PaddingRight=UDim.new(0, 5)}, button)
+		elseif iconKind then
+			buildNativeIcon(button, iconKind, C.White, 2)
+		end
+		local outline = stroke(button, if iconKind == "reload" then C.Gold else (color or C.Magenta), if iconKind == "reload" then 1.2 else 1)
+		outline.Transparency = if iconKind == "reload" then 0.32 else 0.64
 		bindFocusFeedback(button, outline, color or C.Magenta)
 		make("UIGradient", {
 			Color = ColorSequence.new({
@@ -1391,7 +1406,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		updateProgress()
 
 		-- Reload song button
-		actionButton(nowCard, "↻ RELOAD", UDim2.new(1, -108, 0, if stackedArtwork then 207 else 77), UDim2.fromOffset(94, 22), reloadSong, C.Purple)
+		actionButton(nowCard, "↻ RELOAD", UDim2.new(1, -116, 0, if stackedArtwork then 204 else 75), UDim2.fromOffset(104, 26), reloadSong, Color3.fromRGB(66, 54, 91))
 
 		-- Audio visualizer
 		local vizFrame = make("Frame", {
