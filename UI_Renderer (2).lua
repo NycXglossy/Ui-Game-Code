@@ -864,7 +864,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local title = make("TextLabel", {
 		Name = "FestivalTitle", Position = UDim2.fromOffset(66, 10),
 		Size = UDim2.new(1, -154, 0, 30), BackgroundTransparency = 1,
-		Text = "FIREBEACH MUSIC FESTIVAL CLUB", TextColor3 = C.White,
+		Text = "FIREBEACH MUSIC FESTIVAL", TextColor3 = C.White,
 		TextSize = 20, TextScaled = true, Font = BOLD,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
 	}, header) :: TextLabel
@@ -872,7 +872,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local subtitle = make("TextLabel", {
 		Name = "FestivalSubtitle", Position = UDim2.fromOffset(67, 42),
 		Size = UDim2.new(1, -154, 0, 17), BackgroundTransparency = 1,
-		Text = "LIVE MUSIC  •  COMMUNITY  •  FESTIVAL", TextColor3 = C.Cyan,
+		Text = "CLUB  •  LIVE MUSIC  •  COMMUNITY", TextColor3 = C.Cyan,
 		TextSize = 9, TextScaled = true, Font = BOLD,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
 	}, header)
@@ -1293,7 +1293,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local liveBadgeStroke = stroke(liveBadge, liveColor, 1)
 		liveBadgeStroke.Transparency = 0.55
 		make("Frame", {Name="PlayerAccent", Position=if stackedArtwork then UDim2.fromOffset(12, 184) else UDim2.fromOffset(leftInset, 58), Size=UDim2.new(1, -(leftInset + 14), 0, 2), BackgroundColor3=C.Gold, BackgroundTransparency=0.48, BorderSizePixel=0}, nowCard)
-		local detail = nz(now.artist, "Sunset Stage Club")
+		local detail = nz(now.artist, "Firebeach Music Festival")
 		if now.source == "player" and nz(now.requestedBy, "") ~= "" then
 			detail ..= "  •  requested by " .. tostring(now.requestedBy)
 		end
