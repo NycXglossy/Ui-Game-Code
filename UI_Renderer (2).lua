@@ -1436,7 +1436,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 						and typeof(entry.trackIds) == "table" then
 						local row = card(40)
 						row.Parent = playlistList
-						row.LayoutOrder = order
+						row.LayoutOrder = order * 100
 						local selected = selectedPlaylistId == entry.id
 						actionButton(row, (if selected then "SELECTED  " else "SELECT  ") .. entry.name .. "  •  " .. tostring(#entry.trackIds) .. " tracks",
 							UDim2.fromOffset(8, 5), UDim2.new(1, -92, 0, 30), function()
