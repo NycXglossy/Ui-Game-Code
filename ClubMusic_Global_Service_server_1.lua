@@ -602,6 +602,11 @@ local function onQueueChanged(message)
 	local data = if typeof(message) == "table" then message.Data else nil
 	if not validEnvelope(data) or data.kind ~= "QueueChanged" or not finiteNumber(data.revision) then return end
 	if not unseen(data.id) then return end
+	-- MessagingService is an invalidation signal: discard this server's short-lived
+	-- snapshot cache before the controller asks for the authoritative queue state.
+	if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
+		MusicGlobalQueueService:InvalidateSnapshot()
+	end
 	globalEventBindable:Fire({kind = "QueueChanged", revision = math.floor(data.revision), senderJob = data.senderJob})
 end
 
