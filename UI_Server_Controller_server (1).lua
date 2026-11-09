@@ -270,6 +270,7 @@ local function getOrCreate(parent: Instance, className: string, name: string): I
 end
 
 local remotes = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicRemotes") :: Folder
+remotes:SetAttribute("Ready", false)
 local actionRemote = getOrCreate(remotes, "RemoteEvent", "RequestAction") :: RemoteEvent
 local stateRemote = getOrCreate(remotes, "RemoteEvent", "StateChanged") :: RemoteEvent
 local noticeRemote = getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
@@ -2966,6 +2967,7 @@ actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload
 	local ok, err = pcall(handleAction, player, action, payload)
 	if not ok then warn("[ClubMusic] Action handler error: " .. tostring(err)) end
 end)
+remotes:SetAttribute("Ready", true)
 
 -- Releases this server's profile lease after the final save. Ownership is checked
 -- inside UpdateAsync so a stale server cannot clear a newer server's lease.
