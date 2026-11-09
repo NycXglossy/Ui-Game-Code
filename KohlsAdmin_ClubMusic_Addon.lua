@@ -16,7 +16,7 @@
 -- arbitrary action names, queue IDs, player targets, asset IDs, or raw payloads.
 
 return function(_K: any)
-	local function submit(context: any, operation: string): string?
+	local function submit(context: any, operation: string, argument: string?): string?
 		local caller = context and context.fromPlayer
 		if typeof(caller) ~= "Instance" or not caller:IsA("Player") then
 			return "This command requires an online player caller."
@@ -29,7 +29,7 @@ return function(_K: any)
 		end
 
 		local ok, accepted, message = pcall(function()
-			return bridge:Invoke(caller, operation)
+			return bridge:Invoke(caller, operation, argument)
 		end)
 		if not ok then
 			warn("[ClubMusic Kohl's Admin] Bridge invocation failed: " .. tostring(accepted))
@@ -41,16 +41,16 @@ return function(_K: any)
 		return if typeof(message) == "string" then message else "ClubMusic action submitted."
 	end
 
-	local function register(name: string, description: string, group: string, operation: string, aliases: {string}?)
+	local function register(name: string, description: string, group: string, operation: string, aliases: {string}?, argumentDefinitions: {any}?)
 		_K.Registry.registerCommand(_K, {
 			name = name,
 			aliases = aliases,
 			description = description,
 			group = group,
 			noLog = false,
-			args = {},
-			run = function(context)
-				return submit(context, operation)
+			args = argumentDefinitions or {},
+			run = function(context, argument: string?)
+				return submit(context, operation, argument)
 			end,
 		})
 	end
@@ -61,4 +61,8 @@ return function(_K: any)
 	register("clubmusic-lock", "Toggle ClubMusic song requests lock.", "General", "ToggleRequestLock", {"cmlock"})
 	register("clubmusic-clearqueue", "Clear the ClubMusic request queue (ClubMusic admin required).", "Administration", "ClearQueue", {"cmclear"})
 	register("clubmusic-status", "Show current ClubMusic playback and request status.", "General", "Status", {"cmstatus"})
+	register("clubmusic-queue", "List queued ClubMusic tracks and their removal IDs.", "General", "Queue", {"cmqueue"})
+	register("clubmusic-remove", "Remove one queued ClubMusic track by its ID.", "General", "RemoveQueueEntry", {"cmremove"}, {
+		{type = "string", name = "QueueId", description = "Queue entry ID copied from ;cmqueue.", optional = false},
+	})
 end
