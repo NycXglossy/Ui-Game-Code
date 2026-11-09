@@ -926,13 +926,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function sectionLabel(text: string)
 		return make("TextLabel", {
-			Size = UDim2.new(1, -4, 0, 28),
+			Size = UDim2.new(1, -4, 0, 30),
 			BackgroundTransparency = 1,
-			Text = text,
-			TextColor3 = C.Cyan,
-			TextSize = 13,
+			Text = string.upper(text),
+			TextColor3 = C.Gold,
+			TextSize = 11,
 			Font = BOLD,
 			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
 		}, content)
 	end
 
@@ -944,6 +945,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		}, content) :: Frame
 		corner(frame, 15)
 		stroke(frame, C.SurfaceLight, 1)
+		make("Frame", {Name="AccentEdge", Position=UDim2.fromOffset(0,14), Size=UDim2.fromOffset(2,math.max(18,(height or 72)-28)), BackgroundColor3=C.Gold, BackgroundTransparency=0.22, BorderSizePixel=0}, frame)
 		return frame
 	end
 
@@ -974,6 +976,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			AutoButtonColor = true,
 		}, parent) :: TextButton
 		corner(button, 11)
+		local outline = stroke(button, C.White, 1)
+		outline.Transparency = 0.9
 		button.Activated:Connect(callback)
 		return button
 	end
@@ -1175,7 +1179,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
 		}, parent or content)
-		corner(frame, 10)
+		corner(frame, 13)
+		stroke(frame, C.SurfaceLight, 1)
 		local textWidth = if canAddToPlaylist then (if canRemove then -330 else -250) else (if canRemove then -250 else -176)
 		label(frame, tostring(track[2]), UDim2.fromOffset(12, 8), UDim2.new(1, textWidth, 0, 22), C.White, 13, true)
 		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(12, 32), UDim2.new(1, textWidth, 0, 18), C.Muted, 11, false)
@@ -1249,13 +1254,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local chip = make("TextLabel", {
 			Position = position,
 			Size = UDim2.fromOffset(width, 24),
-			BackgroundColor3 = color,
+			BackgroundColor3 = color:Lerp(C.Base, 0.22),
 			Text = text,
-			TextColor3 = C.White,
-			TextSize = 10,
+			TextColor3 = color:Lerp(C.White, 0.35),
+			TextSize = 9,
 			Font = BOLD,
 		}, parent)
 		corner(chip, 8)
+		local badgeStroke = stroke(chip, color, 1)
+		badgeStroke.Transparency = 0.55
 		return chip
 	end
 
@@ -1347,7 +1354,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		sectionLabel("NOW PLAYING")
 		buildNowPlaying()
 
-		local statusCard = card(40)
+		local statusCard = card(48)
 		local disabled, reason = requestsDisabled()
 		local statusText = reason
 		local statusColor = C.Orange
@@ -1359,7 +1366,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		elseif state.blocked == true then
 			statusColor = C.Red
 		end
-		label(statusCard, statusText, UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), statusColor, 11, true)
+		label(statusCard, "REQUEST STATUS", UDim2.fromOffset(14, 5), UDim2.new(1, -28, 0, 14), C.Muted, 9, true)
+		label(statusCard, statusText, UDim2.fromOffset(14, 20), UDim2.new(1, -28, 0, 22), statusColor, 11, true)
 
 		local favoriteIds: {string} = {}
 		local favorites: any = state.favorites
@@ -2640,8 +2648,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local renderer = renderers[activeTab]
 		if renderer then renderer() end
 		for name, button in pairs(navButtons) do
-			button.BackgroundColor3 = if name == activeTab then C.Magenta else C.SurfaceLight
-			button.TextColor3 = C.White
+			local selected = name == activeTab
+			button.BackgroundColor3 = if selected then C.Gold else C.SurfaceLight
+			button.TextColor3 = if selected then C.Base else C.Muted
+			button.TextSize = if selected then 11 else 10
 		end
 	end
 
@@ -2651,14 +2661,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local button = make("TextButton", {
 			Name = tabName:gsub("%s","") .. "Tab",
 			Size = UDim2.fromOffset(if tabName == "Daily Rewards" then 112 else 94, 34),
-			BackgroundColor3 = if tabName == activeTab then C.Magenta else C.SurfaceLight,
+			BackgroundColor3 = if tabName == activeTab then C.Gold else C.SurfaceLight,
 			Text = tabName,
-			TextColor3 = C.White,
+			TextColor3 = if tabName == activeTab then C.Base else C.Muted,
 			TextSize = 10,
 			Font = BOLD,
 			LayoutOrder = index,
 		}, nav) :: TextButton
-		corner(button, 9)
+		corner(button, 11)
+		local navStroke = stroke(button, C.Gold, 1)
+		navStroke.Transparency = 0.88
 		navButtons[tabName] = button
 		if tabName == "Moderation" or tabName == "Audio ID" then button.Visible = false end
 		button.Activated:Connect(function()
