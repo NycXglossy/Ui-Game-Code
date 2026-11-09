@@ -968,8 +968,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Size = UDim2.new(1, 0, 0, 46),
 		BackgroundColor3 = C.Surface,
 		BorderSizePixel = 0,
-		ScrollBarThickness = 2,
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = C.Gold,
 		ScrollingDirection = Enum.ScrollingDirection.X,
+		Active = true,
+		ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
 		CanvasSize = UDim2.new(0, 0, 0, 0),
 		AutomaticCanvasSize = Enum.AutomaticSize.X,
 	}, panel) :: ScrollingFrame
@@ -991,8 +994,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Size = UDim2.new(1, -24, 1, -142),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		ScrollBarThickness = 4,
-		ScrollBarImageColor3 = C.Magenta,
+		ScrollBarThickness = 5,
+		ScrollBarImageColor3 = C.Gold,
+		Active = true,
+		ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
 		CanvasSize = UDim2.new(0,0,0,0),
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 	}, panel) :: ScrollingFrame
@@ -1219,18 +1224,42 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			elseif text == "▼" or text == "↓" then "down"
 			elseif text == "✕" then "close"
 			elseif text == "−" then "minus" else nil
+		local semanticColor = color or C.Magenta
+		local upperText = string.upper(text)
+		if color == nil or color == C.SurfaceLight then
+			if string.find(upperText, "BUY", 1, true) or string.find(upperText, "GET", 1, true)
+				or string.find(upperText, "CLAIM", 1, true) or string.find(upperText, "EQUIP", 1, true)
+				or string.find(upperText, "TIP", 1, true) then semanticColor = C.Gold
+			elseif string.find(upperText, "CLEAR", 1, true) or string.find(upperText, "STOP", 1, true)
+				or string.find(upperText, "LOCK", 1, true) or string.find(upperText, "REMOVE", 1, true) then semanticColor = C.Red
+			elseif string.find(upperText, "PAUSE", 1, true) or string.find(upperText, "RESUME", 1, true)
+				or string.find(upperText, "EDIT", 1, true) or string.find(upperText, "OPEN", 1, true) then semanticColor = C.Cyan
+			elseif string.find(upperText, "LIKE", 1, true) or string.find(upperText, "VOTE", 1, true)
+				or string.find(upperText, "SKIP", 1, true) then semanticColor = C.Purple
+			end
+		end
+		local touchProfile = UserInputService.TouchEnabled or GuiService:IsTenFootInterface()
+		local minimumHeight = if touchProfile then 36 else 32
+		local minimumWidth = if touchProfile then 58 else 48
+		local resolvedSize = UDim2.new(size.X.Scale, math.max(size.X.Offset, minimumWidth),
+			size.Y.Scale, math.max(size.Y.Offset, minimumHeight))
+		local displayText = if iconKind and iconKind ~= "reload" then "" elseif iconKind == "reload" then "RELOAD" else text
 		local button = make("TextButton", {
 			Position = position,
-			Size = size,
-			BackgroundColor3 = color or C.Magenta,
-			Text = if iconKind and iconKind ~= "reload" then "" elseif iconKind == "reload" then "RELOAD" else text,
+			Size = resolvedSize,
+			BackgroundColor3 = semanticColor,
+			Text = displayText,
 			TextColor3 = C.White,
-			TextSize = 12,
+			TextSize = if #displayText > 15 then 10 else (#displayText > 10 and 11 or 12),
+			TextWrapped = true,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Font = BOLD,
 			AutoButtonColor = false,
 			Selectable = true,
+			Active = true,
 		}, parent) :: TextButton
-		corner(button, if iconKind == "reload" then 10 else 12)
+		button:SetAttribute("ClubActionControl", true)
+		corner(button, if iconKind == "reload" then 10 else 11)
 		if iconKind == "reload" then
 			local reloadIcon = buildNativeIcon(button, "reload", C.Gold, 2)
 			reloadIcon.Position = UDim2.new(0, 14, 0.5, 0)
@@ -1240,17 +1269,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		elseif iconKind then
 			buildNativeIcon(button, iconKind, C.White, 2)
 		end
-		local outline = stroke(button, if iconKind == "reload" then C.Gold else (color or C.Magenta), if iconKind == "reload" then 1.2 else 1)
-		outline.Transparency = if iconKind == "reload" then 0.32 else 0.64
-		bindFocusFeedback(button, outline, color or C.Magenta)
+		local outline = stroke(button, if iconKind == "reload" then C.Gold else semanticColor, if iconKind == "reload" then 1.5 else 1.15)
+		outline.Transparency = if iconKind == "reload" then 0.22 else 0.42
+		bindFocusFeedback(button, outline, semanticColor)
 		make("UIGradient", {
 			Color = ColorSequence.new({
-				ColorSequenceKeypoint.new(0, (color or C.Magenta):Lerp(C.White, 0.10)),
-				ColorSequenceKeypoint.new(1, (color or C.Magenta):Lerp(C.Base, 0.20)),
+				ColorSequenceKeypoint.new(0, semanticColor:Lerp(C.White, 0.12)),
+				ColorSequenceKeypoint.new(1, semanticColor:Lerp(C.Base, 0.24)),
 			}),
 			Rotation = 90,
 		}, button)
-		-- Subtle native interaction feedback; the original activation callback is untouched.
 		local scale = make("UIScale", {Scale = 1}, button) :: UIScale
 		local function animateScale(target: number, duration: number)
 			TweenService:Create(scale, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = target}):Play()
@@ -1266,7 +1294,6 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end)
 		return button
 	end
-
 	local function act(method: string, payload: {[string]: any}, ...)
 		if typeof(Network[method]) == "function" then
 			callNetwork(method, ...)
@@ -1724,7 +1751,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local favorites: any = state.favorites
 		local liked = trackId ~= nil and typeof(favorites) == "table" and favorites[trackId] == true
 		local controls = card(92)
-		label(controls, string.format("Skip votes: %d / %d", votes, needed), UDim2.fromOffset(12, 6), UDim2.new(1, -24, 0, 20), C.Cyan, 11, true)
+		label(controls, string.format("VOTE SKIP  •  %d / %d VOTES", votes, needed), UDim2.fromOffset(12, 6), UDim2.new(1, -24, 0, 20), C.Gold, 10, true)
 		local likeButton = actionButton(controls, if liked then "★ LIKED" else "☆ LIKE", UDim2.fromOffset(12, 40), UDim2.new(0.5, -16, 0, 38), function()
 			if not trackId then
 				notify("This track can't be saved to favorites.", C.Orange)
