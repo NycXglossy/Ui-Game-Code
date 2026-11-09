@@ -17,20 +17,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Renderer = {}
 
 local C = {
-	Base = Color3.fromRGB(15, 14, 18),
-	Surface = Color3.fromRGB(26, 24, 34),
-	SurfaceLight = Color3.fromRGB(40, 36, 51),
-	Magenta = Color3.fromRGB(255, 46, 147),
-	Cyan = Color3.fromRGB(0, 240, 255),
-	Orange = Color3.fromRGB(255, 140, 0),
-	Gold = Color3.fromRGB(252, 211, 77),
-	Purple = Color3.fromRGB(88, 28, 135),
-	Green = Color3.fromRGB(46, 204, 113),
-	White = Color3.fromRGB(255, 255, 255),
-	Muted = Color3.fromRGB(160, 155, 175),
-	Red = Color3.fromRGB(239, 68, 68),
+	Base = Color3.fromRGB(13, 16, 24),
+	Surface = Color3.fromRGB(21, 25, 37),
+	SurfaceLight = Color3.fromRGB(31, 37, 52),
+	Magenta = Color3.fromRGB(224, 112, 151),
+	Cyan = Color3.fromRGB(119, 196, 203),
+	Orange = Color3.fromRGB(220, 160, 108),
+	Gold = Color3.fromRGB(226, 194, 132),
+	Purple = Color3.fromRGB(116, 91, 153),
+	Green = Color3.fromRGB(94, 184, 139),
+	White = Color3.fromRGB(242, 241, 236),
+	Muted = Color3.fromRGB(157, 164, 177),
+	Red = Color3.fromRGB(218, 104, 112),
 }
-local FONT = Enum.Font.Gotham
+local FONT = Enum.Font.GothamMedium
 local BOLD = Enum.Font.GothamBold
 local ITALIC = Enum.Font.SourceSansItalic
 
@@ -397,7 +397,7 @@ local function stroke(parent: Instance, color: Color3, thickness: number?)
 	local obj = Instance.new("UIStroke")
 	obj.Color = color
 	obj.Thickness = thickness or 1
-	obj.Transparency = 1
+	obj.Transparency = 0.68
 	obj.Parent = parent
 	return obj
 end
@@ -801,8 +801,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Visible = false,
 		ClipsDescendants = true,
 	}, gui) :: Frame
-	corner(panel, 24)
-	stroke(panel, C.Magenta, 2)
+	corner(panel, 22)
+	stroke(panel, C.Gold, 1.5)
 
 	local sizeConstraint = make("UISizeConstraint", {
 		MinSize = Vector2.new(320, 360),
@@ -818,6 +818,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		BackgroundColor3 = C.Surface,
 		BorderSizePixel = 0,
 	}, panel) :: Frame
+	make("UIGradient", {
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, C.SurfaceLight),
+			ColorSequenceKeypoint.new(1, C.Surface),
+		}),
+		Rotation = 0,
+	}, header)
 	-- Header follows the panel's rounded top corners; the filler squares off its bottom edge.
 	corner(header, 24)
 	make("Frame", {
@@ -935,7 +942,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
 		}, content) :: Frame
-		corner(frame, 12)
+		corner(frame, 15)
 		stroke(frame, C.SurfaceLight, 1)
 		return frame
 	end
@@ -966,7 +973,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Font = BOLD,
 			AutoButtonColor = true,
 		}, parent) :: TextButton
-		corner(button, 9)
+		corner(button, 11)
 		button.Activated:Connect(callback)
 		return button
 	end
