@@ -4114,17 +4114,26 @@ task.spawn(function()
 		task.wait(60)
 		for _, player in ipairs(Players:GetPlayers()) do
 			task.spawn(function()
+				local previousRank = getRank(player)
+				local previousTier = passTier(player)
 				refreshRank(player)
 				refreshVip(player)
 				local profile = profiles[player.UserId]
+				local slotsUpgraded = false
 				if profile and isStaff(player) and profile.unlockedSlots < TITLE_SLOT_COUNT then
 					profile.unlockedSlots = TITLE_SLOT_COUNT
 					applyTitleAttributes(player, profile)
 					scheduleProfileSave(player)
-					publishState(player)
+					slotsUpgraded = true
 				end
 				applyVipAttribute(player)
+				player:SetAttribute("ClubRank", getRank(player))
 				syncTitleTagUnlocks(player)
+				-- Publish promotions/demotions even when the player already owns all
+				-- title slots, so every client receives the current rank and tier.
+				if slotsUpgraded or previousRank ~= getRank(player) or previousTier ~= passTier(player) then
+					publishState(nil)
+				end
 			end)
 		end
 	end
