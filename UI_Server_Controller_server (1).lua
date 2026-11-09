@@ -1536,8 +1536,11 @@ end
 
 enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
 	local callOk, writeOk, state, message = globalInvoke("EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize)
-	if not callOk or writeOk ~= true then return false, tostring(message or "Global queue is unavailable.") end
 	if typeof(state) == "table" then applyGlobalQueueState(state) end
+	if not callOk or writeOk ~= true then
+		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		return false, tostring(message or "Global queue is unavailable.")
+	end
 	return true, nil
 end
 
@@ -1582,13 +1585,20 @@ topUpAuto()
 -- Switch to shared authority only when the separately configured global service
 -- confirms it is enabled. Studio remains local unless explicitly enabled there.
 task.spawn(function()
-	local enabledCallOk, enabled = globalInvoke("IsEnabled")
+	local enabledCallOk, enabled = false, false
+	for _ = 1, 30 do
+		enabledCallOk, enabled = globalInvoke("IsEnabled")
+		if enabledCallOk then break end
+		task.wait(2)
+	end
 	if not enabledCallOk or enabled ~= true then return end
 	globalQueueMode = true
 	local readOk = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
 	if not readOk then
-		globalQueueMode = false
-		warn("[ClubMusic] Global queue could not be loaded; refusing a local-only queue in this server.")
+		table.clear(queue)
+		nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""; nowPlaying.elapsed = 0
+		stopServerMusic()
+		warn("[ClubMusic] Global queue could not be loaded; shared playback and requests remain fail-closed.")
 		return
 	end
 	if nowPlaying.trackId == "" then
