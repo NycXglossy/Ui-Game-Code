@@ -95,3 +95,42 @@ The checked-in map is empty by default. Configure existing group/pass/staff IDs 
 ## Verification status
 
 The changes were source-reviewed against the repository. They have **not** been executed in Roblox Studio or tested against live DataStore, MarketplaceService, MessagingService, or multi-server sessions. Run a private multiplayer Studio test before publishing: verify catalog and playlist startup/retry, add/remove catalog tracks, create/edit/delete playlists, request priority, queue removal, skip voting, pause/resume/restart, automatic advancement, moderation, and player join/leave cleanup.
+
+## Global queue migration — backend foundation (2026-11-09)
+
+The global queue backend has been added as a separate atomic state service:
+
+- `MusicGlobalQueueService.lua` — place as a **ModuleScript** at
+  `ServerStorage/MusicGlobalQueueService`.
+- `ClubMusic_Global_Service_server_1.lua` requires that module and exposes
+  server-only BindableFunction operations through `ServerStorage.ClubMusicGlobalAPI`:
+  `GetGlobalQueueState`, `EnqueueGlobalQueueEntry`, `RemoveGlobalQueueEntry`,
+  `ClearGlobalQueue`, `AdvanceGlobalQueue`, `SetGlobalPlayback`, and
+  `GetGlobalPlaybackPosition`.
+- Shared state is stored under `ClubMusic_GlobalQueue_v1/globalState`.
+  Queue mutations and compare-and-swap track transitions use DataStore
+  `UpdateAsync`; MessagingService is only a notification path, never the
+  source of truth.
+- Entries are normalized and bounded server-side. The service caps the global
+  queue at 80 entries, validates audio IDs, metadata, duration, source, role
+  tier, and requester identity, and rejects duplicate track IDs.
+- Playback state stores a shared server-time anchor, pause state, position,
+  and track revision. A stale server cannot advance a newer track revision.
+
+**Important rollout status:** this is the backend/API foundation, not the
+completed live global-queue migration. The controller still has local queue
+mutation and playback paths that must be routed through these APIs before
+servers share one queue/current track. Do not publish this as a completed
+global-sync feature yet. The next integration stage must migrate request
+insertion, auto/playlist top-up, queue reorder/removal/clear, moderation
+purges, DJ skip, automatic end/watchdog transitions, pause/resume/restart,
+and late-join reconciliation together. Until that stage is complete, the
+existing local queue remains active and the new global queue store is not
+authoritative for live playback.
+
+**Required installation:** copy the new ModuleScript into ServerStorage under
+the exact name above. The global service will fail startup if it is missing.
+Enable DataStore and MessagingService access for the published experience.
+Studio cross-server tests require intentionally enabling
+`EnableInStudio` in the global service configuration; keep it disabled for
+ordinary isolated Studio sessions.
