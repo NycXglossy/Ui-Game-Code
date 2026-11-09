@@ -48,6 +48,7 @@ local GENRES: {Genre} = {
 	{id = "country", name = "Country"},
 	{id = "pop", name = "Pop"},
 	{id = "exclusive", name = "Club Exclusives"},
+	{id = "other", name = "Other"},
 }
 
 -- Keep IDs stable: player favorites, queue entries, and the existing UI refer
