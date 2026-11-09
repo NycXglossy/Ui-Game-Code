@@ -30,6 +30,7 @@ local destroyed = false
 local receivedState = false
 
 local actionRemote: RemoteEvent? = nil
+local catalogFunction: RemoteFunction? = nil
 local currentState: {[string]: any} = {}
 local connections: {RBXScriptConnection} = {}
 local stateEvent = Instance.new("BindableEvent")
@@ -220,9 +221,11 @@ function Network.Init(): boolean
 		local stateRemote = waitForRemote(foundFolder, "StateChanged", "RemoteEvent") :: RemoteEvent
 		local noticeRemote = waitForRemote(foundFolder, "Notice", "RemoteEvent") :: RemoteEvent
 		local stateFunction = waitForRemote(foundFolder, "GetState", "RemoteFunction") :: RemoteFunction
+		local musicCatalogFunction = waitForRemote(foundFolder, "GetMusicCatalog", "RemoteFunction") :: RemoteFunction
 
 		-- Subscribe before the initial snapshot request so no push update is missed.
 		actionRemote = action
+		catalogFunction = musicCatalogFunction
 		table.insert(connections, stateRemote.OnClientEvent:Connect(applyState))
 		table.insert(connections, noticeRemote.OnClientEvent:Connect(applyNotice))
 
@@ -245,6 +248,7 @@ function Network.Init(): boolean
 		for _, connection in ipairs(connections) do connection:Disconnect() end
 		table.clear(connections)
 		actionRemote = nil
+	catalogFunction = nil
 		initialized = false
 		warn("[ClubMusic Network] Initialization failed: " .. tostring(err))
 		return false
@@ -269,6 +273,32 @@ end
 -- Return a detached copy: callers may inspect/change it without mutating the cache.
 function Network.GetState(): {[string]: any}
 	return safeClone(currentState)
+end
+
+-- Fetch a bounded page from the server-owned song catalog. This is a read-only
+-- metadata API; it cannot queue tracks or bypass RequestTrack authorization.
+function Network.GetMusicCatalog(query: string?, genreId: string?, offset: number?, limit: number?)
+	if destroyed or not initialized then
+		if not Network.Init() then return nil end
+	end
+	local remote = catalogFunction
+	if remote == nil or remote.Parent == nil then return nil end
+	local safeQuery = if typeof(query) == "string" then string.sub(query, 1, 48) else ""
+	local safeGenre = if typeof(genreId) == "string" then string.sub(genreId, 1, 24) else ""
+	local safeOffset = if typeof(offset) == "number" then math.clamp(math.floor(offset), 0, 10000) else 0
+	local safeLimit = if typeof(limit) == "number" then math.clamp(math.floor(limit), 1, 50) else 30
+	local ok, result = pcall(function()
+		return remote:InvokeServer(safeQuery, safeGenre, safeOffset, safeLimit)
+	end)
+	if not ok then
+		warn("[ClubMusic Network] GetMusicCatalog failed: " .. tostring(result))
+		return nil
+	end
+	if typeof(result) ~= "table" or typeof(result.items) ~= "table"
+		or typeof(result.total) ~= "number" or typeof(result.offset) ~= "number" then
+		return nil
+	end
+	return safeClone(result)
 end
 
 function Network.OnStateChanged(callback: (any) -> ()): RBXScriptConnection
