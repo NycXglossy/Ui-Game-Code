@@ -1888,18 +1888,14 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 				return false, tostring(message or (if callOk then "The shared queue rejected the transition." else "The shared queue service is unavailable."))
 			end
 			local didAdvance, failureReason = attemptGlobalAdvance()
-			-- Other live servers can legitimately advance between our snapshot and
-			-- compare-and-swap. A retry is allowed only after this server applies a
-			-- newer authoritative playback revision; never replay against stale state.
-			local conflictRetries = 0
-			while not didAdvance and failureReason == "Track already advanced by another server."
-				and conflictRetries < 3 do
-				conflictRetries += 1
+			-- A stale revision means another server has already won this transition.
+			-- Refresh and accept that authoritative advance instead of issuing a
+			-- second skip against the newly-current track (which would double-skip).
+			if not didAdvance and failureReason == "Track already advanced by another server." then
 				local previousRevision = globalTrackRevision
 				local refreshed = false
-				-- Snapshot sync can be busy in another event callback. Give that
-				-- in-flight read time to finish rather than immediately reusing stale data.
-				for refreshAttempt = 1, 5 do
+				-- Snapshot sync may already be running in another event callback.
+				for refreshAttempt = 1, 10 do
 					if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
 						and globalTrackRevision > previousRevision then
 						refreshed = true
@@ -1907,11 +1903,11 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 					end
 					task.wait(0.1)
 				end
-				if not refreshed then
-					failureReason = "The shared track changed, but this server could not confirm a newer snapshot. Please retry."
-					break
+				if refreshed then
+					didAdvance, failureReason = true, nil
+				else
+					failureReason = "The shared track changed, but this server could not confirm the newer snapshot. Please retry."
 				end
-				didAdvance, failureReason = attemptGlobalAdvance()
 			end
 			if didAdvance then
 				topUpAuto()
