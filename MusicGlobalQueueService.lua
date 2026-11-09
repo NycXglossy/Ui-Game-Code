@@ -44,6 +44,7 @@ export type Playback = {
 	position: number,
 	anchorTime: number,
 	trackRevision: number,
+	restartRevision: number,
 }
 
 export type Rotation = {enabled: boolean, id: string, name: string, trackIds: {string}, cursor: number}
@@ -54,6 +55,7 @@ type State = {
 	current: QueueEntry?,
 	playback: Playback,
 	rotation: Rotation,
+	autoQueueHold: boolean,
 	updatedAt: number,
 	updatedBy: number,
 }
@@ -108,8 +110,9 @@ local function defaultState(): State
 		revision = 0,
 		queue = {},
 		current = nil,
-		playback = {paused = false, position = 0, anchorTime = Workspace:GetServerTimeNow(), trackRevision = 0},
+		playback = {paused = false, position = 0, anchorTime = Workspace:GetServerTimeNow(), trackRevision = 0, restartRevision = 0},
 		rotation = {enabled = false, id = "", name = "", trackIds = {}, cursor = 1},
+		autoQueueHold = false,
 		updatedAt = os.time(),
 		updatedBy = 0,
 	}
@@ -121,6 +124,7 @@ local function sanitizeState(raw: any): State
 	state.revision = if finite(raw.revision) then math.clamp(math.floor(raw.revision), 0, MAX_SAFE_INTEGER) else 0
 	state.updatedAt = if finite(raw.updatedAt) then math.max(0, math.floor(raw.updatedAt)) else os.time()
 	state.updatedBy = if finite(raw.updatedBy) then math.max(0, math.floor(raw.updatedBy)) else 0
+	state.autoQueueHold = raw.autoQueueHold == true
 	state.current = sanitizeEntry(raw.current)
 	if typeof(raw.queue) == "table" then
 		local seenIds: {[string]: boolean} = {}
@@ -161,6 +165,7 @@ local function sanitizeState(raw: any): State
 		state.playback.position = if finite(p.position) then math.clamp(p.position, 0, MAX_DURATION) else 0
 		state.playback.anchorTime = if finite(p.anchorTime) then p.anchorTime else Workspace:GetServerTimeNow()
 		state.playback.trackRevision = if finite(p.trackRevision) then math.max(0, math.floor(p.trackRevision)) else 0
+		state.playback.restartRevision = if finite(p.restartRevision) then math.max(0, math.floor(p.restartRevision)) else 0
 	end
 	return state
 end
@@ -228,6 +233,9 @@ function MusicGlobalQueueService:Enqueue(rawEntry: any, maxPlayerRequests: numbe
 	if not entry then return false, nil, "Invalid queue entry." end
 	local playerCap = if finite(maxPlayerRequests) then math.clamp(math.floor(maxPlayerRequests), 1, MAX_QUEUE) else MAX_QUEUE
 	return transact(function(state)
+		if state.autoQueueHold and entry.source ~= "player" then
+			return false, "Automatic queue refill is paused until the current track changes."
+		end
 		if #state.queue >= MAX_QUEUE then return false, "Global queue is full." end
 		if state.current and state.current.trackId == entry.trackId then return false, "That track is already playing globally." end
 		for _, queued in ipairs(state.queue) do
@@ -336,8 +344,13 @@ end
 
 function MusicGlobalQueueService:Clear(): (boolean, State?, string?)
 	return transact(function(state)
-		if #state.queue == 0 then return false, "The global queue is already empty." end
+		if #state.queue == 0 and state.autoQueueHold then
+			return false, "The global queue is already empty."
+		end
 		table.clear(state.queue)
+		-- Prevent Auto DJ from immediately repopulating the queue. Advance
+		-- releases this hold atomically when the current track changes.
+		state.autoQueueHold = true
 		return true
 	end)
 end
@@ -371,6 +384,7 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 		state.playback.position = 0
 		state.playback.anchorTime = Workspace:GetServerTimeNow()
 		state.playback.trackRevision += 1
+		state.autoQueueHold = false
 		return true
 	end)
 end
@@ -387,7 +401,10 @@ function MusicGlobalQueueService:SetPlayback(paused: any, position: any, expecte
 		state.playback.position = if restart then 0 else math.clamp(position, 0, state.current.duration)
 		state.playback.paused = if restart then false else paused
 		state.playback.anchorTime = Workspace:GetServerTimeNow()
-		state.playback.trackRevision += 1
+		state.playback.restartRevision = if finite(state.playback.restartRevision) then math.floor(state.playback.restartRevision) else 0
+		if restart then state.playback.restartRevision += 1 end
+		-- trackRevision identifies the current song only; playback controls must
+		-- not invalidate another server's in-flight track transition.
 		return true
 	end)
 end
