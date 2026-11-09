@@ -3740,8 +3740,11 @@ task.spawn(function()
 		local currentGeneration = playbackGeneration
 		local shouldAdvance = not playbackPaused and nowPlaying.trackId ~= ""
 			and nowPlaying.elapsed >= nowPlaying.duration
+		-- Catalog tracks without a configured SoundId are intentionally silent
+		-- UI/visualizer entries. Do not treat their non-playing Sound as a failed
+		-- asset: let their catalog duration drive the normal transition instead.
 		if not shouldAdvance and not playbackPaused and nowPlaying.trackId ~= ""
-			and nowPlaying.elapsed >= 15 and not musicSound.IsPlaying then
+			and nowPlaying.soundId ~= "" and nowPlaying.elapsed >= 15 and not musicSound.IsPlaying then
 			-- IsLoaded/TimeLength distinguishes a confirmed stopped/ended sound from
 			-- an audio asset that is still buffering. If loading never completes,
 			-- the 45-second ceiling prevents a permanently stuck track.
