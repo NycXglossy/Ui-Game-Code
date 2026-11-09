@@ -3169,6 +3169,23 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return row
 	end
 
+	local function linkChipRows(upper: Instance?, lower: Instance?)
+		if not upper or not lower then return end
+		local function orderedButtons(row: Instance): {TextButton}
+			local result: {TextButton} = {}
+			for _, child in ipairs(row:GetChildren()) do
+				if child:IsA("TextButton") then table.insert(result, child) end
+			end
+			table.sort(result, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+			return result
+		end
+		local upperButtons = orderedButtons(upper)
+		local lowerButtons = orderedButtons(lower)
+		if #upperButtons == 0 or #lowerButtons == 0 then return end
+		upperButtons[#upperButtons].NextSelectionDown = lowerButtons[1]
+		lowerButtons[1].NextSelectionUp = upperButtons[#upperButtons]
+	end
+
 	local function stepper(parent: Instance, y: number, text: string, get: () -> number, set: (number) -> (), minValue: number, maxValue: number, step: number, unit: string)
 		local compact = currentDevice == "Mobile" or currentDevice == "Tablet"
 		local titleLabel = label(parent, text, UDim2.fromOffset(12, y), UDim2.new(1, compact and -194 or -190, 0, 26), C.Cyan, compact and 9 or 10, true)
@@ -3388,7 +3405,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local initialPreset = findById(initialEffect.sets, draft.set)
 		local selectedPreset = label(form, "SELECTED  •  " .. string.upper(initialPreset.name), UDim2.fromOffset(12, 234), UDim2.new(1, -24, 0, 16), initialPreset.color or initialPreset.a or C.Gold, 10, true)
 		local setRow: Instance? = nil
+		local familyRow: Instance? = nil
+		local effectRow: Instance? = nil
+		local fontRow: Instance? = nil
+		local styleRow: Instance? = nil
 		local emptyHint: Instance? = nil
+		local function refreshChipNavigation()
+			linkChipRows(effectRow, familyRow)
+			linkChipRows(familyRow, setRow)
+			linkChipRows(setRow, fontRow)
+			linkChipRows(fontRow, styleRow)
+		end
 		local function buildSetRow()
 			if setRow then setRow:Destroy() end
 			if emptyHint then emptyHint:Destroy(); emptyHint = nil end
@@ -3410,12 +3437,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if #filtered == 0 then
 				emptyHint = label(form, "No matching presets — try another family or search.", UDim2.fromOffset(12, 202), UDim2.new(1, -24, 0, 26), C.Muted, 10, false)
 			end
+			refreshChipNavigation()
 		end
-		chipRow(form, 168, families, function() return selectedFamily end, function(id)
+		familyRow = chipRow(form, 168, families, function() return selectedFamily end, function(id)
 			selectedFamily = id
 			buildSetRow()
 		end)
-		chipRow(form, 84, TITLE_EFFECTS, function() return draft.effect end, function(id)
+		effectRow = chipRow(form, 84, TITLE_EFFECTS, function() return draft.effect end, function(id)
 			local firstPreset = findById(TITLE_EFFECTS, id).sets[1]
 			draft.effect = id
 			draft.set = firstPreset.id
@@ -3432,7 +3460,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		buildSetRow()
 
 		label(form, "Text face", UDim2.fromOffset(12, 256), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
-		chipRow(form, 274, TITLE_FONTS, function() return draft.font end, function(id)
+		fontRow = chipRow(form, 274, TITLE_FONTS, function() return draft.font end, function(id)
 			draft.font = id
 			refreshPreview()
 		end)
@@ -3441,10 +3469,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		for _, styleId in ipairs(TITLE_STYLES) do
 			table.insert(styleOptions, { id = styleId, name = string.upper(string.sub(styleId, 1, 1)) .. string.sub(styleId, 2) })
 		end
-		chipRow(form, 326, styleOptions, function() return draft.style end, function(id)
+		styleRow = chipRow(form, 326, styleOptions, function() return draft.style end, function(id)
 			draft.style = id
 			refreshPreview()
 		end)
+		refreshChipNavigation()
 
 		stepper(form, 366, "Height offset (above head)", function() return draft.height end, function(v) draft.height = v end, 0, 8, 0.25, "studs")
 		stepper(form, 398, "View distance", function() return draft.distance end, function(v) draft.distance = v end, 20, 200, 10, "studs")
