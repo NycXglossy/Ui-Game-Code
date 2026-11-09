@@ -131,6 +131,86 @@ assert(not string.find(loaderSource, "MAIN_MODULE_ID", 1, true), "External MainM
 loader.Source = loaderSource
 
 local serverSource = mainModule.Source
+
+-- Rate-limit the shared admin RemoteEvent by player and operation. Preserve
+-- the existing command dispatcher cooldown and use tighter limits for costly actions.
+local oldHandler = [=[function ServerEvent(plr: Player, event, arguments, uID)
+	if type(arguments) == "function" or type(event) ~= "string" then
+		return
+	end
+	uID, event = event:match("(%d*)(.+)")]=]
+local newHandler = [=[local remoteEventCooldowns = {
+	KuID = 1,
+	KCClr = 0.1,
+	KRefresh = 1,
+	KCmdBar = 0.5,
+	KDelete = 0.025,
+	KPaste = 0.2,
+	KUpdate = 0.5,
+	KVote = 0.05,
+	KHat = 2,
+	KTrail = 2,
+	KShine = 2,
+	KBulkPurchase = 5,
+	KVIPCheck = 5,
+	KPing = 0.5,
+	KCam = 0.5,
+}
+local remoteEventLast = {}
+local function allowRemoteEvent(player: Player, eventName: string): boolean
+	local now = os.clock()
+	local playerEvents = remoteEventLast[player]
+	if not playerEvents then
+		playerEvents = {}
+		remoteEventLast[player] = playerEvents
+	end
+	local last = playerEvents[eventName]
+	if last and now - last < (remoteEventCooldowns[eventName] or 0.05) then
+		return false
+	end
+	playerEvents[eventName] = now
+	return true
+end
+services.Players.PlayerRemoving:Connect(function(player)
+	remoteEventLast[player] = nil
+end)
+
+function ServerEvent(plr: Player, event, arguments, uID)
+	if typeof(plr) ~= "Instance" or not plr:IsA("Player") then
+		return
+	end
+	if type(arguments) == "function" or type(event) ~= "string" then
+		return
+	end
+	uID, event = event:match("(%d*)(.+)")
+	if type(event) ~= "string" or not remoteEventCooldowns[event] or not allowRemoteEvent(plr, event) then
+		return
+	end]=]
+serverSource = replaceLiteral(serverSource, oldHandler, newHandler, "RemoteEvent rate limiting and event allowlist")
+
+-- The built-in native loadstring command is distinct from the Creator addon.
+-- Keep it available, but require Game Creator power (6), not Owner power (5).
+serverSource = replaceLiteral(
+	serverSource,
+	[=[{ "s", "script" },
+			{ "Creates a script.", "game.Players:Destroy()" },
+			5,
+			{ "string" },]=],
+	[=[{ "s", "script" },
+			{ "Creates a script.", "game.Players:Destroy()" },
+			6,
+			{ "string" },]=],
+	"native script command creator-only permission"
+)
+
+-- Validate the client-supplied camera payload before reading LookVector.
+serverSource = replaceLiteral(
+	serverSource,
+	"if plr == pl and a == f.uID .. \"KCam\" then",
+	"if plr == pl and a == f.uID .. \"KCam\" and typeof(b) == \"CFrame\" then",
+	"KCam CFrame validation"
+)
+
 local oldRemote = [=[	elseif event == "KDelete" and arguments and f.getPower(plr) > 4 then
 		arguments:Destroy()
 	elseif event == "KPaste" and f.getPower(plr) > 4 then
@@ -194,4 +274,8 @@ print("- Legacy configuration is checked before use.")
 print("- KDelete and KPaste validate live Instances and payload shape.")
 print("- KPaste batches are limited to 100 Instances.")
 print("NOTE: Dynamic script/localscript execution remains a separate high-impact feature; review or disable it if not required.")
-print("NOTE: This patch does not replace a complete audit or add general RemoteEvent rate limiting.")
+print("- Shared admin RemoteEvent operations are allowlisted and rate-limited per player.")
+print("- Native loadstring script command is retained but restricted to Game Creator power (6).")
+print("- KCam validates the client CFrame payload.")
+print("NOTE: The separate Creator addon script/localscript commands remain high-impact and Creator-scoped.")
+print("NOTE: This is targeted hardening, not a complete audit of all embedded commands/remotes.")
