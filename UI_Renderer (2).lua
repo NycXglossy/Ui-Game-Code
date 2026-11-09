@@ -3162,8 +3162,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function stepper(parent: Instance, y: number, text: string, get: () -> number, set: (number) -> (), minValue: number, maxValue: number, step: number, unit: string)
-		label(parent, text, UDim2.fromOffset(12, y), UDim2.new(1, -190, 0, 26), C.Cyan, 10, true)
-		local valueLabel = label(parent, "", UDim2.new(1, -124, 0, y), UDim2.fromOffset(76, 26), C.White, 11, true)
+		local compact = currentDevice == "Mobile" or currentDevice == "Tablet"
+		local titleLabel = label(parent, text, UDim2.fromOffset(12, y), UDim2.new(1, compact and -194 or -190, 0, 26), C.Cyan, compact and 9 or 10, true)
+		titleLabel.TextScaled = true
+		make("UITextSizeConstraint", { MinTextSize = 8, MaxTextSize = compact and 9 or 10 }, titleLabel)
+		local valueLabel = label(parent, "", UDim2.new(1, -124, 0, y), UDim2.fromOffset(76, 26), C.White, compact and 10 or 11, true)
 		valueLabel.TextXAlignment = Enum.TextXAlignment.Center
 		local function show() valueLabel.Text = string.format("%.2f %s", get(), unit) end
 		local function change(direction: number)
@@ -3171,8 +3174,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			set(value)
 			show()
 		end
-		actionButton(parent, "−", UDim2.new(1, -162, 0, y), UDim2.fromOffset(34, 26), function() change(-1) end, C.SurfaceLight)
-		actionButton(parent, "+", UDim2.new(1, -44, 0, y), UDim2.fromOffset(34, 26), function() change(1) end, C.SurfaceLight)
+		local decrement = actionButton(parent, "−", UDim2.new(1, -162, 0, y), UDim2.fromOffset(34, 26), function() change(-1) end, C.SurfaceLight)
+		local increment = actionButton(parent, "+", UDim2.new(1, -44, 0, y), UDim2.fromOffset(34, 26), function() change(1) end, C.SurfaceLight)
+		-- Keep controller focus moving predictably across the two value controls.
+		decrement.NextSelectionRight = increment
+		increment.NextSelectionLeft = decrement
 		show()
 	end
 
