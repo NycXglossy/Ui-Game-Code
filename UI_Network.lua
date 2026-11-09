@@ -202,17 +202,26 @@ local function applyState(newState: any)
 	stateEvent:Fire(safeClone(currentState))
 end
 
+local lastNoticeText = ""
+local lastNoticeAt = 0
+local NOTICE_DUPLICATE_WINDOW = 0.9
+
 local function applyNotice(notice: any)
 	if destroyed then return end
 	if typeof(notice) == "string" then
-		noticeEvent:Fire({text = string.sub(notice, 1, MAX_NOTICE_TEXT), kind = "info"})
-		return
+		notice = {text = notice, kind = "info"}
 	end
 	if typeof(notice) ~= "table" then return end
 
 	local textValue = notice.text
 	if typeof(textValue) ~= "string" then textValue = notice.message end
 	if typeof(textValue) ~= "string" or textValue == "" then return end
+	-- Some admin integrations and UI actions can emit the same confirmation
+	-- through adjacent paths. Suppress only an immediate identical duplicate.
+	local now = os.clock()
+	if textValue == lastNoticeText and now - lastNoticeAt < NOTICE_DUPLICATE_WINDOW then return end
+	lastNoticeText = textValue
+	lastNoticeAt = now
 
 	local kindValue = notice.kind
 	if typeof(kindValue) ~= "string" then kindValue = "info" end
