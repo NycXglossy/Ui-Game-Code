@@ -132,6 +132,26 @@ local function copyTrack(track: Track): Track
 	}
 end
 
+local function hasValidStoredCatalogShape(stored: any): boolean
+	if stored == nil then return true end
+	if typeof(stored) ~= "table" or typeof(stored.tracks) ~= "table" then
+		return false
+	end
+
+	-- DataStore tracks must be a bounded, dense 1-based array. ipairs alone
+	-- would silently ignore dictionary keys and holes, then replace good data.
+	local entryCount = 0
+	local highestIndex = 0
+	for key in pairs(stored.tracks) do
+		if typeof(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > MAX_CUSTOM_TRACKS then
+			return false
+		end
+		entryCount += 1
+		if key > highestIndex then highestIndex = key end
+	end
+	return entryCount == highestIndex
+end
+
 local function sanitizeStoredTrack(value: any): Track?
 	if typeof(value) ~= "table" then return nil end
 	local assetId = value.assetId
@@ -179,12 +199,16 @@ function MusicCatalogService:Initialize(studioUseDataStore: boolean?, budgetCall
 		storageInitializing = false
 		return false
 	end
+	if not hasValidStoredCatalogShape(stored) then
+		warn("[ClubMusic Catalog] Initialization refused malformed persisted catalog data; retry after recovery.")
+		storageInitializing = false
+		storageReady = false
+		storageInitialized = false
+		return false
+	end
 	local loaded: {[string]: Track} = {}
-	if typeof(stored) == "table" and typeof(stored.tracks) == "table" then
-		local count = 0
+	if stored ~= nil then
 		for _, rawTrack in ipairs(stored.tracks) do
-			count += 1
-			if count > MAX_CUSTOM_TRACKS then break end
 			local clean = sanitizeStoredTrack(rawTrack)
 			if clean and not TRACK_BY_ID[clean.id] then loaded[clean.id] = clean end
 		end
@@ -220,12 +244,14 @@ function MusicCatalogService:Refresh(budgetCallback: (() -> boolean)?): boolean
 		warn("[ClubMusic Catalog] Cross-server refresh failed: " .. tostring(stored))
 		return false
 	end
+	if not hasValidStoredCatalogShape(stored) then
+		storageWriteBusy = false
+		warn("[ClubMusic Catalog] Refresh refused malformed persisted catalog data; last-known-good cache preserved.")
+		return false
+	end
 	local loaded: {[string]: Track} = {}
-	if typeof(stored) == "table" and typeof(stored.tracks) == "table" then
-		local count = 0
+	if stored ~= nil then
 		for _, rawTrack in ipairs(stored.tracks) do
-			count += 1
-			if count > MAX_CUSTOM_TRACKS then break end
 			local clean = sanitizeStoredTrack(rawTrack)
 			if clean and not TRACK_BY_ID[clean.id] then loaded[clean.id] = clean end
 		end
