@@ -254,11 +254,18 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 	local updatedData: any = nil
 	local duplicateFound = false
 	local capacityReached = false
+	local invalidStoredCatalog = false
 	local ok, err = pcall(function()
 		updatedData = catalogStore:UpdateAsync(CATALOG_KEY, function(old)
 			duplicateFound = false
 			capacityReached = false
-			local list = if typeof(old) == "table" and typeof(old.tracks) == "table" then table.clone(old.tracks) else {}
+			invalidStoredCatalog = false
+			if old ~= nil and (typeof(old) ~= "table" or typeof(old.tracks) ~= "table") then
+				-- Do not turn malformed persisted data into a fresh one-track catalog.
+				invalidStoredCatalog = true
+				return old
+			end
+			local list = if typeof(old) == "table" then table.clone(old.tracks) else {}
 			for _, raw in ipairs(list) do
 				if typeof(raw) == "table" and tonumber(raw.assetId) == assetId then
 					duplicateFound = true
@@ -275,6 +282,10 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 	end)
 	storageWriteBusy = false
 	if not ok then warn("[ClubMusic Catalog] Add failed: " .. tostring(err)); return false, "Catalog save failed. Try again later." end
+	if invalidStoredCatalog then
+		warn("[ClubMusic Catalog] Add refused because persisted catalog data has an unexpected shape.")
+		return false, "Catalog data needs recovery; no addition was saved."
+	end
 	if duplicateFound then return false, "That audio was added by another server already. Refresh the catalog." end
 	if capacityReached then return false, "The custom catalog is full (200 tracks)." end
 	local persistedTrack: Track? = nil
@@ -284,7 +295,7 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 			if clean and clean.id == id then persistedTrack = clean; break end
 		end
 	end
-	if not persistedTrack then return false, "The catalog update could not be confirmed." end
+	if not persistedTrack then return false, "The catalog update could not be confirmed; refresh and retry." end
 	customTracks[id] = persistedTrack
 	return true, "Track saved to the shared catalog."
 end
