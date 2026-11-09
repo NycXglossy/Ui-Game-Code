@@ -2836,6 +2836,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		sectionLabel("TITLE TAG COLLECTION")
 		local equipped = state.equippedTitleTag or state.equippedTag or ""
 		local serverOwned = if typeof(state.ownedTags) == "table" then state.ownedTags else nil
+		local intro = card(54)
+		label(intro, "EQUIPPED COLLECTION TAGS APPEAR ABOVE YOUR AVATAR", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 18), C.Cyan, 10, true)
+		label(intro, "Custom titles remain managed separately in the CUSTOM and MANAGE tabs.", UDim2.fromOffset(12, 25), UDim2.new(1, -24, 0, 18), C.Muted, 9, false)
 		for _, tag in ipairs(TAGS) do
 			-- The server is authoritative: tags bought in the shop or earned via rewards appear here.
 			local isOwned = if serverOwned then serverOwned[tag.id] == true else tag.owned
