@@ -99,9 +99,12 @@ function MusicPlaylistService:Refresh(budgetCallback: (() -> boolean)?): boolean
  -- Serialize refresh reads with mutations so a stale GetAsync cannot replace a
  -- newer in-memory playlist list after a successful UpdateAsync.
  busy = true
- if budgetCallback and not budgetCallback() then
-  busy = false
-  return false
+ if budgetCallback then
+  local budgetOk, budgetAvailable = pcall(budgetCallback)
+  if not budgetOk or budgetAvailable ~= true then
+   busy = false
+   return false
+  end
  end
  local ok, data = pcall(function() return store:GetAsync(KEY) end)
  if not ok then
