@@ -112,8 +112,8 @@ This roadmap records potential additions for the existing ClubMusic architecture
 - [ ] Add genre or event-based playlist selection if supported by the experience.
 - [ ] Define behavior when the request queue is empty.
 - [ ] Define behavior when all playlist entries fail validation or playback.
-- [ ] Add bounded playback watchdog checks for stalled or unexpectedly stopped tracks.
-- [ ] Add track-transition safeguards to prevent double advancement.
+- [x] Add bounded playback watchdog checks for stalled or unexpectedly stopped tracks.
+- [x] Add track-transition safeguards to prevent double advancement.
 - [ ] Keep automatic playlist playback distinct from player-request priority and staff-only Creator Hub audio policy.
 
 **Exit criteria:** playlist rotation is deterministic enough to debug, bounded, and cannot bypass audio validation or staff restrictions.
