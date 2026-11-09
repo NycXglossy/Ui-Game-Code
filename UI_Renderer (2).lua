@@ -1860,6 +1860,28 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		if perm() >= 1 then
 			sectionLabel("STAFF PLAYLISTS")
+
+			-- A read-only snapshot keeps playlist editing grounded in the same
+			-- authoritative playback state used by the Now Playing panel.
+			local playback = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
+			local monitor = card(82)
+			label(monitor, "PLAYBACK SNAPSHOT", UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 17), C.Gold, 10, true)
+			local playbackTitle = if playback then nz(playback.title, "Unknown track") else "Nothing is currently on air"
+			local playbackArtist = if playback then nz(playback.artist, "Unknown artist") else "The stage is in standby"
+			label(monitor, playbackTitle, UDim2.fromOffset(12, 27), UDim2.new(1, -24, 0, 19), C.White, 12, true)
+			label(monitor, playbackArtist, UDim2.fromOffset(12, 48), UDim2.new(1, -24, 0, 16), C.Muted, 10, false)
+			local playbackState = if not playback then "STANDBY" elseif playback.paused == true then "PAUSED" else "ON AIR"
+			local stateColor = if not playback then C.Muted elseif playback.paused == true then C.Orange else C.Green
+			local stateBadge = make("TextLabel", {
+				Name = "PlaylistPlaybackState", AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -10, 0, 7), Size = UDim2.fromOffset(76, 20),
+				BackgroundColor3 = stateColor:Lerp(C.Base, 0.25), Text = playbackState,
+				TextColor3 = C.White, TextSize = 8, Font = BOLD,
+			}, monitor)
+			corner(stateBadge, 7)
+			local destination = selectedPlaylistName and ("ADD DESTINATION  •  " .. selectedPlaylistName) or "ADD DESTINATION  •  None selected"
+			label(monitor, destination, UDim2.fromOffset(12, 65), UDim2.new(1, -24, 0, 13), if selectedPlaylistName then C.Cyan else C.Muted, 9, true)
+
 			local compactPlaylist = currentDevice == "Mobile" or currentDevice == "Tablet"
 			local createCard = card(if compactPlaylist then 86 else 48)
 			local playlistNameBox = make("TextBox", {
