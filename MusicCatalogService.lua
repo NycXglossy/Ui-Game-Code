@@ -26,8 +26,10 @@ local CATALOG_KEY = "custom_tracks"
 local MAX_CUSTOM_TRACKS = 200
 local customTracks: {[string]: Track} = {}
 local storageInitialized = false
+local storageInitializing = false
 local storagePersistent = false
 local storageReady = false
+-- Shared operation lock: reads that replace the in-memory overlay must not race writes.
 local storageWriteBusy = false
 
 type Genre = {
@@ -149,19 +151,24 @@ end
 
 function MusicCatalogService:Initialize(studioUseDataStore: boolean?, budgetCallback: (() -> boolean)?): boolean
 	if storageInitialized then return storageReady end
-	storageInitialized = true
+	if storageInitializing then return false end
+	storageInitializing = true
 	storagePersistent = not RunService:IsStudio() or studioUseDataStore == true
 	if not storagePersistent then
 		storageReady = true -- Studio session-only catalog; never pretend it persisted.
+		storageInitialized = true
+		storageInitializing = false
 		return true
 	end
 	if budgetCallback and not budgetCallback() then
-		warn("[ClubMusic Catalog] Shared DataStore budget unavailable; custom catalog storage is read-only until restart.")
+		warn("[ClubMusic Catalog] Shared DataStore budget unavailable; initialization may be retried.")
+		storageInitializing = false
 		return false
 	end
 	local ok, stored = pcall(function() return catalogStore:GetAsync(CATALOG_KEY) end)
 	if not ok then
 		warn("[ClubMusic Catalog] Could not load persisted catalog: " .. tostring(stored))
+		storageInitializing = false
 		return false
 	end
 	local loaded: {[string]: Track} = {}
@@ -176,6 +183,8 @@ function MusicCatalogService:Initialize(studioUseDataStore: boolean?, budgetCall
 	end
 	customTracks = loaded
 	storageReady = true
+	storageInitialized = true
+	storageInitializing = false
 	return true
 end
 
@@ -189,9 +198,14 @@ function MusicCatalogService:Refresh(budgetCallback: (() -> boolean)?): boolean
 	if not storageReady then return false end
 	if not storagePersistent then return true end
 	if storageWriteBusy then return false end
-	if budgetCallback and not budgetCallback() then return false end
+	storageWriteBusy = true
+	if budgetCallback and not budgetCallback() then
+		storageWriteBusy = false
+		return false
+	end
 	local ok, stored = pcall(function() return catalogStore:GetAsync(CATALOG_KEY) end)
 	if not ok then
+		storageWriteBusy = false
 		warn("[ClubMusic Catalog] Cross-server refresh failed: " .. tostring(stored))
 		return false
 	end
@@ -206,6 +220,7 @@ function MusicCatalogService:Refresh(budgetCallback: (() -> boolean)?): boolean
 		end
 	end
 	customTracks = loaded
+	storageWriteBusy = false
 	return true
 end
 
