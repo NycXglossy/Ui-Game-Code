@@ -3133,6 +3133,23 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local chipOutline = stroke(chip, color, 1)
 			chipOutline.Transparency = 0.48
 			bindFocusFeedback(chip, chipOutline, C.SurfaceLight)
+			-- Keep the currently selected chip visible while navigating long preset
+			-- rows with a controller or keyboard. The row remains touch-scrollable.
+			chip.SelectionGained:Connect(function()
+				local left = chip.AbsolutePosition.X - row.AbsolutePosition.X + row.CanvasPosition.X
+				local right = left + chip.AbsoluteSize.X
+				local viewLeft = row.CanvasPosition.X
+				local viewRight = viewLeft + row.AbsoluteSize.X
+				local targetX = viewLeft
+				if left < viewLeft then
+					targetX = math.max(0, left - 8)
+				elseif right > viewRight then
+					targetX = math.max(0, right - row.AbsoluteSize.X + 8)
+				else
+					return
+				end
+				row.CanvasPosition = Vector2.new(targetX, row.CanvasPosition.Y)
+			end)
 			make("UIPadding", { PaddingLeft = UDim.new(0, 11), PaddingRight = UDim.new(0, 11) }, chip)
 			buttons[option.id] = { button = chip, tint = color }
 			chip.Activated:Connect(function()
