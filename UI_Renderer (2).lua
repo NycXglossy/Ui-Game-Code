@@ -1642,8 +1642,19 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
 			}, content) :: Frame
 			make("UIListLayout", {SortOrder=Enum.SortOrder.LayoutOrder, Padding=UDim.new(0,6)}, playlistList)
-			local playlistStatus = sectionLabel("Loading playlists…")
-			playlistStatus.TextSize = 10
+			-- This status is updated asynchronously, so keep it as a TextLabel
+			-- rather than the decorative Frame returned by sectionLabel().
+			local playlistStatus = make("TextLabel", {
+				Name = "PlaylistLoadStatus",
+				Size = UDim2.new(1, -4, 0, 30),
+				BackgroundTransparency = 1,
+				Text = "LOADING PLAYLISTS…",
+				TextColor3 = C.Gold,
+				TextSize = 10,
+				Font = BOLD,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Center,
+			}, content) :: TextLabel
 			task.spawn(function()
 				local ok, entries = pcall(function()
 					if typeof(Network.GetMusicPlaylists) ~= "function" then return nil end
