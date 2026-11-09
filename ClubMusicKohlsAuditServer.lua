@@ -63,6 +63,10 @@ return function(_K: any)
 		["cmclear"] = true,
 		["clubmusic-status"] = true,
 		["cmstatus"] = true,
+		["clubmusic-queue"] = true,
+		["cmqueue"] = true,
+		["clubmusic-remove"] = true,
+		["cmremove"] = true,
 	}
 
 	connectHook("postCommand", function(command: any)
