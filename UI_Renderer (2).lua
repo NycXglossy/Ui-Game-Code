@@ -1395,7 +1395,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local createCard = card(48)
 			local playlistNameBox = make("TextBox", {
 				Name = "NewPlaylistName", Position = UDim2.fromOffset(10, 8),
-				Size = UDim2.new(1, -112, 0, 32), BackgroundColor3 = C.SurfaceLight,
+				Size = UDim2.new(1, -184, 0, 32), BackgroundColor3 = C.SurfaceLight,
 				TextColor3 = C.White, PlaceholderColor3 = C.Muted,
 				PlaceholderText = "New playlist name (2–32 characters)", Text = "",
 				TextSize = 11, Font = FONT, TextXAlignment = Enum.TextXAlignment.Left,
@@ -1412,6 +1412,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					if not destroyed then renderTab() end
 				end)
 			end, C.Green)
+			actionButton(createCard, "STOP", UDim2.new(1, -164, 0, 8), UDim2.fromOffset(62, 32), function()
+				send("DJStopPlaylist", {})
+				notify("Stopping playlist rotation…", C.Orange)
+			end, C.Red)
 
 			local playlistList = make("Frame", {
 				Name = "StaffPlaylistList", Size = UDim2.new(1, 0, 0, 0),
@@ -1439,13 +1443,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 						and typeof(entry.trackIds) == "table" then
 						local row = card(40)
 						row.Parent = playlistList
-						row.LayoutOrder = order * 100
+						row.LayoutOrder = order * 102
 						local selected = selectedPlaylistId == entry.id
 						actionButton(row, (if selected then "SELECTED  " else "SELECT  ") .. entry.name .. "  •  " .. tostring(#entry.trackIds) .. " tracks",
-							UDim2.fromOffset(8, 5), UDim2.new(1, -92, 0, 30), function()
+							UDim2.fromOffset(8, 5), UDim2.new(1, -230, 0, 30), function()
 								selectedPlaylistId = if selectedPlaylistId == entry.id then nil else entry.id
 								renderTab()
 							end, if selected then C.Green else C.SurfaceLight)
+						actionButton(row, "PLAY", UDim2.new(1, -148, 0, 5), UDim2.fromOffset(64, 30), function()
+							send("DJPlayPlaylist", {playlistId = entry.id})
+							notify("Starting playlist rotation after the current track…", C.Cyan)
+						end, C.Purple)
 						actionButton(row, "DELETE", UDim2.new(1, -78, 0, 5), UDim2.fromOffset(70, 30), function()
 							send("PlaylistDelete", {playlistId = entry.id})
 							if selectedPlaylistId == entry.id then selectedPlaylistId = nil end
@@ -1457,7 +1465,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 								if typeof(trackId) == "string" then
 									local trackRow = card(34)
 									trackRow.Parent = playlistList
-									trackRow.LayoutOrder = order * 100 + trackIndex
+									trackRow.LayoutOrder = order * 102 + trackIndex
 									local indexedTrack: any = TRACK_INDEX[trackId]
 									local displayName = if indexedTrack then tostring(indexedTrack[2]) else trackId
 									label(trackRow, tostring(trackIndex) .. ". " .. displayName,
