@@ -150,7 +150,7 @@ for attempt = 1, 20 do
 		networkReady = true
 		break
 	end
-	lastInitError = if initOk then "server remotes are not ready yet" else tostring(initResult)
+	lastInitError = if initOk then (if typeof(Network.GetInitError) == "function" then Network.GetInitError() else "server remotes are not ready yet") else tostring(initResult)
 	if attempt < 20 then task.wait(3) end
 end
 if not networkReady then
