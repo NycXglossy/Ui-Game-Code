@@ -2861,12 +2861,9 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if trustedAdminCommand == true then
-		-- Kohl's Admin commands use a separate short cross-command interval so an
-		-- unrelated UI click cannot reject a legitimate staff command.
-		local previousAdmin = lastAdminActionAt[userId] or 0
-		if previousAdmin > 0 and now - previousAdmin < 0.12 then
-			return false, "Please wait before using another ClubMusic admin command."
-		end
+		-- Trusted admin commands rely on the per-player token bucket and shared
+		-- global action budget above. Avoid a second time-based gate here because
+		-- Kohl's Admin may invoke the same command through closely spaced handlers.
 		lastAdminActionAt[userId] = now
 	else
 		local previousGlobal = lastActionAt[userId] or 0
