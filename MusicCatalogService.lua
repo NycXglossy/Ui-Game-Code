@@ -199,28 +199,40 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 	if not storagePersistent then customTracks[id] = candidate; return true, "Added for this Studio session only." end
 	storageWriteBusy = true
 	local updatedData: any = nil
+	local duplicateFound = false
+	local capacityReached = false
 	local ok, err = pcall(function()
 		updatedData = catalogStore:UpdateAsync(CATALOG_KEY, function(old)
+			duplicateFound = false
+			capacityReached = false
 			local list = if typeof(old) == "table" and typeof(old.tracks) == "table" then table.clone(old.tracks) else {}
 			for _, raw in ipairs(list) do
-				if typeof(raw) == "table" and tonumber(raw.assetId) == assetId then return old end
+				if typeof(raw) == "table" and tonumber(raw.assetId) == assetId then
+					duplicateFound = true
+					return old
+				end
 			end
-			if #list >= MAX_CUSTOM_TRACKS then return old end
+			if #list >= MAX_CUSTOM_TRACKS then
+				capacityReached = true
+				return old
+			end
 			table.insert(list, {assetId=assetId, genreId=genreId, title=title, artist=artist, duration=duration, genre=genreName})
 			return {schemaVersion=1, tracks=list}
 		end)
 	end)
 	storageWriteBusy = false
 	if not ok then warn("[ClubMusic Catalog] Add failed: " .. tostring(err)); return false, "Catalog save failed. Try again later." end
-	local found = false
+	if duplicateFound then return false, "That audio was added by another server already. Refresh the catalog." end
+	if capacityReached then return false, "The custom catalog is full (200 tracks)." end
+	local persistedTrack: Track? = nil
 	if typeof(updatedData) == "table" and typeof(updatedData.tracks) == "table" then
 		for _, raw in ipairs(updatedData.tracks) do
 			local clean = sanitizeStoredTrack(raw)
-			if clean and clean.id == id then found = true; break end
+			if clean and clean.id == id then persistedTrack = clean; break end
 		end
 	end
-	if not found then return false, "Catalog is full or the track already exists." end
-	customTracks[id] = candidate
+	if not persistedTrack then return false, "The catalog update could not be confirmed." end
+	customTracks[id] = persistedTrack
 	return true, "Track saved to the shared catalog."
 end
 
