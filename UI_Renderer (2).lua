@@ -3118,16 +3118,22 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local color = (if tint then tint(option) else nil) or C.Muted
 			local chip = make("TextButton", {
 				AutomaticSize = Enum.AutomaticSize.X,
-				Size = UDim2.new(0, 0, 0, 26),
+				Size = UDim2.new(0, 0, 0, 30),
 				BackgroundColor3 = C.SurfaceLight,
 				Text = option.name,
 				TextColor3 = color,
 				TextSize = 10,
 				Font = BOLD,
 				LayoutOrder = order,
+				Selectable = true,
+				Active = true,
+				AutoButtonColor = false,
 			}, row) :: TextButton
-			corner(chip, 13)
-			make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, chip)
+			corner(chip, 15)
+			local chipOutline = stroke(chip, color, 1)
+			chipOutline.Transparency = 0.48
+			bindFocusFeedback(chip, chipOutline, C.SurfaceLight)
+			make("UIPadding", { PaddingLeft = UDim.new(0, 11), PaddingRight = UDim.new(0, 11) }, chip)
 			buttons[option.id] = { button = chip, tint = color }
 			chip.Activated:Connect(function()
 				onPick(option.id)
@@ -3255,7 +3261,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		label(form, "Title text (24 characters max)", UDim2.fromOffset(12, 6), UDim2.new(1, -24, 0, 18), C.Muted, 10, true)
 		local titleInput = make("TextBox", {
 			Position = UDim2.fromOffset(12, 26),
-			Size = UDim2.new(1, -24, 0, 34),
+			Size = UDim2.new(1, -24, 0, 36),
 			BackgroundColor3 = C.SurfaceLight,
 			TextColor3 = C.White,
 			PlaceholderColor3 = C.Muted,
@@ -3264,8 +3270,22 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			TextSize = 12,
 			Font = FONT,
 			ClearTextOnFocus = false,
+			Selectable = true,
+			Active = true,
 		}, form) :: TextBox
-		corner(titleInput, 8)
+		corner(titleInput, 9)
+		local titleInputStroke = stroke(titleInput, C.SurfaceLight, 1)
+		titleInputStroke.Transparency = 0.38
+		titleInput.Focused:Connect(function()
+			titleInputStroke.Color = C.Cyan
+			titleInputStroke.Transparency = 0
+			titleInputStroke.Thickness = 2
+		end)
+		titleInput.FocusLost:Connect(function()
+			titleInputStroke.Color = C.SurfaceLight
+			titleInputStroke.Transparency = 0.38
+			titleInputStroke.Thickness = 1
+		end)
 		titleInput:GetPropertyChangedSignal("Text"):Connect(function()
 			local text = titleInput.Text
 			local length = utf8.len(text)
