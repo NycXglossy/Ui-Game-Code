@@ -41,25 +41,22 @@ return function(_K: any)
 		return nil
 	end
 
-	local function logOutcome(context: any, operation: string, outcome: string, message: string)
+	local function logOutcome(context: any, operation: string, outcome: string)
 		if _K.IsServer ~= true or typeof(_K.log) ~= "function" then
 			return
 		end
-
-		local safeMessage = string.gsub(message, "[%c]", " ")
-		safeMessage = string.sub(safeMessage, 1, 180)
 
 		local level = if outcome == "accepted" then "INFO"
 			elseif outcome == "error" then "ERROR"
 			else "WARN"
 
 		local actorUserId = getActorUserId(context)
+		-- Keep audit records metadata-only. Bridge response text can contain
+		-- queue identifiers, track details, or other command-specific data.
 		local logMessage = string.format(
-			"ClubMusic bridge %s: operation=%s result=%s message=%s",
-			outcome,
+			"ClubMusic bridge outcome: operation=%s result=%s",
 			operation,
-			outcome,
-			safeMessage
+			outcome
 		)
 
 		local ok, err = pcall(_K.log, logMessage, level, actorUserId)
@@ -69,7 +66,7 @@ return function(_K: any)
 	end
 
 	local function finish(context: any, operation: string, outcome: string, message: string): string
-		logOutcome(context, operation, outcome, message)
+		logOutcome(context, operation, outcome)
 		return message
 	end
 
