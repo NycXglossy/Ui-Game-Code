@@ -233,6 +233,37 @@ function MusicGlobalQueueService:Remove(entryId: any): (boolean, State?, string?
 	end)
 end
 
+function MusicGlobalQueueService:MoveUp(entryId: any): (boolean, State?, string?)
+	if typeof(entryId) ~= "string" or #entryId < 1 or #entryId > MAX_ID then return false, nil, "Invalid queue entry." end
+	return transact(function(state)
+		for index, entry in ipairs(state.queue) do
+			if entry.id == entryId then
+				if index <= 1 then return false, "Queue entry is already first." end
+				state.queue[index], state.queue[index - 1] = state.queue[index - 1], state.queue[index]
+				return true
+			end
+		end
+		return false, "Queue entry was not found."
+	end)
+end
+
+function MusicGlobalQueueService:RemoveUserEntries(userId: any): (boolean, State?, string?)
+	if not finite(userId) or userId < 1 or userId % 1 ~= 0 or userId > MAX_SAFE_INTEGER then
+		return false, nil, "Invalid user ID."
+	end
+	return transact(function(state)
+		local filtered = {}
+		local removed = 0
+		for _, entry in ipairs(state.queue) do
+			if entry.source == "player" and entry.userId == userId then removed += 1
+			else table.insert(filtered, entry) end
+		end
+		if removed == 0 then return false, "No queued requests were found for that user." end
+		state.queue = filtered
+		return true
+	end)
+end
+
 function MusicGlobalQueueService:Clear(): (boolean, State?, string?)
 	return transact(function(state)
 		if #state.queue == 0 then return false, "The global queue is already empty." end
