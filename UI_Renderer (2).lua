@@ -1798,9 +1798,18 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		refreshChips()
 
-		local countLabel = sectionLabel("Loading catalog…")
-		countLabel.TextColor3 = C.Muted
-		countLabel.TextSize = 11
+		-- Catalog status is a text element, not the decorative Frame returned by sectionLabel().
+		local countLabel = make("TextLabel", {
+			Name = "CatalogLoadStatus",
+			Size = UDim2.new(1, 0, 0, 30),
+			BackgroundTransparency = 1,
+			Text = "LOADING CATALOG…",
+			TextColor3 = C.Muted,
+			TextSize = 11,
+			Font = BOLD,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
+		}, content) :: TextLabel
 
 		local results = make("Frame", {
 			Name = "TrackResults",
