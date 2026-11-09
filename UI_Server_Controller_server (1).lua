@@ -480,6 +480,8 @@ type Profile = {
 	claimedToday: boolean,
 	equippedTag: string?,
 	ownedTags: {[string]: boolean},
+	clubPlaySeconds: number,
+	titleTagUnlocksVersion: number,
 	titleSlots: {[number]: TitleSlot},
 	unlockedSlots: number,
 	activeSlot: number,
@@ -927,6 +929,8 @@ local function defaultProfile(): Profile
 		claimedToday = false,
 		equippedTag = nil,
 		ownedTags = {},
+		clubPlaySeconds = 0,
+		titleTagUnlocksVersion = 2,
 		titleSlots = {},
 		unlockedSlots = 1,
 		activeSlot = 1,
@@ -993,18 +997,23 @@ local function loadProfile(player: Player)
 		profile.glowsticks = math.max(0, math.floor(tonumber(data.glowsticks) or 0))
 		profile.skipTokens = math.max(0, math.floor(tonumber(data.skipTokens) or 0))
 		profile.neonTrail = data.neonTrail == true
+		profile.clubPlaySeconds = math.clamp(math.floor(tonumber(data.clubPlaySeconds) or 0), 0, 9007199254740000)
+		profile.titleTagUnlocksVersion = math.max(0, math.floor(tonumber(data.titleTagUnlocksVersion) or 0))
 		if typeof(data.ownedTags) == "table" then
 			for id, owned in pairs(data.ownedTags) do
 				if TAGS[id] == true and owned == true then profile.ownedTags[id] = true end
 			end
 		end
-		-- These three flags were incorrectly granted by the old default profile.
-		-- Strip those legacy defaults so they cannot masquerade as earned ownership.
-		profile.ownedTags.vip = nil
-		profile.ownedTags.party = nil
-		profile.ownedTags.wave = nil
-		if profile.equippedTag == "vip" or profile.equippedTag == "party" or profile.equippedTag == "wave" then
-			profile.equippedTag = nil
+		-- One-time migration: the previous defaults falsely marked these tags as owned.
+		-- Re-evaluate them below using the real server-side unlock conditions.
+		if profile.titleTagUnlocksVersion < 2 then
+			profile.ownedTags.vip = nil
+			profile.ownedTags.party = nil
+			profile.ownedTags.wave = nil
+			if profile.equippedTag == "vip" or profile.equippedTag == "party" or profile.equippedTag == "wave" then
+				profile.equippedTag = nil
+			end
+			profile.titleTagUnlocksVersion = 2
 		end
 		if typeof(data.favorites) == "table" then
 			local count = 0
@@ -1126,6 +1135,8 @@ local function saveProfile(player: Player)
 		claimedToday = profile.claimedToday,
 		equippedTag = profile.equippedTag,
 		ownedTags = table.clone(profile.ownedTags),
+		clubPlaySeconds = profile.clubPlaySeconds,
+		titleTagUnlocksVersion = profile.titleTagUnlocksVersion,
 		titleSlots = slotsSnapshot,
 		unlockedSlots = profile.unlockedSlots,
 		activeSlot = profile.activeSlot,
@@ -1804,6 +1815,7 @@ local function snapshotFor(player: Player)
 		},
 		equippedTag = profile.equippedTag,
 		ownedTags = profile.ownedTags,
+		clubPlaySeconds = profile.clubPlaySeconds,
 		titleSlots = {
 			unlocked = profile.unlockedSlots,
 			active = profile.activeSlot,
@@ -3422,6 +3434,33 @@ end
 
 -- Player lifecycle ----------------------------------------------------------------------
 
+-- Collection tag unlocks are granted only from server-verified profile/pass state.
+local function syncTitleTagUnlocks(player: Player): boolean
+	local profile = profiles[player.UserId]
+	if not profile then return false end
+	local changed = false
+	if isVip(player) and profile.ownedTags.vip ~= true then
+		profile.ownedTags.vip = true
+		changed = true
+		notify(player, "VIP title tag unlocked!", "ok")
+	end
+	if profile.loginStreak >= 7 and profile.ownedTags.wave ~= true then
+		profile.ownedTags.wave = true
+		changed = true
+		notify(player, "Wave Rider title tag unlocked for your 7-day login streak!", "ok")
+	end
+	if profile.clubPlaySeconds >= 36000 and profile.ownedTags.party ~= true then
+		profile.ownedTags.party = true
+		changed = true
+		notify(player, "Party Animal title tag unlocked after 10 hours at the festival!", "ok")
+	end
+	if changed then
+		scheduleProfileSave(player)
+		publishState(player)
+	end
+	return changed
+end
+
 local function onJoin(player: Player)
 	local enabledCallOk, globalServiceEnabled = globalInvoke("IsEnabled")
 	local globalModerationRequired = not RunService:IsStudio()
@@ -3460,6 +3499,7 @@ local function onJoin(player: Player)
 		return
 	end
 	applyVipAttribute(player)
+	syncTitleTagUnlocks(player)
 	player:SetAttribute("ClubRank", getRank(player))
 	xpLastAwardAt[player.UserId] = os.clock()
 	xpFractional[player.UserId] = 0
@@ -3776,10 +3816,30 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Playe
 	task.spawn(function()
 		refreshVip(player)
 		applyVipAttribute(player)
+		syncTitleTagUnlocks(player)
 		local tierName = if isSultan(player) then "Tiki Tide Sultan" elseif isVvip(player) then "VVIP" elseif isVip(player) then "VIP" else "Pass"
 		notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
 		publishState(nil)
 	end)
+end)
+
+-- Track time spent in this experience for the Party Animal collection unlock.
+-- Progress is server-owned, persisted, and never accepted from a client.
+task.spawn(function()
+	while true do
+		task.wait(60)
+		for _, player in ipairs(Players:GetPlayers()) do
+			local profile = profiles[player.UserId]
+			if profile then
+				profile.clubPlaySeconds = math.min(profile.clubPlaySeconds + 60, 9007199254740000)
+				if profile.clubPlaySeconds % 300 < 60 then
+					scheduleProfileSave(player)
+					publishState(player)
+				end
+				syncTitleTagUnlocks(player)
+			end
+		end
+	end
 end)
 
 task.spawn(function()
@@ -3800,6 +3860,7 @@ task.spawn(function()
 				refreshRank(player)
 				refreshVip(player)
 				applyVipAttribute(player)
+				syncTitleTagUnlocks(player)
 			end)
 		end
 	end
