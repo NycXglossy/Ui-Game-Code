@@ -27,6 +27,7 @@ local CONFIG = {
 		Moderation = "ClubMusic_Global_Moderation_v1",
 		DJ = "ClubMusic_Global_DJ_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
+		Catalog = "ClubMusic_Global_Catalog_v1",
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -345,6 +346,11 @@ end)
 
 bindFunction("PublishDJCommand", publishDJCommand)
 
+bindFunction("PublishCatalogChange", function()
+	if not SERVICE_ENABLED then return false end
+	return publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
+end)
+
 bindFunction("GetGlobalRequestLock", function()
 	if not SERVICE_ENABLED then return nil, false end
 	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
@@ -444,6 +450,13 @@ local function onDJ(message)
 	globalEventBindable:Fire({kind = "DJ", command = data.command, payload = payload, actorUserId = data.actorUserId, senderJob = data.senderJob})
 end
 
+local function onCatalog(message)
+	local data = message.Data
+	if not validEnvelope(data) or data.kind ~= "Catalog" or not unseen(data.id) then return end
+	-- The message carries invalidation only, never track metadata or executable commands.
+	globalEventBindable:Fire({kind = "Catalog", senderJob = data.senderJob, at = data.at})
+end
+
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	task.spawn(function()
 		while SERVICE_ENABLED do
@@ -463,6 +476,7 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.Moderation, onModeration)
 	subscribeWithRetry(CONFIG.Topics.DJ, onDJ)
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
+	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
 else
 	warn("[ClubMusic Global] Disabled in Studio or by configuration; local UI controller remains fully functional.")
 end
