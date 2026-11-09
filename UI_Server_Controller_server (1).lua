@@ -3381,19 +3381,28 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "DJRemove" then
-		if not isStaff(player) then return end
+		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
 		local id = payload.queueId
-		if not isValidString(id, 64) then return end
+		if not isValidString(id, 64) then return false, "A valid queue entry ID is required." end
 		if globalQueueMode then
-			local callOk, removed, state = globalInvoke("RemoveGlobalQueueEntry", id)
-			if callOk and removed == true and typeof(state) == "table" then applyGlobalQueueState(state); topUpAuto()
-			elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		else
-			local index = findQueueIndex(id)
-			if index then queueManager:RemoveAt(index, true); topUpAuto() end
+			local callOk, removed, state, message = globalInvoke("RemoveGlobalQueueEntry", id)
+			if callOk and removed == true then
+				if typeof(state) == "table" and not applyGlobalQueueState(state) and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				if typeof(state) ~= "table" and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				topUpAuto()
+				publishState(nil)
+				return true, "Queued track removed."
+			end
+			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			return false, tostring(message or "Queue entry was not found or the shared queue is unavailable.")
 		end
+		local index = findQueueIndex(id)
+		if not index then return false, "Queue entry was not found. Run ;cmqueue to refresh the IDs." end
+		local removedEntry = queueManager:RemoveAt(index, true)
+		if not removedEntry then return false, "Queue entry could not be removed." end
+		topUpAuto()
 		publishState(nil)
-		return
+		return true, "Removed queued track: " .. tostring(removedEntry.title or "Unknown track") .. "."
 	end
 
 	if action == "DJSkip" then
@@ -3838,7 +3847,7 @@ local ADMIN_BRIDGE_ACTIONS: {[string]: string} = {
 	ToggleRequestLock = "DJToggleLock",
 	ClearQueue = "DJClearQueue",
 }
-adminBridge.OnInvoke = function(caller: any, operation: any): (boolean, string)
+adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (boolean, string)
 	if typeof(caller) ~= "Instance" or not caller:IsA("Player") or caller.Parent ~= Players then
 		return false, "A live player caller is required."
 	end
@@ -3846,8 +3855,8 @@ adminBridge.OnInvoke = function(caller: any, operation: any): (boolean, string)
 		return false, "Invalid ClubMusic admin operation."
 	end
 	if not isStaff(caller) then return false, "ClubMusic staff permission is required." end
-	-- Read-only status is intentionally separate from handleAction: it does not
-	-- mutate playback, queue state, cooldowns, or shared DataStore records.
+	-- Read-only status and queue inspection do not enter the action handler or
+	-- consume mutation cooldowns. Global inspection refreshes the authoritative mirror.
 	if operation == "Status" then
 		local currentTitle = if typeof(nowPlaying.title) == "string" and nowPlaying.title ~= "" then nowPlaying.title else "Nothing playing"
 		local currentArtist = if typeof(nowPlaying.artist) == "string" then nowPlaying.artist else ""
@@ -3860,12 +3869,39 @@ adminBridge.OnInvoke = function(caller: any, operation: any): (boolean, string)
 		local trackLabel = currentTitle .. (if currentArtist ~= "" then " — " .. currentArtist else "")
 		return true, string.sub(string.format("ClubMusic: %s | %s | Requests %s | Queue %d (%s) | %ds/%ds", trackLabel, playbackLabel, requestLabel, queueCount, queueModeLabel, elapsed, duration), 1, 450)
 	end
+	if operation == "Queue" then
+		if globalQueueMode and (not syncGlobalQueueSnapshot or not syncGlobalQueueSnapshot()) then
+			return false, "The shared queue could not be refreshed. Try ;cmqueue again shortly."
+		end
+		local total = #queue
+		if total == 0 then return true, "ClubMusic queue is empty (" .. (if globalQueueMode then "GLOBAL" else "LOCAL") .. ")." end
+		local lines = {string.format("ClubMusic queue (%s) — %d queued:", if globalQueueMode then "GLOBAL" else "LOCAL", total)}
+		local shown = math.min(total, 6)
+		for index = 1, shown do
+			local entry = queue[index]
+			local title = string.sub(string.gsub(tostring(entry.title or "Unknown track"), "[%c]", " "), 1, 34)
+			local artist = string.sub(string.gsub(tostring(entry.artist or "Unknown artist"), "[%c]", " "), 1, 24)
+			local requester = string.sub(string.gsub(tostring(entry.requestedBy or "Unknown"), "[%c]", " "), 1, 18)
+			table.insert(lines, string.format("%d. %s — %s | %s | ID: %s", index, title, artist, requester, tostring(entry.id or "")))
+		end
+		if total > shown then table.insert(lines, string.format("...and %d more. Run ;cmqueue again after removals.", total - shown)) end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1800)
+	end
 	local action = ADMIN_BRIDGE_ACTIONS[operation]
+	local payload = {}
+	if operation == "RemoveQueueEntry" then
+		if typeof(argument) ~= "string" or #argument > 64
+			or not string.match(argument, "^cm%-%x+%-%x+%-%x+%-%x+%-%x+$") then
+			return false, "Use ;cmremove with a queue ID copied from ;cmqueue."
+		end
+		action = "DJRemove"
+		payload = {queueId = argument}
+	end
 	if not action then return false, "That ClubMusic admin operation is not exposed." end
 	if action == "DJClearQueue" and not isAdmin(caller) then
 		return false, "ClubMusic administrator permission is required to clear the queue."
 	end
-	local ok, accepted, message = pcall(handleAction, caller, action, {}, true)
+	local ok, accepted, message = pcall(handleAction, caller, action, payload, true)
 	if not ok then
 		warn("[ClubMusic Admin Bridge] Action failed: " .. tostring(accepted))
 		return false, "ClubMusic could not process that action."
