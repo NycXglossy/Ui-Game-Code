@@ -110,6 +110,25 @@ local CONFIG = {
 -- wait safely even when catalog initialization is delayed.
 -- The catalog is server-owned. The controller remains the only authority
 -- for request limits, moderation, queue priority, and playback.
+local function getOrCreate(parent: Instance, className: string, name: string): Instance
+	local found = parent:FindFirstChild(name)
+	if found and found.ClassName == className then return found end
+	if found then found:Destroy() end
+	local created = Instance.new(className)
+	created.Name = name
+	created.Parent = parent
+	return created
+end
+
+local remotes = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicRemotes") :: Folder
+remotes:SetAttribute("Ready", false)
+local actionRemote = getOrCreate(remotes, "RemoteEvent", "RequestAction") :: RemoteEvent
+local stateRemote = getOrCreate(remotes, "RemoteEvent", "StateChanged") :: RemoteEvent
+local noticeRemote = getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
+local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: RemoteFunction
+local catalogFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
+local playlistFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
+
 local serverStorage = game:GetService("ServerStorage")
 local catalogModule = serverStorage:WaitForChild("MusicCatalogService", 20)
 local playlistModule = serverStorage:WaitForChild("MusicPlaylistService", 20)
@@ -258,25 +277,6 @@ if USE_STUDIO_MEMORY_PROFILES then
 end
 local SESSION_TOKEN = if game.JobId ~= "" then game.JobId else HttpService:GenerateGUID(false)
 local random = Random.new()
-
-local function getOrCreate(parent: Instance, className: string, name: string): Instance
-	local found = parent:FindFirstChild(name)
-	if found and found.ClassName == className then return found end
-	if found then found:Destroy() end
-	local created = Instance.new(className)
-	created.Name = name
-	created.Parent = parent
-	return created
-end
-
-local remotes = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicRemotes") :: Folder
-remotes:SetAttribute("Ready", false)
-local actionRemote = getOrCreate(remotes, "RemoteEvent", "RequestAction") :: RemoteEvent
-local stateRemote = getOrCreate(remotes, "RemoteEvent", "StateChanged") :: RemoteEvent
-local noticeRemote = getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
-local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: RemoteFunction
-local catalogFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
-local playlistFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
 
 -- One server-owned Sound drives the entire server. This replaces the source
 -- system's second remote/event architecture and keeps playback under this controller.
