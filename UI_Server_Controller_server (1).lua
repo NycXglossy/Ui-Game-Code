@@ -2097,6 +2097,9 @@ local function handleAction(player: Player, action: any, payload: any)
 		if not playlistStorageReady or not MusicPlaylistService:IsReady() then
 			notify(player, "Playlist storage is unavailable. No changes were made.", "warn"); return
 		end
+		if not waitForDataStoreBudget(5) then
+			notify(player, "Shared DataStore budget is unavailable; playlist was not changed.", "warn"); return
+		end
 		local ok, message = false, "Invalid playlist action."
 		if action == "PlaylistCreate" then
 			ok, message = MusicPlaylistService:Create(payload.name)
