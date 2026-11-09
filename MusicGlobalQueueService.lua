@@ -46,12 +46,14 @@ export type Playback = {
 	trackRevision: number,
 }
 
-export type State = {
+export type Rotation = {enabled: boolean, id: string, name: string, trackIds: {string}, cursor: number}
+type State = {
 	schemaVersion: number,
 	revision: number,
 	queue: {QueueEntry},
 	current: QueueEntry?,
 	playback: Playback,
+	rotation: Rotation,
 	updatedAt: number,
 	updatedBy: number,
 }
@@ -107,6 +109,7 @@ local function defaultState(): State
 		queue = {},
 		current = nil,
 		playback = {paused = false, position = 0, anchorTime = Workspace:GetServerTimeNow(), trackRevision = 0},
+		rotation = {enabled = false, id = "", name = "", trackIds = {}, cursor = 1},
 		updatedAt = os.time(),
 		updatedBy = 0,
 	}
@@ -133,6 +136,25 @@ local function sanitizeState(raw: any): State
 			end
 		end
 	end
+	if typeof(raw.rotation) == "table" then
+		local rotation = raw.rotation
+		local id = cleanText(rotation.id, 64)
+		local name = cleanText(rotation.name, 100)
+		if rotation.enabled == true and id and name and typeof(rotation.trackIds) == "table" then
+			local seenTracks: {[string]: boolean} = {}
+			for _, trackId in ipairs(rotation.trackIds) do
+				if #state.rotation.trackIds >= 200 then break end
+				if typeof(trackId) == "string" and #trackId > 0 and #trackId <= 32
+					and string.match(trackId, "^[%w%-_]+$") and not seenTracks[trackId] then
+					table.insert(state.rotation.trackIds, trackId); seenTracks[trackId] = true
+				end
+			end
+			if #state.rotation.trackIds > 0 then
+				state.rotation.enabled = true; state.rotation.id = id; state.rotation.name = name
+				state.rotation.cursor = if finite(rotation.cursor) then math.clamp(math.floor(rotation.cursor), 1, #state.rotation.trackIds) else 1
+			end
+		end
+	end
 	if typeof(raw.playback) == "table" then
 		local p = raw.playback
 		state.playback.paused = p.paused == true
@@ -149,6 +171,8 @@ local function detached(state: State): State
 	for _, entry in ipairs(state.queue) do table.insert(result.queue, cloneEntry(entry)) end
 	result.current = if state.current then cloneEntry(state.current) else nil
 	result.playback = table.clone(state.playback)
+	result.rotation = table.clone(state.rotation)
+	result.rotation.trackIds = table.clone(state.rotation.trackIds)
 	return result
 end
 
@@ -218,6 +242,13 @@ function MusicGlobalQueueService:Enqueue(rawEntry: any, maxPlayerRequests: numbe
 				index = i + 1
 			end
 		end
+		if entry.source == "playlist" then
+			if not state.rotation.enabled then return false, "Playlist rotation is not active globally." end
+			local expectedTrackId = state.rotation.trackIds[state.rotation.cursor]
+			if expectedTrackId ~= entry.trackId then return false, "Playlist rotation advanced on another server; refresh and retry." end
+			state.rotation.cursor += 1
+			if state.rotation.cursor > #state.rotation.trackIds then state.rotation.cursor = 1 end
+		end
 		table.insert(state.queue, index, cloneEntry(entry))
 		return true
 	end)
@@ -259,6 +290,39 @@ function MusicGlobalQueueService:RemoveUserEntries(userId: any): (boolean, State
 			else table.insert(filtered, entry) end
 		end
 		if removed == 0 then return false, "No queued requests were found for that user." end
+		state.queue = filtered
+		return true
+	end)
+end
+
+function MusicGlobalQueueService:SetPlaylistRotation(playlistId: any, playlistName: any, trackIds: any): (boolean, State?, string?)
+	if playlistId == nil then
+		return transact(function(state)
+			state.rotation = {enabled = false, id = "", name = "", trackIds = {}, cursor = 1}
+			local filtered = {}
+			for _, entry in ipairs(state.queue) do if entry.source == "player" then table.insert(filtered, entry) end end
+			state.queue = filtered
+			return true
+		end)
+	end
+	local id = cleanText(playlistId, 64)
+	local name = cleanText(playlistName, 100)
+	if not id or not name or typeof(trackIds) ~= "table" or #trackIds < 1 or #trackIds > 200 then
+		return false, nil, "Invalid playlist rotation."
+	end
+	local cleanIds = {}
+	local seen: {[string]: boolean} = {}
+	for _, trackId in ipairs(trackIds) do
+		if typeof(trackId) ~= "string" or #trackId < 1 or #trackId > 32
+			or not string.match(trackId, "^[%w%-_]+$") or seen[trackId] then
+			return false, nil, "Invalid playlist track list."
+		end
+		seen[trackId] = true; table.insert(cleanIds, trackId)
+	end
+	return transact(function(state)
+		state.rotation = {enabled = true, id = id, name = name, trackIds = cleanIds, cursor = 1}
+		local filtered = {}
+		for _, entry in ipairs(state.queue) do if entry.source == "player" then table.insert(filtered, entry) end end
 		state.queue = filtered
 		return true
 	end)
