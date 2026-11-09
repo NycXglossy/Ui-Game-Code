@@ -1514,6 +1514,7 @@ local function advance(expectedGeneration: number?): boolean
 		if callOk and advanced == true and typeof(state) == "table" then
 			applyGlobalQueueState(state)
 			transitionInProgress = false
+			topUpAuto()
 			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			return true
 		end
@@ -2830,8 +2831,9 @@ local function handleAction(player: Player, action: any, payload: any)
 
 	if action == "DJSkip" then
 		if not isStaff(player) then return end
-		advance()
-		globalInvoke("PublishDJCommand", "Skip", {}, player.UserId)
+		local advanced = advance()
+		if not advanced then notify(player, "The shared track transition could not be confirmed.", "warn"); return end
+		if not globalQueueMode then globalInvoke("PublishDJCommand", "Skip", {}, player.UserId) end
 		notify(player, "Track skipped.", "ok")
 		publishState(nil)
 		return
@@ -2839,26 +2841,26 @@ local function handleAction(player: Player, action: any, payload: any)
 
 	if action == "DJPause" then
 		if not isStaff(player) then return end
-		if nowPlaying.trackId == "" then
-			notify(player, "No track is currently selected.", "warn")
-			return
-		end
-		if playbackPaused then
-			playbackPaused = false
-			local ok, err = pcall(function() musicSound:Resume() end)
-			if not ok then warn("[ClubMusic] Resume failed: " .. tostring(err)) end
-			notify(player, "Music resumed.", "ok")
+		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return end
+		local desiredPaused = not playbackPaused
+		if globalQueueMode then
+			local position = nowPlaying.elapsed
+			pcall(function() if musicSound.IsLoaded then position = musicSound.TimePosition end end)
+			local callOk, changed, state, message = globalInvoke("SetGlobalPlayback", desiredPaused, position, globalTrackRevision, false)
+			if not callOk or changed ~= true or typeof(state) ~= "table" then
+				notify(player, tostring(message or "Global playback state could not be saved."), "warn")
+				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				return
+			end
+			applyGlobalQueueState(state)
+			notify(player, if desiredPaused then "Music paused globally." else "Music resumed globally.", "ok")
 		else
-			playbackPaused = true
-			pcall(function() musicSound:Pause() end)
-			notify(player, "Music paused.", "ok")
-		end
-		local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused}, player.UserId)
-		if globalOk and globalPublished == true and isFiniteNumber(globalRevision) then
-			lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision))
-		end
-		if not globalOk or globalPublished ~= true then
-			notify(player, "Playback changed on this server, but cross-server sync is unavailable.", "warn")
+			playbackPaused = desiredPaused
+			pcall(function() if playbackPaused then musicSound:Pause() else musicSound:Resume() end end)
+			local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused}, player.UserId)
+			if globalOk and globalPublished == true and isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
+			if not globalOk or globalPublished ~= true then notify(player, "Playback changed on this server, but cross-server sync is unavailable.", "warn") end
+			notify(player, if playbackPaused then "Music paused." else "Music resumed.", "ok")
 		end
 		publishState(nil)
 		return
@@ -2866,22 +2868,23 @@ local function handleAction(player: Player, action: any, payload: any)
 
 	if action == "DJRestart" then
 		if not isStaff(player) then return end
-		if nowPlaying.trackId == "" then
-			notify(player, "No track is currently selected.", "warn")
-			return
-		end
-		nowPlaying.elapsed = 0
-		playbackPaused = false
-		local soundId = nowPlaying.soundId
-		startServerMusic(soundId)
-		local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
-		if globalOk and globalPublished == true and isFiniteNumber(globalRevision) then
-			lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision))
-		end
-		if not globalOk or globalPublished ~= true then
-			notify(player, "Track restarted here, but cross-server sync is unavailable.", "warn")
-		else
+		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return end
+		if globalQueueMode then
+			local callOk, restarted, state, message = globalInvoke("SetGlobalPlayback", false, 0, globalTrackRevision, true)
+			if not callOk or restarted ~= true or typeof(state) ~= "table" then
+				notify(player, tostring(message or "Global restart could not be confirmed."), "warn")
+				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				return
+			end
+			applyGlobalQueueState(state)
 			notify(player, "Current track restarted across servers.", "ok")
+		else
+			nowPlaying.elapsed = 0; playbackPaused = false
+			startServerMusic(nowPlaying.soundId)
+			local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
+			if globalOk and globalPublished == true and isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
+			if not globalOk or globalPublished ~= true then notify(player, "Track restarted here, but cross-server sync is unavailable.", "warn")
+			else notify(player, "Current track restarted across servers.", "ok") end
 		end
 		publishState(nil)
 		return
@@ -3361,6 +3364,11 @@ end
 
 local function handleGlobalMessage(message: any)
 	if typeof(message) ~= "table" then return end
+	if message.kind == "QueueChanged" and globalQueueMode then
+		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		if #queue < CONFIG.AutoQueueTarget then topUpAuto() end
+		return
+	end
 	if message.kind == "Catalog" then
 		if os.clock() - lastCatalogRefreshAt < 3 then return end
 		task.spawn(refreshLocalCatalog)
