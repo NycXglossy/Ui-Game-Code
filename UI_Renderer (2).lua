@@ -488,6 +488,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local selectedGenre = "hiphop"
 	local trackSearch = ""
 	local trackGenreFilter = "all"
+	local catalogOffset = 0
+	local catalogHasMore = false
+	local catalogRequestSerial = 0
+	local requestCatalogPage: ((number) -> ())? = nil
 	local volume = 0.8
 	local lastVolume = 0.8
 	local sliderDragging = false
@@ -1368,7 +1372,6 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		corner(searchBox, 8)
 		make("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, searchBox)
 
-		-- Genre filter chips
 		local filterCard = card(46)
 		local chips = make("ScrollingFrame", {
 			Name = "GenreFilter",
@@ -1387,8 +1390,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = UDim.new(0, 6),
 		}, chips)
+
 		local chipButtons: {[string]: {button: any, color: Color3}} = {}
-		local populate: () -> ()
 		local function refreshChips()
 			for id, entry in pairs(chipButtons) do
 				local active = id == trackGenreFilter
@@ -1418,12 +1421,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			chip.Activated:Connect(function()
 				trackGenreFilter = def.id
 				refreshChips()
-				populate()
+				catalogOffset = 0
+				requestCatalogPage(0)
 			end)
 		end
 		refreshChips()
 
-		local countLabel = sectionLabel("")
+		local countLabel = sectionLabel("Loading catalog…")
 		countLabel.TextColor3 = C.Muted
 		countLabel.TextSize = 11
 
@@ -1436,30 +1440,96 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		}, content) :: Frame
 		make("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 9) }, results)
 
-		populate = function()
+		local pager = card(44)
+		local pageLabel = label(pager, "Page 1", UDim2.new(0.28, 0, 0, 0), UDim2.new(0.44, 0, 1, 0), C.Muted, 10, true)
+		local previousButton = actionButton(pager, "PREVIOUS", UDim2.fromOffset(8, 7), UDim2.new(0.28, -12, 0, 30), function()
+			if catalogOffset >= 30 then
+				catalogOffset = math.max(0, catalogOffset - 30)
+				requestCatalogPage(catalogOffset)
+			end
+		end, C.SurfaceLight)
+		local nextButton = actionButton(pager, "NEXT", UDim2.new(1, -100, 0, 7), UDim2.fromOffset(92, 30), function()
+			if catalogHasMore then
+				catalogOffset += 30
+				requestCatalogPage(catalogOffset)
+			end
+		end, C.Purple)
+
+		local function showCatalogPage(result: any)
+			if destroyed or not results.Parent then return end
 			for _, child in ipairs(results:GetChildren()) do
 				if not child:IsA("UIListLayout") then child:Destroy() end
 			end
-			local query = string.lower((string.gsub(trackSearch, "^%s*(.-)%s*$", "%1")))
+			if typeof(result) ~= "table" or typeof(result.items) ~= "table" then
+				countLabel.Text = "Catalog is temporarily unavailable. Try again shortly."
+				pageLabel.Text = "Unavailable"
+				previousButton.Active = false
+				nextButton.Active = false
+				return
+			end
+
+			catalogHasMore = result.hasMore == true
 			local shown = 0
-			for _, track in ipairs(ALL_TRACKS) do
-				local genre: any = TRACK_GENRE[track[1] :: string]
-				local haystack = string.lower(tostring(track[2]) .. " " .. tostring(track[3]) .. " " .. (if genre then genre.name else ""))
-				local genreOk = trackGenreFilter == "all" or (genre ~= nil and genre.id == trackGenreFilter)
-				if genreOk and (query == "" or string.find(haystack, query, 1, true)) then
+			for _, entry in ipairs(result.items) do
+				if typeof(entry) == "table" and typeof(entry.id) == "string"
+					and typeof(entry.title) == "string" and typeof(entry.artist) == "string"
+					and typeof(entry.duration) == "number" then
+					local trackId = entry.id
+					local tuple = TRACK_INDEX[trackId]
+					if not tuple then
+						tuple = {trackId, entry.title, entry.artist, entry.duration}
+						TRACK_INDEX[trackId] = tuple
+						table.insert(ALL_TRACKS, tuple)
+					end
+					tuple[2] = entry.title
+					tuple[3] = entry.artist
+					tuple[4] = entry.duration
+					local genreInfo: any = TRACK_GENRE[trackId]
+					if not genreInfo then
+						local genreColor = C.Cyan
+						for _, knownGenre in ipairs(GENRES) do
+							if knownGenre.id == entry.genreId then genreColor = knownGenre.color break end
+						end
+						genreInfo = {id = entry.genreId, name = entry.genre, color = genreColor}
+						TRACK_GENRE[trackId] = genreInfo
+					end
 					shown += 1
-					local trackCard = makeTrackCard(track, results)
+					local trackCard = makeTrackCard(tuple, results)
 					trackCard.LayoutOrder = shown
+					if string.sub(trackId, 1, 7) == "custom-" then
+						local customLabel = make("TextLabel", {
+							Name = "CustomCatalogBadge",
+							Position = UDim2.new(1, -176, 0, 7),
+							Size = UDim2.fromOffset(48, 16),
+							BackgroundColor3 = C.Cyan,
+							Text = "CUSTOM",
+							TextColor3 = C.White,
+							TextSize = 8,
+							Font = BOLD,
+						}, trackCard)
+						corner(customLabel, 6)
+					end
 				end
 			end
-			local summary = string.format("%d track%s", shown, if shown == 1 then "" else "s")
+
+			local total = tonumber(result.total) or shown
+			local summary = string.format("%d catalog result%s", total, if total == 1 then "" else "s")
 			if trackGenreFilter ~= "all" then
 				for _, genre in ipairs(GENRES) do
-					if genre.id == trackGenreFilter then summary ..= " in " .. genre.name end
+					if genre.id == trackGenreFilter then summary ..= " in " .. genre.name break end
 				end
 			end
-			if query ~= "" then summary ..= string.format(" matching \"%s\"", query) end
+			if trackSearch ~= "" then summary ..= " matching \"" .. trackSearch .. "\"" end
 			countLabel.Text = summary
+			pageLabel.Text = string.format("Page %d  •  %d–%d of %d",
+				math.floor((tonumber(result.offset) or 0) / 30) + 1,
+				if shown > 0 then (tonumber(result.offset) or 0) + 1 else 0,
+				(tonumber(result.offset) or 0) + shown, total)
+			previousButton.Active = (tonumber(result.offset) or 0) > 0
+			previousButton.AutoButtonColor = previousButton.Active
+			nextButton.Active = catalogHasMore
+			nextButton.AutoButtonColor = nextButton.Active
+
 			if shown == 0 then
 				local empty = make("Frame", {
 					Size = UDim2.new(1, -4, 0, 52),
@@ -1471,18 +1541,44 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 		end
 
+		requestCatalogPage = function(offset: number)
+			if destroyed then return end
+			catalogRequestSerial += 1
+			local serial = catalogRequestSerial
+			countLabel.Text = "Loading catalog…"
+			task.spawn(function()
+				if typeof(Network.GetMusicCatalog) ~= "function" then
+					if serial == catalogRequestSerial then showCatalogPage(nil) end
+					return
+				end
+				local genreId = if trackGenreFilter == "all" then "" else trackGenreFilter
+				local ok, result = pcall(function()
+					return Network.GetMusicCatalog(trackSearch, genreId, offset, 30)
+				end)
+				if destroyed or serial ~= catalogRequestSerial then return end
+				showCatalogPage(if ok then result else nil)
+			end)
+		end
+
 		actionButton(searchCard, "CLEAR", UDim2.new(1, -72, 0, 11), UDim2.fromOffset(60, 30), function()
 			trackSearch = ""
 			searchBox.Text = ""
+			catalogOffset = 0
+			requestCatalogPage(0)
 		end, C.SurfaceLight)
 
 		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			if searchBox.Text ~= trackSearch then
-				trackSearch = searchBox.Text
-				populate()
+				trackSearch = string.sub(searchBox.Text, 1, 48)
+				catalogOffset = 0
+				catalogRequestSerial += 1
+				local serial = catalogRequestSerial
+				task.delay(0.9, function()
+					if not destroyed and serial == catalogRequestSerial then requestCatalogPage(0) end
+				end)
 			end
 		end)
-		populate()
+		requestCatalogPage(catalogOffset)
 	end
 
 	local function stopPreview()
