@@ -1238,14 +1238,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				or string.find(upperText, "SKIP", 1, true) then semanticColor = C.Purple
 			end
 		end
-		local touchProfile = UserInputService.TouchEnabled or GuiService:IsTenFootInterface()
-		local minimumHeight = if touchProfile then 36 else 32
-		-- Compact icon-only queue controls keep their paired layout; labeled
-		-- actions receive a wider touch target without colliding with neighbors.
-		local minimumWidth = if iconKind then (if touchProfile then 40 else 34)
-			else (if touchProfile then 58 else 48)
-		local resolvedSize = UDim2.new(size.X.Scale, math.max(size.X.Offset, minimumWidth),
-			size.Y.Scale, math.max(size.Y.Offset, minimumHeight))
+		-- Every caller owns its layout geometry. Never enlarge a control here:
+		-- doing so makes paired/stacked controls overlap on compact screens.
+		local resolvedSize = size
 		local displayText = if iconKind and iconKind ~= "reload" then "" elseif iconKind == "reload" then "RELOAD" else text
 		local button = make("TextButton", {
 			Position = position,
@@ -1286,10 +1281,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local function animateScale(target: number, duration: number)
 			TweenService:Create(scale, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = target}):Play()
 		end
-		button.MouseEnter:Connect(function() animateScale(1.025, 0.12) end)
+		-- Keep hover/focus feedback inside the button bounds so adjacent
+		-- controls never visually collide; the outline carries the emphasis.
+		button.MouseEnter:Connect(function() animateScale(1, 0.12) end)
 		button.MouseLeave:Connect(function() animateScale(1, 0.12) end)
 		button.Activated:Connect(function()
-			animateScale(0.985, 0.06)
+			animateScale(0.99, 0.06)
 			callback()
 			task.delay(0.07, function()
 				if button.Parent then animateScale(1, 0.12) end
