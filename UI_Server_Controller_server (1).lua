@@ -871,6 +871,9 @@ end
 -- Legacy attributes (CustomTitle/TitleColor/TitleStyle/ShowCustomTitle) are kept up to date as well.
 local function applyTitleAttributes(player: Player, profile: Profile)
 	local slot = profile.titleSlots[profile.activeSlot]
+	-- Replicate the equipped collection tag on join as well as after equip actions.
+	-- The overhead renderer consumes this cosmetic attribute; ownership remains server-authoritative.
+	player:SetAttribute("EquippedTag", if typeof(profile.equippedTag) == "string" then profile.equippedTag else "")
 	player:SetAttribute("TitleSlotsUnlocked", profile.unlockedSlots)
 	player:SetAttribute("TitleSlot", profile.activeSlot)
 	player:SetAttribute("ShowCustomTitle", profile.showCustomTitle)
