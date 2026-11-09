@@ -2988,6 +2988,25 @@ local function handleAction(player: Player, action: any, payload: any)
 		for index, id in ipairs(ALL_TRACK_IDS) do
 			if id == trackId then table.remove(ALL_TRACK_IDS, index); break end
 		end
+		-- Remove the deleted track from the active in-memory rotation immediately.
+		-- The persistent playlist keeps its ID so restoration can make it playable again.
+		if activePlaylistId then
+			for index = #activePlaylistTracks, 1, -1 do
+				if activePlaylistTracks[index].id == trackId then
+					table.remove(activePlaylistTracks, index)
+				end
+			end
+			activePlaylistCursor = math.clamp(activePlaylistCursor, 1, math.max(1, #activePlaylistTracks))
+			if globalQueueMode then
+				local rotationSynced, syncMessage = syncGlobalPlaylistRotation()
+				if not rotationSynced then
+					warn("[ClubMusic] Removed catalog track locally, but shared playlist rotation sync failed: " .. tostring(syncMessage))
+				end
+			else
+				clearAutomaticQueue()
+				topUpAuto()
+			end
+		end
 		local publishOk, published = globalInvoke("PublishCatalogChange")
 		if not publishOk or published ~= true then
 			warn("[ClubMusic] Catalog removal saved locally; cross-server invalidation publish failed.")
@@ -3825,7 +3844,14 @@ local function refreshLocalCatalog(): boolean
 		-- Rebuild the in-memory playable view without mutating the saved playlist:
 		-- stale IDs remain available if a track is restored in a later catalog sync.
 		if activePlaylistId then
-			reloadActivePlaylist()
+			if globalQueueMode then
+				-- The shared rotation is authoritative in global mode; re-read it
+				-- against the refreshed local catalog instead of replacing it with
+				-- this server's possibly stale playlist copy.
+				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			else
+				reloadActivePlaylist()
+			end
 		end
 		refreshed = true
 	end)
