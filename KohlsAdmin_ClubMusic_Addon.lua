@@ -14,31 +14,91 @@
 -- ClubMusic then independently applies its own staff/admin rank checks.
 -- This addon intentionally exposes a small fixed command set. It does not provide
 -- arbitrary action names, queue IDs, player targets, asset IDs, or raw payloads.
+--
+-- Audit refinement:
+-- Actual bridge outcomes are logged here, where accepted/rejected is known.
+-- Do not use postCommand to infer whether a ClubMusic action succeeded.
 
 return function(_K: any)
+	local function getActorUserId(context: any): number?
+		if typeof(context) ~= "table" then
+			return nil
+		end
+
+		local player = context.fromPlayer
+		if typeof(player) == "Instance" and player:IsA("Player") then
+			return player.UserId
+		end
+
+		local from = context.from
+		if typeof(from) == "number"
+			and from > 0
+			and from % 1 == 0
+			and from <= 9007199254740991 then
+			return from
+		end
+
+		return nil
+	end
+
+	local function logOutcome(context: any, operation: string, outcome: string, message: string)
+		if _K.IsServer ~= true or typeof(_K.log) ~= "function" then
+			return
+		end
+
+		local safeMessage = string.gsub(message, "[%c]", " ")
+		safeMessage = string.sub(safeMessage, 1, 180)
+
+		local level = if outcome == "accepted" then "INFO"
+			elseif outcome == "error" then "ERROR"
+			else "WARN"
+
+		local actorUserId = getActorUserId(context)
+		local logMessage = string.format(
+			"ClubMusic bridge %s: operation=%s result=%s message=%s",
+			outcome,
+			operation,
+			outcome,
+			safeMessage
+		)
+
+		local ok, err = pcall(_K.log, logMessage, level, actorUserId)
+		if not ok then
+			warn("[ClubMusic Kohl's Admin] Could not write outcome audit log: " .. tostring(err))
+		end
+	end
+
+	local function finish(context: any, operation: string, outcome: string, message: string): string
+		logOutcome(context, operation, outcome, message)
+		return message
+	end
+
 	local function submit(context: any, operation: string, argument: string?): string?
 		local caller = context and context.fromPlayer
 		if typeof(caller) ~= "Instance" or not caller:IsA("Player") then
-			return "This command requires an online player caller."
+			return finish(context, operation, "rejected", "This command requires an online player caller.")
 		end
 
 		local serverStorage = game:GetService("ServerStorage")
 		local bridge = serverStorage:FindFirstChild("ClubMusicAdminBridge")
 		if not bridge or not bridge:IsA("BindableFunction") then
-			return "ClubMusic admin bridge is unavailable. Check the server controller installation."
+			return finish(context, operation, "error", "ClubMusic admin bridge is unavailable. Check the server controller installation.")
 		end
 
 		local ok, accepted, message = pcall(function()
 			return bridge:Invoke(caller, operation, argument)
 		end)
 		if not ok then
-			warn("[ClubMusic Kohl's Admin] Bridge invocation failed: " .. tostring(accepted))
-			return "ClubMusic could not process that command."
+			return finish(context, operation, "error", "Bridge invocation failed: " .. tostring(accepted))
 		end
+
 		if accepted ~= true then
-			return if typeof(message) == "string" then message else "ClubMusic rejected that command."
+			local rejectionMessage = if typeof(message) == "string" then message else "ClubMusic rejected that command."
+			return finish(context, operation, "rejected", rejectionMessage)
 		end
-		return if typeof(message) == "string" then message else "ClubMusic action submitted."
+
+		local successMessage = if typeof(message) == "string" then message else "ClubMusic action submitted."
+		return finish(context, operation, "accepted", successMessage)
 	end
 
 	local function register(name: string, description: string, group: string, operation: string, aliases: {string}?, argumentDefinitions: {any}?)
