@@ -2818,12 +2818,17 @@ end
 -- Actions -----------------------------------------------------------------------------
 
 local function handleAction(player: Player, action: any, payload: any)
-	-- Global + per-action throttles. Unknown actions are still throttled and rejected below.
 	if player.Parent ~= Players then return end
+	-- Validate the small, fixed remote contract before spending shared-service
+	-- budget or forwarding attacker-controlled action values across the server bridge.
+	if not isValidString(action, 32) or not isBoundedPayload(payload) then return end
+	if ACTION_COOLDOWNS[action] == nil then return end
+
+	-- Global + per-action throttles apply only to recognized, bounded actions.
 	local now = os.clock()
 	local userId = player.UserId
 	if not consumeActionBudget(userId, now) then return end
-	local globalBudgetOk, globalAllowed = globalInvoke("ConsumeActionBudget", userId, tostring(action), 1)
+	local globalBudgetOk, globalAllowed = globalInvoke("ConsumeActionBudget", userId, action, 1)
 	if RunService:IsStudio() then
 		if globalBudgetOk and globalAllowed == false then return end
 	else
@@ -2834,9 +2839,6 @@ local function handleAction(player: Player, action: any, payload: any)
 	local previousGlobal = lastActionAt[userId] or 0
 	if previousGlobal > 0 and now - previousGlobal < 0.12 then return end
 	lastActionAt[userId] = now
-	if not isValidString(action, 32) or not isBoundedPayload(payload) then return end
-	-- Reject unknown actions before retaining attacker-controlled names in cooldown tables.
-	if ACTION_COOLDOWNS[action] == nil then return end
 	local actionTimes = lastActionByType[userId]
 	if not actionTimes then actionTimes = {}; lastActionByType[userId] = actionTimes end
 	local actionCooldown = ACTION_COOLDOWNS[action] or 0.2
