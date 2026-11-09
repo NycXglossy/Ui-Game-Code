@@ -3264,9 +3264,15 @@ local function handleAction(player: Player, action: any, payload: any)
 			applyGlobalQueueState(state)
 			notify(player, if desiredPaused then "Music paused globally." else "Music resumed globally.", "ok")
 		else
+			local position = nowPlaying.elapsed
+			pcall(function() if musicSound.IsLoaded then position = musicSound.TimePosition end end)
+			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
 			playbackPaused = desiredPaused
-			pcall(function() if playbackPaused then musicSound:Pause() else musicSound:Resume() end end)
-			local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused}, player.UserId)
+			pcall(function()
+				if musicSound.IsLoaded then musicSound.TimePosition = nowPlaying.elapsed end
+				if playbackPaused then musicSound:Pause() else musicSound:Resume() end
+			end)
+			local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused, position = nowPlaying.elapsed}, player.UserId)
 			if globalOk and globalPublished == true and isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
 			if not globalOk or globalPublished ~= true then notify(player, "Playback changed on this server, but cross-server sync is unavailable.", "warn") end
 			notify(player, if playbackPaused then "Music paused." else "Music resumed.", "ok")
@@ -3814,7 +3820,13 @@ local function applyGlobalPlaybackControl(command: string, payload: any): boolea
 	if command == "SetPlaybackPaused" then
 		if typeof(payload.paused) ~= "boolean" then return false end
 		playbackPaused = payload.paused
+		if isFiniteNumber(payload.position) then
+			nowPlaying.elapsed = math.clamp(payload.position, 0, nowPlaying.duration)
+		end
 		pcall(function()
+			if musicSound.IsLoaded and isFiniteNumber(payload.position) then
+				musicSound.TimePosition = nowPlaying.elapsed
+			end
 			if playbackPaused then musicSound:Pause() else musicSound:Resume() end
 		end)
 	elseif command == "Restart" then
