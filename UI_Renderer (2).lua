@@ -427,7 +427,7 @@ end
 -- permission, argument, cooldown, and ownership check independently.
 local ALLOWED_ACTIONS: {[string]: boolean} = {
 	ReloadSong = true, ToggleFavorite = true, RequestTrack = true, VoteSkip = true,
-	RequestAudioAsset = true, DJSkip = true, DJToggleLock = true, DJClearQueue = true,
+	RequestAudioAsset = true, CatalogAddAudio = true, CatalogRemoveTrack = true, DJSkip = true, DJToggleLock = true, DJClearQueue = true,
 	DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ModBlockUser = true, ModSetVip = true,
 	ModPurgeUser = true, ClaimDailyReward = true, EquipTitleTag = true,
 	SaveTitleSlot = true, SetTitleVisible = true, SelectTitleSlot = true,
@@ -444,7 +444,7 @@ local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	SelectTitleSlot = true, ClearTitleSlot = true, SetTitleVisible = true,
 }
 local ACTION_MIN_INTERVAL: {[string]: number} = {
-	RequestTrack = 0.35, RequestAudioAsset = 1.0, ReloadSong = 3.0,
+	RequestTrack = 0.35, RequestAudioAsset = 1.0, CatalogAddAudio = 10.0, CatalogRemoveTrack = 2.0, ReloadSong = 3.0,
 	SaveTitleSlot = 0.35, ClaimDailyReward = 0.35,
 }
 
@@ -494,6 +494,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local lastReload = 0
 	local audioInput = ""
 	local audioLookup: {[string]: any}? = nil
+	local catalogGenreId = "exclusive"
 	local lookupSerial = 0
 	local previewSound: Sound? = nil
 	local previewId: number? = nil
@@ -1581,7 +1582,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		local info = card(84)
 		label(info, "Play any Roblox audio by asset ID.", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.White, 13, true)
-		label(info, "Paste an audio ID or a Creator Hub link, look it up, preview it privately, then request it. Only audio this experience is allowed to use will play.",
+		label(info, "Paste an audio ID or Creator Hub link, look it up, preview it, request it, or save a validated track to the shared catalog.",
 			UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 46), C.Muted, 10, false)
 
 		local inputCard = card(96)
@@ -1627,7 +1628,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			label(failed, tostring(result.message), UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Red, 11, true)
 		else
 			local id = tonumber(result.id) or 0
-			local found = card(128)
+			local found = card(176)
 			label(found, tostring(result.name), UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.White, 13, true)
 			label(found, "by " .. tostring(result.creator) .. "  •  ID " .. tostring(id), UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
 			local previewing = previewId == id
@@ -1648,6 +1649,28 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					send("RequestAudioAsset", { assetId = id, title = title })
 				end
 			end, if disabled then C.SurfaceLight else C.Magenta)
+
+			local genreName = "Club Exclusives"
+			for _, genre in ipairs(GENRES) do
+				if genre.id == catalogGenreId then genreName = genre.name break end
+			end
+			actionButton(found, "GENRE: " .. genreName, UDim2.fromOffset(12, 116), UDim2.new(0.5, -16, 0, 34), function()
+				local currentIndex = 1
+				for index, genre in ipairs(GENRES) do
+					if genre.id == catalogGenreId then currentIndex = index break end
+				end
+				currentIndex = currentIndex % #GENRES + 1
+				catalogGenreId = GENRES[currentIndex].id
+				refreshAudioTab()
+			end, C.SurfaceLight)
+			actionButton(found, "SAVE TO CATALOG", UDim2.new(0.5, 4, 0, 116), UDim2.new(0.5, -16, 0, 34), function()
+				if typeof(Network.Send) ~= "function" then
+					notify("Catalog storage network is unavailable.", C.Red)
+					return
+				end
+				send("CatalogAddAudio", {assetId = id, genreId = catalogGenreId})
+				notify("Submitting audio for server validation and catalog storage…", C.Cyan)
+			end, C.Cyan)
 		end
 	end
 
