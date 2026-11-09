@@ -2692,7 +2692,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function applyMenuTypography()
-		local scaleByDevice = {Desktop=1.08, Tablet=1.00, Mobile=0.90, Console=1.04, VR=0.96}
+		-- Keep typography readable without fighting the panel's device UIScale.
+		local scaleByDevice = {Desktop=1.04, Tablet=0.98, Mobile=0.92, Console=1.02, VR=0.96}
 		local textScale = scaleByDevice[currentDevice] or 1
 		for _, item in ipairs(panel:GetDescendants()) do
 			if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
@@ -2701,8 +2702,42 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					baseSize = item.TextSize
 					item:SetAttribute("ClubBaseTextSize", baseSize)
 				end
-				item.TextSize = math.clamp(math.floor(baseSize * textScale + 0.5), 9, 30)
-				if item:IsA("TextButton") and item.TextScaled then item.TextScaled = false end
+				local minSize = if currentDevice == "Mobile" then 8 else 9
+				local maxSize = if currentDevice == "Mobile" then 25 else 28
+				item.TextSize = math.clamp(math.floor(baseSize * textScale + 0.5), minSize, maxSize)
+				if item:IsA("TextButton") then
+					item.TextScaled = false
+					item.Font = BOLD
+				elseif item:IsA("TextBox") then
+					item.TextScaled = false
+					item.Font = FONT
+				end
+			end
+		end
+
+		-- Every tab shares the same editorial hierarchy: confident titles,
+		-- calm supporting copy, and compact but legible control labels.
+		for _, item in ipairs(content:GetDescendants()) do
+			if item:IsA("TextLabel") then
+				local baseSize = item:GetAttribute("ClubBaseTextSize")
+				if typeof(baseSize) ~= "number" then
+					baseSize = item.TextSize
+					item:SetAttribute("ClubBaseTextSize", baseSize)
+				end
+				item.Font = if baseSize >= 13 then BOLD else FONT
+				item.TextScaled = false
+				-- Longer descriptions can wrap in their existing card area rather
+				-- than being forced into an unreadably small font.
+				local height = item.Size.Y.Offset
+				if height >= 26 and #item.Text > 34 then
+					item.TextWrapped = true
+				end
+			elseif item:IsA("TextButton") then
+				item.Font = BOLD
+				item.TextScaled = false
+			elseif item:IsA("TextBox") then
+				item.Font = FONT
+				item.TextScaled = false
 			end
 		end
 	end
