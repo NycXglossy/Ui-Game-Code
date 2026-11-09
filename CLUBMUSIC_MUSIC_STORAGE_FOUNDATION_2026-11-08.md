@@ -12,11 +12,20 @@ Branch: `audit/hardened-clubmusic-2026-11-08`
 
 ## Installation
 
-1. Create a **ModuleScript** named `MusicCatalogService` under `ServerStorage`.
-2. Paste the complete contents of `MusicCatalogService.lua` from this repository into it.
-3. Keep the existing `UI_Server_Controller` Script in `ServerScriptService`; it now requires the catalog module.
-4. Keep `UI_Network` in `ReplicatedStorage`. The controller creates `GetMusicCatalog` inside the existing `ClubMusicRemotes` folder at runtime.
-5. No new LocalScript, legacy remote, role module, DataStore, or queue manager is required for this foundation.
+**Recommended: import the bundled ServerStorage modules.**
+
+1. Download `ClubMusic_ServerStorage_Modules.rbxmx` from this branch and open/import it in Roblox Studio.
+2. It creates a folder named `ClubMusic_ServerStorage_Modules` containing three ModuleScripts: `MusicCatalogService`, `MusicPlaylistService`, and `ClubMusic_ReceiptHash`.
+3. Move all three ModuleScripts directly into `ServerStorage` (not into a nested folder). Delete the now-empty bundle folder.
+4. Confirm the exact Explorer paths are:
+   - `ServerStorage/MusicCatalogService`
+   - `ServerStorage/MusicPlaylistService`
+   - `ServerStorage/ClubMusic_ReceiptHash`
+5. Keep the existing `UI_Server_Controller` Script in `ServerScriptService`, `UI_Network` in `ReplicatedStorage`, and the bootstrap LocalScript in `StarterPlayer/StarterPlayerScripts`.
+
+**Manual alternative:** create each ModuleScript with the exact name above and paste the matching `.lua` source file from this branch. The controller requires these modules as direct children of `ServerStorage`; a folder nested under ServerStorage will not satisfy the lookup.
+
+The importable bundle contains the current source versions from this branch. It does not install or replace the controller, client modules, or any legacy remotes.
 
 ## Adding songs
 
