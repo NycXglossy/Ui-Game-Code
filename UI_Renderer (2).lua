@@ -486,6 +486,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local destroyed = false
 	local expanded = false
 	local activeTab = "Home"
+	local lastRenderedTab: string? = nil
 	local selectedGenre = "hiphop"
 	local musicSearchQuery = ""
 	local trackSearch = ""
@@ -3262,6 +3263,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 	local function renderTab()
 		refreshNav()
+		local tabChanged = lastRenderedTab ~= activeTab
+		lastRenderedTab = activeTab
+		if tabChanged then content.CanvasPosition = Vector2.zero end
 		clearContent()
 		local renderer = renderers[activeTab]
 		if renderer then renderer() end
@@ -3304,6 +3308,33 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 		end
 		applyMenuTypography()
+		if tabChanged then
+			-- Keep the active destination visible in the horizontal navigation on
+			-- narrow screens and gamepad layouts without moving it on state refreshes.
+			local selectedButton = navButtons[activeTab]
+			if selectedButton then
+				task.defer(function()
+					if destroyed or not selectedButton.Parent or not nav.Parent then return end
+					local left = selectedButton.AbsolutePosition.X - nav.AbsolutePosition.X + nav.CanvasPosition.X
+					local right = left + selectedButton.AbsoluteSize.X
+					local visibleLeft = nav.CanvasPosition.X
+					local visibleRight = visibleLeft + nav.AbsoluteSize.X
+					local targetX = visibleLeft
+					if left < visibleLeft then
+						targetX = left
+					elseif right > visibleRight then
+						targetX = right - nav.AbsoluteSize.X
+					else
+						return
+					end
+					local maxX = math.max(0, nav.AbsoluteCanvasSize.X - nav.AbsoluteSize.X)
+					targetX = math.clamp(targetX, 0, maxX)
+					TweenService:Create(nav, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+						CanvasPosition = Vector2.new(targetX, 0),
+					}):Play()
+				end)
+			end
+		end
 	end
 
 	renderTabFn = renderTab
