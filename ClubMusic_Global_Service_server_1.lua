@@ -17,6 +17,16 @@ local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local ReceiptHash = require(ServerStorage:WaitForChild("ClubMusic_ReceiptHash"))
 
+local queueModule = ServerStorage:WaitForChild("MusicGlobalQueueService", 20)
+if not queueModule or not queueModule:IsA("ModuleScript") then
+	error("[ClubMusic Global] Missing ServerStorage.MusicGlobalQueueService ModuleScript.")
+end
+local queueRequireOk, queueRequireResult = pcall(require, queueModule)
+if not queueRequireOk then
+	error("[ClubMusic Global] MusicGlobalQueueService failed to load: " .. tostring(queueRequireResult))
+end
+local MusicGlobalQueueService = queueRequireResult
+
 local CONFIG = {
 	Enabled = true,
 	-- Keep Studio isolated by default. Set true only for intentional cross-server Studio tests.
@@ -379,6 +389,52 @@ bindFunction("PublishAnnouncement", function(message: any, actorUserId: any)
 end)
 
 bindFunction("PublishDJCommand", publishDJCommand)
+
+-- Global queue API: every mutation is atomic in the shared DataStore.
+-- Controller callers still perform role, moderation, catalog, and request-limit checks.
+bindFunction("GetGlobalQueueState", function()
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	return MusicGlobalQueueService:GetSnapshot()
+end)
+
+bindFunction("EnqueueGlobalQueueEntry", function(entry: any, playerQueueCap: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	local ok, state, message = MusicGlobalQueueService:Enqueue(entry, playerQueueCap)
+	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
+bindFunction("RemoveGlobalQueueEntry", function(entryId: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	local ok, state, message = MusicGlobalQueueService:Remove(entryId)
+	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
+bindFunction("ClearGlobalQueue", function()
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	local ok, state, message = MusicGlobalQueueService:Clear()
+	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
+bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallbackEntry: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry)
+	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
+bindFunction("SetGlobalPlayback", function(paused: any, position: any, expectedTrackRevision: any, restart: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	local ok, state, message = MusicGlobalQueueService:SetPlayback(paused, position, expectedTrackRevision, restart)
+	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
+bindFunction("GetGlobalPlaybackPosition", function(snapshot: any)
+	return MusicGlobalQueueService:GetPosition(snapshot)
+end)
 
 bindFunction("PublishCatalogChange", function()
 	if not SERVICE_ENABLED then return false end
