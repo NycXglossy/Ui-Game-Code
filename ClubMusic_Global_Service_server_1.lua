@@ -266,14 +266,39 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): b
 	elseif command == "SetPlaybackPaused" then
 		if typeof(payload.paused) ~= "boolean" then return false end
 		cleanPayload.paused = payload.paused
+	elseif command == "Restart" then
+		cleanPayload.restart = true
+	end
+	if command == "SetPlaybackPaused" or command == "Restart" then
+		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
+		if not budgetShared or not budgetAllowed then
+			warn("[ClubMusic Global] Playback control rejected: shared DataStore budget unavailable.")
+			return false
+		end
+		local stored, storeResult = pcall(function()
+			return globalControlStore:UpdateAsync("playbackControl", function(old)
+				local state = if typeof(old) == "table" then table.clone(old) else {}
+				local revision = if finiteNumber(state.revision) and state.revision >= 0 then math.floor(state.revision) else 0
+				state.revision = revision + 1
+				state.command = command
+				state.paused = if command == "SetPlaybackPaused" then cleanPayload.paused else false
+				state.updatedAt = os.time()
+				state.updatedBy = math.floor(actorUserId)
+				return state
+			end)
+		end)
+		if not stored or typeof(storeResult) ~= "table" or not finiteNumber(storeResult.revision) then
+			warn("[ClubMusic Global] Could not persist global playback control: " .. tostring(storeResult))
+			return false
+		end
+		cleanPayload.revision = math.floor(storeResult.revision)
 	end
 	local published = publishTopic(CONFIG.Topics.DJ, {
 		kind = "DJ", command = command, payload = cleanPayload,
 		actorUserId = math.floor(actorUserId),
 	})
-	-- Request-lock state is durable; a missed notification is recovered by polling.
-	-- Other DJ commands require successful MessagingService publication.
-	if command == "SetRequestLock" then return true end
+	-- Pause/resume and restart are durable; polling repairs missed MessagingService events.
+	if command == "SetRequestLock" or command == "SetPlaybackPaused" or command == "Restart" then return true end
 	return published
 end
 
@@ -352,6 +377,20 @@ bindFunction("PublishDJCommand", publishDJCommand)
 bindFunction("PublishCatalogChange", function()
 	if not SERVICE_ENABLED then return false end
 	return publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
+end)
+
+bindFunction("GetGlobalPlaybackControl", function()
+	if not SERVICE_ENABLED then return nil, false end
+	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
+	if not shared or not allowed then return nil, false end
+	local ok, state = pcall(function() return globalControlStore:GetAsync("playbackControl") end)
+	if not ok then return nil, false end
+	if typeof(state) == "table" and finiteNumber(state.revision)
+		and (state.command == "SetPlaybackPaused" or state.command == "Restart")
+		and typeof(state.paused) == "boolean" then
+		return {revision = math.floor(state.revision), command = state.command, paused = state.paused}, true
+	end
+	return nil, true
 end)
 
 bindFunction("GetGlobalRequestLock", function()
@@ -449,7 +488,8 @@ local function onDJ(message)
 	if not allowedDJCommands[data.command] or not finiteNumber(data.actorUserId) then return end
 	local payload = if typeof(data.payload) == "table" then data.payload else {}
 	if data.command == "SetRequestLock" and typeof(payload.locked) ~= "boolean" then return end
-	if data.command == "SetPlaybackPaused" and typeof(payload.paused) ~= "boolean" then return end
+	if data.command == "SetPlaybackPaused" and (typeof(payload.paused) ~= "boolean" or not finiteNumber(payload.revision)) then return end
+	if data.command == "Restart" and not finiteNumber(payload.revision) then return end
 	globalEventBindable:Fire({kind = "DJ", command = data.command, payload = payload, actorUserId = data.actorUserId, senderJob = data.senderJob})
 end
 
@@ -483,6 +523,31 @@ if SERVICE_ENABLED then
 else
 	warn("[ClubMusic Global] Disabled in Studio or by configuration; local UI controller remains fully functional.")
 end
+
+-- Reconcile durable playback controls independently of MessagingService delivery.
+-- Each controller applies a revision once; a missed restart is replayed on next poll.
+task.spawn(function()
+	while true do
+		task.wait(20 + math.random(0, 5))
+		if SERVICE_ENABLED then
+			local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
+			if allowed and shared then
+				local ok, state = pcall(function() return globalControlStore:GetAsync("playbackControl") end)
+				if ok and typeof(state) == "table" and finiteNumber(state.revision)
+					and (state.command == "SetPlaybackPaused" or state.command == "Restart")
+					and typeof(state.paused) == "boolean" then
+					globalEventBindable:Fire({
+						kind = "DJ", command = state.command,
+						payload = {revision = math.floor(state.revision), paused = state.paused},
+						actorUserId = if finiteNumber(state.updatedBy) then state.updatedBy else 0,
+					})
+				elseif not ok then
+					warn("[ClubMusic Global] Playback-control reconciliation read failed: " .. tostring(state))
+				end
+			end
+		end
+	end
+end)
 
 -- Reconcile online users against durable moderation records so missed MessagingService
 -- deliveries do not leave a stale request-block/ban state indefinitely.
