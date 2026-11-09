@@ -3152,7 +3152,7 @@ local function handleAction(player: Player, action: any, payload: any)
 			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
 			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
 		else
-			table.insert(queue, insertIndex(passTier(player)), entry)
+			queueManager:Insert(insertIndex(passTier(player)), entry)
 			requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
 		end
 		lastRequestAt[player.UserId] = recheckNow
