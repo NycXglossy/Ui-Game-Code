@@ -104,3 +104,15 @@ The patch checks `typeof(b) == "CFrame"` before reading `LookVector`. This preve
 7. Apply the corrected patch to a backup in Studio, test all documented workflows and privilege tiers, then export a new `.rbxmx`.
 
 **Deployment recommendation: Do not treat this model as fully hardened or production-ready yet.**
+
+
+## Patch correction follow-up — 2026-11-08
+
+The patch source was subsequently revised on this audit branch to address the directly actionable findings:
+
+- **KHA-03:** all source-string replacements are now prepared and asserted before either Script.Source property is assigned. The MainModule write is rolled back if the Loader write fails.
+- **KHA-04:** KDelete is throttled to 10 requests/second and KPaste to 1 request/second per player; paste batches are capped at 25 Instances and 500 combined descendants.
+- **KHA-05:** delete/paste targets are narrowed to Workspace descendants; paste validates a dense list, rejects invalid/self-descendant targets, and stages clones before parenting. This narrower scope may affect workflows that edited outside Workspace and must be tested.
+- **KHA-07:** KCam now rejects non-CFrame, non-finite component values, and position coordinates outside ±100,000 studs.
+
+The revised patch is stored at `Kohls_Admin_Hardening_Patch.lua` on this branch. These are source-level corrections only. **KHA-01** (Creator-scoped arbitrary-code execution) and **KHA-06** (full per-command authorization review) remain open; full model inspection and Studio/multiplayer testing remain outstanding. The corrected patch has not been executed against the model.
