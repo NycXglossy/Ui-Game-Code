@@ -1909,12 +1909,10 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 					failureReason = "The shared track changed, but this server could not confirm the newer snapshot. Please retry."
 				end
 			end
-			if didAdvance then
-				topUpAuto()
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			else
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			end
+			-- Keep the transition lock scoped to the authoritative CAS and any
+			-- required stale-revision confirmation. Queue replenishment and the
+			-- follow-up snapshot can yield on DataStore work, so they must run only
+			-- after the lock is released.
 			return didAdvance, failureReason
 		end)
 		transitionInProgress = false
@@ -1925,7 +1923,15 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 		end
 		if not advanced then
 			warn("[ClubMusic] Global transition was not applied: " .. tostring(reason))
+			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			return false, reason
+		end
+		local maintenanceOk, maintenanceError = pcall(function()
+			topUpAuto()
+			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		end)
+		if not maintenanceOk then
+			warn("[ClubMusic] Track advanced, but post-transition queue maintenance failed: " .. tostring(maintenanceError))
 		end
 		return true, nil
 	end
