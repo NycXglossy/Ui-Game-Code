@@ -947,9 +947,12 @@ end
 
 local function passTier(player: Player): number
 	local userId = player.UserId
+	-- Staff receive the complete club membership tier by default. This is
+	-- derived from the server-verified staff rank, never from client attributes.
+	if getLevel(player) >= 1 then return 3 end
 	if sultanPass[userId] == true then return 3 end
 	if vvipPass[userId] == true then return 2 end
-	if getLevel(player) >= 1 or vipPass[userId] == true or tempVip[userId] == true then return 1 end
+	if vipPass[userId] == true or tempVip[userId] == true then return 1 end
 	return 0
 end
 
@@ -1274,6 +1277,12 @@ local function loadProfile(player: Player)
 			end
 		end
 		profile.activeSlot = math.clamp(math.floor(tonumber(data.activeSlot) or 1), 1, TITLE_SLOT_COUNT)
+	end
+
+	-- Staff have all three custom-title slots unlocked automatically. Existing
+	-- player-owned slots and title data are preserved; this only raises access.
+	if isStaff(player) then
+		profile.unlockedSlots = TITLE_SLOT_COUNT
 	end
 
 	-- The active slot must be unlocked and filled; otherwise fall back to the first filled slot.
@@ -4098,16 +4107,18 @@ end)
 
 -- Periodically re-check group rank / VIP so promotions apply without rejoining.
 task.spawn(function()
-	while true do
-		task.wait(60)
-		for _, player in ipairs(Players:GetPlayers()) do
-			task.spawn(function()
 				refreshRank(player)
 				refreshVip(player)
+				local profile = profiles[player.UserId]
+				if profile and isStaff(player) and profile.unlockedSlots < TITLE_SLOT_COUNT then
+					profile.unlockedSlots = TITLE_SLOT_COUNT
+					applyTitleAttributes(player, profile)
+					scheduleProfileSave(player)
+					publishState(player)
+				end
 				applyVipAttribute(player)
 				syncTitleTagUnlocks(player)
-			end)
-		end
+			end)		end
 	end
 end)
 
