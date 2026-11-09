@@ -731,6 +731,8 @@ local autoQueueHold = false
 -- This prevents delayed MessagingService snapshots from restoring an older queue.
 local globalQueueRevision = 0
 local globalQueueSyncBusy = false
+local globalQueueRefreshScheduled = false
+local globalPlaybackInitialized = false
 local publishState: (Player?) -> () = function(_player: Player?) end
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
@@ -1776,35 +1778,34 @@ local function applyGlobalQueueState(state: any): boolean
 			}
 			setNowPlaying(entry)
 		end
+		-- Pause is authoritative state, not a side effect of a position lookup.
+		-- Apply it even if the optional position helper is temporarily unavailable.
+		playbackPaused = state.playback.paused == true
+		local restartObserved = globalPlaybackInitialized and restartRevision > previousRestartRevision
+		if restartObserved then
+			nowPlaying.elapsed = 0
+			pcall(function() startServerMusic(nowPlaying.soundId) end)
+		elseif isFiniteNumber(state.playback.position) then
+			nowPlaying.elapsed = math.clamp(state.playback.position, 0, nowPlaying.duration)
+		end
 		local positionCallOk, position = globalInvoke("GetGlobalPlaybackPosition", state)
 		if positionCallOk and isFiniteNumber(position) then
-			local synchronizedPosition = math.clamp(position, 0, nowPlaying.duration)
-			local restartObserved = restartRevision > previousRestartRevision
-				and synchronizedPosition <= 0.25
-				and musicSound.SoundId == nowPlaying.soundId
-				and musicSound.TimePosition > 1
-			nowPlaying.elapsed = synchronizedPosition
-			playbackPaused = state.playback.paused == true
-			pcall(function()
-				-- A global restart preserves the track ID but increments its playback
-				-- revision. Restart the local Sound explicitly; seeking alone does not
-				-- reliably restart a Sound that is already playing or paused.
-				if restartObserved then
-					startServerMusic(nowPlaying.soundId)
-				end
-				if musicSound.SoundId ~= nowPlaying.soundId then
-					if nowPlaying.soundId ~= "" then startServerMusic(nowPlaying.soundId)
-					else stopServerMusic(); musicSound.SoundId = "" end
-				end
-				if musicSound.IsLoaded and math.abs(musicSound.TimePosition - nowPlaying.elapsed) > 2 then
-					musicSound.TimePosition = nowPlaying.elapsed
-				end
-				if playbackPaused then musicSound:Pause()
-				elseif not musicSound.IsPlaying and nowPlaying.soundId ~= "" then musicSound:Play() end
-			end)
+			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
 		end
+		pcall(function()
+			if musicSound.SoundId ~= nowPlaying.soundId then
+				if nowPlaying.soundId ~= "" then startServerMusic(nowPlaying.soundId)
+				else stopServerMusic(); musicSound.SoundId = "" end
+			end
+			if musicSound.IsLoaded and math.abs(musicSound.TimePosition - nowPlaying.elapsed) > 2 then
+				musicSound.TimePosition = nowPlaying.elapsed
+			end
+			if playbackPaused then musicSound:Pause()
+			elseif not musicSound.IsPlaying and nowPlaying.soundId ~= "" then musicSound:Play() end
+		end)
 		globalTrackRevision = revision
 		globalRestartRevision = restartRevision
+		globalPlaybackInitialized = true
 	else
 		if nowPlaying.trackId ~= "" then
 			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
@@ -1997,7 +1998,7 @@ end)
 -- only a repair fallback; jitter the slower poll to avoid synchronized server reads.
 task.spawn(function()
 	while script.Parent do
-		task.wait(45 + math.random(0, 15))
+		task.wait(90 + math.random(0, 30))
 		if globalQueueMode then
 			local synchronized = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
 			if synchronized and nowPlaying.trackId == "" then
@@ -2007,7 +2008,8 @@ task.spawn(function()
 				if callOk and advanced == true and typeof(state) == "table" then applyGlobalQueueState(state)
 				elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			end
-			if synchronized and #queue < CONFIG.AutoQueueTarget then topUpAuto() end
+			-- Queue refill is performed by the server that wins the atomic track transition.
+			-- Periodic repair only refreshes missed state notifications; it must not make every server race to refill.
 		end
 	end
 end)
@@ -4112,8 +4114,15 @@ end
 local function handleGlobalMessage(message: any)
 	if typeof(message) ~= "table" then return end
 	if message.kind == "QueueChanged" and globalQueueMode then
-		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		if #queue < CONFIG.AutoQueueTarget then topUpAuto() end
+		-- Coalesce bursts (for example, several automatic queue inserts) into one
+		-- authoritative snapshot read. Observer servers only refresh their HUD mirror.
+		if not globalQueueRefreshScheduled then
+			globalQueueRefreshScheduled = true
+			task.delay(0.2, function()
+				if globalQueueMode and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				globalQueueRefreshScheduled = false
+			end)
+		end
 		return
 	end
 	if message.kind == "Catalog" then
