@@ -1993,11 +1993,11 @@ task.spawn(function()
 	topUpAuto()
 end)
 
--- MessagingService is a fast invalidation path; periodic snapshots repair missed
--- notifications and correct playback drift without making per-second DataStore reads.
+-- MessagingService is the primary fast invalidation path. Periodic snapshots are
+-- only a repair fallback; jitter the slower poll to avoid synchronized server reads.
 task.spawn(function()
 	while script.Parent do
-		task.wait(20)
+		task.wait(45 + math.random(0, 15))
 		if globalQueueMode then
 			local synchronized = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
 			if synchronized and nowPlaying.trackId == "" then
