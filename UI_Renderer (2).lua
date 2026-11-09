@@ -3378,6 +3378,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			TextSize = if compactTitleEditor then 9 else 10,
 			Font = FONT,
 			ClearTextOnFocus = false,
+			Selectable = true,
+			Active = true,
 		}, form) :: TextBox
 		corner(presetSearch, 7)
 
@@ -3411,11 +3413,38 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local fontRow: Instance? = nil
 		local styleRow: Instance? = nil
 		local emptyHint: Instance? = nil
+		local function rowButtons(row: Instance?): {TextButton}
+			local result: {TextButton} = {}
+			if not row then return result end
+			for _, child in ipairs(row:GetChildren()) do
+				if child:IsA("TextButton") then table.insert(result, child) end
+			end
+			table.sort(result, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+			return result
+		end
 		local function refreshChipNavigation()
 			linkChipRows(effectRow, familyRow)
-			linkChipRows(familyRow, setRow)
-			linkChipRows(setRow, fontRow)
 			linkChipRows(fontRow, styleRow)
+			local familyButtons = rowButtons(familyRow)
+			local presetButtons = rowButtons(setRow)
+			local fontButtons = rowButtons(fontRow)
+			if #familyButtons > 0 then
+				familyButtons[#familyButtons].NextSelectionDown = presetSearch
+				presetSearch.NextSelectionUp = familyButtons[#familyButtons]
+			end
+			if #presetButtons > 0 then
+				presetSearch.NextSelectionDown = presetButtons[1]
+				presetButtons[1].NextSelectionUp = presetSearch
+				if #fontButtons > 0 then
+					presetButtons[#presetButtons].NextSelectionDown = fontButtons[1]
+					fontButtons[1].NextSelectionUp = presetButtons[#presetButtons]
+				end
+			else
+				-- An empty search result must not strand controller focus on a
+				-- destroyed preset chip; route directly to the next live section.
+				presetSearch.NextSelectionDown = fontButtons[1]
+				if #fontButtons > 0 then fontButtons[1].NextSelectionUp = presetSearch end
+			end
 		end
 		local function buildSetRow()
 			if setRow then setRow:Destroy() end
