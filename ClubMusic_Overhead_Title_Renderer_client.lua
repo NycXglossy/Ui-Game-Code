@@ -67,6 +67,7 @@ type PlayerState = {
 	character: Model?,
 	gui: BillboardGui?,
 	label: TextLabel?,
+	tagLabel: TextLabel?,
 	gradient: UIGradient?,
 	connections: {RBXScriptConnection},
 }
@@ -177,12 +178,32 @@ local function getSafeTitle(player: Player): (string, boolean)
 	return rawText, true
 end
 
+-- Collection tags are server-equipped profile cosmetics, separate from custom title slots.
+local TAG_PRESENTATION: {[string]: {label: string, color: Color3}} = {
+	vip = {label = "VIP", color = Color3.fromRGB(244, 114, 182)},
+	party = {label = "PARTY ANIMAL", color = Color3.fromRGB(251, 146, 60)},
+	wave = {label = "WAVE RIDER", color = Color3.fromRGB(103, 232, 249)},
+	tiki = {label = "TIKI LEGEND", color = Color3.fromRGB(252, 211, 77)},
+	sunset = {label = "SUNSET SOUL", color = Color3.fromRGB(236, 72, 153)},
+	bass = {label = "BASS HEAD", color = Color3.fromRGB(167, 139, 250)},
+	island = {label = "ISLAND ROYALTY", color = Color3.fromRGB(254, 240, 138)},
+}
+
+local function getSafeTag(player: Player): (string, Color3?)
+	local id = player:GetAttribute("EquippedTag")
+	if typeof(id) ~= "string" then return "", nil end
+	local presentation = TAG_PRESENTATION[id]
+	if not presentation then return "", nil end
+	return presentation.label, presentation.color
+end
+
 local function removeGui(state: PlayerState)
 	if state.gui then
 		state.gui:Destroy()
 	end
 	state.gui = nil
 	state.label = nil
+	state.tagLabel = nil
 	state.gradient = nil
 	state.character = nil
 end
@@ -224,15 +245,31 @@ local function createGui(state: PlayerState, character: Model, head: BasePart)
 	billboard.AlwaysOnTop = true
 	billboard.LightInfluence = 0
 	billboard.MaxDistance = 80
-	billboard.Size = UDim2.fromOffset(260, 44)
+	billboard.Size = UDim2.fromOffset(260, 62)
 	billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+
+	local tagLabel = Instance.new("TextLabel")
+	tagLabel.Name = "CollectionTag"
+	tagLabel.BackgroundTransparency = 1
+	tagLabel.BorderSizePixel = 0
+	tagLabel.Size = UDim2.new(1, 0, 0, 23)
+	tagLabel.Position = UDim2.fromOffset(0, 0)
+	tagLabel.Text = ""
+	tagLabel.TextColor3 = Color3.fromRGB(244, 211, 120)
+	tagLabel.TextScaled = true
+	tagLabel.TextWrapped = false
+	tagLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	tagLabel.Font = Enum.Font.GothamBlack
+	tagLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+	tagLabel.TextStrokeTransparency = 0.35
+	tagLabel.Parent = billboard
 
 	local label = Instance.new("TextLabel")
 	label.Name = "Title"
 	label.BackgroundTransparency = 1
 	label.BorderSizePixel = 0
-	label.Size = UDim2.fromScale(1, 1)
-	label.Position = UDim2.fromScale(0, 0)
+	label.Size = UDim2.new(1, 0, 0, 36)
+	label.Position = UDim2.fromOffset(0, 24)
 	label.Text = ""
 	label.TextColor3 = Color3.new(1, 1, 1)
 	label.TextScaled = true
@@ -258,6 +295,7 @@ local function createGui(state: PlayerState, character: Model, head: BasePart)
 	state.character = character
 	state.gui = billboard
 	state.label = label
+	state.tagLabel = tagLabel
 	state.gradient = gradient
 end
 
@@ -268,11 +306,11 @@ local function refreshState(state: PlayerState)
 		return
 	end
 
-	local titleText, visible = getSafeTitle(player)
-	if not visible then
-		if state.gui then
-			state.gui.Enabled = false
-		end
+	local titleText, titleVisible = getSafeTitle(player)
+	local tagText, tagColor = getSafeTag(player)
+	local hasVisibleContent = titleVisible or tagText ~= ""
+	if not hasVisibleContent then
+		if state.gui then state.gui.Enabled = false end
 		return
 	end
 
@@ -296,12 +334,17 @@ local function refreshState(state: PlayerState)
 
 	local billboard = state.gui
 	local label = state.label
+	local tagLabel = state.tagLabel
 	local gradient = state.gradient
-	if not billboard or not label or not gradient then
+	if not billboard or not label or not tagLabel or not gradient then
 		return
 	end
 
 	billboard.Enabled = true
+	tagLabel.Visible = tagText ~= ""
+	tagLabel.Text = tagText
+	tagLabel.TextColor3 = tagColor or Color3.fromRGB(244, 211, 120)
+	label.Visible = titleVisible
 	billboard.MaxDistance = boundedNumber(player:GetAttribute("TitleDistance"), 80, 20, 200)
 	billboard.StudsOffset = Vector3.new(
 		0,
@@ -368,6 +411,7 @@ local function bindPlayer(player: Player)
 		character = nil,
 		gui = nil,
 		label = nil,
+		tagLabel = nil,
 		gradient = nil,
 		connections = {},
 	}
@@ -380,6 +424,7 @@ local function bindPlayer(player: Player)
 	local watchedAttributes = {
 		"ShowCustomTitle",
 		"CustomTitle",
+		"EquippedTag",
 		"TitleEffect",
 		"TitleSet",
 		"TitleColors",
