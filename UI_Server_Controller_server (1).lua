@@ -753,6 +753,7 @@ local nowPlaying = {
 local requestCounts: {[number]: number} = {}
 local lastRequestAt: {[number]: number} = {}
 local lastActionAt: {[number]: number} = {}
+local lastAdminActionAt: {[number]: number} = {}
 local lastReloadAt: {[number]: number} = {}
 local reloadNonce: {[number]: number} = {}
 local pendingAudio: {[number]: boolean} = {}
@@ -2817,7 +2818,7 @@ end
 
 -- Actions -----------------------------------------------------------------------------
 
-local function handleAction(player: Player, action: any, payload: any): (boolean?, string?)
+local function handleAction(player: Player, action: any, payload: any, trustedAdminCommand: boolean?): (boolean?, string?)
 	if player.Parent ~= Players then return false, "The caller is no longer in this server." end
 	-- Validate the small, fixed remote contract before spending shared-service
 	-- budget or forwarding attacker-controlled action values across the server bridge.
@@ -2836,14 +2837,31 @@ local function handleAction(player: Player, action: any, payload: any): (boolean
 		-- budgets because the bridge or shared MemoryStore is unavailable.
 		if not globalBudgetOk or globalAllowed ~= true then return false, "ClubMusic security budget is unavailable. Try again shortly." end
 	end
-	local previousGlobal = lastActionAt[userId] or 0
-	if previousGlobal > 0 and now - previousGlobal < 0.12 then return false, "Please wait before using another ClubMusic action." end
-	lastActionAt[userId] = now
+	-- Check every cooldown before recording timestamps. A rejected action must not
+	-- consume the cross-action interval and block an unrelated command immediately after it.
 	local actionTimes = lastActionByType[userId]
 	if not actionTimes then actionTimes = {}; lastActionByType[userId] = actionTimes end
 	local actionCooldown = ACTION_COOLDOWNS[action] or 0.2
 	local previousAction = actionTimes[action] or 0
-	if previousAction > 0 and now - previousAction < actionCooldown then return false, "That ClubMusic action is cooling down." end
+	if previousAction > 0 and now - previousAction < actionCooldown then
+		return false, "That ClubMusic action is cooling down."
+	end
+
+	if trustedAdminCommand == true then
+		-- Kohl's Admin commands use a separate short cross-command interval so an
+		-- unrelated UI click cannot reject a legitimate staff command.
+		local previousAdmin = lastAdminActionAt[userId] or 0
+		if previousAdmin > 0 and now - previousAdmin < 0.12 then
+			return false, "Please wait before using another ClubMusic admin command."
+		end
+		lastAdminActionAt[userId] = now
+	else
+		local previousGlobal = lastActionAt[userId] or 0
+		if previousGlobal > 0 and now - previousGlobal < 0.12 then
+			return false, "Please wait before using another ClubMusic action."
+		end
+		lastActionAt[userId] = now
+	end
 	actionTimes[action] = now
 
 	if string.sub(tostring(action), 1, 8) == "Playlist" then
@@ -3749,7 +3767,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any): (boolean, string)
 	if action == "DJClearQueue" and not isAdmin(caller) then
 		return false, "ClubMusic administrator permission is required to clear the queue."
 	end
-	local ok, accepted, message = pcall(handleAction, caller, action, {})
+	local ok, accepted, message = pcall(handleAction, caller, action, {}, true)
 	if not ok then
 		warn("[ClubMusic Admin Bridge] Action failed: " .. tostring(accepted))
 		return false, "ClubMusic could not process that action."
@@ -4161,6 +4179,7 @@ Players.PlayerRemoving:Connect(function(player)
 	requestCounts[userId] = nil
 	lastRequestAt[userId] = nil
 	lastActionAt[userId] = nil
+	lastAdminActionAt[userId] = nil
 	lastActionByType[userId] = nil
 	perPlayerActionBuckets[userId] = nil
 	saveQueued[userId] = nil
