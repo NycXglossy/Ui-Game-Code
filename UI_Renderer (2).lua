@@ -958,8 +958,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local function line(name: string, x: number, y: number, w: number, h: number, angle: number?)
 			navIconPart(icon, name, x, y, w, h, ink, 1, angle)
 		end
-		local function ring(name: string, x: number, y: number, w: number, h: number)
-			navIconOutline(icon, name, x, y, w, h, ink, 1)
+		local function ring(name: string, x: number, y: number, w: number, h: number, angle: number?)
+			navIconOutline(icon, name, x, y, w, h, ink, 1, angle)
 		end
 		if tabName == "Home" then
 			line("RoofLeft", .19, .30, .36, .075, -38); line("RoofRight", .45, .30, .36, .075, 38)
@@ -990,14 +990,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			line("CalendarPinA", .34, .13, .07, .22); line("CalendarPinB", .61, .13, .07, .22)
 			for row = 0, 1 do for col = 0, 1 do navIconPart(icon, "Date"..row..col, .34 + col * .22, .53 + row * .14, .10, .08, ink, 1) end end
 		elseif tabName == "Title Tag" then
-			ring("TagBody", .18, .29, .62, .43, 1)
+			ring("TagBody", .24, .31, .52, .38, 45)
 			navIconPart(icon, "TagHole", .27, .43, .09, .09, ink, 1)
 			line("TagPointA", .57, .30, .075, .38, 45); line("TagPointB", .57, .30, .075, .38, -45)
 		elseif tabName == "Community" then
 			ring("PersonLeft", .17, .20, .25, .25); ring("PersonRight", .58, .20, .25, .25)
 			ring("GroupLeft", .08, .53, .40, .30); ring("GroupRight", .52, .53, .40, .30)
 		elseif tabName == "Moderation" then
-			ring("Shield", .22, .13, .56, .68, 1)
+			line("ShieldTop", .27, .20, .46, .065)
+			line("ShieldLeft", .23, .23, .065, .40, -8); line("ShieldRight", .70, .23, .065, .40, 8)
+			line("ShieldLowerLeft", .30, .58, .065, .25, 34); line("ShieldLowerRight", .64, .58, .065, .25, -34)
 			line("CheckA", .34, .51, .075, .22, -42); line("CheckB", .48, .48, .075, .34, 42)
 		end
 		return icon
