@@ -60,4 +60,5 @@ return function(_K: any)
 	register("clubmusic-restart", "Restart the current ClubMusic track.", "General", "Restart", {"cmrestart"})
 	register("clubmusic-lock", "Toggle ClubMusic song requests lock.", "General", "ToggleRequestLock", {"cmlock"})
 	register("clubmusic-clearqueue", "Clear the ClubMusic request queue (ClubMusic admin required).", "Administration", "ClearQueue", {"cmclear"})
+	register("clubmusic-status", "Show current ClubMusic playback and request status.", "General", "Status", {"cmstatus"})
 end
