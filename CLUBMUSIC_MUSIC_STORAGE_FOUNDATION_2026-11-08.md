@@ -5,7 +5,7 @@ Branch: `audit/hardened-clubmusic-2026-11-08`
 ## What was added
 
 - `MusicCatalogService.lua`: server-owned, metadata-only catalog ModuleScript.
-- Existing 39 built-in sample tracks were moved out of the controller into the catalog service without changing their stable IDs, titles, artists, genres, or durations.
+- Existing 42 built-in sample tracks were moved out of the controller into the catalog service without changing their stable IDs, titles, artists, genres, or durations.
 - The controller builds its trusted `TRACK_BY_ID` lookup from the service. `RequestTrack` still validates against that server-owned lookup and continues through the existing VIP priority, queue limits, moderation, cooldown, and playback paths.
 - A server-owned `GetMusicCatalog` RemoteFunction provides bounded title/artist/genre search and pagination (maximum 50 entries per page).
 - `UI_Network.GetMusicCatalog(query, genreId, offset, limit)` exposes that read-only catalog API to the existing client architecture.
@@ -65,9 +65,9 @@ The network API is `UI_Network.GetMusicCatalog(query, genreId, offset, limit)`. 
 
 ## Current scope / not yet implemented
 
-- No staff UI for editing the catalog at runtime.
-- No DataStore persistence for catalog edits; this foundation is a code-defined catalog and changes deploy with the experience.
-- No new catalog browsing UI has been added yet. The network API is ready for the renderer to consume in a separate UI change.
+- The Audio ID tab now includes a staff-only genre selector and **SAVE TO CATALOG** action after asset lookup. The server still performs its own audio inspection; client lookup is only a convenience.
+- Catalog add/remove network actions are available. The Audio ID tab currently exposes adding; a dedicated custom-entry removal list is still a follow-up UI task.
+- The All Tracks renderer still uses its built-in local display list; dynamic custom entries are returned by the catalog API but are not yet merged into that tab.
 - No playlist manager, automatic rotation rules, favorites migration, or five child manager modules have been introduced.
 - No live Roblox Studio, multiplayer, audio-permission, or exploit-client test was run as part of this repository change.
 
@@ -96,3 +96,14 @@ remain authoritative; client wrappers are not security boundaries.
 
 - This stage persists approved catalog metadata and asset IDs. It does not create a new catalog editor screen; a staff-facing add/remove UI can be connected to the existing Audio ID and All Tracks tabs in a separate renderer change.
 - DataStore writes use the shared budget gate and atomic `UpdateAsync`. Roblox Studio/live DataStore behavior still requires a controlled runtime test.
+
+
+## Current persistent catalog stage
+
+- Persistent store: `ClubMusic_Catalog_v1`, key `custom_tracks`, maximum 200 custom entries.
+- The catalog loads at controller startup after passing the existing shared DataStore budget gate.
+- `CatalogAddAudio` is available in the staff Audio ID tab. It stores only after server-side staff authorization, optional allowlist enforcement, Marketplace audio-type inspection, and server-side Sound loadability/duration inspection.
+- `CatalogRemoveTrack` is available through `UI_Network.CatalogRemoveTrack(trackId)`; only custom entries may be removed, and current/queued tracks are protected.
+- Built-in tracks remain code-defined. Custom tracks are persisted independently from player profile data and are merged into server-side track lookup, automatic selection, and catalog search.
+- A successful write is immediately reflected in the current server. Other already-running servers load the persisted change on their next restart; cross-server live catalog invalidation is not implemented yet.
+- If catalog loading fails at startup, built-in playback remains available and persistent catalog mutation fails closed for that server. Failed writes never mutate the in-memory catalog.
