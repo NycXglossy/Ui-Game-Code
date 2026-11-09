@@ -1546,6 +1546,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			catalogRequestSerial += 1
 			local serial = catalogRequestSerial
 			countLabel.Text = "Loading catalog…"
+			previousButton.Active = false
+			previousButton.AutoButtonColor = false
+			nextButton.Active = false
+			nextButton.AutoButtonColor = false
 			task.spawn(function()
 				if typeof(Network.GetMusicCatalog) ~= "function" then
 					if serial == catalogRequestSerial then showCatalogPage(nil) end
