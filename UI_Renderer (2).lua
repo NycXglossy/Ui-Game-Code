@@ -1064,9 +1064,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return heading
 	end
 
-	local function card(height: number? = nil, parent: Instance? = nil): Frame
+	local function card(height: number?, parent: Instance?): Frame
+		height = height or 72
 		local frame = make("Frame", {
-			Size = UDim2.new(1, -4, 0, height or 72),
+			Size = UDim2.new(1, -4, 0, height),
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
 		}, parent or content) :: Frame
@@ -1204,7 +1205,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		notify("Reloading song…", C.Cyan)
 	end
 
-	local function buildNowPlaying(parent: Instance? = nil, artworkMode: boolean? = false)
+	local function buildNowPlaying(parent: Instance?, artworkMode: boolean?)
+		parent = parent or content
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
 		local showArtwork = artworkMode == true
 		local leftInset = if showArtwork then 108 else 14
