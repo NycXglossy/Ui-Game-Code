@@ -326,8 +326,11 @@ local TITLE_SETS: {[string]: {[string]: boolean}} = {
 	shimmer = { amethyst = true, aurora = true, candy = true, cotton = true, cyber = true, desert = true, emerald = true, fire = true, forest = true, galaxy = true, ice = true, lava = true, midnight = true, neon = true, ocean = true, pastel = true, purple = true, rosegold = true, royal = true, sakura = true, sapphire = true, sunset = true, thunder = true, tropical = true, volcano = true },
 }
 local TITLE_FONTS: {[string]: boolean} = {
-	gotham = true, fredoka = true, arcade = true, cartoon = true, scifi = true, fantasy = true,
-	bangers = true, luckiest = true, marker = true, hand = true, retro = true, code = true,
+	gotham = true, gothammed = true, source = true, ubuntu = true, roboto = true,
+	fredoka = true, bangers = true, oswald = true, nunito = true, michroma = true,
+	fantasy = true, arcade = true, scifi = true, code = true,
+	-- Retain validation for previously saved titles while the editor offers the refreshed face set.
+	cartoon = true, luckiest = true, marker = true, hand = true, retro = true,
 }
 -- Server-side colors so clients never choose raw colors.
 local TITLE_HEX: {[string]: {[string]: {string}}} = {
