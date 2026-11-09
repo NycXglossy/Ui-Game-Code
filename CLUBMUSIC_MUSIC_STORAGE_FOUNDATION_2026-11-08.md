@@ -149,3 +149,39 @@ DataStore persistence, the queue, VIP priority, moderation, or playback.
   session, or exploit-client test has been performed. Validate catalog search,
   genre filtering, page navigation, custom-track display, and ordinary song
   requests in a private Studio test before release.
+
+
+## Cross-server catalog synchronization
+
+The persistent custom catalog now broadcasts invalidation events after successful
+staff additions and removals.
+
+- The global service publishes a small, versioned
+  `ClubMusic_Global_Catalog_v1` MessagingService message. It contains no
+  user-supplied track metadata; the message only signals that the durable
+  catalog may have changed.
+- Other running servers validate the message envelope, ignore their own
+  echoes, deduplicate message IDs, and refresh the custom catalog from
+  `ClubMusic_Catalog_v1`.
+- Refresh uses the existing shared DataStore budget gate. A failed refresh
+  leaves the last known-good in-memory catalog untouched.
+- Each server rebuilds its trusted track lookup and catalog index after a
+  successful refresh. Existing queue entries and the current track retain
+  their already-copied playback data; removed entries are no longer available
+  for new requests or automatic selection.
+- MessagingService delivery is best-effort, so servers also perform a
+  jittered, low-frequency reconciliation (about every 3–3.5 minutes) to repair
+  missed invalidations.
+- If the global service is disabled or MessagingService is unavailable, the
+  originating server still keeps its successfully saved local change. Other
+  servers converge through periodic reconciliation or restart; this is not a
+  durable event queue or an instantaneous consistency guarantee.
+
+### Verification status for this stage
+
+The service, controller, and global-service files were committed and fetched
+again from the working branch. No Roblox Studio multiplayer session,
+MessagingService delivery test, live DataStore test, Luau typecheck, or
+exploit-client test has been run. Validate add/remove propagation with at
+least two live test servers and confirm behavior during MessagingService
+outage and DataStore budget exhaustion before release.
