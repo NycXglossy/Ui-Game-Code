@@ -390,14 +390,21 @@ end)
 
 bindFunction("PublishDJCommand", publishDJCommand)
 
+local function allowGlobalQueueStoreOperation(): boolean
+	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
+	return shared and allowed
+end
+
 -- Global queue API: every mutation is atomic in the shared DataStore.
 -- Controller callers still perform role, moderation, catalog, and request-limit checks.
 bindFunction("GetGlobalQueueState", function()
+	if not SERVICE_ENABLED or not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	return MusicGlobalQueueService:GetSnapshot()
 end)
 
 bindFunction("EnqueueGlobalQueueEntry", function(entry: any, playerQueueCap: any)
+	if not SERVICE_ENABLED or not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	local ok, state, message = MusicGlobalQueueService:Enqueue(entry, playerQueueCap)
 	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
@@ -405,6 +412,7 @@ bindFunction("EnqueueGlobalQueueEntry", function(entry: any, playerQueueCap: any
 end)
 
 bindFunction("RemoveGlobalQueueEntry", function(entryId: any)
+	if not SERVICE_ENABLED or not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	local ok, state, message = MusicGlobalQueueService:Remove(entryId)
 	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
@@ -412,6 +420,7 @@ bindFunction("RemoveGlobalQueueEntry", function(entryId: any)
 end)
 
 bindFunction("ClearGlobalQueue", function()
+	if not SERVICE_ENABLED or not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	local ok, state, message = MusicGlobalQueueService:Clear()
 	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
@@ -419,6 +428,7 @@ bindFunction("ClearGlobalQueue", function()
 end)
 
 bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallbackEntry: any)
+	if not SERVICE_ENABLED or not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry)
 	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
@@ -426,6 +436,7 @@ bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallback
 end)
 
 bindFunction("SetGlobalPlayback", function(paused: any, position: any, expectedTrackRevision: any, restart: any)
+	if not SERVICE_ENABLED or not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	local ok, state, message = MusicGlobalQueueService:SetPlayback(paused, position, expectedTrackRevision, restart)
 	if ok then publishTopic("ClubMusic_Global_Queue_v1", {kind = "QueueChanged", revision = state.revision}) end
