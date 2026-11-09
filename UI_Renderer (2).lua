@@ -459,12 +459,26 @@ local function buildNativeIcon(parent: Instance, kind: string, color: Color3, zI
 		local direction = if kind == "up" then -1 else 1
 		part("ArrowLeft",.37,.5,.10,.42,45 * direction)
 		part("ArrowRight",.63,.5,.10,.42,-45 * direction)
-	elseif kind == "reload" then
-		local arc = make("Frame", {Name="ReloadArc", AnchorPoint=Vector2.new(.5,.5), Position=UDim2.fromScale(.48,.52), Size=UDim2.fromScale(.70,.70), BackgroundTransparency=1, BorderSizePixel=0, ZIndex=root.ZIndex}, root) :: Frame
+	elseif kind == "reload" or kind == "restart" then
+		-- Familiar Roblox-style circular arrow, drawn from native GUI shapes.
+		-- A slightly open-ended ring and a compact arrow tip stay crisp at small sizes.
+		local arc = make("Frame", {
+			Name = if kind == "restart" then "RestartArc" else "ReloadArc",
+			AnchorPoint = Vector2.new(.5,.5),
+			Position = UDim2.fromScale(.47,.53),
+			Size = UDim2.fromScale(.72,.72),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ZIndex = root.ZIndex,
+		}, root) :: Frame
 		local arcStroke = Instance.new("UIStroke")
-		arcStroke.Color = color; arcStroke.Thickness = 2.2; arcStroke.LineJoinMode = Enum.LineJoinMode.Round; arcStroke.Parent = arc
+		arcStroke.Color = color
+		arcStroke.Thickness = 2.4
+		arcStroke.LineJoinMode = Enum.LineJoinMode.Round
+		arcStroke.Parent = arc
 		corner(arc, 20)
-		part("ArrowHeadA",.75,.18,.11,.36,45); part("ArrowHeadB",.84,.30,.11,.36,-45)
+		part("ArrowHeadA",.75,.17,.12,.34,42)
+		part("ArrowHeadB",.85,.29,.12,.34,-48)
 	elseif kind == "minus" then
 		part("MinusBar",.5,.5,.72,.10,0)
 	elseif kind == "star" then
@@ -1219,6 +1233,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function actionButton(parent: Instance, text: string, position: UDim2, size: UDim2, callback: () -> (), color: Color3?)
 		local iconKind = if text == "↻ RELOAD" then "reload"
+			elseif text == "↻ RESTART" then "restart"
 			elseif text == "★" or text == "☆" then "star"
 			elseif text == "▲" or text == "↑" then "up"
 			elseif text == "▼" or text == "↓" then "down"
@@ -1241,7 +1256,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- Every caller owns its layout geometry. Never enlarge a control here:
 		-- doing so makes paired/stacked controls overlap on compact screens.
 		local resolvedSize = size
-		local displayText = if iconKind and iconKind ~= "reload" then "" elseif iconKind == "reload" then "RELOAD" else text
+		local displayText = if iconKind == "restart" then "RESTART" elseif iconKind == "reload" then "RELOAD" elseif iconKind then "" else text
 		local button = make("TextButton", {
 			Position = position,
 			Size = resolvedSize,
@@ -1257,18 +1272,24 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Active = true,
 		}, parent) :: TextButton
 		button:SetAttribute("ClubActionControl", true)
-		corner(button, if iconKind == "reload" then 10 else 11)
-		if iconKind == "reload" then
-			local reloadIcon = buildNativeIcon(button, "reload", C.Gold, 2)
-			reloadIcon.Position = UDim2.new(0, 14, 0.5, 0)
-			reloadIcon.Size = UDim2.fromOffset(15, 15)
+		local hasInlineIcon = iconKind == "reload" or iconKind == "restart"
+		corner(button, if hasInlineIcon then 10 else 11)
+		if hasInlineIcon then
+			local iconColor = if iconKind == "restart" then C.White else C.Gold
+			local inlineIcon = buildNativeIcon(button, iconKind, iconColor, 2)
+			inlineIcon.Position = UDim2.new(0, 13, 0.5, 0)
+			inlineIcon.Size = UDim2.fromOffset(22, 22)
 			button.TextXAlignment = Enum.TextXAlignment.Left
-			make("UIPadding", {PaddingLeft=UDim.new(0, 27), PaddingRight=UDim.new(0, 5)}, button)
+			button.TextYAlignment = Enum.TextYAlignment.Center
+			button.TextSize = 10
+			button.TextWrapped = false
+			button.TextTruncate = Enum.TextTruncate.AtEnd
+			make("UIPadding", {PaddingLeft=UDim.new(0, 29), PaddingRight=UDim.new(0, 5)}, button)
 		elseif iconKind then
 			buildNativeIcon(button, iconKind, C.White, 2)
 		end
-		local outline = stroke(button, if iconKind == "reload" then C.Gold else semanticColor, if iconKind == "reload" then 1.5 else 1.15)
-		outline.Transparency = if iconKind == "reload" then 0.22 else 0.42
+		local outline = stroke(button, if hasInlineIcon then (if iconKind == "reload" then C.Gold else C.Cyan) else semanticColor, if hasInlineIcon then 1.5 else 1.15)
+		outline.Transparency = if hasInlineIcon then 0.22 else 0.42
 		bindFocusFeedback(button, outline, semanticColor)
 		make("UIGradient", {
 			Color = ColorSequence.new({
