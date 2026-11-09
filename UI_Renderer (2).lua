@@ -3111,13 +3111,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = UDim.new(0, chipGap),
 		}, row)
-		local buttons: {[string]: {button: any, tint: Color3}} = {}
+		local buttons: {[string]: {button: any, tint: Color3, outline: UIStroke?}} = {}
 		local navigationButtons: {TextButton} = {}
 		local function refresh()
 			for id, entry in pairs(buttons) do
 				local on = id == getSelected()
 				entry.button.BackgroundColor3 = if on then C.Magenta else C.SurfaceLight
 				entry.button.TextColor3 = if on then C.White else entry.tint
+				if entry.outline then
+					entry.outline.Thickness = if on then 2 else 1
+					entry.outline.Transparency = if on then 0.08 else 0.48
+				end
 			end
 		end
 		for order, option in ipairs(options) do
@@ -3129,6 +3133,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				Text = option.name,
 				TextColor3 = color,
 				TextSize = chipTextSize,
+				TextWrapped = false,
+				TextTruncate = Enum.TextTruncate.AtEnd,
 				Font = BOLD,
 				LayoutOrder = order,
 				Selectable = true,
@@ -3157,7 +3163,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				row.CanvasPosition = Vector2.new(targetX, row.CanvasPosition.Y)
 			end)
 			make("UIPadding", { PaddingLeft = UDim.new(0, chipPadding), PaddingRight = UDim.new(0, chipPadding) }, chip)
-			buttons[option.id] = { button = chip, tint = color }
+			buttons[option.id] = { button = chip, tint = color, outline = chipOutline }
 			table.insert(navigationButtons, chip)
 			chip.Activated:Connect(function()
 				onPick(option.id)
