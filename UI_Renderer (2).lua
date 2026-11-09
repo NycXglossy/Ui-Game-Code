@@ -92,9 +92,9 @@ local TAGS = {
 	{id="vip",label="VIP",source="VIP Pass",owned=false,a=Color3.fromRGB(244,114,182),b=Color3.fromRGB(217,70,239)},
 	{id="party",label="Party Animal",source="Spend 10 hours at the festival",owned=false,a=Color3.fromRGB(251,146,60),b=Color3.fromRGB(252,211,77)},
 	{id="wave",label="Wave Rider",source="7-day login streak",owned=false,a=Color3.fromRGB(103,232,249),b=Color3.fromRGB(14,165,233)},
-	{id="tiki",label="Tiki Legend",source="Shop",owned=false,price=400,a=Color3.fromRGB(252,211,77),b=Color3.fromRGB(239,68,68)},
-	{id="sunset",label="Sunset Soul",source="Shop",owned=false,price=250,a=Color3.fromRGB(236,72,153),b=Color3.fromRGB(253,224,71)},
-	{id="bass",label="Bass Head",source="Shop",owned=false,price=150,a=Color3.fromRGB(167,139,250),b=Color3.fromRGB(99,102,241)},
+	{id="tiki",label="Tiki Legend",source="Festival title shop",owned=false,price=400,a=Color3.fromRGB(252,211,77),b=Color3.fromRGB(239,68,68)},
+	{id="sunset",label="Sunset Soul",source="Festival title shop",owned=false,price=250,a=Color3.fromRGB(236,72,153),b=Color3.fromRGB(253,224,71)},
+	{id="bass",label="Bass Head",source="Festival title shop",owned=false,price=150,a=Color3.fromRGB(167,139,250),b=Color3.fromRGB(99,102,241)},
 	{id="island",label="Island Royalty",source="Day 7 reward",owned=false,a=Color3.fromRGB(254,240,138),b=Color3.fromRGB(168,85,247)},
 }
 
@@ -509,14 +509,14 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	ReloadSong = true, ToggleFavorite = true, RequestTrack = true, VoteSkip = true,
 	RequestAudioAsset = true, CatalogAddAudio = true, CatalogRemoveTrack = true, DJSkip = true, DJToggleLock = true, DJClearQueue = true,
 	DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ModBlockUser = true, ModSetVip = true,
-	ModPurgeUser = true, ClaimDailyReward = true, EquipTitleTag = true,
+	ModPurgeUser = true, ClaimDailyReward = true, EquipTitleTag = true, BuyTitleTag = true,
 	SaveTitleSlot = true, SetTitleVisible = true, SelectTitleSlot = true,
 	ClearTitleSlot = true,
 }
 local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	RequestTrack = true, ToggleFavorite = true, VoteSkip = true,
 	DJSkip = true, DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ClaimDailyReward = true,
-	EquipTitleTag = true, RequestAudioAsset = true, SaveTitleSlot = true,
+	EquipTitleTag = true, BuyTitleTag = true, RequestAudioAsset = true, SaveTitleSlot = true,
 	SaveCustomTitle = true,
 	-- Wrappers that UI_Network exposes; act() prefers these over raw Network.Send.
 	ReloadSong = true, DJClearQueue = true, DJToggleLock = true,
@@ -2970,12 +2970,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				local hours = math.min(10, math.floor((tonumber(state.clubPlaySeconds) or 0) / 3600))
 				label(tagCard, string.format("%d / 10 HOURS", hours), UDim2.new(1, -112, 1, -17), UDim2.fromOffset(100, 14), C.Cyan, 9, true)
 			end
-			local buttonText = if equipped == tag.id then "EQUIPPED" elseif isOwned then "EQUIP" else "LOCKED"
+			local buttonText = if equipped == tag.id then "EQUIPPED" elseif isOwned then "EQUIP" elseif tag.price then string.format("BUY  •  %d", tag.price) else "LOCKED"
 			actionButton(tagCard, buttonText, UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
-				if not isOwned then notify("Unlock this title tag first.", C.Red); return end
-				callNetwork("EquipTitleTag", tag.id)
-				if typeof(Network.EquipTitleTag) ~= "function" then send("EquipTitleTag", {tagId=tag.id}) end
-			end, isOwned and C.Purple or C.SurfaceLight)
+				if isOwned then
+					callNetwork("EquipTitleTag", tag.id)
+					if typeof(Network.EquipTitleTag) ~= "function" then send("EquipTitleTag", {tagId=tag.id}) end
+				elseif tag.price then
+					act("BuyTitleTag", {tagId=tag.id}, tag.id)
+				else
+					notify("Complete this title tag unlock requirement first.", C.Red)
+				end
+			end, isOwned and C.Purple or tag.price and C.Gold or C.SurfaceLight)
 		end
 	end
 
@@ -3116,6 +3121,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function renderTitleEditor()
+		if state.customTitleUnlocked ~= true then
+			sectionLabel("CUSTOM TITLE  •  SULTAN EXCLUSIVE")
+			local locked = card(112)
+			label(locked, "🔒  TIKI TIDE SULTAN REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
+			label(locked, "Unlock the Tiki Tide Sultan pass to create, style, and display your own overhead title.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
+			return
+		end
 		local unlocked, _, slotOf = titleSlotInfo()
 		if titleEditSlot > unlocked then titleEditSlot = 1 end
 		if not titleDraft or titleDraft.slot ~= titleEditSlot then
@@ -3233,6 +3245,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function renderTitleManage()
+		if state.customTitleUnlocked ~= true then
+			sectionLabel("MANAGE TITLES  •  SULTAN EXCLUSIVE")
+			local locked = card(112)
+			label(locked, "🔒  TIKI TIDE SULTAN REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
+			label(locked, "Custom title slots and overhead title controls are exclusive to Tiki Tide Sultan members.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
+			return
+		end
 		local unlocked, active, slotOf, ts = titleSlotInfo()
 		local shown = ts.visible ~= false
 		sectionLabel("MANAGE TITLES")
