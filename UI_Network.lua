@@ -248,7 +248,7 @@ function Network.Init(): boolean
 		for _, connection in ipairs(connections) do connection:Disconnect() end
 		table.clear(connections)
 		actionRemote = nil
-	catalogFunction = nil
+		catalogFunction = nil
 		initialized = false
 		warn("[ClubMusic Network] Initialization failed: " .. tostring(err))
 		return false
@@ -264,6 +264,7 @@ function Network.Destroy()
 	for _, connection in ipairs(connections) do connection:Disconnect() end
 	table.clear(connections)
 	actionRemote = nil
+	catalogFunction = nil
 	table.clear(lastActionSend)
 	currentState = {}
 	if stateEvent then stateEvent:Destroy() end
