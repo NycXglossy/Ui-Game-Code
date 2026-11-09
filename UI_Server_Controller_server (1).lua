@@ -3831,9 +3831,12 @@ task.spawn(function()
 		for _, player in ipairs(Players:GetPlayers()) do
 			local profile = profiles[player.UserId]
 			if profile then
-				profile.clubPlaySeconds = math.min(profile.clubPlaySeconds + 60, 9007199254740000)
-				if profile.clubPlaySeconds % 300 < 60 then
+				local previousSeconds = profile.clubPlaySeconds
+				profile.clubPlaySeconds = math.min(previousSeconds + 60, 9007199254740000)
+				if math.floor(profile.clubPlaySeconds / 300) > math.floor(previousSeconds / 300) then
 					scheduleProfileSave(player)
+				end
+				if math.floor(profile.clubPlaySeconds / 3600) > math.floor(previousSeconds / 3600) then
 					publishState(player)
 				end
 				syncTitleTagUnlocks(player)
