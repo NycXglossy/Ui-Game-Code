@@ -1737,6 +1737,20 @@ local function snapshotFor(player: Player)
 		productsOut[tostring(i)] = CONFIG.TitleSlotProductIds[i] or 0
 	end
 	local activeSlotData = profile.titleSlots[profile.activeSlot]
+	-- The rotation cursor points beyond tracks already prefetched into the queue.
+	-- Derive the visible position from the authoritative current track instead.
+	local playlistPosition: number? = nil
+	local playlistTotal = if activePlaylistId ~= nil then #activePlaylistTracks else 0
+	local playlistRemaining: number? = nil
+	if activePlaylistId ~= nil and nowPlaying.source == "playlist" and playlistTotal > 0 then
+		for index, track in ipairs(activePlaylistTracks) do
+			if track.id == nowPlaying.trackId then
+				playlistPosition = index
+				playlistRemaining = playlistTotal - index
+				break
+			end
+		end
+	end
 
 	local snapshot = {
 		rank = getRank(player),
@@ -1748,7 +1762,11 @@ local function snapshotFor(player: Player)
 			genre = nowPlaying.genre, duration = nowPlaying.duration, elapsed = nowPlaying.elapsed,
 			dj = nowPlaying.dj, source = nowPlaying.source, requestedBy = nowPlaying.requestedBy,
 			vip = nowPlaying.vip, soundId = nowPlaying.soundId, paused = playbackPaused,
-			playlist = {active = activePlaylistId ~= nil, id = activePlaylistId, name = activePlaylistName},
+			playlist = {
+				active = activePlaylistId ~= nil, id = activePlaylistId, name = activePlaylistName,
+				currentPosition = playlistPosition, totalTracks = playlistTotal,
+				remainingBeforeLoop = playlistRemaining,
+			},
 		},
 		reloadNonce = reloadNonce[player.UserId] or 0,
 		favorites = favorites,
