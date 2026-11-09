@@ -926,7 +926,7 @@ local function defaultProfile(): Profile
 		lastClaimDay = 0,
 		claimedToday = false,
 		equippedTag = nil,
-		ownedTags = {vip=true, party=true, wave=true},
+		ownedTags = {},
 		titleSlots = {},
 		unlockedSlots = 1,
 		activeSlot = 1,
@@ -997,6 +997,14 @@ local function loadProfile(player: Player)
 			for id, owned in pairs(data.ownedTags) do
 				if TAGS[id] == true and owned == true then profile.ownedTags[id] = true end
 			end
+		end
+		-- These three flags were incorrectly granted by the old default profile.
+		-- Strip those legacy defaults so they cannot masquerade as earned ownership.
+		profile.ownedTags.vip = nil
+		profile.ownedTags.party = nil
+		profile.ownedTags.wave = nil
+		if profile.equippedTag == "vip" or profile.equippedTag == "party" or profile.equippedTag == "wave" then
+			profile.equippedTag = nil
 		end
 		if typeof(data.favorites) == "table" then
 			local count = 0
