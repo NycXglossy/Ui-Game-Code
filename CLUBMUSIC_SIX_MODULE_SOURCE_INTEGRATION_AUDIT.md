@@ -37,6 +37,18 @@ The six uploaded modules come from a different legacy contract. They cannot safe
 - Preserve VIP/VVIP/Tiki Tide Sultan queue priority, title slots, profile persistence, catalog behavior, and the existing client UI contract.
 - Integrate in small steps, with static checks after each change. Do not declare runtime verification complete until Roblox Studio multiplayer tests cover playback, pause/resume, track end, late join, queue priority, skip voting, player departure, and invalid/private audio.
 
+## Integration progress (2026-11-09)
+
+- **MusicQueueManager: integrated as a shared-state adapter.** The controller requires `ServerStorage.MusicQueueManager`, injects its existing `queue` table and `releaseSlot` callback, and routes local queue insertion, pop/advance, moderation removal, staff removal, clear, and automatic-queue cleanup through the adapter. The adapter does not allocate a queue or per-player count table, so controller priority ordering, request-count ownership, snapshots, and global-queue mirror remain authoritative.
+- Controller commit: `7e705364c775070557aed8a98e2c291783046983`.
+- Module commit: `b98c863a1b80430a28b0e8bf4d1d103be247946c`.
+- **Not yet integrated:** MusicPlaybackManager, MusicPlaylistManager, MusicSkipVoteManager, MusicValidationService, and ServerMusicAudioHandler. They require compatibility refactors before activation; in particular, the playback and audio modules must not create a second Sound or playback clock, and the skip-vote module must not override the existing server vote policy.
+- Static source checks confirmed the controller has no remaining direct player-request insertion call and that the manager references the injected controller queue. Roblox Studio runtime and multiplayer tests have not been run.
+
+## Installation for this stage
+
+Create a ModuleScript named `MusicQueueManager` directly under `ServerStorage` and paste the contents of repository file `MusicQueueManager.lua`. Replace `ServerScriptService.UI_Server_Controller` with the updated `UI_Server_Controller_server (1).lua`. Do not place the ModuleScript under a nested folder unless the controller's `WaitForChild` path is changed too.
+
 ## Current status
 
-Source retrieval and compatibility audit are complete. This commit documents the integration boundary; it does not claim that the six modules have already been wired into live controller behavior.
+Source retrieval and compatibility audit are complete. Queue-manager adapter integration is committed. The remaining five modules are deliberately not activated until their duplicate state ownership and legacy dependencies are removed.
