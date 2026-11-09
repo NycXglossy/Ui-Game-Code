@@ -134,10 +134,26 @@ local playlistFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylis
 local serverStorage = game:GetService("ServerStorage")
 local catalogModule = serverStorage:WaitForChild("MusicCatalogService", 20)
 local playlistModule = serverStorage:WaitForChild("MusicPlaylistService", 20)
-assert(catalogModule and catalogModule:IsA("ModuleScript"), "[ClubMusic] Missing ServerStorage.MusicCatalogService ModuleScript.")
-assert(playlistModule and playlistModule:IsA("ModuleScript"), "[ClubMusic] Missing ServerStorage.MusicPlaylistService ModuleScript.")
-local MusicCatalogService = require(catalogModule)
-local MusicPlaylistService = require(playlistModule)
+if not catalogModule or not catalogModule:IsA("ModuleScript") then
+	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicCatalogService ModuleScript.")
+	error("[ClubMusic] Missing ServerStorage.MusicCatalogService ModuleScript.")
+end
+if not playlistModule or not playlistModule:IsA("ModuleScript") then
+	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicPlaylistService ModuleScript.")
+	error("[ClubMusic] Missing ServerStorage.MusicPlaylistService ModuleScript.")
+end
+local catalogRequireOk, catalogRequireResult = pcall(require, catalogModule)
+if not catalogRequireOk then
+	remotes:SetAttribute("StartupError", "MusicCatalogService require failed: " .. string.sub(tostring(catalogRequireResult), 1, 180))
+	error("[ClubMusic] MusicCatalogService failed to load: " .. tostring(catalogRequireResult))
+end
+local playlistRequireOk, playlistRequireResult = pcall(require, playlistModule)
+if not playlistRequireOk then
+	remotes:SetAttribute("StartupError", "MusicPlaylistService require failed: " .. string.sub(tostring(playlistRequireResult), 1, 180))
+	error("[ClubMusic] MusicPlaylistService failed to load: " .. tostring(playlistRequireResult))
+end
+local MusicCatalogService = catalogRequireResult
+local MusicPlaylistService = playlistRequireResult
 remotes:SetAttribute("StartupStage", "InitializingStorage")
 
 type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string? }
@@ -320,7 +336,18 @@ end
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 local ServerStorage = game:GetService("ServerStorage")
-local ReceiptHash = require(ServerStorage:WaitForChild("ClubMusic_ReceiptHash"))
+remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
+local receiptHashModule = ServerStorage:WaitForChild("ClubMusic_ReceiptHash", 20)
+if not receiptHashModule or not receiptHashModule:IsA("ModuleScript") then
+	remotes:SetAttribute("StartupError", "Missing ServerStorage.ClubMusic_ReceiptHash ModuleScript.")
+	error("[ClubMusic] Missing ServerStorage.ClubMusic_ReceiptHash ModuleScript.")
+end
+local receiptHashOk, receiptHashResult = pcall(require, receiptHashModule)
+if not receiptHashOk then
+	remotes:SetAttribute("StartupError", "ClubMusic_ReceiptHash require failed: " .. string.sub(tostring(receiptHashResult), 1, 180))
+	error("[ClubMusic] ClubMusic_ReceiptHash failed to load: " .. tostring(receiptHashResult))
+end
+local ReceiptHash = receiptHashResult
 local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI") or ServerStorage:WaitForChild("ClubMusicGlobalAPI", 15)
 local function globalInvoke(name: string, ...: any): any
 	-- Re-resolve on every call so the bridge recovers if its separate Script starts late.
@@ -2984,6 +3011,7 @@ stateFunction.OnServerInvoke = function(player: Player)
 	return snapshot
 end
 
+remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
 	local ok, err = pcall(handleAction, player, action, payload)
 	if not ok then warn("[ClubMusic] Action handler error: " .. tostring(err)) end
