@@ -1367,6 +1367,19 @@ local function startPlaylistRotation(player: Player, playlistId: any): boolean
 		notify(player, "This playlist has no tracks available in the current catalog.", "warn")
 		return false
 	end
+	if globalQueueMode then
+		local trackIds = {}
+		for _, playlistTrack in ipairs(validTracks) do table.insert(trackIds, playlistTrack.id) end
+		local callOk, changed, state, message = globalInvoke("SetGlobalPlaylistRotation", found.id, found.name, trackIds)
+		if not callOk or changed ~= true or typeof(state) ~= "table" then
+			notify(player, tostring(message or "Global playlist rotation could not be started."), "warn")
+			return false
+		end
+		applyGlobalQueueState(state)
+		topUpAuto()
+		notify(player, "Global playlist rotation enabled: " .. found.name .. ".", "ok")
+		return true
+	end
 	activePlaylistId = found.id
 	activePlaylistName = found.name
 	activePlaylistTracks = validTracks
@@ -1383,6 +1396,17 @@ local function stopPlaylistRotation(player: Player?)
 		return false
 	end
 	local stoppedName = activePlaylistName
+	if globalQueueMode then
+		local callOk, stopped, state, message = globalInvoke("SetGlobalPlaylistRotation", nil)
+		if not callOk or stopped ~= true or typeof(state) ~= "table" then
+			if player then notify(player, tostring(message or "Global playlist rotation could not be stopped."), "warn") end
+			return false
+		end
+		applyGlobalQueueState(state)
+		topUpAuto()
+		if player then notify(player, "Global playlist rotation stopped: " .. stoppedName .. ".", "ok") end
+		return true
+	end
 	activePlaylistId = nil
 	activePlaylistName = ""
 	table.clear(activePlaylistTracks)
@@ -1423,6 +1447,20 @@ end
 local function applyGlobalQueueState(state: any): boolean
 	if typeof(state) ~= "table" or typeof(state.queue) ~= "table"
 		or typeof(state.playback) ~= "table" then return false end
+	if typeof(state.rotation) == "table" and state.rotation.enabled == true
+		and typeof(state.rotation.trackIds) == "table" then
+		activePlaylistId = tostring(state.rotation.id)
+		activePlaylistName = tostring(state.rotation.name)
+		activePlaylistTracks = {}
+		for _, trackId in ipairs(state.rotation.trackIds) do
+			local track = TRACK_BY_ID[trackId]
+			if track then table.insert(activePlaylistTracks, track) end
+		end
+		activePlaylistCursor = math.clamp(tonumber(state.rotation.cursor) or 1, 1, math.max(1, #activePlaylistTracks))
+		if #activePlaylistTracks == 0 then activePlaylistId = nil; activePlaylistName = "" end
+	else
+		activePlaylistId = nil; activePlaylistName = ""; table.clear(activePlaylistTracks); activePlaylistCursor = 1
+	end
 	table.clear(queue)
 	for _, raw in ipairs(state.queue) do
 		if typeof(raw) == "table" and typeof(raw.id) == "string" and typeof(raw.trackId) == "string"
@@ -1464,8 +1502,9 @@ local function applyGlobalQueueState(state: any): boolean
 			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
 			playbackPaused = state.playback.paused == true
 			pcall(function()
-				if musicSound.SoundId ~= nowPlaying.soundId and nowPlaying.soundId ~= "" then
-					startServerMusic(nowPlaying.soundId)
+				if musicSound.SoundId ~= nowPlaying.soundId then
+					if nowPlaying.soundId ~= "" then startServerMusic(nowPlaying.soundId)
+					else stopServerMusic(); musicSound.SoundId = "" end
 				end
 				if musicSound.IsLoaded and math.abs(musicSound.TimePosition - nowPlaying.elapsed) > 2 then
 					musicSound.TimePosition = nowPlaying.elapsed
@@ -2734,7 +2773,8 @@ local function handleAction(player: Player, action: any, payload: any)
 		}, "player", player)
 		entry.soundId = "rbxassetid://" .. tostring(assetId)
 		if globalQueueMode then
-			local queued, queueError = if enqueueGlobalQueueEntry then enqueueGlobalQueueEntry(entry) else false, "Global queue is not ready."
+			local queued, queueError = false, "Global queue is not ready."
+			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
 			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
 		else
 			table.insert(queue, insertIndex(passTier(player)), entry)
