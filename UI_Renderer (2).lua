@@ -1032,7 +1032,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function buildNowPlaying()
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
 		local nowCard = card(182)
-		label(nowCard, nz(now.title, "The stage is warming up"), UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 24), C.White, 15, true)
+		local live = typeof(state.nowPlaying) == "table"
+		label(nowCard, nz(now.title, "The stage is warming up"), UDim2.fromOffset(14, 8), UDim2.new(1, -116, 0, 24), C.White, 16, true)
+		badge(nowCard, if live then "ON AIR" else "STANDBY", if live then C.Green else C.SurfaceLight, UDim2.new(1, -92, 0, 8), 78)
+		make("Frame", {Name="PlayerAccent", Position=UDim2.fromOffset(14, 58), Size=UDim2.new(1, -28, 0, 2), BackgroundColor3=C.Gold, BackgroundTransparency=0.48, BorderSizePixel=0}, nowCard)
 		local detail = nz(now.artist, "Sunset Stage Club")
 		if now.source == "player" and nz(now.requestedBy, "") ~= "" then
 			detail ..= "  •  requested by " .. tostring(now.requestedBy)
@@ -1047,11 +1050,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		corner(bar, 3)
 		local fill = make("Frame", {
 			Size = UDim2.fromScale(0, 1),
-			BackgroundColor3 = C.Magenta,
+			BackgroundColor3 = C.Gold,
 			BorderSizePixel = 0,
 		}, bar)
 		corner(fill, 3)
-		local timeLabel = label(nowCard, "0:00 / 0:00", UDim2.fromOffset(14, 78), UDim2.new(1, -140, 0, 22), C.Cyan, 10, true)
+		local timeLabel = label(nowCard, "0:00 / 0:00", UDim2.fromOffset(14, 78), UDim2.new(1, -140, 0, 22), C.Gold, 10, true)
 		progressRefs = { fill = fill, timeLabel = timeLabel, duration = math.max(1, tonumber(now.duration) or 1) }
 		updateProgress()
 
@@ -1181,6 +1184,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		}, parent or content)
 		corner(frame, 13)
 		stroke(frame, C.SurfaceLight, 1)
+		make("Frame", {Name="TrackAccent", Position=UDim2.fromOffset(0,12), Size=UDim2.fromOffset(2,42), BackgroundColor3=C.Gold, BackgroundTransparency=0.28, BorderSizePixel=0}, frame)
 		local textWidth = if canAddToPlaylist then (if canRemove then -330 else -250) else (if canRemove then -250 else -176)
 		label(frame, tostring(track[2]), UDim2.fromOffset(12, 8), UDim2.new(1, textWidth, 0, 22), C.White, 13, true)
 		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(12, 32), UDim2.new(1, textWidth, 0, 18), C.Muted, 11, false)
@@ -1988,12 +1992,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		for index, item: any in ipairs(queue) do
 			local qcard = card(64)
+			local rank = make("Frame", {Name="QueuePosition", Position=UDim2.fromOffset(12, 17), Size=UDim2.fromOffset(30, 30), BackgroundColor3=C.SurfaceLight, BorderSizePixel=0}, qcard)
+			corner(rank, 9)
+			local rankText = make("TextLabel", {Size=UDim2.fromScale(1, 1), BackgroundTransparency=1, Text=string.format("%02d", index), TextColor3=C.Gold, TextSize=11, Font=BOLD}, rank)
 			local textWidth = if level >= 1 then -100 else -24
 			local trackName = nz(item.title, nz(item.trackId, "Unknown track"))
 			local who = if item.source == "player" then "Requested by " .. nz(item.requestedBy, "a guest") else "Auto DJ pick"
 			if item.vip == true then who ..= "  •  VIP" end
-			label(qcard, string.format("%02d  %s", index, trackName), UDim2.fromOffset(12, 7), UDim2.new(1, textWidth, 0, 22), C.White, 12, true)
-			label(qcard, who .. "  •  " .. formatTime(tonumber(item.duration) or 0), UDim2.fromOffset(12, 33), UDim2.new(1, textWidth, 0, 17), C.Muted, 10, false)
+			label(qcard, trackName, UDim2.fromOffset(52, 7), UDim2.new(1, textWidth, 0, 22), C.White, 12, true)
+			label(qcard, who .. "  •  " .. formatTime(tonumber(item.duration) or 0), UDim2.fromOffset(52, 33), UDim2.new(1, textWidth, 0, 17), C.Muted, 10, false)
 			if level >= 1 then
 				local queueId = tostring(item.id)
 				if index > 1 then
