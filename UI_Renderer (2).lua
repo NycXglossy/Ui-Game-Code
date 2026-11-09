@@ -1231,31 +1231,32 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			stroke(art, tint, 1.4).Transparency = 0.2
 			local artworkId = tonumber(now.artworkAssetId) or TRACK_ARTWORK[currentTrackId(now) or ""]
 			if artworkId and artworkId > 0 then
-				make("ImageLabel", {Name="CatalogArtwork", Size=UDim2.fromScale(1, 1), BackgroundTransparency=1, Image="rbxassetid://" .. tostring(artworkId), ScaleType=Enum.ScaleType.Crop, ZIndex=5}, art)
+				make("ImageLabel", {Name="CatalogArtwork", Size=UDim2.fromScale(1, 1), BackgroundTransparency=1, Image="rbxassetid://" .. tostring(artworkId), ScaleType=Enum.ScaleType.Crop}, art)
+			else
+				make("UIGradient", {
+					Color = ColorSequence.new(tint:Lerp(C.Base, 0.12), C.Base),
+					Rotation = 135,
+				}, art)
+				local vinyl = make("Frame", {
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromScale(0.5, 0.48),
+					Size = UDim2.fromOffset(54, 54),
+					BackgroundColor3 = C.Base,
+					BorderSizePixel = 0,
+				}, art)
+				corner(vinyl, 27)
+				stroke(vinyl, tint, 1.2).Transparency = 0.18
+				local center = make("Frame", {
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromScale(0.5, 0.5),
+					Size = UDim2.fromOffset(15, 15),
+					BackgroundColor3 = tint,
+					BorderSizePixel = 0,
+				}, vinyl)
+				corner(center, 8)
+				label(art, if genre then string.upper(string.sub(genre.name, 1, 12)) else "SUNSET MIX",
+					UDim2.new(0, 4, 1, -19), UDim2.new(1, -8, 0, 14), C.White, 8, true)
 			end
-			make("UIGradient", {
-				Color = ColorSequence.new(tint:Lerp(C.Base, 0.12), C.Base),
-				Rotation = 135,
-			}, art)
-			local vinyl = make("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.48),
-				Size = UDim2.fromOffset(54, 54),
-				BackgroundColor3 = C.Base,
-				BorderSizePixel = 0,
-			}, art)
-			corner(vinyl, 27)
-			stroke(vinyl, tint, 1.2).Transparency = 0.18
-			local center = make("Frame", {
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				Position = UDim2.fromScale(0.5, 0.5),
-				Size = UDim2.fromOffset(15, 15),
-				BackgroundColor3 = tint,
-				BorderSizePixel = 0,
-			}, vinyl)
-			corner(center, 8)
-			label(art, if genre then string.upper(string.sub(genre.name, 1, 12)) else "SUNSET MIX",
-				UDim2.new(0, 4, 1, -19), UDim2.new(1, -8, 0, 14), C.White, 8, true)
 		end
 
 		label(nowCard, nz(now.title, "The stage is warming up"), UDim2.fromOffset(leftInset, 8), UDim2.new(1, -(rightInset + 88), 0, 24), C.White, 16, true)
