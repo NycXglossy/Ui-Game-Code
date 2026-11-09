@@ -75,11 +75,12 @@ local function sanitizeEntry(raw: any): QueueEntry?
 	local artist = cleanText(raw.artist, MAX_TEXT)
 	local genre = cleanText(raw.genre, 48)
 	local requestedBy = cleanText(raw.requestedBy, MAX_TEXT)
-	local soundId = cleanText(raw.soundId, MAX_SOUND_ID)
+	local soundId = if typeof(raw.soundId) == "string" then raw.soundId else ""
 	if not id or not string.match(id, "^[%w%-_]+$")
 		or not trackId or not string.match(trackId, "^[%w%-_]+$")
 		or not title or not artist or not genre or not requestedBy
-		or not soundId or not string.match(soundId, "^rbxassetid://%d+$") then return nil end
+		or #soundId > MAX_SOUND_ID
+		or (soundId ~= "" and not string.match(soundId, "^rbxassetid://%d+$")) then return nil end
 	if not finite(raw.duration) or raw.duration < 1 or raw.duration > MAX_DURATION then return nil end
 	if not finite(raw.userId) or raw.userId < 0 or raw.userId % 1 ~= 0 or raw.userId > MAX_SAFE_INTEGER then return nil end
 	if not finite(raw.passTier) or raw.passTier < 0 or raw.passTier > 3 or raw.passTier % 1 ~= 0 then return nil end
