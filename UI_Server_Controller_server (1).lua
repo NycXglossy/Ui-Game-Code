@@ -398,7 +398,7 @@ type QueueEntry = {
 	requestedBy: string,
 	userId: number,
 	genre: string,
-	source: string, -- "player" | "auto"
+	source: string, -- "player" | "auto" | "playlist"
 	vip: boolean,
 	passTier: number?,
 	soundId: string?,
@@ -1316,7 +1316,7 @@ local function setNowPlaying(entry: QueueEntry)
 	nowPlaying.elapsed = 0
 	nowPlaying.dj = if entry.source == "playlist" then "Playlist: " .. activePlaylistName else "Automated Selector"
 	nowPlaying.source = entry.source
-	nowPlaying.requestedBy = entry.requestedBy
+	nowPlaying.requestedBy = if entry.source == "playlist" then activePlaylistName else entry.requestedBy
 	nowPlaying.vip = entry.vip
 	nowPlaying.soundId = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
 	startServerMusic(nowPlaying.soundId)
