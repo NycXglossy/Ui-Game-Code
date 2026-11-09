@@ -1694,7 +1694,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
 		sectionLabel("NOW PLAYING  /  LIVE QUEUE")
 
-		local widePlayer = currentDevice ~= "Mobile" and (content.AbsoluteSize.X >= 620 or currentDevice == "Desktop" or currentDevice == "Console" or currentDevice == "VR")
+		-- Choose the side-by-side player/queue layout from measured content width,
+		-- not the device label. Desktop windows can be narrow, and tablet/console
+		-- safe areas can reduce usable width after the panel is laid out.
+		local widePlayer = content.AbsoluteSize.X >= 620
 		local playerRow = make("Frame", {
 			Name = "PlayerQueueLayout",
 			Size = UDim2.new(1, -4, 0, if widePlayer then 210 else 386),
