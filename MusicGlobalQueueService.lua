@@ -175,7 +175,7 @@ local function transact(mutator: (State) -> (boolean, string?)): (boolean, State
 		warn("[ClubMusic Global Queue] DataStore transaction failed: " .. tostring(result))
 		return false, nil, "Global queue storage is unavailable. No local-only change was applied."
 	end
-	if not accepted then return false, if typeof(result) == "table" then detached(sanitizeState(result)) else nil, reason end
+	if not accepted then return false, (if typeof(result) == "table" then detached(sanitizeState(result)) else nil), reason
 	return true, detached(sanitizeState(result)), nil
 end
 
