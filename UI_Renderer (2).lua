@@ -764,7 +764,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Name = "Backdrop",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Color3.new(0,0,0),
-		BackgroundTransparency = 0.45,
+		BackgroundTransparency = 1,
 		Text = "",
 		Visible = false,
 		AutoButtonColor = false,
