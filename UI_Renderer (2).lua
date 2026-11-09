@@ -3300,10 +3300,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if hue < 0.70 then return "blue" end
 			return "purple"
 		end
-		local selectedPreset = label(form, "SELECTED  •  " .. string.upper(draft.set), UDim2.fromOffset(12, 234), UDim2.new(1, -24, 0, 16), C.Gold, 10, true)
+		local initialEffect = findById(TITLE_EFFECTS, draft.effect)
+		local initialPreset = findById(initialEffect.sets, draft.set)
+		local selectedPreset = label(form, "SELECTED  •  " .. string.upper(initialPreset.name), UDim2.fromOffset(12, 234), UDim2.new(1, -24, 0, 16), initialPreset.color or initialPreset.a or C.Gold, 10, true)
 		local setRow: Instance? = nil
+		local emptyHint: Instance? = nil
 		local function buildSetRow()
 			if setRow then setRow:Destroy() end
+			if emptyHint then emptyHint:Destroy(); emptyHint = nil end
 			local effect = findById(TITLE_EFFECTS, draft.effect)
 			local query = string.lower(presetSearch.Text or "")
 			local filtered = {}
@@ -3320,7 +3324,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				refreshPreview()
 			end, function(option) return option.color or option.a end)
 			if #filtered == 0 then
-				label(form, "No matching presets — try another family or search.", UDim2.fromOffset(12, 202), UDim2.new(1, -24, 0, 26), C.Muted, 10, false)
+				emptyHint = label(form, "No matching presets — try another family or search.", UDim2.fromOffset(12, 202), UDim2.new(1, -24, 0, 26), C.Muted, 10, false)
 			end
 		end
 		chipRow(form, 168, families, function() return selectedFamily end, function(id)
