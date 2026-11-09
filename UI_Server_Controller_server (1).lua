@@ -2928,9 +2928,16 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if trustedAdminCommand == true then
-		-- Trusted admin commands rely on the per-player token bucket and shared
-		-- global action budget above. Avoid a second time-based gate here because
-		-- Kohl's Admin may invoke the same command through closely spaced handlers.
+		-- Keep toggle actions protected from duplicate command-framework dispatch.
+		-- Without this guard, two rapid invocations can pause then immediately resume,
+		-- or lock then immediately unlock, before the user can observe the first state.
+		if action == "DJPause" or action == "DJToggleLock" then
+			local toggleCooldown = if action == "DJPause" then 0.75 else 1.25
+			local previousToggle = actionTimes[action] or 0
+			if previousToggle > 0 and now - previousToggle < toggleCooldown then
+				return false, "That ClubMusic toggle was just used. Wait a moment before toggling it again."
+			end
+		end
 		lastAdminActionAt[userId] = now
 	else
 		local previousGlobal = lastActionAt[userId] or 0
