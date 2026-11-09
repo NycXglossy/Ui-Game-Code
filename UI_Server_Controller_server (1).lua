@@ -1872,10 +1872,13 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 		-- Always release the transition lock, including when fallback selection,
 		-- state synchronization, or post-transition queue maintenance throws.
 		local branchOk, advanced, reason = pcall(function(): (boolean, string?)
+			-- Build one fallback entry for this transition. Retrying a stale revision
+			-- must not consume additional playlist cursor positions or pick new tracks.
+			local playlistFallback = nextPlaylistTrack()
+			local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
 			local function attemptGlobalAdvance(): (boolean, string?)
-				local playlistFallback = nextPlaylistTrack()
-				local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
-				local callOk, didAdvance, state, message = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
+				local expectedRevision = globalTrackRevision
+				local callOk, didAdvance, state, message = globalInvoke("AdvanceGlobalQueue", expectedRevision, fallback)
 				if callOk and didAdvance == true and typeof(state) == "table" then
 					if not applyGlobalQueueState(state) then
 						return false, "The shared transition was accepted, but its state snapshot could not be applied."
@@ -1885,10 +1888,29 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 				return false, tostring(message or (if callOk then "The shared queue rejected the transition." else "The shared queue service is unavailable."))
 			end
 			local didAdvance, failureReason = attemptGlobalAdvance()
-			-- A different server may win the compare-and-swap between our last
-			-- snapshot and this request. Refresh and retry once for that conflict only.
-			if not didAdvance and failureReason == "Track already advanced by another server." then
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			-- Other live servers can legitimately advance between our snapshot and
+			-- compare-and-swap. A retry is allowed only after this server applies a
+			-- newer authoritative playback revision; never replay against stale state.
+			local conflictRetries = 0
+			while not didAdvance and failureReason == "Track already advanced by another server."
+				and conflictRetries < 3 do
+				conflictRetries += 1
+				local previousRevision = globalTrackRevision
+				local refreshed = false
+				-- Snapshot sync can be busy in another event callback. Give that
+				-- in-flight read time to finish rather than immediately reusing stale data.
+				for refreshAttempt = 1, 5 do
+					if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
+						and globalTrackRevision > previousRevision then
+						refreshed = true
+						break
+					end
+					task.wait(0.1)
+				end
+				if not refreshed then
+					failureReason = "The shared track changed, but this server could not confirm a newer snapshot. Please retry."
+					break
+				end
 				didAdvance, failureReason = attemptGlobalAdvance()
 			end
 			if didAdvance then
