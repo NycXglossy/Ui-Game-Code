@@ -1516,7 +1516,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
 		sectionLabel("NOW PLAYING  /  LIVE QUEUE")
 
-		local widePlayer = currentDevice ~= "Mobile" and content.AbsoluteSize.X >= 620
+		local widePlayer = currentDevice ~= "Mobile" and (content.AbsoluteSize.X >= 620 or currentDevice == "Desktop" or currentDevice == "Console" or currentDevice == "VR")
 		local playerRow = make("Frame", {
 			Name = "PlayerQueueLayout",
 			Size = UDim2.new(1, -4, 0, if widePlayer then 210 else 386),
@@ -1545,7 +1545,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			label(queueCard, "Nothing queued. Auto DJ will select the next track.",
 				UDim2.fromOffset(12, 62), UDim2.new(1, -24, 0, 48), C.Muted, 11, false)
 		else
-			local shown = math.min(#queue, 3)
+			local shown = math.min(#queue, if widePlayer then 3 else 2)
 			for index = 1, shown do
 				local item: any = queue[index]
 				local top = 46 + (index - 1) * 45
