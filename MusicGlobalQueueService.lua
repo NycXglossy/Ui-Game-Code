@@ -64,6 +64,40 @@ local cachedSnapshot: State? = nil
 local cachedSnapshotAt = 0
 local SNAPSHOT_CACHE_SECONDS = 3
 
+-- Serialize this server's queue-store calls and wait for Roblox's real request
+-- budget before touching the shared key. The MemoryStore limiter above this
+-- module is aggregate protection; it is not a substitute for DataStore budget.
+local storeOperationBusy = false
+
+local function withStoreOperation(requestType: Enum.DataStoreRequestType, callback: () -> any): (boolean, any)
+	local lockStartedAt = os.clock()
+	while storeOperationBusy do
+		if os.clock() - lockStartedAt >= 8 then
+			return false, "Timed out waiting for the local global-queue store lock."
+		end
+		task.wait(0.05)
+	end
+	storeOperationBusy = true
+
+	local budgetStartedAt = os.clock()
+	while true do
+		local budgetOk, budget = pcall(function()
+			return DataStoreService:GetRequestBudgetForRequestType(requestType)
+		end)
+		if budgetOk and budget >= 1 then break end
+		if os.clock() - budgetStartedAt >= 5 then
+			storeOperationBusy = false
+			return false, "Roblox DataStore request budget is temporarily unavailable."
+		end
+		task.wait(0.1)
+	end
+
+	local callOk, result = pcall(callback)
+	storeOperationBusy = false
+	if not callOk then return false, result end
+	return true, result
+end
+
 local function finite(value: any): boolean
 	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
@@ -188,7 +222,7 @@ end
 local function transact(mutator: (State) -> (boolean, string?)): (boolean, State?, string?)
 	local accepted = false
 	local reason = "Shared queue update was rejected."
-	local ok, result = pcall(function()
+	local ok, result = withStoreOperation(Enum.DataStoreRequestType.UpdateAsync, function()
 		return STORE:UpdateAsync(KEY, function(old)
 			accepted = false
 			reason = "Shared queue update was rejected."
@@ -236,10 +270,12 @@ function MusicGlobalQueueService:GetSnapshot(): (boolean, State?, string?)
 	if cachedSnapshot and os.clock() - cachedSnapshotAt < SNAPSHOT_CACHE_SECONDS then
 		return true, detached(cachedSnapshot), nil
 	end
-	local ok, raw = pcall(function() return STORE:GetAsync(KEY) end)
+	local ok, raw = withStoreOperation(Enum.DataStoreRequestType.GetAsync, function()
+		return STORE:GetAsync(KEY)
+	end)
 	if not ok then
 		warn("[ClubMusic Global Queue] Snapshot read failed: " .. tostring(raw))
-		return false, nil, "Global queue storage is unavailable."
+		return false, nil, "Global queue storage is temporarily unavailable."
 	end
 	cachedSnapshot = detached(sanitizeState(raw))
 	cachedSnapshotAt = os.clock()
