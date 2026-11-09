@@ -118,7 +118,7 @@ end
 local function sanitizeState(raw: any): State
 	local state = defaultState()
 	if typeof(raw) ~= "table" or raw.schemaVersion ~= SCHEMA_VERSION then return state end
-	state.revision = if finite(raw.revision) then math.max(0, math.floor(raw.revision)) else 0
+	state.revision = if finite(raw.revision) then math.clamp(math.floor(raw.revision), 0, MAX_SAFE_INTEGER) else 0
 	state.updatedAt = if finite(raw.updatedAt) then math.max(0, math.floor(raw.updatedAt)) else os.time()
 	state.updatedBy = if finite(raw.updatedBy) then math.max(0, math.floor(raw.updatedBy)) else 0
 	state.current = sanitizeEntry(raw.current)
@@ -184,6 +184,12 @@ local function transact(mutator: (State) -> (boolean, string?)): (boolean, State
 			accepted = false
 			reason = "Shared queue update was rejected."
 			local state = sanitizeState(old)
+			-- DataStore revisions are used as monotonic concurrency markers. Refuse
+			-- writes at the exact-integer ceiling rather than silently losing precision.
+			if state.revision >= MAX_SAFE_INTEGER then
+				reason = "Global queue revision limit reached; writes are paused for safe recovery."
+				return old or state
+			end
 			local changed, message = mutator(state)
 			if changed then
 				state.revision += 1
