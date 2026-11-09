@@ -3291,6 +3291,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		label(previewCard, "LIVE PREVIEW", UDim2.fromOffset(12, 5), UDim2.new(1, -110, 0, 15), C.Muted, 9, true)
 		local previewSlot = label(previewCard, "SLOT " .. tostring(titleEditSlot) .. "  •  UNSAVED", UDim2.new(1, -116, 0, 5), UDim2.fromOffset(104, 15), C.Gold, 8, true)
 		previewSlot.TextXAlignment = Enum.TextXAlignment.Right
+		previewSlot.TextScaled = true
+		previewSlot.TextTruncate = Enum.TextTruncate.AtEnd
+		make("UITextSizeConstraint", {
+			MinTextSize = 7,
+			MaxTextSize = if compactTitleEditor then 8 else 9,
+		}, previewSlot)
 		local previewStage = make("Frame", {
 			Name = "TitlePreviewStage",
 			Position = UDim2.fromOffset(9, 24),
@@ -3308,6 +3314,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BackgroundTransparency = 1,
 			TextSize = previewMaxTextSize,
 			TextScaled = true,
+			TextWrapped = false,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 		}, previewStage) :: TextLabel
 		make("UITextSizeConstraint", {
