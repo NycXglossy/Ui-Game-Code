@@ -491,7 +491,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local catalogOffset = 0
 	local catalogHasMore = false
 	local catalogRequestSerial = 0
-	local requestCatalogPage: ((number) -> ())? = nil
+	local requestCatalogPage: (number) -> ()
 	local volume = 0.8
 	local lastVolume = 0.8
 	local sliderDragging = false
