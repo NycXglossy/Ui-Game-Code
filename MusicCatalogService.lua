@@ -176,14 +176,13 @@ end
 local function hasValidStoredCatalogRecords(stored: any): boolean
 	if stored == nil then return true end
 	if not hasValidStoredCatalogShape(stored) then return false end
+	local seenIds: {[string]: boolean} = {}
 	for _, rawTrack in ipairs(stored.tracks) do
 		local clean = sanitizeStoredTrack(rawTrack)
-		if not clean then
+		if not clean or TRACK_BY_ID[clean.id] or seenIds[clean.id] then
 			return false
 		end
-		if TRACK_BY_ID[clean.id] then
-			return false
-		end
+		seenIds[clean.id] = true
 	end
 	return true
 end
@@ -300,8 +299,8 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 			duplicateFound = false
 			capacityReached = false
 			invalidStoredCatalog = false
-			if old ~= nil and (typeof(old) ~= "table" or typeof(old.tracks) ~= "table") then
-				-- Do not turn malformed persisted data into a fresh one-track catalog.
+			if not hasValidStoredCatalogRecords(old) then
+				-- Never overwrite malformed, invalid, or duplicate persisted records.
 				invalidStoredCatalog = true
 				return old
 			end
@@ -329,7 +328,7 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 	if duplicateFound then return false, "That audio was added by another server already. Refresh the catalog." end
 	if capacityReached then return false, "The custom catalog is full (200 tracks)." end
 	local persistedTrack: Track? = nil
-	if typeof(updatedData) == "table" and typeof(updatedData.tracks) == "table" then
+	if hasValidStoredCatalogRecords(updatedData) and typeof(updatedData) == "table" and typeof(updatedData.tracks) == "table" then
 		for _, raw in ipairs(updatedData.tracks) do
 			local clean = sanitizeStoredTrack(raw)
 			if clean and clean.id == id then persistedTrack = clean; break end
@@ -353,8 +352,8 @@ function MusicCatalogService:RemoveCustomTrack(trackId: string): (boolean, strin
 	local ok, err = pcall(function()
 		updatedData = catalogStore:UpdateAsync(CATALOG_KEY, function(old)
 			invalidStoredCatalog = false
-			if old ~= nil and (typeof(old) ~= "table" or typeof(old.tracks) ~= "table") then
-				-- Never replace an unexpected persisted shape with an empty catalog.
+			if not hasValidStoredCatalogRecords(old) then
+				-- Never filter or rewrite malformed, invalid, or duplicate records.
 				invalidStoredCatalog = true
 				return old
 			end
@@ -372,7 +371,7 @@ function MusicCatalogService:RemoveCustomTrack(trackId: string): (boolean, strin
 		warn("[ClubMusic Catalog] Remove refused because persisted catalog data has an unexpected shape.")
 		return false, "Catalog data needs recovery; no removal was confirmed."
 	end
-	if typeof(updatedData) ~= "table" or typeof(updatedData.tracks) ~= "table" then
+	if not hasValidStoredCatalogRecords(updatedData) or typeof(updatedData) ~= "table" or typeof(updatedData.tracks) ~= "table" then
 		return false, "Catalog removal could not be confirmed; no local change was applied."
 	end
 	for _, raw in ipairs(updatedData.tracks) do
