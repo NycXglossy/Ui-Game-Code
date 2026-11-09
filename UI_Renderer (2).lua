@@ -1881,6 +1881,33 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			-- A read-only snapshot keeps playlist editing grounded in the same
 			-- authoritative playback state used by the Now Playing panel.
 			local playback = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
+
+			-- Rotation status comes from the server's authoritative playback snapshot.
+			-- The client never guesses whether a playlist is active from button clicks.
+			local rotation = if playback and typeof(playback.playlist) == "table" then playback.playlist else nil
+			local rotationActive = rotation ~= nil and rotation.active == true
+			local rotationCard = card(76)
+			label(rotationCard, "PLAYLIST ROTATION", UDim2.fromOffset(12, 7), UDim2.new(1, -120, 0, 16), C.Gold, 10, true)
+			local rotationBadge = make("TextLabel", {
+				Name = "PlaylistRotationState",
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -10, 0, 7),
+				Size = UDim2.fromOffset(94, 21),
+				BackgroundColor3 = (if rotationActive then C.Green else C.SurfaceLight):Lerp(C.Base, 0.22),
+				Text = if rotationActive then "ROTATION ACTIVE" else "STOPPED",
+				TextColor3 = C.White,
+				TextSize = 8,
+				Font = BOLD,
+			}, rotationCard)
+			corner(rotationBadge, 7)
+			local rotationName = if rotationActive then nz(rotation.name, "Active playlist") else "Auto DJ is selecting tracks"
+			label(rotationCard, rotationName, UDim2.fromOffset(12, 29), UDim2.new(1, -24, 0, 19),
+				if rotationActive then C.Green else C.White, 12, true)
+			local rotationDetail = if rotationActive
+				then "Repeating playlist order • " .. nz(if playback then playback.title else nil, "Waiting for next track")
+				else "No staff playlist is currently controlling track selection."
+			label(rotationCard, rotationDetail, UDim2.fromOffset(12, 51), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
+
 			local monitor = card(82)
 			label(monitor, "PLAYBACK SNAPSHOT", UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 17), C.Gold, 10, true)
 			local playbackTitle = if playback then nz(playback.title, "Unknown track") else "Nothing is currently on air"
