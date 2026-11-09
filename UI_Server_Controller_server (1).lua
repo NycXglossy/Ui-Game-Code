@@ -3818,8 +3818,12 @@ local function refreshLocalCatalog(): boolean
 end
 
 local function applyGlobalPlaybackControl(command: string, payload: any): boolean
-	if typeof(payload) ~= "table" or not isFiniteNumber(payload.revision) or payload.revision < 1 then return false end
-	local revision = math.floor(payload.revision)
+	-- Playback revisions are monotonic integer sequence numbers. Reject malformed
+	-- fractional/unsafe values instead of silently rounding them into a valid revision.
+	if typeof(payload) ~= "table" or not isFiniteNumber(payload.revision)
+		or payload.revision < 1 or payload.revision % 1 ~= 0
+		or payload.revision > 9007199254740991 then return false end
+	local revision = payload.revision
 	if revision <= lastGlobalPlaybackRevision then return false end
 	if command == "SetPlaybackPaused" then
 		if typeof(payload.paused) ~= "boolean" then return false end
