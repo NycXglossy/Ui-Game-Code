@@ -439,6 +439,7 @@ local activePlaylistId: string? = nil
 local activePlaylistName = ""
 local activePlaylistTracks: {Track} = {}
 local activePlaylistCursor = 1
+local notify: (Player, string, string?) -> ()
 local nowPlaying = {
 	trackId = "",
 	title = "",
@@ -1547,7 +1548,7 @@ local function publishState(player: Player?)
 	end
 end
 
-local function notify(player: Player, text: string, kind: string?)
+notify = function(player: Player, text: string, kind: string?)
 	noticeRemote:FireClient(player, { text = text, kind = kind or "info" })
 end
 
@@ -2245,10 +2246,9 @@ local function handleAction(player: Player, action: any, payload: any)
 		end
 		if ok and activePlaylistId == payload.playlistId
 			and (action == "PlaylistAddTrack" or action == "PlaylistRemoveTrack" or action == "PlaylistMoveTrack") then
-			if reloadActivePlaylist() then
-				clearAutomaticQueue()
-				topUpAuto()
-			end
+			reloadActivePlaylist()
+			clearAutomaticQueue()
+			topUpAuto()
 		end
 		notify(player, message, if ok then "ok" else "warn")
 		if ok then publishState(nil) end
