@@ -246,9 +246,13 @@ function Network.Init(): boolean
 		end
 		local readyStartedAt = os.clock()
 		while foundFolder:GetAttribute("Ready") ~= true do
+			local stage = foundFolder:GetAttribute("StartupStage")
+			local startupError = foundFolder:GetAttribute("StartupError")
+			if typeof(startupError) == "string" and startupError ~= "" then
+				error(("ClubMusic server startup failed during %s: %s")
+					:format(tostring(stage or "unknown"), string.sub(startupError, 1, 220)))
+			end
 			if os.clock() - readyStartedAt >= READY_TIMEOUT then
-				local stage = foundFolder:GetAttribute("StartupStage")
-				local startupError = foundFolder:GetAttribute("StartupError")
 				error(("ClubMusicRemotes is still not ready after %d seconds (server stage: %s; server error: %s).")
 					:format(READY_TIMEOUT, tostring(stage or "unknown"), tostring(startupError or "none reported")))
 			end
