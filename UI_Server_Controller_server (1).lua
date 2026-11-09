@@ -299,22 +299,49 @@ end
 local SESSION_TOKEN = if game.JobId ~= "" then game.JobId else HttpService:GenerateGUID(false)
 local random = Random.new()
 
--- One server-owned Sound drives the entire server. This replaces the source
--- system's second remote/event architecture and keeps playback under this controller.
--- The existing renderer can still set a local-only SoundGroup volume per client.
-local musicSoundGroup = getOrCreate(SoundService, "SoundGroup", "ClubMusic") :: SoundGroup
+-- One server-owned Sound drives the entire server. Reuse the supplied
+-- SoundService.ServerMusicSound and SoundService.MusicGroup instances so the
+-- existing assets are not shadowed by duplicate playback objects.
+-- The controller remains the only playback authority; clients may adjust the
+-- canonical SoundGroup locally for their own volume preference.
+local musicSoundGroup = getOrCreate(SoundService, "SoundGroup", "MusicGroup") :: SoundGroup
 local musicSound = getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
+
+-- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
+-- This preserves other SoundService audio while removing the obsolete group.
+local legacyMusicGroup = SoundService:FindFirstChild("ClubMusic")
+if legacyMusicGroup and legacyMusicGroup:IsA("SoundGroup") and legacyMusicGroup ~= musicSoundGroup then
+	for _, descendant in ipairs(SoundService:GetDescendants()) do
+		if descendant:IsA("Sound") and descendant.SoundGroup == legacyMusicGroup then
+			descendant.SoundGroup = musicSoundGroup
+		end
+	end
+	legacyMusicGroup:Destroy()
+end
+
 musicSound.SoundGroup = musicSoundGroup
 musicSound.Volume = 1
 musicSound.Looped = false
 musicSound.PlaybackSpeed = 1
 musicSoundGroup.Volume = 1
+musicSound:SetAttribute("ManagedByClubMusicController", true)
+
+-- The uploaded "Audio Sound Count" model is a Sound, not a counter script.
+-- Publish a truthful count of controller-managed sounds currently playing.
+-- This architecture owns exactly one such Sound, so the value is always 0 or 1.
+local function refreshActiveMusicSoundCount()
+	SoundService:SetAttribute("ActiveMusicSoundCount", if musicSound.IsPlaying then 1 else 0)
+end
+refreshActiveMusicSoundCount()
+musicSound:GetPropertyChangedSignal("Playing"):Connect(refreshActiveMusicSoundCount)
+
 local playbackPaused = false
 
 local function stopServerMusic()
 	pcall(function()
 		musicSound:Stop()
 	end)
+	refreshActiveMusicSoundCount()
 end
 
 local function startServerMusic(soundId: any)
