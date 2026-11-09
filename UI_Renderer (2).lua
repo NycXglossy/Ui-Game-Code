@@ -3225,8 +3225,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			notify("Unlock this slot first.", C.Red)
 			return
 		end
-		if nz(draft.text, "") == "" then
+		local titleText = nz(draft.text, "")
+		local titleLength = utf8.len(titleText)
+		if titleText == "" then
 			notify("Enter a title first.", C.Orange)
+			return
+		end
+		if not titleLength or titleLength > 24 then
+			notify("Titles must contain 1-24 valid characters.", C.Orange)
 			return
 		end
 		local payload = {
@@ -3341,7 +3347,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		refreshPreview()
 
 		local form = card(478)
-		label(form, "Title text (24 characters max)", UDim2.fromOffset(12, 6), UDim2.new(1, -24, 0, 18), C.Muted, 10, true)
+		label(form, "Title text", UDim2.fromOffset(12, 6), UDim2.new(1, -132, 0, 18), C.Muted, 10, true)
+		local titleCounter = label(form, "0 / 24", UDim2.new(1, -112, 0, 6), UDim2.fromOffset(100, 18), C.Muted, 9, true)
+		titleCounter.TextXAlignment = Enum.TextXAlignment.Right
+		titleCounter.TextScaled = true
+		make("UITextSizeConstraint", { MinTextSize = 8, MaxTextSize = 9 }, titleCounter)
 		local titleInput = make("TextBox", {
 			Position = UDim2.fromOffset(12, 26),
 			Size = UDim2.new(1, -24, 0, 36),
@@ -3381,6 +3391,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			titleInputStroke.Transparency = 0.38
 			titleInputStroke.Thickness = 1
 		end)
+		local function refreshTitleCounter(text: string)
+			local length = utf8.len(text) or 0
+			titleCounter.Text = string.format("%d / 24", math.min(length, 24))
+			titleCounter.TextColor3 = if length >= 24 then C.Orange elseif length >= 20 then C.Gold else C.Muted
+		end
+		refreshTitleCounter(titleInput.Text)
 		titleInput:GetPropertyChangedSignal("Text"):Connect(function()
 			local text = titleInput.Text
 			local length = utf8.len(text)
@@ -3389,6 +3405,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				return
 			end
 			draft.text = text
+			refreshTitleCounter(text)
 			refreshPreview()
 		end)
 
