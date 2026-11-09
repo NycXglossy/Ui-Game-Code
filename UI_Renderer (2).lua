@@ -644,6 +644,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if not refs or not refs.fill.Parent then return end
 		local elapsed = interpolatedElapsed(refs.duration)
 		refs.fill.Size = UDim2.new(math.clamp(elapsed / refs.duration, 0, 1), 0, 1, 0)
+		refs.fill.BackgroundColor3 = if playbackIsPaused() then C.Orange else C.Gold
 		refs.timeLabel.Text = formatTime(elapsed) .. " / " .. formatTime(refs.duration)
 	end
 
@@ -1417,12 +1418,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 
 		label(nowCard, nz(now.title, "The stage is warming up"), if stackedArtwork then UDim2.fromOffset(12, 130) else UDim2.fromOffset(leftInset, 8), if stackedArtwork then UDim2.new(1, -24, 0, 25) else UDim2.new(1, -(rightInset + 88), 0, 24), C.White, if stackedArtwork then 15 else 16, true)
-		local liveColor = if live then C.Green else C.SurfaceLight
+		local paused = live and now.paused == true
+		local liveColor = if paused then C.Orange elseif live then C.Green else C.SurfaceLight
 		local liveBadge = make("TextLabel", {
 			Position = UDim2.new(1, -92, 0, 8),
 			Size = UDim2.fromOffset(78, 24),
 			BackgroundColor3 = liveColor:Lerp(C.Base, 0.22),
-			Text = if live then "ON AIR" else "STANDBY",
+			Text = if paused then "PAUSED" elseif live then "ON AIR" else "STANDBY",
 			TextColor3 = liveColor:Lerp(C.White, 0.35),
 			TextSize = 9,
 			Font = BOLD,
