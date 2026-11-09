@@ -495,6 +495,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local catalogRequestSerial = 0
 	local pendingCatalogRemoval: string? = nil
 	local selectedPlaylistId: string? = nil
+	local selectedPlaylistName: string? = nil
 	local requestCatalogPage: (number) -> ()
 	local volume = 0.8
 	local lastVolume = 0.8
@@ -1933,6 +1934,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 							UDim2.fromOffset(8, 5),
 							if compactPlaylist then UDim2.new(1, -16, 0, 27) else UDim2.new(1, -230, 0, 30), function()
 								selectedPlaylistId = if selectedPlaylistId == entry.id then nil else entry.id
+								selectedPlaylistName = if selectedPlaylistId == entry.id then nil else entry.name
 								renderTab()
 							end, if selected then C.Green else C.SurfaceLight)
 						local actionY = if compactPlaylist then 37 else 5
@@ -1988,6 +1990,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					end
 				end
 			end)
+		end
+
+		if perm() >= 1 and selectedPlaylistId ~= nil then
+			local targetCard = card(42)
+			label(targetCard, "ADDING TRACKS TO", UDim2.fromOffset(12, 4), UDim2.new(1, -112, 0, 12), C.Muted, 8, true)
+			label(targetCard, selectedPlaylistName or "Selected playlist", UDim2.fromOffset(12, 17), UDim2.new(1, -112, 0, 18), C.Green, 11, true)
+			actionButton(targetCard, "CHANGE", UDim2.new(1, -88, 0, 6), UDim2.fromOffset(76, 30), function()
+				selectedPlaylistId = nil
+				selectedPlaylistName = nil
+				renderTab()
+			end, C.SurfaceLight)
 		end
 
 		local searchCard = card(52)
