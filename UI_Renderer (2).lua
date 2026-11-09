@@ -3224,6 +3224,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			titleDraft = loaded
 		end
 		local draft: any = titleDraft
+		local compactTitleEditor = currentDevice == "Mobile" or currentDevice == "Tablet"
+		local previewMaxTextSize = if currentDevice == "Mobile" then 20 elseif currentDevice == "Tablet" then 23 else 26
 
 		sectionLabel("CUSTOM TITLE")
 		local slotCard = card(56)
@@ -3261,9 +3263,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Position = UDim2.fromOffset(8, 3),
 			Size = UDim2.new(1, -16, 1, -6),
 			BackgroundTransparency = 1,
-			TextSize = 26,
+			TextSize = previewMaxTextSize,
+			TextScaled = true,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 		}, previewStage) :: TextLabel
+		make("UITextSizeConstraint", {
+			MinTextSize = 14,
+			MaxTextSize = previewMaxTextSize,
+		}, previewLabel)
 		local previewHint = label(previewCard, "Changes appear here before you save", UDim2.fromOffset(12, 80), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
 		previewHint.TextXAlignment = Enum.TextXAlignment.Center
 		local previewUpdate: (number) -> () = function(_) end
@@ -3284,7 +3291,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			PlaceholderColor3 = C.Muted,
 			PlaceholderText = "Enter a custom title",
 			Text = draft.text,
-			TextSize = 12,
+			TextSize = if compactTitleEditor then 11 else 12,
 			Font = FONT,
 			ClearTextOnFocus = false,
 			Selectable = true,
@@ -3324,7 +3331,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			PlaceholderColor3 = C.Muted,
 			PlaceholderText = "Search color presets...",
 			Text = "",
-			TextSize = 10,
+			TextSize = if compactTitleEditor then 9 else 10,
 			Font = FONT,
 			ClearTextOnFocus = false,
 		}, form) :: TextBox
