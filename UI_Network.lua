@@ -16,6 +16,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FOLDER_NAME = "ClubMusicRemotes"
+local FOLDER_TIMEOUT = 20
 local REMOTE_TIMEOUT = 3
 local READY_TIMEOUT = 45
 local MAX_STATE_DEPTH = 8
@@ -239,7 +240,7 @@ function Network.Init(): boolean
 	initializing = true
 
 	local ok, err = pcall(function()
-		local foundFolder = ReplicatedStorage:WaitForChild(FOLDER_NAME, REMOTE_TIMEOUT)
+		local foundFolder = ReplicatedStorage:WaitForChild(FOLDER_NAME, FOLDER_TIMEOUT)
 		if not foundFolder or not foundFolder:IsA("Folder") then
 			error("Waiting for ReplicatedStorage.ClubMusicRemotes; the server controller may still be starting.")
 		end
