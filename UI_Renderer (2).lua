@@ -1033,7 +1033,18 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BorderSizePixel = 0,
 		}, heading)
 		corner(marker, 2)
-		label(heading, string.upper(text), UDim2.fromOffset(11, 0), UDim2.new(1, -18, 0, 25), C.Gold, 11, true)
+		make("TextLabel", {
+			Name = "SectionTitle",
+			Position = UDim2.fromOffset(11, 0),
+			Size = UDim2.new(1, -18, 0, 25),
+			BackgroundTransparency = 1,
+			Text = string.upper(text),
+			TextColor3 = C.Gold,
+			TextSize = 11,
+			Font = BOLD,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
+		}, heading)
 		local rule = make("Frame", {
 			Name = "SectionRule",
 			Position = UDim2.fromOffset(11, 26),
