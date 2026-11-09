@@ -825,83 +825,106 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local toggleOutline = stroke(toggleButton, C.Cyan, 2)
 	bindFocusFeedback(toggleButton, toggleOutline, C.Magenta)
 
-	-- Top bar HUD: always-visible now-playing strip (tap it to open the club panel).
+	-- Top bar HUD: a compact companion to the full festival panel, with matching surfaces and accents.
 	local hud = make("TextButton", {
 		Name = "TopBarHUD",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 8),
-		Size = UDim2.new(0.94, 0, 0, 42),
-		BackgroundColor3 = Color3.fromRGB(17, 19, 29),
-		BackgroundTransparency = 0.04,
+		Size = UDim2.new(0.96, 0, 0, 68),
+		BackgroundColor3 = C.Surface,
+		BackgroundTransparency = 0,
 		Text = "",
 		AutoButtonColor = false,
 	}, gui) :: TextButton
-	corner(hud, 15)
-	local hudOutline = stroke(hud, C.Gold, 1)
-	hudOutline.Transparency = 0.28
-	bindFocusFeedback(hud, hudOutline, Color3.fromRGB(17, 19, 29))
-	make("UIGradient", {Rotation=0, Color=ColorSequence.new(Color3.fromRGB(28,25,39), Color3.fromRGB(17,21,31))}, hud)
-	local hudConstraint = make("UISizeConstraint", { MaxSize = Vector2.new(560, 42) }, hud)
+	corner(hud, 18)
+	local hudOutline = stroke(hud, C.Gold, 1.5)
+	hudOutline.Transparency = 0.22
+	bindFocusFeedback(hud, hudOutline, C.Surface)
+	make("UIGradient", {
+		Rotation = 0,
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, C.SurfaceLight),
+			ColorSequenceKeypoint.new(1, C.Surface),
+		}),
+	}, hud)
+	local hudConstraint = make("UISizeConstraint", { MinSize = Vector2.new(260, 64), MaxSize = Vector2.new(760, 68) }, hud)
 	local hudScale = make("UIScale", { Scale = 1 }, hud)
 	local hudBars: {any} = {}
 	local hudBarHolder = make("Frame", {
-		Position = UDim2.fromOffset(12, 9),
-		Size = UDim2.fromOffset(20, 20),
-		BackgroundTransparency = 1,
+		Name = "HudFestivalMark",
+		Position = UDim2.fromOffset(14, 17),
+		Size = UDim2.fromOffset(32, 32),
+		BackgroundColor3 = C.SurfaceLight,
+		BorderSizePixel = 0,
 	}, hud)
+	corner(hudBarHolder, 10)
+	stroke(hudBarHolder, C.Gold, 1).Transparency = 0.48
 	for i = 1, 4 do
 		local piece = make("Frame", {
 			AnchorPoint = Vector2.new(0, 1),
-			Position = UDim2.new(0, (i - 1) * 5, 1, 0),
+			Position = UDim2.new(0, 6 + (i - 1) * 6, 1, -6),
 			Size = UDim2.new(0, 3, 0.3, 0),
-			BackgroundColor3 = C.Magenta:Lerp(C.Cyan, (i - 1) / 3),
+			BackgroundColor3 = if i == 2 then C.Gold else C.Cyan:Lerp(C.Magenta, (i - 1) / 3),
 			BorderSizePixel = 0,
 		}, hudBarHolder)
 		corner(piece, 1)
 		hudBars[i] = piece
 	end
+	local hudEyebrow = make("TextLabel", {
+		Name = "HudEyebrow",
+		Position = UDim2.fromOffset(58, 7),
+		Size = UDim2.new(1, -210, 0, 12),
+		BackgroundTransparency = 1,
+		Text = "FIREBEACH  /  NOW PLAYING",
+		TextColor3 = C.Cyan,
+		TextSize = 8,
+		Font = BOLD,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, hud)
 	local hudTitle = make("TextLabel", {
-		Position = UDim2.fromOffset(40, 3),
-		Size = UDim2.new(1, -140, 0, 18),
+		Position = UDim2.fromOffset(58, 19),
+		Size = UDim2.new(1, -210, 0, 21),
 		BackgroundTransparency = 1,
 		Text = "",
 		TextColor3 = C.White,
-		TextSize = 13,
+		TextSize = 14,
 		Font = BOLD,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	}, hud)
 	local hudArtist = make("TextLabel", {
-		Position = UDim2.fromOffset(40, 19),
-		Size = UDim2.new(1, -140, 0, 14),
+		Position = UDim2.fromOffset(58, 41),
+		Size = UDim2.new(1, -210, 0, 15),
 		BackgroundTransparency = 1,
 		Text = "",
 		TextColor3 = C.Muted,
-		TextSize = 9,
+		TextSize = 10,
 		Font = FONT,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 	}, hud)
 	local hudTime = make("TextLabel", {
+		Name = "HudTrackTime",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -12, 0, 3),
-		Size = UDim2.fromOffset(88, 16),
+		Position = UDim2.new(1, -14, 0, 13),
+		Size = UDim2.fromOffset(104, 16),
 		BackgroundTransparency = 1,
 		Text = "",
-		TextColor3 = C.Cyan,
+		TextColor3 = C.Gold,
 		TextSize = 10,
 		Font = BOLD,
 		TextXAlignment = Enum.TextXAlignment.Right,
 	}, hud)
 	local hudStatus = make("TextLabel", {
+		Name = "HudRequestStatus",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -12, 0, 19),
-		Size = UDim2.fromOffset(88, 14),
+		Position = UDim2.new(1, -14, 0, 34),
+		Size = UDim2.fromOffset(104, 15),
 		BackgroundTransparency = 1,
 		Text = "",
-		TextColor3 = C.Muted,
+		TextColor3 = C.Cyan,
 		TextSize = 9,
-		Font = FONT,
+		Font = BOLD,
 		TextXAlignment = Enum.TextXAlignment.Right,
 	}, hud)
 	local hudTrack = make("Frame", {
@@ -910,11 +933,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		BackgroundColor3 = C.SurfaceLight,
 		BorderSizePixel = 0,
 	}, hud)
+	corner(hudTrack, 2)
 	local hudFill = make("Frame", {
 		Size = UDim2.fromScale(0, 1),
-		BackgroundColor3 = C.Magenta,
+		BackgroundColor3 = C.Gold,
 		BorderSizePixel = 0,
 	}, hudTrack)
+	corner(hudFill, 2)
+	make("UIGradient", {
+		Color = ColorSequence.new(C.Cyan, C.Magenta),
+		Rotation = 0,
+	}, hudFill)
 
 	local function updateHud()
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
@@ -4143,18 +4172,21 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 
 		hudScale.Scale = layoutScale
-		hudConstraint.MaxSize = Vector2.new(math.clamp(viewport.X - 20, 260, 560), 42)
-		hud.Size = UDim2.new(0.96 / layoutScale, 0, 0, 42)
-		hudTitle.TextSize = if viewport.X < 430 then 11 else 13
-		hudArtist.TextSize = if viewport.X < 430 then 9 else 10
-		hudTime.TextSize = if viewport.X < 430 then 9 else 10
-		hudStatus.TextSize = if viewport.X < 430 then 8 else 9
-		hudTitle.Size = UDim2.new(1, if viewport.X < 430 then -132 else -158, 0, 18)
-		hudArtist.Size = UDim2.new(1, if viewport.X < 430 then -132 else -158, 0, 13)
-		hudTime.Size = UDim2.fromOffset(if viewport.X < 430 then 82 else 102, 16)
-		hudStatus.Size = UDim2.fromOffset(if viewport.X < 430 then 82 else 102, 13)
+		hudConstraint.MaxSize = Vector2.new(math.clamp(viewport.X - 20, 260, 760), 68)
+		local compactHud = viewport.X < 430
+		hud.Size = UDim2.new(0.96 / layoutScale, 0, 0, 68)
+		hudEyebrow.TextSize = if compactHud then 7 else 8
+		hudTitle.TextSize = if compactHud then 11 else 14
+		hudArtist.TextSize = if compactHud then 8 else 10
+		hudTime.TextSize = if compactHud then 8 else 10
+		hudStatus.TextSize = if compactHud then 7 else 9
+		hudTitle.Size = UDim2.new(1, if compactHud then -142 else -210, 0, 20)
+		hudArtist.Size = UDim2.new(1, if compactHud then -142 else -210, 0, 15)
+		hudEyebrow.Size = UDim2.new(1, if compactHud then -142 else -210, 0, 12)
+		hudTime.Size = UDim2.fromOffset(if compactHud then 78 else 104, 16)
+		hudStatus.Size = UDim2.fromOffset(if compactHud then 78 else 104, 15)
 		hud.Position = UDim2.new(0.5, 0, 0, profile.hudTop)
-		hudBottom = profile.hudTop + math.floor(42 * layoutScale) + 8
+		hudBottom = profile.hudTop + math.floor(68 * layoutScale) + 8
 		if expanded then applyMenuTypography() end
 	end
 
