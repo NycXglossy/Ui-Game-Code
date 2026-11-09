@@ -132,7 +132,9 @@ local catalogFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog"
 local playlistFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
 
 local serverStorage = game:GetService("ServerStorage")
+remotes:SetAttribute("StartupStage", "LoadingMusicCatalogService")
 local catalogModule = serverStorage:WaitForChild("MusicCatalogService", 20)
+remotes:SetAttribute("StartupStage", "LoadingMusicPlaylistService")
 local playlistModule = serverStorage:WaitForChild("MusicPlaylistService", 20)
 if not catalogModule or not catalogModule:IsA("ModuleScript") then
 	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicCatalogService ModuleScript.")
