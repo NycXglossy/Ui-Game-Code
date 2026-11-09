@@ -1258,7 +1258,7 @@ local function reloadActivePlaylist(): boolean
 end
 
 local function startPlaylistRotation(player: Player, playlistId: any): boolean
-	if not isValidString(playlistId, 64) then
+	if typeof(playlistId) ~= "string" or #playlistId == 0 or #playlistId > 64 then
 		notify(player, "Choose a valid playlist.", "warn")
 		return false
 	end
