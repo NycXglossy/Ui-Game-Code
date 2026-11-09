@@ -110,23 +110,10 @@ local CONFIG = {
 -- for request limits, moderation, queue priority, and playback.
 local MusicCatalogService = require(game:GetService("ServerStorage"):WaitForChild("MusicCatalogService"))
 
-type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string }
+type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string? }
 
 local TRACK_BY_ID: {[string]: Track} = {}
 local ALL_TRACK_IDS: {string} = {}
-for _, catalogTrack in ipairs(MusicCatalogService:GetAllTracks()) do
-	local track: Track = {
-		id = catalogTrack.id,
-		genreId = catalogTrack.genreId,
-		title = catalogTrack.title,
-		artist = catalogTrack.artist,
-		duration = catalogTrack.duration,
-		genre = catalogTrack.genre,
-	}
-	TRACK_BY_ID[track.id] = track
-	table.insert(ALL_TRACK_IDS, track.id)
-end
-table.sort(ALL_TRACK_IDS)
 
 local TAGS: {[string]: boolean} = {
 	vip = true, party = true, wave = true, tiki = true, sunset = true, bass = true, island = true,
@@ -512,6 +499,30 @@ local function waitForDataStoreBudget(maxWaitSeconds: number): boolean
 	end
 end
 
+-- Load the persisted custom catalog only after the shared DataStore budget gate
+-- is available. A failed load leaves the built-in catalog readable but disables writes.
+local catalogStorageReady = MusicCatalogService:Initialize(CONFIG.StudioUseDataStore, function()
+	return waitForDataStoreBudget(5)
+end)
+if not catalogStorageReady then
+	warn("[ClubMusic] Persistent catalog unavailable; custom catalog changes are disabled for this server.")
+end
+for _, catalogTrack in ipairs(MusicCatalogService:GetAllTracks()) do
+	local track: Track = {
+		id = catalogTrack.id,
+		genreId = catalogTrack.genreId,
+		title = catalogTrack.title,
+		artist = catalogTrack.artist,
+		duration = catalogTrack.duration,
+		genre = catalogTrack.genre,
+		assetId = catalogTrack.assetId,
+		soundId = catalogTrack.soundId,
+	}
+	TRACK_BY_ID[track.id] = track
+	table.insert(ALL_TRACK_IDS, track.id)
+end
+table.sort(ALL_TRACK_IDS)
+
 local function consumeActionBudget(userId: number, now: number): boolean
 	local bucket = perPlayerActionBuckets[userId]
 	if not bucket then
@@ -531,6 +542,7 @@ end
 local ACTION_COOLDOWNS: {[string]: number} = {
 	RequestTrack = 0.5, RequestAudioAsset = CONFIG.AudioInspectionCooldownSeconds,
 	ReloadSong = CONFIG.ReloadCooldownSeconds, ToggleFavorite = 0.2, VoteSkip = 0.5,
+	CatalogAddAudio = 10, CatalogRemoveTrack = 2,
 	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
 	ModBlockUser = 0.5, ModSetVip = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
@@ -1091,7 +1103,7 @@ local function makeEntry(track: Track, source: string, player: Player?): QueueEn
 		source = source,
 		vip = if player then isVip(player) else false,
 		passTier = if player then passTier(player) else 0,
-		soundId = CONFIG.SoundIds[track.id],
+		soundId = track.soundId or CONFIG.SoundIds[track.id],
 	}
 end
 
@@ -2069,6 +2081,91 @@ local function handleAction(player: Player, action: any, payload: any)
 	local previousAction = actionTimes[action] or 0
 	if previousAction > 0 and now - previousAction < actionCooldown then return end
 	actionTimes[action] = now
+
+	if action == "CatalogAddAudio" then
+		if not isStaff(player) then notify(player, "Only staff can add catalog tracks.", "warn"); return end
+		if not catalogStorageReady or not MusicCatalogService:IsStorageReady() then
+			notify(player, "Persistent catalog storage is unavailable. No changes were made.", "warn"); return
+		end
+		local assetId = payload.assetId
+		local genreId = payload.genreId
+		if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then
+			notify(player, "Enter a valid audio asset ID.", "warn"); return
+		end
+		if typeof(genreId) ~= "string" or #genreId > 24 then
+			notify(player, "Choose a valid catalog genre.", "warn"); return
+		end
+		if CONFIG.RestrictAudioToAllowlist and not table.find(CONFIG.AllowedAudioAssetIds, assetId) then
+			notify(player, "That audio asset is not on the approved list.", "warn"); return
+		end
+		if pendingAudio[userId] then notify(player, "An audio inspection is already running.", "warn"); return end
+		local audioNow = os.clock()
+		local previousAudio = lastAudioInspection[userId] or 0
+		if previousAudio > 0 and audioNow - previousAudio < CONFIG.AudioInspectionCooldownSeconds then
+			notify(player, "Please wait before inspecting another audio asset.", "warn"); return
+		end
+		if audioInspectionCount >= math.max(1, CONFIG.MaxConcurrentAudioInspections)
+			or not consumeToken(globalAudioBucket, audioNow, 1) then
+			notify(player, "Audio inspection is busy. Try again shortly.", "warn"); return
+		end
+		pendingAudio[userId] = true
+		lastAudioInspection[userId] = audioNow
+		audioInspectionCount += 1
+		local inspectOk, valid, title, artist, duration, inspectionOwnsSlot = pcall(inspectAudioAsset, assetId)
+		if inspectionOwnsSlot ~= true then audioInspectionCount = math.max(0, audioInspectionCount - 1) end
+		pendingAudio[userId] = nil
+		if not inspectOk or not valid then
+			notify(player, if inspectOk then tostring(title) else "Audio inspection failed.", "warn"); return
+		end
+		if duration > CONFIG.AudioMaxSeconds then
+			notify(player, string.format("Audio exceeds the %d-minute catalog limit.", math.floor(CONFIG.AudioMaxSeconds / 60)), "warn"); return
+		end
+		if player.Parent ~= Players or not isStaff(player) then return end
+		local budgetReady = waitForDataStoreBudget(5)
+		if not budgetReady then notify(player, "Shared DataStore budget is unavailable; catalog was not changed.", "warn"); return end
+		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId)
+		if not saved then notify(player, message, "warn"); return end
+		local trackId = "custom-" .. tostring(assetId)
+		local track = MusicCatalogService:GetTrackById(trackId)
+		if track then
+			TRACK_BY_ID[trackId] = track
+			table.insert(ALL_TRACK_IDS, trackId)
+			table.sort(ALL_TRACK_IDS)
+		end
+		notify(player, message, "ok")
+		publishState(nil)
+		return
+	end
+
+	if action == "CatalogRemoveTrack" then
+		if not isStaff(player) then notify(player, "Only staff can remove catalog tracks.", "warn"); return end
+		local trackId = payload.trackId
+		if not isValidString(trackId, 32) then return end
+		local track = TRACK_BY_ID[trackId]
+		if not track or track.assetId == nil then
+			notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
+		end
+		if nowPlaying.trackId == trackId then
+			notify(player, "That track is currently playing. Remove it after playback ends.", "warn"); return
+		end
+		for _, queued in ipairs(queue) do
+			if queued.trackId == trackId then
+				notify(player, "That track is queued. Remove it from the queue first.", "warn"); return
+			end
+		end
+		if not catalogStorageReady or not waitForDataStoreBudget(5) then
+			notify(player, "Catalog storage is unavailable; track was not removed.", "warn"); return
+		end
+		local removed, message = MusicCatalogService:RemoveCustomTrack(trackId)
+		if not removed then notify(player, message, "warn"); return end
+		TRACK_BY_ID[trackId] = nil
+		for index, id in ipairs(ALL_TRACK_IDS) do
+			if id == trackId then table.remove(ALL_TRACK_IDS, index); break end
+		end
+		notify(player, message, "ok")
+		publishState(nil)
+		return
+	end
 
 	if action == "RequestTrack" then
 		local trackId = payload.trackId
