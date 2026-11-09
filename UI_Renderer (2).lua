@@ -268,16 +268,18 @@ local TITLE_EFFECTS = {
 }
 local TITLE_FONTS = {
 	{ id = "gotham", name = "Gotham", font = Enum.Font.GothamBold },
+	{ id = "gothammed", name = "Gotham Medium", font = Enum.Font.GothamMedium },
+	{ id = "source", name = "Source", font = Enum.Font.SourceSans },
+	{ id = "ubuntu", name = "Ubuntu", font = Enum.Font.Ubuntu },
+	{ id = "roboto", name = "Roboto", font = Enum.Font.Roboto },
 	{ id = "fredoka", name = "Fredoka", font = Enum.Font.FredokaOne },
-	{ id = "arcade", name = "Arcade", font = Enum.Font.Arcade },
-	{ id = "cartoon", name = "Cartoon", font = Enum.Font.Cartoon },
-	{ id = "scifi", name = "Sci-Fi", font = Enum.Font.SciFi },
-	{ id = "fantasy", name = "Fantasy", font = Enum.Font.Fantasy },
 	{ id = "bangers", name = "Bangers", font = Enum.Font.Bangers },
-	{ id = "luckiest", name = "Luckiest", font = Enum.Font.LuckiestGuy },
-	{ id = "marker", name = "Marker", font = Enum.Font.PermanentMarker },
-	{ id = "hand", name = "Handwritten", font = Enum.Font.PatrickHand },
-	{ id = "retro", name = "Retro", font = Enum.Font.SpecialElite },
+	{ id = "oswald", name = "Oswald", font = Enum.Font.Oswald },
+	{ id = "nunito", name = "Nunito", font = Enum.Font.Nunito },
+	{ id = "michroma", name = "Michroma", font = Enum.Font.Michroma },
+	{ id = "fantasy", name = "Fantasy", font = Enum.Font.Fantasy },
+	{ id = "arcade", name = "Arcade", font = Enum.Font.Arcade },
+	{ id = "scifi", name = "Sci-Fi", font = Enum.Font.SciFi },
 	{ id = "code", name = "Code", font = Enum.Font.Code },
 }
 local TITLE_STYLES = { "normal", "bold", "italic", "outline" }
