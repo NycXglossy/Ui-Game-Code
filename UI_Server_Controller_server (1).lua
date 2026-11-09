@@ -499,7 +499,7 @@ local queue: {QueueEntry} = {}
 local globalQueueMode = false
 local globalTrackRevision = 0
 local globalQueueSyncBusy = false
-local publishState: (Player?) -> ()
+local publishState: (Player?) -> () = function(_player: Player?) end
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
 local activePlaylistId: string? = nil
@@ -2791,7 +2791,8 @@ local function handleAction(player: Player, action: any, payload: any)
 		}, "player", player)
 		entry.soundId = "rbxassetid://" .. tostring(assetId)
 		if globalQueueMode then
-			local queued, queueError = false, "Global queue is not ready."
+			local queued: boolean = false
+			local queueError: string? = "Global queue is not ready."
 			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
 			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
 		else
