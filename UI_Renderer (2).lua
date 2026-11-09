@@ -2215,7 +2215,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				BackgroundTransparency = 1,
 				Text = "LOADING PLAYLISTS…",
 				TextColor3 = C.Gold,
-				TextSize = 10,
+				TextSize = chipTextSize,
 				Font = BOLD,
 				TextXAlignment = Enum.TextXAlignment.Left,
 				TextYAlignment = Enum.TextYAlignment.Center,
@@ -3090,6 +3090,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	-- Horizontal row of selectable chips. Returns the row so callers can rebuild it.
 	local function chipRow(parent: Instance, y: number, options: {any}, getSelected: () -> string, onPick: (string) -> (), tint: ((any) -> Color3?)?)
+		local compactChips = currentDevice == "Mobile" or currentDevice == "Tablet"
+		local chipHeight = if compactChips then 28 else 30
+		local chipTextSize = if compactChips then 9 else 10
+		local chipPadding = if compactChips then 9 else 11
+		local chipGap = if compactChips then 5 else 6
 		local row = make("ScrollingFrame", {
 			Position = UDim2.fromOffset(12, y),
 			Size = UDim2.new(1, -24, 0, 30),
@@ -3104,7 +3109,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			FillDirection = Enum.FillDirection.Horizontal,
 			VerticalAlignment = Enum.VerticalAlignment.Center,
 			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 6),
+			Padding = UDim.new(0, chipGap),
 		}, row)
 		local buttons: {[string]: {button: any, tint: Color3}} = {}
 		local navigationButtons: {TextButton} = {}
@@ -3119,7 +3124,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local color = (if tint then tint(option) else nil) or C.Muted
 			local chip = make("TextButton", {
 				AutomaticSize = Enum.AutomaticSize.X,
-				Size = UDim2.new(0, 0, 0, 30),
+				Size = UDim2.new(0, 0, 0, chipHeight),
 				BackgroundColor3 = C.SurfaceLight,
 				Text = option.name,
 				TextColor3 = color,
@@ -3151,7 +3156,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				end
 				row.CanvasPosition = Vector2.new(targetX, row.CanvasPosition.Y)
 			end)
-			make("UIPadding", { PaddingLeft = UDim.new(0, 11), PaddingRight = UDim.new(0, 11) }, chip)
+			make("UIPadding", { PaddingLeft = UDim.new(0, chipPadding), PaddingRight = UDim.new(0, chipPadding) }, chip)
 			buttons[option.id] = { button = chip, tint = color }
 			table.insert(navigationButtons, chip)
 			chip.Activated:Connect(function()
@@ -3388,6 +3393,18 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Active = true,
 		}, form) :: TextBox
 		corner(presetSearch, 7)
+		local presetSearchStroke = stroke(presetSearch, C.SurfaceLight, 1)
+		presetSearchStroke.Transparency = 0.38
+		presetSearch.Focused:Connect(function()
+			presetSearchStroke.Color = C.Cyan
+			presetSearchStroke.Transparency = 0
+			presetSearchStroke.Thickness = 2
+		end)
+		presetSearch.FocusLost:Connect(function()
+			presetSearchStroke.Color = C.SurfaceLight
+			presetSearchStroke.Transparency = 0.38
+			presetSearchStroke.Thickness = 1
+		end)
 		presetSearch.TextScaled = true
 		presetSearch.TextWrapped = false
 		make("UITextSizeConstraint", {
