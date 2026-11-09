@@ -2817,33 +2817,33 @@ end
 
 -- Actions -----------------------------------------------------------------------------
 
-local function handleAction(player: Player, action: any, payload: any)
-	if player.Parent ~= Players then return end
+local function handleAction(player: Player, action: any, payload: any): (boolean, string?)
+	if player.Parent ~= Players then return false, "The caller is no longer in this server." end
 	-- Validate the small, fixed remote contract before spending shared-service
 	-- budget or forwarding attacker-controlled action values across the server bridge.
-	if not isValidString(action, 32) or not isBoundedPayload(payload) then return end
-	if ACTION_COOLDOWNS[action] == nil then return end
+	if not isValidString(action, 32) or not isBoundedPayload(payload) then return false, "Invalid action or payload." end
+	if ACTION_COOLDOWNS[action] == nil then return false, "That action is not supported." end
 
 	-- Global + per-action throttles apply only to recognized, bounded actions.
 	local now = os.clock()
 	local userId = player.UserId
-	if not consumeActionBudget(userId, now) then return end
+	if not consumeActionBudget(userId, now) then return false, "ClubMusic action rate limit reached. Try again shortly." end
 	local globalBudgetOk, globalAllowed = globalInvoke("ConsumeActionBudget", userId, action, 1)
 	if RunService:IsStudio() then
-		if globalBudgetOk and globalAllowed == false then return end
+		if globalBudgetOk and globalAllowed == false then return false, "ClubMusic shared action budget is exhausted." end
 	else
 		-- Live servers require the global security service; never bypass aggregate
 		-- budgets because the bridge or shared MemoryStore is unavailable.
-		if not globalBudgetOk or globalAllowed ~= true then return end
+		if not globalBudgetOk or globalAllowed ~= true then return false, "ClubMusic security budget is unavailable. Try again shortly." end
 	end
 	local previousGlobal = lastActionAt[userId] or 0
-	if previousGlobal > 0 and now - previousGlobal < 0.12 then return end
+	if previousGlobal > 0 and now - previousGlobal < 0.12 then return false, "Please wait before using another ClubMusic action." end
 	lastActionAt[userId] = now
 	local actionTimes = lastActionByType[userId]
 	if not actionTimes then actionTimes = {}; lastActionByType[userId] = actionTimes end
 	local actionCooldown = ACTION_COOLDOWNS[action] or 0.2
 	local previousAction = actionTimes[action] or 0
-	if previousAction > 0 and now - previousAction < actionCooldown then return end
+	if previousAction > 0 and now - previousAction < actionCooldown then return false, "That ClubMusic action is cooling down." end
 	actionTimes[action] = now
 
 	if string.sub(tostring(action), 1, 8) == "Playlist" then
@@ -3304,18 +3304,18 @@ local function handleAction(player: Player, action: any, payload: any)
 	end
 
 	if action == "DJSkip" then
-		if not isStaff(player) then return end
+		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
 		local advanced = advance()
-		if not advanced then notify(player, "The shared track transition could not be confirmed.", "warn"); return end
+		if not advanced then notify(player, "The shared track transition could not be confirmed.", "warn"); return false, "The track transition could not be confirmed." end
 		if not globalQueueMode then globalInvoke("PublishDJCommand", "Skip", {}, player.UserId) end
 		notify(player, "Track skipped.", "ok")
 		publishState(nil)
-		return
+		return true, "Track skipped."
 	end
 
 	if action == "DJPause" then
-		if not isStaff(player) then return end
-		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return end
+		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
 		if globalQueueMode then
 			local position = nowPlaying.elapsed
@@ -3324,7 +3324,7 @@ local function handleAction(player: Player, action: any, payload: any)
 			if not callOk or changed ~= true or typeof(state) ~= "table" then
 				notify(player, tostring(message or "Global playback state could not be saved."), "warn")
 				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				return
+				return false, tostring(message or "Global playback state could not be saved.")
 			end
 			applyGlobalQueueState(state)
 			notify(player, if desiredPaused then "Music paused globally." else "Music resumed globally.", "ok")
@@ -3343,18 +3343,18 @@ local function handleAction(player: Player, action: any, payload: any)
 			notify(player, if playbackPaused then "Music paused." else "Music resumed.", "ok")
 		end
 		publishState(nil)
-		return
+		return true, if desiredPaused then "Music paused." else "Music resumed."
 	end
 
 	if action == "DJRestart" then
-		if not isStaff(player) then return end
-		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return end
+		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		if globalQueueMode then
 			local callOk, restarted, state, message = globalInvoke("SetGlobalPlayback", false, 0, globalTrackRevision, true)
 			if not callOk or restarted ~= true or typeof(state) ~= "table" then
 				notify(player, tostring(message or "Global restart could not be confirmed."), "warn")
 				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				return
+				return false, tostring(message or "Global restart could not be confirmed.")
 			end
 			applyGlobalQueueState(state)
 			notify(player, "Current track restarted across servers.", "ok")
@@ -3367,14 +3367,14 @@ local function handleAction(player: Player, action: any, payload: any)
 			else notify(player, "Current track restarted across servers.", "ok") end
 		end
 		publishState(nil)
-		return
+		return true, "Current track restarted."
 	end
 
 	if action == "DJClearQueue" then
-		if not isAdmin(player) then return end
+		if not isAdmin(player) then return false, "ClubMusic administrator permission is required." end
 		if globalQueueMode then
 			local callOk, cleared, state = globalInvoke("ClearGlobalQueue")
-			if not callOk or cleared ~= true then notify(player, "The shared queue could not be cleared.", "warn"); return end
+			if not callOk or cleared ~= true then notify(player, "The shared queue could not be cleared.", "warn"); return false, "The shared queue could not be cleared." end
 			if typeof(state) == "table" then applyGlobalQueueState(state) end
 			topUpAuto()
 		else
@@ -3383,11 +3383,11 @@ local function handleAction(player: Player, action: any, payload: any)
 		end
 		notify(player, "Queue cleared.", "ok")
 		publishState(nil)
-		return
+		return true, "Queue cleared."
 	end
 
 	if action == "DJToggleLock" then
-		if not isStaff(player) then return end
+		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
 		local desiredLock = not requestsLocked
 		local publishCallOk, persisted = globalInvoke("PublishDJCommand", "SetRequestLock", {locked = desiredLock}, player.UserId)
 		if not RunService:IsStudio() and (not publishCallOk or persisted ~= true) then
@@ -3395,12 +3395,12 @@ local function handleAction(player: Player, action: any, payload: any)
 			requestsLocked = true
 			notify(player, "Global lock could not be confirmed. Requests remain locked on this server.", "warn")
 			publishState(nil)
-			return
+			return false, "Global lock could not be confirmed; requests remain locked here."
 		end
 		requestsLocked = desiredLock
 		broadcast(if requestsLocked then "Song requests are now LOCKED." else "Song requests are open again.", "info")
 		publishState(nil)
-		return
+		return true, if requestsLocked then "Song requests locked." else "Song requests opened."
 	end
 
 	if action == "ModBlockUser" then
@@ -3749,12 +3749,15 @@ adminBridge.OnInvoke = function(caller: any, operation: any): (boolean, string)
 	if action == "DJClearQueue" and not isAdmin(caller) then
 		return false, "ClubMusic administrator permission is required to clear the queue."
 	end
-	local ok, err = pcall(handleAction, caller, action, {})
+	local ok, accepted, message = pcall(handleAction, caller, action, {})
 	if not ok then
-		warn("[ClubMusic Admin Bridge] Action failed: " .. tostring(err))
+		warn("[ClubMusic Admin Bridge] Action failed: " .. tostring(accepted))
 		return false, "ClubMusic could not process that action."
 	end
-	return true, "ClubMusic action submitted to the authoritative controller."
+	if accepted ~= true then
+		return false, if typeof(message) == "string" then message else "ClubMusic rejected that action."
+	end
+	return true, if typeof(message) == "string" then message else "ClubMusic action accepted."
 end
 
 remotes:SetAttribute("StartupStage", "BindingHandlers")
