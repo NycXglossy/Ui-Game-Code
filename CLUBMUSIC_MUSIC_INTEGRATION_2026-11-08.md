@@ -164,4 +164,38 @@ local playlist state. The updated controller is source-reviewed only; verify
 in a two-server test by editing and deleting the currently active playlist
 while observing the other server's queue and next-track order.
 
+## Global transition and recovery audit (2026-11-09)
+
+Source review confirms the global queue uses a DataStore `UpdateAsync` compare-and-swap
+against `playback.trackRevision` for `Advance` and `SetPlayback`. Only one server
+can advance a given revision; competing servers refresh the authoritative snapshot
+when their compare-and-swap loses. Queue-change MessagingService events are
+invalidation signals, while the controller's 20-second snapshot poll repairs
+missed messages. A joining/restarted server reads the persisted current entry,
+playback anchor, pause state, queue, and playlist cursor, then seeks its local
+Sound to the shared position. No shutdown handler should clear or stop global
+playback: the persisted state is intentionally the recovery source.
+
+The local watchdog retries a failed global transition on subsequent ticks; it
+does not locally advance playback when global compare-and-swap fails. This keeps
+a transient DataStore failure from creating a server-specific current track.
+Keep the service's fail-closed behavior if the shared snapshot cannot be read.
+
+**Two-server recovery test checklist**
+1. Start a track and confirm both servers report the same track and revision.
+2. Force two servers to reach the transition boundary close together; confirm
+   only one global revision increment and one next track.
+3. Pause, resume, and restart while the other server is joining; confirm the
+   joining server applies the latest revision and position.
+4. Shut down the server that initiated playback; confirm the remaining server
+   continues from the persisted global state.
+5. Start a fresh server after all test servers have closed; confirm it restores
+   current track, elapsed position, pause state, queue, and playlist cursor.
+6. Temporarily simulate a failed global read/write in a test universe; confirm
+   the server does not create a local-only global transition and recovers after
+   the service becomes available.
+
+These are source-level findings and required runtime checks, not claims that
+multi-server recovery has already been exercised in Roblox.
+
 **Validation status:** source integration and API wiring are committed, but this environment cannot execute Roblox Luau or run multi-server Studio/live tests. Before release, test two or more servers with simultaneous requests, VIP tier ordering, queue reorder/remove/clear, moderation purge, playlist start/stop and wraparound, skip/Ended races, pause/resume/restart, silent catalog tracks, audio requests, and late joins. Confirm every server reports the same current track and queue revision and that playback position converges. Do not treat a source-level commit as proof of runtime correctness.
