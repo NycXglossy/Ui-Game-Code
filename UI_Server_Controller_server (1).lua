@@ -1483,6 +1483,7 @@ local function applyGlobalQueueState(state: any): boolean
 		end
 	end
 	local revision = tonumber(state.playback.trackRevision) or 0
+	local previousTrackRevision = globalTrackRevision
 	local current = state.current
 	if typeof(current) == "table" and typeof(current.trackId) == "string" then
 		if nowPlaying.trackId ~= current.trackId then
@@ -1496,12 +1497,22 @@ local function applyGlobalQueueState(state: any): boolean
 			}
 			setNowPlaying(entry)
 		end
-		globalTrackRevision = revision
 		local positionCallOk, position = globalInvoke("GetGlobalPlaybackPosition", state)
 		if positionCallOk and isFiniteNumber(position) then
-			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
+			local synchronizedPosition = math.clamp(position, 0, nowPlaying.duration)
+			local restartObserved = revision > previousTrackRevision
+				and synchronizedPosition <= 0.25
+				and musicSound.SoundId == nowPlaying.soundId
+				and musicSound.TimePosition > 1
+			nowPlaying.elapsed = synchronizedPosition
 			playbackPaused = state.playback.paused == true
 			pcall(function()
+				-- A global restart preserves the track ID but increments its playback
+				-- revision. Restart the local Sound explicitly; seeking alone does not
+				-- reliably restart a Sound that is already playing or paused.
+				if restartObserved then
+					startServerMusic(nowPlaying.soundId)
+				end
 				if musicSound.SoundId ~= nowPlaying.soundId then
 					if nowPlaying.soundId ~= "" then startServerMusic(nowPlaying.soundId)
 					else stopServerMusic(); musicSound.SoundId = "" end
@@ -1513,6 +1524,7 @@ local function applyGlobalQueueState(state: any): boolean
 				elseif not musicSound.IsPlaying and nowPlaying.soundId ~= "" then musicSound:Play() end
 			end)
 		end
+		globalTrackRevision = revision
 	else
 		if nowPlaying.trackId ~= "" then
 			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
