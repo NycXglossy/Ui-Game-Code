@@ -211,7 +211,7 @@ serverSource = replaceLiteral(
 				else
 					local success, err = pcall(loadstring(args[1]))
 					if success == false then
-						f.Error("SCRIPT ERROR\\t" .. err, pl)
+						f.Error("SCRIPT ERROR\t" .. err, pl)
 					end
 				end
 			end
