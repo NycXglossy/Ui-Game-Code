@@ -442,6 +442,27 @@ local function bindFocusFeedback(button: GuiButton, outline: UIStroke?, baseColo
 	end)
 end
 
+-- Small icons are composed from Roblox Frames, not emoji or external assets.
+local function buildNativeIcon(parent: Instance, kind: string, color: Color3, zIndex: number?): Frame
+	local root = make("Frame", {Name="NativeIcon_"..kind, AnchorPoint=Vector2.new(.5,.5), Position=UDim2.fromScale(.5,.5), Size=UDim2.fromScale(.58,.58), BackgroundTransparency=1, BorderSizePixel=0, ZIndex=zIndex or 2}, parent) :: Frame
+	local function part(name: string, x: number, y: number, w: number, h: number, rotation: number?)
+		local item = make("Frame", {Name=name, AnchorPoint=Vector2.new(.5,.5), Position=UDim2.fromScale(x,y), Size=UDim2.fromScale(w,h), BackgroundColor3=color, BorderSizePixel=0, Rotation=rotation or 0, ZIndex=root.ZIndex}, root) :: Frame
+		corner(item, 3)
+		return item
+	end
+	if kind == "music" then
+		part("StemLeft",.39,.42,.075,.60,0); part("StemRight",.69,.33,.075,.60,0); part("Beam",.54,.16,.38,.075,-8)
+		part("NoteHeadLeft",.25,.78,.27,.19,0); part("NoteHeadRight",.57,.78,.27,.19,0)
+	elseif kind == "close" then
+		part("SlashA",.5,.5,.78,.09,45); part("SlashB",.5,.5,.78,.09,-45)
+	elseif kind == "volume" then
+		part("SpeakerBody",.25,.5,.20,.34,0); part("SpeakerConeA",.43,.39,.10,.36,-45); part("SpeakerConeB",.43,.61,.10,.36,45)
+		local a=part("SoundArcA",.70,.5,.075,.36,0); local b=part("SoundArcB",.82,.5,.075,.58,0)
+		a:SetAttribute("SoundArc",true); b:SetAttribute("SoundArc",true)
+	end
+	return root
+end
+
 local function safeCall(callback: any, ...)
 	if typeof(callback) == "function" then
 		local ok, err = pcall(callback, ...)
@@ -690,7 +711,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Position = UDim2.new(1, -18, 0.55, 0),
 		Size = UDim2.fromOffset(54, 54),
 		BackgroundColor3 = C.Magenta,
-		Text = "♫",
+		Text = "",
 		TextColor3 = C.White,
 		TextSize = 28,
 		Font = BOLD,
@@ -698,6 +719,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		ZIndex = 10,
 	}, gui) :: TextButton
 	corner(toggleButton, 18)
+	buildNativeIcon(toggleButton, "music", C.White, 11)
 	local toggleOutline = stroke(toggleButton, C.Cyan, 2)
 	bindFocusFeedback(toggleButton, toggleOutline, C.Magenta)
 
@@ -910,13 +932,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Position = UDim2.new(1, -12, 0, 12),
 		Size = UDim2.fromOffset(40, 40),
 		BackgroundColor3 = C.SurfaceLight,
-		Text = "×",
+		Text = "",
 		TextColor3 = C.White,
 		TextSize = 26,
 		Font = FONT,
 		Selectable = true,
 	}, header) :: TextButton
 	corner(closeButton, 12)
+	buildNativeIcon(closeButton, "close", C.White, 2)
 	local closeOutline = stroke(closeButton, C.SurfaceLight, 1)
 	bindFocusFeedback(closeButton, closeOutline, C.SurfaceLight)
 
@@ -1091,7 +1114,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BackgroundTransparency = 1,
 			Text = string.upper(text),
 			TextColor3 = C.Gold,
-			TextSize = 11,
+			TextSize = 12,
 			Font = BOLD,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextYAlignment = Enum.TextYAlignment.Center,
@@ -1121,9 +1144,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BackgroundColor3 = C.Surface,
 			BorderSizePixel = 0,
 		}, parent or content) :: Frame
-		corner(frame, 15)
+		corner(frame, 17)
 		local outline = stroke(frame, C.SurfaceLight, 1)
-		outline.Transparency = 0.34
+		outline.Transparency = 0.26
 		make("UIGradient", {
 			Color = ColorSequence.new({
 				ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 34, 48)),
@@ -1177,12 +1200,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BackgroundColor3 = color or C.Magenta,
 			Text = text,
 			TextColor3 = C.White,
-			TextSize = 11,
+			TextSize = 12,
 			Font = BOLD,
-			AutoButtonColor = true,
+			AutoButtonColor = false,
 			Selectable = true,
 		}, parent) :: TextButton
-		corner(button, 11)
+		corner(button, 12)
 		local outline = stroke(button, color or C.Magenta, 1)
 		outline.Transparency = 0.64
 		bindFocusFeedback(button, outline, color or C.Magenta)
@@ -1392,12 +1415,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Position = UDim2.fromOffset(leftInset, if stackedArtwork then 282 else 148),
 			Size = UDim2.fromOffset(30, 26),
 			BackgroundColor3 = C.SurfaceLight,
-			Text = "🔊",
+			Text = "",
 			TextColor3 = C.White,
 			TextSize = 14,
 			Font = BOLD,
 		}, nowCard) :: TextButton
 		corner(muteButton, 8)
+		local volumeIcon = buildNativeIcon(muteButton, "volume", C.White, 2)
 		local track = make("Frame", {
 			Position = UDim2.fromOffset(leftInset + 42, if stackedArtwork then 291 else 157),
 			Size = UDim2.new(1, -(leftInset + 128), 0, 8),
@@ -1435,7 +1459,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			volFill.Size = UDim2.fromScale(volume, 1)
 			knob.Position = UDim2.new(volume, 0, 0.5, 0)
 			percent.Text = string.format("%d%%", math.floor(volume * 100 + 0.5))
-			muteButton.Text = if volume <= 0 then "🔇" elseif volume < 0.5 then "🔉" else "🔊"
+			for _, arc in ipairs(volumeIcon:GetChildren()) do
+				if arc:IsA("Frame") and arc:GetAttribute("SoundArc") == true then arc.Visible = volume > 0 end
+			end
 		end
 		refreshVolumeUI()
 
@@ -3393,7 +3419,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if textLabel then
 				textLabel.TextColor3 = if selected then C.Gold else C.White
 				textLabel.Font = if selected then BOLD else FONT
-				textLabel.TextSize = if selected then 12 else 11
+				textLabel.TextSize = if selected then 13 else 12
 			end
 		end
 		applyMenuTypography()
