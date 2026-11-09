@@ -914,8 +914,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		TextColor3 = C.White,
 		TextSize = 26,
 		Font = FONT,
+		Selectable = true,
 	}, header) :: TextButton
 	corner(closeButton, 12)
+	local closeOutline = stroke(closeButton, C.SurfaceLight, 1)
+	bindFocusFeedback(closeButton, closeOutline, C.SurfaceLight)
 
 	local nav = make("ScrollingFrame", {
 		Name = "Navigation",
