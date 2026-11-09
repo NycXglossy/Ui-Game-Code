@@ -3262,7 +3262,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		local draft: any = titleDraft
 		local compactTitleEditor = currentDevice == "Mobile" or currentDevice == "Tablet"
-		local previewMaxTextSize = if currentDevice == "Mobile" then 20 elseif currentDevice == "Tablet" then 23 else 26
+		local previewMaxTextSize = if currentDevice == "Mobile" then 18 elseif currentDevice == "Tablet" then 21 else 24
 
 		sectionLabel("CUSTOM TITLE")
 		local slotCard = card(56)
@@ -3294,7 +3294,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local previewStage = make("Frame", {
 			Name = "TitlePreviewStage",
 			Position = UDim2.fromOffset(9, 24),
-			Size = UDim2.new(1, -18, 0, 52),
+			Size = UDim2.new(1, -18, 0, if compactTitleEditor then 48 else 52),
 			BackgroundColor3 = C.SurfaceLight,
 			BackgroundTransparency = 0.28,
 			BorderSizePixel = 0,
@@ -3316,6 +3316,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		}, previewLabel)
 		local previewHint = label(previewCard, "Changes appear here before you save", UDim2.fromOffset(12, 80), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
 		previewHint.TextXAlignment = Enum.TextXAlignment.Center
+		previewHint.TextScaled = true
+		previewHint.TextTruncate = Enum.TextTruncate.AtEnd
+		make("UITextSizeConstraint", { MinTextSize = 8, MaxTextSize = 9 }, previewHint)
 		local previewUpdate: (number) -> () = function(_) end
 		table.insert(titleAnimators, function(t) previewUpdate(t) end)
 		local function refreshPreview()
