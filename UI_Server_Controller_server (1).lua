@@ -4107,6 +4107,10 @@ end)
 
 -- Periodically re-check group rank / VIP so promotions apply without rejoining.
 task.spawn(function()
+	while true do
+		task.wait(60)
+		for _, player in ipairs(Players:GetPlayers()) do
+			task.spawn(function()
 				refreshRank(player)
 				refreshVip(player)
 				local profile = profiles[player.UserId]
@@ -4118,7 +4122,8 @@ task.spawn(function()
 				end
 				applyVipAttribute(player)
 				syncTitleTagUnlocks(player)
-			end)		end
+			end)
+		end
 	end
 end)
 
