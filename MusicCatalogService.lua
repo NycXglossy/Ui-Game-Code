@@ -17,6 +17,7 @@ export type Track = {
 	genre: string,
 	assetId: number?,
 	soundId: string?,
+	artworkAssetId: number?,
 }
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -126,6 +127,7 @@ local function copyTrack(track: Track): Track
 		genre = track.genre,
 		assetId = track.assetId,
 		soundId = track.soundId,
+		artworkAssetId = track.artworkAssetId,
 	}
 end
 
@@ -140,12 +142,14 @@ local function sanitizeStoredTrack(value: any): Track?
 	local artist = value.artist
 	local duration = value.duration
 	local genre = value.genre
+	local artworkAssetId = value.artworkAssetId
+	if artworkAssetId ~= nil and (typeof(artworkAssetId) ~= "number" or artworkAssetId ~= artworkAssetId or artworkAssetId % 1 ~= 0 or artworkAssetId <= 0 or artworkAssetId > 9007199254740991) then return nil end
 	if typeof(title) ~= "string" or #title < 1 or #title > 100 then return nil end
 	if typeof(artist) ~= "string" or #artist < 1 or #artist > 100 then return nil end
 	if typeof(duration) ~= "number" or duration ~= duration or duration % 1 ~= 0 or duration < 1 or duration > 3600 then return nil end
 	if typeof(genre) ~= "string" or #genre < 1 or #genre > 40 then return nil end
 	return {id=id, genreId=genreId, title=title, artist=artist, duration=duration, genre=genre,
-		assetId=assetId, soundId="rbxassetid://" .. tostring(assetId)}
+		assetId=assetId, soundId="rbxassetid://" .. tostring(assetId), artworkAssetId=artworkAssetId}
 end
 
 
@@ -230,19 +234,20 @@ function MusicCatalogService:Refresh(budgetCallback: (() -> boolean)?): boolean
 	return true
 end
 
-function MusicCatalogService:AddCustomTrack(assetId: number, title: string, artist: string, duration: number, genreId: string): (boolean, string)
+function MusicCatalogService:AddCustomTrack(assetId: number, title: string, artist: string, duration: number, genreId: string, artworkAssetId: number?): (boolean, string)
 	if not storageReady then return false, "Catalog storage is unavailable; no changes were saved." end
 	if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then return false, "Invalid audio asset ID." end
 	if typeof(title) ~= "string" or #title < 1 or #title > 100 or typeof(artist) ~= "string" or #artist < 1 or #artist > 100 then return false, "Invalid track metadata." end
 	if typeof(duration) ~= "number" or duration % 1 ~= 0 or duration < 1 or duration > 3600 then return false, "Invalid track duration." end
 	if typeof(genreId) ~= "string" or not VALID_GENRES[genreId] then return false, "Choose a valid catalog genre." end
+	if artworkAssetId ~= nil and (typeof(artworkAssetId) ~= "number" or artworkAssetId ~= artworkAssetId or artworkAssetId % 1 ~= 0 or artworkAssetId <= 0 or artworkAssetId > 9007199254740991) then return false, "Invalid artwork image asset ID." end
 	if storageWriteBusy then return false, "Catalog is busy. Try again shortly." end
 	local id = "custom-" .. tostring(assetId)
 	if TRACK_BY_ID[id] or customTracks[id] then return false, "That audio is already in the catalog." end
 	local genreName = "Club Exclusives"
 	for _, genre in ipairs(GENRES) do if genre.id == genreId then genreName = genre.name break end end
 	local candidate: Track = {id=id, genreId=genreId, title=title, artist=artist, duration=duration,
-		genre=genreName, assetId=assetId, soundId="rbxassetid://" .. tostring(assetId)}
+		genre=genreName, assetId=assetId, soundId="rbxassetid://" .. tostring(assetId), artworkAssetId=artworkAssetId}
 	if not storagePersistent then customTracks[id] = candidate; return true, "Added for this Studio session only." end
 	storageWriteBusy = true
 	local updatedData: any = nil
@@ -263,8 +268,8 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 				capacityReached = true
 				return old
 			end
-			table.insert(list, {assetId=assetId, genreId=genreId, title=title, artist=artist, duration=duration, genre=genreName})
-			return {schemaVersion=1, tracks=list}
+			table.insert(list, {assetId=assetId, genreId=genreId, title=title, artist=artist, duration=duration, genre=genreName, artworkAssetId=artworkAssetId})
+			return {schemaVersion=2, tracks=list}
 		end)
 	end)
 	storageWriteBusy = false
