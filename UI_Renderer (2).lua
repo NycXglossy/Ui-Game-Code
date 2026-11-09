@@ -3225,10 +3225,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			notify("Unlock this slot first.", C.Red)
 			return
 		end
-		local titleText = nz(draft.text, "")
+		-- Match the server's whitespace normalization so titles containing
+		-- only spaces cannot appear saveable in the editor.
+		local titleText = string.match(nz(draft.text, ""), "^%s*(.-)%s*$") or ""
 		local titleLength = utf8.len(titleText)
 		if titleText == "" then
-			notify("Enter a title first.", C.Orange)
+			notify("Enter a title first. Spaces alone do not count.", C.Orange)
 			return
 		end
 		if not titleLength or titleLength > 24 then
@@ -3237,7 +3239,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		local payload = {
 			slot = draft.slot,
-			text = draft.text,
+			text = titleText,
 			effect = draft.effect,
 			set = draft.set,
 			colors = titleColorHex(draft.effect, draft.set),
@@ -3251,7 +3253,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			callNetwork("SaveTitleSlot", payload)
 		elseif typeof(Network.SaveCustomTitle) == "function" and draft.slot == 1 then
 			-- Older servers only understand a fixed color name and basic style.
-			callNetwork("SaveCustomTitle", draft.text, if draft.effect == "fixed" then draft.set else "gold", draft.style, true)
+			callNetwork("SaveCustomTitle", titleText, if draft.effect == "fixed" then draft.set else "gold", draft.style, true)
 		else
 			send("SaveTitleSlot", payload)
 		end
