@@ -128,8 +128,6 @@ local newLoad = [=[	local localMainModule = script:FindFirstChild(MAIN_MODULE_NA
 loaderSource = replaceLiteral(loaderSource, oldLoad, newLoad, "local-only module loading")
 assert(not string.find(loaderSource, "InsertService", 1, true), "External asset loading reference remains in Loader.")
 assert(not string.find(loaderSource, "MAIN_MODULE_ID", 1, true), "External MainModule asset ID remains in Loader.")
-loader.Source = loaderSource
-
 local serverSource = mainModule.Source
 
 -- Rate-limit the shared admin RemoteEvent by player and operation. Preserve
@@ -144,8 +142,8 @@ local newHandler = [=[local remoteEventCooldowns = {
 	KCClr = 0.1,
 	KRefresh = 1,
 	KCmdBar = 0.5,
-	KDelete = 0.025,
-	KPaste = 0.2,
+	KDelete = 0.1,
+	KPaste = 1,
 	KUpdate = 0.5,
 	KVote = 0.05,
 	KHat = 2,
@@ -216,8 +214,8 @@ serverSource = replaceLiteral(
 serverSource = replaceLiteral(
 	serverSource,
 	"if plr == pl and a == f.uID .. \"KCam\" then",
-	"if plr == pl and a == f.uID .. \"KCam\" and typeof(b) == \"CFrame\" then",
-	"KCam CFrame validation"
+	"local function isSafeCameraCFrame(value)\\n\\tif typeof(value) ~= \"CFrame\" then return false end\\n\\tlocal components = { value:GetComponents() }\\n\\tfor _, component in ipairs(components) do\\n\\t\\tif component ~= component or component == math.huge or component == -math.huge then return false end\\n\\tend\\n\\tlocal position = value.Position\\n\\treturn math.abs(position.X) <= 100000 and math.abs(position.Y) <= 100000 and math.abs(position.Z) <= 100000\\nend\\nif plr == pl and a == f.uID .. \"KCam\" and isSafeCameraCFrame(b) then",
+	"KCam finite and bounded CFrame validation"
 )
 
 local oldRemote = [=[	elseif event == "KDelete" and arguments and f.getPower(plr) > 4 then
@@ -230,19 +228,24 @@ local oldRemote = [=[	elseif event == "KDelete" and arguments and f.getPower(plr
 			end
 		end]=]
 local newRemote = [=[	elseif event == "KDelete" and f.getPower(plr) > 4 then
-		-- Validate the client-supplied Instance before destructive operations.
+		-- Only allow world-edit deletion of live Workspace objects.
 		if typeof(arguments) == "Instance"
+			and arguments ~= workspace
 			and arguments.Parent ~= nil
-			and arguments:IsDescendantOf(game)
+			and arguments:IsDescendantOf(workspace)
+			and not arguments:IsA("Script")
+			and not arguments:IsA("LocalScript")
+			and not arguments:IsA("ModuleScript")
 		then
 			arguments:Destroy()
 		end
 	elseif event == "KPaste" and f.getPower(plr) > 4 then
-		-- Validate the full payload before making any changes.
+		-- Validate a dense, bounded list and a Workspace destination before cloning.
 		if type(arguments) ~= "table"
 			or type(arguments[1]) ~= "table"
 			or typeof(arguments[2]) ~= "Instance"
-			or not arguments[2]:IsDescendantOf(game)
+			or arguments[2] == workspace
+			or not arguments[2]:IsDescendantOf(workspace)
 			or (arguments[3] ~= nil and type(arguments[3]) ~= "boolean")
 		then
 			return
@@ -251,37 +254,90 @@ local newRemote = [=[	elseif event == "KDelete" and f.getPower(plr) > 4 then
 		local sources = arguments[1]
 		local destination = arguments[2]
 		local moveSources = arguments[3] == true
-		local count = #sources
-		if count > 100 then
+		local count = 0
+		local totalDescendants = 0
+		for key, source in pairs(sources) do
+			if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
+				return
+			end
+			count += 1
+			if count > 25
+				or typeof(source) ~= "Instance"
+				or source.Parent == nil
+				or not source:IsDescendantOf(workspace)
+				or source == workspace
+				or destination == source
+				or destination:IsDescendantOf(source)
+			then
+				return
+			end
+			totalDescendants += #source:GetDescendants() + 1
+			if totalDescendants > 500 then
+				return
+			end
+		end
+		if count == 0 then
 			return
 		end
-
 		for index = 1, count do
-			if typeof(sources[index]) ~= "Instance"
-				or sources[index].Parent == nil
-				or not sources[index]:IsDescendantOf(game)
-			then
+			if sources[index] == nil then
 				return
 			end
 		end
 
+		-- Prepare every clone first. A clone failure must not partially mutate the world.
+		local clones = {}
 		for index = 1, count do
-			local source = sources[index]
-			local clone = source:Clone()
+			local ok, clone = pcall(function()
+				return sources[index]:Clone()
+			end)
+			if not ok or typeof(clone) ~= "Instance" then
+				for _, prepared in ipairs(clones) do
+					prepared:Destroy()
+				end
+				return
+			end
+			table.insert(clones, clone)
+		end
+
+		for _, clone in ipairs(clones) do
 			clone.Parent = destination
-			if moveSources then
-				source:Destroy()
+		end
+		if moveSources then
+			for index = 1, count do
+				sources[index]:Destroy()
 			end
 		end]=]
 serverSource = replaceLiteral(serverSource, oldRemote, newRemote, "privileged delete/paste validation")
-mainModule.Source = serverSource
+-- Source assignment is deferred until every source transformation has passed.
+
+-- Commit source changes only after all replacement assertions above succeeded.
+-- Roll back the first assignment if the second assignment fails.
+local originalLoaderSource = loader.Source
+local originalServerSource = mainModule.Source
+local moduleWriteOk, moduleWriteError = pcall(function()
+	mainModule.Source = serverSource
+end)
+assert(moduleWriteOk, "Could not write hardened MainModule source: " .. tostring(moduleWriteError))
+local loaderWriteOk, loaderWriteError = pcall(function()
+	loader.Source = loaderSource
+end)
+if not loaderWriteOk then
+	pcall(function() mainModule.Source = originalServerSource end)
+	error("Could not write hardened Loader source; MainModule write was rolled back: " .. tostring(loaderWriteError))
+end
 
 print("Kohl's Admin hardening patch applied:")
 print("- External auto-update and Creator Store fallback removed from Loader.")
 print("- Loader requires only the bundled MainModule and validates initialize().")
 print("- Legacy configuration is checked before use.")
 print("- KDelete and KPaste validate live Instances and payload shape.")
-print("- KPaste batches are limited to 100 Instances.")
+print("- KPaste batches are limited to 25 Workspace Instances and 500 total descendants.")
+print("- Delete/paste targets are restricted to Workspace world-edit objects.")
+print("- Paste clones are staged before parenting to prevent partial clone batches.")
+print("- Source writes are deferred and rolled back if the second write fails.")
+print("- Delete/paste cooldowns are reduced to 10/sec and 1/sec per player respectively.")
+print("- KCam validates finite CFrame components and bounds position coordinates.")
 print("NOTE: Dynamic script/localscript execution remains a separate high-impact feature; review or disable it if not required.")
 print("- Shared admin RemoteEvent operations are allowlisted and rate-limited per player.")
 print("- Native loadstring script command is retained but restricted to Game Creator power (6).")
