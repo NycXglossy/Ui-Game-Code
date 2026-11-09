@@ -2928,14 +2928,19 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if trustedAdminCommand == true then
-		-- Keep toggle actions protected from duplicate command-framework dispatch.
-		-- Without this guard, two rapid invocations can pause then immediately resume,
-		-- or lock then immediately unlock, before the user can observe the first state.
-		if action == "DJPause" or action == "DJToggleLock" then
-			local toggleCooldown = if action == "DJPause" then 0.75 else 1.25
-			local previousToggle = actionTimes[action] or 0
-			if previousToggle > 0 and now - previousToggle < toggleCooldown then
-				return false, "That ClubMusic toggle was just used. Wait a moment before toggling it again."
+		-- Protect state-changing admin commands from duplicate command-framework
+		-- dispatch. Toggle duplicates reverse state; restart duplicates replay the
+		-- same track and can emit repeated success notices.
+		if action == "DJPause" or action == "DJToggleLock" or action == "DJRestart" then
+			local duplicateCooldown = if action == "DJPause" then 0.75
+				elseif action == "DJToggleLock" then 1.25
+				else (ACTION_COOLDOWNS.DJRestart or 1)
+			local previousActionAt = actionTimes[action] or 0
+			if previousActionAt > 0 and now - previousActionAt < duplicateCooldown then
+				local message = if action == "DJRestart"
+					then "ClubMusic restart was just triggered. Wait a moment before restarting again."
+					else "That ClubMusic toggle was just used. Wait a moment before toggling it again."
+				return false, message
 			end
 		end
 		lastAdminActionAt[userId] = now
