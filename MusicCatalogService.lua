@@ -183,6 +183,32 @@ function MusicCatalogService:IsStorageReady(): boolean
 	return storageReady
 end
 
+-- Refresh the persisted custom overlay after a cross-server invalidation.
+-- A failed read leaves the last known-good in-memory catalog untouched.
+function MusicCatalogService:Refresh(budgetCallback: (() -> boolean)?): boolean
+	if not storageReady then return false end
+	if not storagePersistent then return true end
+	if storageWriteBusy then return false end
+	if budgetCallback and not budgetCallback() then return false end
+	local ok, stored = pcall(function() return catalogStore:GetAsync(CATALOG_KEY) end)
+	if not ok then
+		warn("[ClubMusic Catalog] Cross-server refresh failed: " .. tostring(stored))
+		return false
+	end
+	local loaded: {[string]: Track} = {}
+	if typeof(stored) == "table" and typeof(stored.tracks) == "table" then
+		local count = 0
+		for _, rawTrack in ipairs(stored.tracks) do
+			count += 1
+			if count > MAX_CUSTOM_TRACKS then break end
+			local clean = sanitizeStoredTrack(rawTrack)
+			if clean and not TRACK_BY_ID[clean.id] then loaded[clean.id] = clean end
+		end
+	end
+	customTracks = loaded
+	return true
+end
+
 function MusicCatalogService:AddCustomTrack(assetId: number, title: string, artist: string, duration: number, genreId: string): (boolean, string)
 	if not storageReady then return false, "Catalog storage is unavailable; no changes were saved." end
 	if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then return false, "Invalid audio asset ID." end
