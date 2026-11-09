@@ -134,3 +134,18 @@ Enable DataStore and MessagingService access for the published experience.
 Studio cross-server tests require intentionally enabling
 `EnableInStudio` in the global service configuration; keep it disabled for
 ordinary isolated Studio sessions.
+
+
+## Studio log diagnosis and safe testing
+
+The following startup messages are expected with the checked-in defaults:
+
+- `Studio in-memory profile mode is active`: the controller has `StudioUseDataStore = false`. Player profiles are held in memory for that Studio server and are discarded when the session ends. This is intentionally separate from global music configuration.
+- `Cross-server service initialized. Enabled=false`: the global service has `Enabled = true` but `EnableInStudio = false`; its effective enabled state is false whenever `RunService:IsStudio()` is true. This prevents Studio from accidentally sharing production moderation, budget, playback-control, and queue DataStores.
+- The `Playback changed on this server, but cross-server sync is unavailable` and `Track restarted here, but cross-server sync is unavailable` notices are the expected consequence of the global service being disabled. They do not indicate that the local controller failed.
+
+For an intentional Studio persistence test, enable Studio API access in the experience settings and review the two independent settings before changing either one. `StudioUseDataStore = true` makes profile data use the configured profile DataStore; `EnableInStudio = true` enables the global service and its shared stores. Do not enable either against production data just to silence a log. Prefer a separate test universe / isolated test DataStore names, and keep both defaults for ordinary Studio playtests.
+
+The Kohl's Admin Explorer `Unable to cast string to Array` and Building Tools nil `WaitForChild` stack traces in the reported output originate in Kohl's Admin model scripts, not ClubMusic. The JellyBuild loaded messages are informational. Diagnose/update those packages independently; changing ClubMusic does not repair them.
+
+**Global queue completion status remains partial:** the queue service and bridge APIs exist, but `UI_Server_Controller` still uses its local queue/playback flow. The bridge's queue API guard/topic cleanup does not itself migrate request insertion, playlist/Auto DJ scheduling, queue moderation, transitions, or late-join playback. Cross-server queue and exact timeline synchronization must not be advertised as active until those controller paths are migrated and tested in a multi-server live test.
