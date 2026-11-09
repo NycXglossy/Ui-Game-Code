@@ -3789,9 +3789,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		vizClock = 0
 
 		local playing = typeof(state.nowPlaying) == "table"
+		local paused = playbackIsPaused()
 		local t = visualizerTime
 		local energy = 0.1
-		if playing then
+		-- A paused server track must not keep the visualizer reacting to stale
+		-- PlaybackLoudness values; retain only the quiet idle baseline.
+		if playing and not paused then
 			local loud: number? = nil
 			if typeof(Network.GetLoudness) == "function" then
 				local ok, value = pcall(Network.GetLoudness)
