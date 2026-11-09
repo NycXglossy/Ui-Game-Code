@@ -1181,6 +1181,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			actionButton(frame, "ADD", UDim2.new(1, if canRemove then -148 else -72, 0.5, -15), UDim2.fromOffset(66, 30), function()
 				send("PlaylistAddTrack", {playlistId = targetPlaylistId, trackId = id})
 				notify("Adding track to selected playlist…", C.Cyan)
+				task.delay(1.1, function()
+					if not destroyed and renderTabFn then renderTabFn() end
+				end)
 			end, C.Green)
 		end
 
