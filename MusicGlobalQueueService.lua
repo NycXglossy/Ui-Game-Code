@@ -222,9 +222,9 @@ local function transact(mutator: (State) -> (boolean, string?)): (boolean, State
 		cachedSnapshotAt = os.clock()
 	end
 	if not accepted then
-		return false, snapshot, reason
+		return false, if snapshot then detached(snapshot) else nil, reason
 	end
-	return true, snapshot, nil
+	return true, if snapshot then detached(snapshot) else nil, nil
 end
 
 function MusicGlobalQueueService:InvalidateSnapshot()
