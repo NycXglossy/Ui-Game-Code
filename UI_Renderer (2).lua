@@ -3237,7 +3237,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		refreshPreview()
 
-		local form = card(426)
+		local form = card(478)
 		label(form, "Title text (24 characters max)", UDim2.fromOffset(12, 6), UDim2.new(1, -24, 0, 18), C.Muted, 10, true)
 		local titleInput = make("TextBox", {
 			Position = UDim2.fromOffset(12, 26),
@@ -3278,6 +3278,29 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			ClearTextOnFocus = false,
 		}, form) :: TextBox
 		corner(presetSearch, 7)
+
+		local families = {
+			{ id = "all", name = "All colors" },
+			{ id = "red", name = "Reds / Pinks" },
+			{ id = "warm", name = "Warm" },
+			{ id = "green", name = "Greens" },
+			{ id = "blue", name = "Blues" },
+			{ id = "purple", name = "Purples" },
+			{ id = "neutral", name = "Neutrals" },
+		}
+		local selectedFamily = "all"
+		local function colorFamily(option: any): string
+			local color = option.color or option.a
+			if typeof(color) ~= "Color3" then return "neutral" end
+			local hue, saturation = color:ToHSV()
+			if saturation < 0.16 then return "neutral" end
+			if hue < 0.045 or hue >= 0.94 then return "red" end
+			if hue < 0.16 then return "warm" end
+			if hue < 0.42 then return "green" end
+			if hue < 0.70 then return "blue" end
+			return "purple"
+		end
+		local selectedPreset = label(form, "SELECTED  •  " .. string.upper(draft.set), UDim2.fromOffset(12, 234), UDim2.new(1, -24, 0, 16), C.Gold, 10, true)
 		local setRow: Instance? = nil
 		local function buildSetRow()
 			if setRow then setRow:Destroy() end
@@ -3285,19 +3308,32 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local query = string.lower(presetSearch.Text or "")
 			local filtered = {}
 			for _, option in ipairs(effect.sets) do
-				if query == "" or string.find(string.lower(option.name .. " " .. option.id), query, 1, true) then
-					table.insert(filtered, option)
-				end
+				local matchesSearch = query == "" or string.find(string.lower(option.name .. " " .. option.id), query, 1, true)
+				local matchesFamily = selectedFamily == "all" or colorFamily(option) == selectedFamily
+				if matchesSearch and matchesFamily then table.insert(filtered, option) end
 			end
-			setRow = chipRow(form, 168, filtered, function() return draft.set end, function(id)
+			setRow = chipRow(form, 202, filtered, function() return draft.set end, function(id)
 				draft.set = id
+				local chosen = findById(effect.sets, id)
+				selectedPreset.Text = "SELECTED  •  " .. string.upper(chosen.name)
+				selectedPreset.TextColor3 = chosen.color or chosen.a or C.Gold
 				refreshPreview()
 			end, function(option) return option.color or option.a end)
+			if #filtered == 0 then
+				label(form, "No matching presets — try another family or search.", UDim2.fromOffset(12, 202), UDim2.new(1, -24, 0, 26), C.Muted, 10, false)
+			end
 		end
+		chipRow(form, 168, families, function() return selectedFamily end, function(id)
+			selectedFamily = id
+			buildSetRow()
+		end)
 		chipRow(form, 84, TITLE_EFFECTS, function() return draft.effect end, function(id)
 			draft.effect = id
 			draft.set = findById(TITLE_EFFECTS, id).sets[1].id
+			selectedFamily = "all"
 			presetSearch.Text = ""
+			selectedPreset.Text = "SELECTED  •  " .. string.upper(draft.set)
+			selectedPreset.TextColor3 = C.Gold
 			buildSetRow()
 			refreshPreview()
 		end)
@@ -3306,28 +3342,28 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end)
 		buildSetRow()
 
-		label(form, "Text face", UDim2.fromOffset(12, 204), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
-		chipRow(form, 222, TITLE_FONTS, function() return draft.font end, function(id)
+		label(form, "Text face", UDim2.fromOffset(12, 256), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
+		chipRow(form, 274, TITLE_FONTS, function() return draft.font end, function(id)
 			draft.font = id
 			refreshPreview()
 		end)
-		label(form, "Text style", UDim2.fromOffset(12, 256), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
+		label(form, "Text style", UDim2.fromOffset(12, 308), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
 		local styleOptions = {}
 		for _, styleId in ipairs(TITLE_STYLES) do
 			table.insert(styleOptions, { id = styleId, name = string.upper(string.sub(styleId, 1, 1)) .. string.sub(styleId, 2) })
 		end
-		chipRow(form, 274, styleOptions, function() return draft.style end, function(id)
+		chipRow(form, 326, styleOptions, function() return draft.style end, function(id)
 			draft.style = id
 			refreshPreview()
 		end)
 
-		stepper(form, 314, "Height offset (above head)", function() return draft.height end, function(v) draft.height = v end, 0, 8, 0.25, "studs")
-		stepper(form, 346, "View distance", function() return draft.distance end, function(v) draft.distance = v end, 20, 200, 10, "studs")
+		stepper(form, 366, "Height offset (above head)", function() return draft.height end, function(v) draft.height = v end, 0, 8, 0.25, "studs")
+		stepper(form, 398, "View distance", function() return draft.distance end, function(v) draft.distance = v end, 20, 200, 10, "studs")
 
-		actionButton(form, "SAVE TITLE", UDim2.fromOffset(12, 382), UDim2.new(0.5, -16, 0, 34), function()
+		actionButton(form, "SAVE TITLE", UDim2.fromOffset(12, 434), UDim2.new(0.5, -16, 0, 34), function()
 			saveTitleDraft(draft)
 		end, C.Magenta)
-		actionButton(form, "RESET", UDim2.new(0.5, 4, 0, 382), UDim2.new(0.5, -16, 0, 34), function()
+		actionButton(form, "RESET", UDim2.new(0.5, 4, 0, 434), UDim2.new(0.5, -16, 0, 34), function()
 			titleDraft = nil
 			refreshTitleTab()
 		end, C.SurfaceLight)
