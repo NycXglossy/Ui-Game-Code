@@ -912,16 +912,96 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	}, content)
 
 	local navButtons: {[string]: TextButton} = {}
-	local navIconLabels: {[string]: TextLabel} = {}
+	local navIconLabels: {[string]: Frame} = {}
 	local navTextLabels: {[string]: TextLabel} = {}
 	local navIconBadges: {[string]: Frame} = {}
 	local tabs = {"Home","Music","All Tracks","Audio ID","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Moderation"}
-	local NAV_ICONS: {[string]: string} = {
-		["Home"] = "⌂", ["Music"] = "♫", ["All Tracks"] = "≋",
-		["Audio ID"] = "♪", ["DJ Booth"] = "◉", ["XP & Boosts"] = "✧",
-		["Tip Jar"] = "◇", ["Item Shop"] = "✦", ["Daily Rewards"] = "▣",
-		["Title Tag"] = "✳", ["Community"] = "◎", ["Moderation"] = "◆",
-	}
+	-- Navigation icons are assembled from native Frames, rounded corners and UIStrokes.
+	-- This avoids font-dependent Unicode glyphs and renders consistently on Roblox clients.
+	local function navIconPart(parent: Instance, name: string, x: number, y: number, w: number, h: number, color: Color3, radius: number?, rotation: number?): Frame
+		local part = make("Frame", {
+			Name = name,
+			Position = UDim2.fromScale(x, y),
+			Size = UDim2.fromScale(w, h),
+			BackgroundColor3 = color,
+			BackgroundTransparency = 0,
+			BorderSizePixel = 0,
+			Rotation = rotation or 0,
+		}, parent) :: Frame
+		if radius and radius > 0 then corner(part, radius) end
+		return part
+	end
+
+	local function navIconOutline(parent: Instance, name: string, x: number, y: number, w: number, h: number, color: Color3, radius: number?, rotation: number?): Frame
+		local part = make("Frame", {
+			Name = name,
+			Position = UDim2.fromScale(x, y),
+			Size = UDim2.fromScale(w, h),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Rotation = rotation or 0,
+		}, parent) :: Frame
+		if radius and radius > 0 then corner(part, radius) end
+		local outline = stroke(part, color, 1.7)
+		outline.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		return part
+	end
+
+	local function createNavIcon(parent: Frame, tabName: string): Frame
+		local icon = make("Frame", {
+			Name = "NavIcon",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+		}, parent) :: Frame
+		local ink = C.Muted
+		local function line(name: string, x: number, y: number, w: number, h: number, angle: number?)
+			navIconPart(icon, name, x, y, w, h, ink, 1, angle)
+		end
+		local function ring(name: string, x: number, y: number, w: number, h: number)
+			navIconOutline(icon, name, x, y, w, h, ink, 1)
+		end
+		if tabName == "Home" then
+			line("RoofLeft", .19, .30, .36, .075, -38); line("RoofRight", .45, .30, .36, .075, 38)
+			ring("House", .27, .43, .46, .39); navIconPart(icon, "Door", .46, .59, .10, .23, ink, 1)
+		elseif tabName == "Music" or tabName == "Audio ID" then
+			line("StemOne", .33, .24, .075, .53); line("StemTwo", .67, .17, .075, .53)
+			line("Beam", .36, .19, .36, .075, -8)
+			ring("NoteOne", .13, .66, .30, .23); ring("NoteTwo", .48, .59, .30, .23)
+		elseif tabName == "All Tracks" then
+			for i = 0, 2 do
+				line("TrackLine"..i, .22, .27 + i * .23, .56, .065)
+				if i < 2 then navIconPart(icon, "TrackDot"..i, .13, .265 + i * .23, .09, .09, ink, 1) end
+			end
+		elseif tabName == "DJ Booth" then
+			ring("VinylOuter", .15, .15, .70, .70); ring("VinylInner", .29, .29, .42, .42)
+			navIconPart(icon, "VinylCenter", .43, .43, .14, .14, ink, 1)
+		elseif tabName == "XP & Boosts" then
+			line("SparkleVertical", .47, .12, .07, .76); line("SparkleHorizontal", .12, .46, .76, .07)
+			line("SparkleDiagA", .30, .29, .07, .40, 45); line("SparkleDiagB", .30, .29, .07, .40, -45)
+		elseif tabName == "Tip Jar" then
+			ring("JarBody", .25, .34, .50, .48); line("JarRim", .23, .29, .54, .07)
+			line("JarBase", .34, .83, .32, .07); ring("Coin", .39, .10, .22, .22)
+		elseif tabName == "Item Shop" then
+			ring("BagBody", .22, .35, .56, .48); line("BagHandle", .36, .20, .28, .07)
+			line("BagHandleLeft", .34, .22, .07, .20, -18); line("BagHandleRight", .59, .22, .07, .20, 18)
+		elseif tabName == "Daily Rewards" then
+			ring("Calendar", .20, .24, .60, .58); line("CalendarHeader", .22, .40, .56, .07)
+			line("CalendarPinA", .34, .13, .07, .22); line("CalendarPinB", .61, .13, .07, .22)
+			for row = 0, 1 do for col = 0, 1 do navIconPart(icon, "Date"..row..col, .34 + col * .22, .53 + row * .14, .10, .08, ink, 1) end end
+		elseif tabName == "Title Tag" then
+			ring("TagBody", .18, .29, .62, .43, 1)
+			navIconPart(icon, "TagHole", .27, .43, .09, .09, ink, 1)
+			line("TagPointA", .57, .30, .075, .38, 45); line("TagPointB", .57, .30, .075, .38, -45)
+		elseif tabName == "Community" then
+			ring("PersonLeft", .17, .20, .25, .25); ring("PersonRight", .58, .20, .25, .25)
+			ring("GroupLeft", .08, .53, .40, .30); ring("GroupRight", .52, .53, .40, .30)
+		elseif tabName == "Moderation" then
+			ring("Shield", .22, .13, .56, .68, 1)
+			line("CheckA", .34, .51, .075, .22, -42); line("CheckB", .48, .48, .075, .34, 42)
+		end
+		return icon
+	end
 
 	local function clearContent()
 		progressRefs = nil
@@ -2756,19 +2836,26 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				outline.Transparency = if selected then 0.12 else 0.58
 				outline.Thickness = if selected then 1.4 else 1
 			end
-			local iconLabel = navIconLabels[name]
+			local iconRoot = navIconLabels[name]
 			local iconBadge = navIconBadges[name]
 			local textLabel = navTextLabels[name]
-			if iconLabel then
-				iconLabel.TextColor3 = if selected then C.Gold else C.Muted
-				iconLabel.TextSize = if selected then 18 else 17
+			local iconColor = if selected then C.Gold else C.Muted
+			if iconRoot then
+				for _, part in ipairs(iconRoot:GetDescendants()) do
+					if part:IsA("UIStroke") then
+						part.Color = iconColor
+						part.Transparency = if selected then 0.02 else 0.12
+					elseif part:IsA("Frame") and part.BackgroundTransparency < 1 then
+						part.BackgroundColor3 = iconColor
+					end
+				end
 			end
 			if iconBadge then
 				iconBadge.BackgroundColor3 = if selected then Color3.fromRGB(76, 63, 43) else Color3.fromRGB(35, 41, 55)
 				local badgeStroke = iconBadge:FindFirstChildOfClass("UIStroke")
 				if badgeStroke then
 					badgeStroke.Color = if selected then C.Gold else C.SurfaceLight
-					badgeStroke.Transparency = if selected then 0.25 else 0.72
+					badgeStroke.Transparency = if selected then 0.18 else 0.68
 				end
 			end
 			if textLabel then
@@ -2805,17 +2892,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		corner(iconBadge, 9)
 		local badgeStroke = stroke(iconBadge, C.SurfaceLight, 1)
 		badgeStroke.Transparency = 0.72
-		local iconLabel = make("TextLabel", {
-			Name = "NavIcon",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			Text = NAV_ICONS[tabName] or "•",
-			TextColor3 = C.Muted,
-			TextSize = 17,
-			Font = BOLD,
-			TextXAlignment = Enum.TextXAlignment.Center,
-			TextYAlignment = Enum.TextYAlignment.Center,
-		}, iconBadge) :: TextLabel
+		local iconLabel = createNavIcon(iconBadge, tabName)
 		local textLabel = make("TextLabel", {
 			Name = "NavLabel",
 			Position = UDim2.fromOffset(39, 0),
@@ -2916,7 +2993,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				badge.Position = UDim2.fromOffset(badgeOffset, math.floor((navHeight - iconSize) / 2))
 				badge.Size = UDim2.fromOffset(iconSize, iconSize)
 			end
-			if glyph then glyph.TextSize = if compactNav then 16 else 18 end
+			-- Icon geometry scales with its badge, so no font-size adjustment is needed.
 			if textLabel then
 				textLabel.Position = UDim2.fromOffset(badgeOffset + iconSize + 7, 0)
 				textLabel.Size = UDim2.new(1, -(badgeOffset + iconSize + 13), 1, 0)
