@@ -1539,6 +1539,33 @@ local function applyGlobalQueueState(state: any): boolean
 	return true
 end
 
+-- Playlist edits are persistent per playlist, but an active rotation is shared
+-- state. Republish its complete ordered track list atomically so every server
+-- drops stale automatic entries and resumes from the same rotation definition.
+local function syncGlobalPlaylistRotation(): (boolean, string?)
+	if not globalQueueMode then return true, nil end
+	local callOk, changed, state, message
+	if activePlaylistId and #activePlaylistTracks > 0 then
+		local trackIds = {}
+		for _, track in ipairs(activePlaylistTracks) do
+			table.insert(trackIds, track.id)
+		end
+		callOk, changed, state, message = globalInvoke(
+			"SetGlobalPlaylistRotation", activePlaylistId, activePlaylistName, trackIds
+		)
+	else
+		callOk, changed, state, message = globalInvoke("SetGlobalPlaylistRotation", nil)
+	end
+	if not callOk or changed ~= true or typeof(state) ~= "table" then
+		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		return false, tostring(message or "The shared playlist rotation could not be updated.")
+	end
+	if not applyGlobalQueueState(state) then
+		return false, "The shared playlist state could not be applied."
+	end
+	return true, nil
+end
+
 syncGlobalQueueSnapshot = function(): boolean
 	if not globalQueueMode or globalQueueSyncBusy then return false end
 	globalQueueSyncBusy = true
@@ -2532,18 +2559,17 @@ local function handleAction(player: Player, action: any, payload: any)
 		if not waitForDataStoreBudget(5) then
 			notify(player, "Shared DataStore budget is unavailable; playlist was not changed.", "warn"); return
 		end
+		local wasActivePlaylist = activePlaylistId == payload.playlistId
 		local ok, message = false, "Invalid playlist action."
 		if action == "PlaylistCreate" then
 			ok, message = MusicPlaylistService:Create(payload.name)
 		elseif action == "PlaylistDelete" then
 			ok, message = MusicPlaylistService:Delete(payload.playlistId)
-			if ok and activePlaylistId == payload.playlistId then
+			if ok and wasActivePlaylist then
 				activePlaylistId = nil
 				activePlaylistName = ""
 				table.clear(activePlaylistTracks)
 				activePlaylistCursor = 1
-				clearAutomaticQueue()
-				topUpAuto()
 			end
 		elseif action == "PlaylistAddTrack" then
 			local trackId = payload.trackId
@@ -2556,11 +2582,21 @@ local function handleAction(player: Player, action: any, payload: any)
 		elseif action == "PlaylistMoveTrack" then
 			ok, message = MusicPlaylistService:MoveTrack(payload.playlistId, payload.trackId, payload.position)
 		end
-		if ok and activePlaylistId == payload.playlistId
-			and (action == "PlaylistAddTrack" or action == "PlaylistRemoveTrack" or action == "PlaylistMoveTrack") then
-			reloadActivePlaylist()
-			clearAutomaticQueue()
-			topUpAuto()
+		if ok and wasActivePlaylist then
+			if action == "PlaylistAddTrack" or action == "PlaylistRemoveTrack" or action == "PlaylistMoveTrack" then
+				reloadActivePlaylist()
+			end
+			if globalQueueMode then
+				local rotationSynced, syncMessage = syncGlobalPlaylistRotation()
+				if rotationSynced then
+					topUpAuto()
+				else
+					message = tostring(message) .. " Shared rotation update failed: " .. tostring(syncMessage)
+				end
+			else
+				clearAutomaticQueue()
+				topUpAuto()
+			end
 		end
 		notify(player, message, if ok then "ok" else "warn")
 		if ok then publishState(nil) end
