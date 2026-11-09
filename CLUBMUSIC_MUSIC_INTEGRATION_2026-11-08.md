@@ -36,6 +36,12 @@ The original standalone `Music System` is **not** a runtime dependency. It creat
 
 These legacy source files can remain in the repository for reference. Their presence in the repository does not mean they should be inserted into the live Roblox hierarchy.
 
+## Cross-server pause and resume
+
+Staff pause/resume actions are sent through the existing `ClubMusic_Global_Service` DJ topic using MessagingService. The originating controller applies the change locally; the global service publishes a validated `SetPlaybackPaused` payload; other server controllers receive it through the existing global event bridge and pause or resume their own `ServerMusicSound`. The originating server ignores its own echoed message to avoid applying the action twice.
+
+A publishing bug previously placed the durable request-lock DataStore write inside the `SetPlaybackPaused` branch. Pause/resume therefore attempted to read a nonexistent `payload.locked` value and returned before publishing. The write now runs only for `SetRequestLock`; pause/resume validates and publishes its boolean `paused` value directly. Pause/resume still depends on MessagingService delivery and reports a warning when publication fails; it is not a durable, missed-message-reconciled global playback state.
+
 ## SoundService model integration
 
 Place both supplied instances directly under `SoundService`:
