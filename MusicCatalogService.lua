@@ -305,7 +305,7 @@ function MusicCatalogService:RemoveCustomTrack(trackId: string): (boolean, strin
 			for _, raw in ipairs(list) do
 				if not (typeof(raw) == "table" and tonumber(raw.assetId) == assetId) then table.insert(filtered, raw) end
 			end
-			return {schemaVersion=1, tracks=filtered}
+			return {schemaVersion=2, tracks=filtered}
 		end)
 	end)
 	storageWriteBusy = false
