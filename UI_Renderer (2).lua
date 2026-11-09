@@ -3240,7 +3240,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BackgroundTransparency = 1,
 			TextSize = 26,
 			TextTruncate = Enum.TextTruncate.AtEnd,
-		}, previewCard) :: TextLabel
+		}, previewStage) :: TextLabel
 		local previewHint = label(previewCard, "Changes appear here before you save", UDim2.fromOffset(12, 80), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
 		previewHint.TextXAlignment = Enum.TextXAlignment.Center
 		local previewUpdate: (number) -> () = function(_) end
