@@ -1449,6 +1449,35 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 							notify("Playlist deletion requested…", C.Orange)
 							task.delay(1.2, function() if not destroyed then renderTab() end end)
 						end, C.Red)
+						if selected and #entry.trackIds > 0 then
+							for trackIndex, trackId in ipairs(entry.trackIds) do
+								if typeof(trackId) == "string" then
+									local trackRow = card(34)
+									trackRow.Parent = playlistList
+									trackRow.LayoutOrder = order * 100 + trackIndex
+									local indexedTrack: any = TRACK_INDEX[trackId]
+									local displayName = if indexedTrack then tostring(indexedTrack[2]) else trackId
+									label(trackRow, tostring(trackIndex) .. ". " .. displayName,
+										UDim2.fromOffset(8, 0), UDim2.new(1, -148, 1, 0), C.Muted, 10, false)
+									actionButton(trackRow, "↑", UDim2.new(1, -136, 0, 3), UDim2.fromOffset(36, 28), function()
+										if trackIndex > 1 then
+											send("PlaylistMoveTrack", {playlistId=entry.id, trackId=trackId, position=trackIndex-1})
+											task.delay(1.1, function() if not destroyed then renderTab() end end)
+										end
+									end, C.SurfaceLight)
+									actionButton(trackRow, "↓", UDim2.new(1, -94, 0, 3), UDim2.fromOffset(36, 28), function()
+										if trackIndex < #entry.trackIds then
+											send("PlaylistMoveTrack", {playlistId=entry.id, trackId=trackId, position=trackIndex+1})
+											task.delay(1.1, function() if not destroyed then renderTab() end end)
+										end
+									end, C.SurfaceLight)
+									actionButton(trackRow, "REMOVE", UDim2.new(1, -54, 0, 3), UDim2.fromOffset(50, 28), function()
+										send("PlaylistRemoveTrack", {playlistId=entry.id, trackId=trackId})
+										task.delay(1.1, function() if not destroyed then renderTab() end end)
+									end, C.Red)
+								end
+							end
+						end
 					end
 				end
 			end)
