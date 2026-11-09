@@ -614,7 +614,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local baseClock = os.clock()
 	local progressRefs: {fill: any, timeLabel: any, duration: number}? = nil
 	local vizRefs: {container: any, bars: {any}, phases: {number}, seed: number}? = nil
-	local sliderRefs: {track: any, setFromX: (number) -> ()}? = nil
+	local sliderRefs: {track: any, control: GuiButton, setFromX: (number) -> (), adjust: (number) -> ()}? = nil
 
 	local function syncElapsed()
 		local np: any = state.nowPlaying
@@ -1563,16 +1563,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			applyVolume(math.clamp(relative, 0, 1))
 			refreshVolumeUI()
 		end
-		sliderRefs = { track = track, setFromX = setFromX }
+		local function adjustVolume(delta: number)
+			applyVolume(volume + delta)
+			refreshVolumeUI()
+		end
+		sliderRefs = { track = track, control = hit, setFromX = setFromX, adjust = adjustVolume }
 
 		hit.InputBegan:Connect(function(input: InputObject)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				sliderDragging = true
 				setFromX(input.Position.X)
-			elseif input.KeyCode == Enum.KeyCode.DPadLeft or input.KeyCode == Enum.KeyCode.Left then
-				applyVolume(volume - 0.1); refreshVolumeUI()
-			elseif input.KeyCode == Enum.KeyCode.DPadRight or input.KeyCode == Enum.KeyCode.Right then
-				applyVolume(volume + 0.1); refreshVolumeUI()
 			end
 		end)
 		muteButton.Activated:Connect(function()
@@ -3767,6 +3767,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			updateHud()
 		end
 	end)
+
+	-- Route directional input to the volume slider only while it owns gamepad/keyboard focus.
+	table.insert(connections, UserInputService.InputBegan:Connect(function(input)
+		local refs = sliderRefs
+		if not refs or GuiService.SelectedObject ~= refs.control then return end
+		if input.KeyCode == Enum.KeyCode.DPadLeft or input.KeyCode == Enum.KeyCode.Left then
+			refs.adjust(-0.1)
+		elseif input.KeyCode == Enum.KeyCode.DPadRight or input.KeyCode == Enum.KeyCode.Right then
+			refs.adjust(0.1)
+		end
+	end))
 
 	-- Volume slider dragging
 	table.insert(connections, UserInputService.InputChanged:Connect(function(input)
