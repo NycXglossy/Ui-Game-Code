@@ -109,6 +109,7 @@ local CONFIG = {
 -- The catalog is server-owned. The controller remains the only authority
 -- for request limits, moderation, queue priority, and playback.
 local MusicCatalogService = require(game:GetService("ServerStorage"):WaitForChild("MusicCatalogService"))
+local MusicPlaylistService = require(game:GetService("ServerStorage"):WaitForChild("MusicPlaylistService"))
 
 type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string? }
 
@@ -267,6 +268,7 @@ local stateRemote = getOrCreate(remotes, "RemoteEvent", "StateChanged") :: Remot
 local noticeRemote = getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
 local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: RemoteFunction
 local catalogFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
+local playlistFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
 
 -- One server-owned Sound drives the entire server. This replaces the source
 -- system's second remote/event architecture and keeps playback under this controller.
@@ -504,6 +506,13 @@ end
 local catalogStorageReady = MusicCatalogService:Initialize(CONFIG.StudioUseDataStore, function()
 	return waitForDataStoreBudget(5)
 end)
+local playlistRefreshAt = 0
+local playlistStorageReady = MusicPlaylistService:Initialize(CONFIG.StudioUseDataStore, function()
+	return waitForDataStoreBudget(5)
+end)
+if not playlistStorageReady then
+	warn("[ClubMusic] Persistent playlists unavailable; playlist management is disabled for this server.")
+end
 if not catalogStorageReady then
 	warn("[ClubMusic] Persistent catalog unavailable; custom catalog changes are disabled for this server.")
 end
@@ -543,6 +552,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	RequestTrack = 0.5, RequestAudioAsset = CONFIG.AudioInspectionCooldownSeconds,
 	ReloadSong = CONFIG.ReloadCooldownSeconds, ToggleFavorite = 0.2, VoteSkip = 0.5,
 	CatalogAddAudio = 10, CatalogRemoveTrack = 2,
+	PlaylistCreate = 2, PlaylistDelete = 1, PlaylistAddTrack = 0.5, PlaylistRemoveTrack = 0.5, PlaylistMoveTrack = 0.5,
 	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
 	ModBlockUser = 0.5, ModSetVip = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
@@ -2082,6 +2092,32 @@ local function handleAction(player: Player, action: any, payload: any)
 	if previousAction > 0 and now - previousAction < actionCooldown then return end
 	actionTimes[action] = now
 
+	if string.sub(tostring(action), 1, 8) == "Playlist" then
+		if not isStaff(player) then notify(player, "Only staff can manage playlists.", "warn"); return end
+		if not playlistStorageReady or not MusicPlaylistService:IsReady() then
+			notify(player, "Playlist storage is unavailable. No changes were made.", "warn"); return
+		end
+		local ok, message = false, "Invalid playlist action."
+		if action == "PlaylistCreate" then
+			ok, message = MusicPlaylistService:Create(payload.name)
+		elseif action == "PlaylistDelete" then
+			ok, message = MusicPlaylistService:Delete(payload.playlistId)
+		elseif action == "PlaylistAddTrack" then
+			local trackId = payload.trackId
+			if not isValidString(trackId, 24) or not TRACK_BY_ID[trackId] then
+				notify(player, "Choose a track from the current server catalog.", "warn"); return
+			end
+			ok, message = MusicPlaylistService:AddTrack(payload.playlistId, trackId)
+		elseif action == "PlaylistRemoveTrack" then
+			ok, message = MusicPlaylistService:RemoveTrack(payload.playlistId, payload.trackId)
+		elseif action == "PlaylistMoveTrack" then
+			ok, message = MusicPlaylistService:MoveTrack(payload.playlistId, payload.trackId, payload.position)
+		end
+		notify(player, message, if ok then "ok" else "warn")
+		if ok then publishState(nil) end
+		return
+	end
+
 	if action == "CatalogAddAudio" then
 		if not isStaff(player) then notify(player, "Only staff can add catalog tracks.", "warn"); return end
 		if not catalogStorageReady or not MusicCatalogService:IsStorageReady() then
@@ -2727,6 +2763,28 @@ catalogFunction.OnServerInvoke = function(player: Player, query: any, genreId: a
 		return nil
 	end
 	return result
+end
+
+local lastPlaylistInvoke: {[number]: number} = {}
+playlistFunction.OnServerInvoke = function(player: Player)
+	if player.Parent ~= Players or not playlistStorageReady then return nil end
+	local now = os.clock()
+	if not consumeToken(globalStateQueryBucket, now, 1) then return nil end
+	local sharedOk, allowed = globalInvoke("ConsumeStateBudget", player.UserId)
+	if RunService:IsStudio() then
+		if sharedOk and allowed == false then return nil end
+	else
+		if not sharedOk or allowed ~= true then return nil end
+	end
+	local previous = lastPlaylistInvoke[player.UserId] or 0
+	if previous > 0 and now - previous < 1 then return nil end
+	lastPlaylistInvoke[player.UserId] = now
+	if os.clock() - playlistRefreshAt >= 5 then
+		if waitForDataStoreBudget(2) and MusicPlaylistService:Refresh() then
+			playlistRefreshAt = os.clock()
+		end
+	end
+	return MusicPlaylistService:GetAll()
 end
 
 stateFunction.OnServerInvoke = function(player: Player)
