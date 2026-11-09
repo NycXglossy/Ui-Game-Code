@@ -3264,6 +3264,20 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end)
 
 		label(form, "Color effect", UDim2.fromOffset(12, 66), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
+		label(form, "Color set", UDim2.fromOffset(12, 116), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
+		local presetSearch = make("TextBox", {
+			Position = UDim2.fromOffset(12, 134),
+			Size = UDim2.new(1, -24, 0, 28),
+			BackgroundColor3 = C.SurfaceLight,
+			TextColor3 = C.White,
+			PlaceholderColor3 = C.Muted,
+			PlaceholderText = "Search color presets...",
+			Text = "",
+			TextSize = 10,
+			Font = FONT,
+			ClearTextOnFocus = false,
+		}, form) :: TextBox
+		corner(presetSearch, 7)
 		local setRow: Instance? = nil
 		local function buildSetRow()
 			if setRow then setRow:Destroy() end
@@ -3283,23 +3297,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		chipRow(form, 84, TITLE_EFFECTS, function() return draft.effect end, function(id)
 			draft.effect = id
 			draft.set = findById(TITLE_EFFECTS, id).sets[1].id
+			presetSearch.Text = ""
 			buildSetRow()
 			refreshPreview()
 		end)
-		label(form, "Color set", UDim2.fromOffset(12, 116), UDim2.new(1, -24, 0, 16), C.Cyan, 10, true)
-		local presetSearch = make("TextBox", {
-			Position = UDim2.fromOffset(12, 134),
-			Size = UDim2.new(1, -24, 0, 28),
-			BackgroundColor3 = C.SurfaceLight,
-			TextColor3 = C.White,
-			PlaceholderColor3 = C.Muted,
-			PlaceholderText = "Search color presets...",
-			Text = "",
-			TextSize = 10,
-			Font = FONT,
-			ClearTextOnFocus = false,
-		}, form) :: TextBox
-		corner(presetSearch, 7)
 		presetSearch:GetPropertyChangedSignal("Text"):Connect(function()
 			buildSetRow()
 		end)
