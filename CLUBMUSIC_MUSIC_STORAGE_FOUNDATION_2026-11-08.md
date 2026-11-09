@@ -329,14 +329,17 @@ normal Auto DJ resumes after STOP.
 
 ## Startup readiness and playback watchdog hardening
 
-The client now allows up to 30 seconds for the server-owned readiness marker,
-rather than treating a three-second cold-start delay as a failed controller.
-The network module reports the server's startup stage and any published startup
-error when the deadline expires; the bootstrap includes that diagnostic in its
-final startup message. The controller publishes bounded stages while loading
-its storage modules, initializing persistent storage, building the controller,
-and binding the remotes. It still marks `Ready=true` only after the server
-action handler is connected.
+The client now allows up to 45 seconds for the server-owned readiness
+marker, rather than treating a three-second cold-start delay as a failed
+controller. The bootstrap makes two bounded initialization attempts instead of
+repeating a long readiness wait indefinitely. The network module reports the
+server's startup stage and any published startup error when the deadline
+expires; the bootstrap includes that diagnostic in its final startup message.
+The controller publishes bounded stages while loading its storage modules,
+loading the receipt-hash dependency, initializing persistent storage, building
+the controller, and binding the remotes. Required ModuleScript lookups and
+requires now have bounded waits and publish actionable failure details. It
+still marks `Ready=true` only after the server action handler is connected.
 
 The playback clock now has a bounded recovery watchdog. It advances at the
 configured track duration as before, but also recovers when a loaded Sound has
