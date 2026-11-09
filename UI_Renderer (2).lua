@@ -3646,9 +3646,19 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		layoutScale = profile.base * fit
 		panelScale.Scale = layoutScale
 
-		sizeConstraint.MinSize = profile.min
-		sizeConstraint.MaxSize = profile.max
-		-- UIScale shrinks the panel, so the fractional size is divided by it to keep the intended screen share.
+		-- Calculate constraints from the actual viewport target. Fixed pixel maxima
+		-- capped larger desktop panels, while fixed minima could force short mobile
+		-- viewports to overflow. UISizeConstraint is evaluated before UIScale, so
+		-- convert the intended on-screen dimensions back into panel-local units.
+		local targetWidth = math.max(1, viewport.X * profile.w / layoutScale)
+		local targetHeight = math.max(1, viewport.Y * profile.h / layoutScale)
+		local targetSize = Vector2.new(targetWidth, targetHeight)
+		local safeMinimum = Vector2.new(
+			math.min(profile.min.X, targetWidth * 0.90),
+			math.min(profile.min.Y, targetHeight * 0.90)
+		)
+		sizeConstraint.MinSize = safeMinimum
+		sizeConstraint.MaxSize = targetSize
 		panelTarget = UDim2.new(profile.w / layoutScale, 0, profile.h / layoutScale, 0)
 		if expanded then panel.Size = panelTarget end
 
