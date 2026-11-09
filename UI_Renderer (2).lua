@@ -53,6 +53,7 @@ local GENRES = {
 		{"pop-0","Electric Paradise","Mia Lumen",189},{"pop-1","Coconut Crush","Jade Rivers",176},{"pop-2","Ocean Eyes Tonight","Leo Starr",201},{"pop-3","Glow Up Summer","Nova Bay",183},{"pop-4","Postcard Heart","Kenna Blue",194}}},
 	{id="exclusive", name="Club Exclusives", tagline="Only at Sunset Stage", color=Color3.fromRGB(255,46,147), tracks={
 		{"ex-0","Sunset Stage Anthem","Club Resident",262},{"ex-1","Tiki Torch Theory","Club Resident ft. VOLTA",238},{"ex-2","Low-Poly Paradise","Pixel Palms",224},{"ex-3","Mainstage Moonrise","The Owners",289}}},
+	{id="other", name="Other", tagline="More sounds beyond the main genres", color=Color3.fromRGB(119,196,203), tracks={}},
 }
 
 local TRACK_INDEX: {[string]: any} = {}
@@ -2082,8 +2083,45 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if selectedGenre ~= "" then
 			for _, genre in ipairs(GENRES) do
 				if genre.id == selectedGenre then
-					sectionLabel(string.upper(genre.name) .. "  •  " .. tostring(#genre.tracks) .. " TRACKS")
-					for _, track in ipairs(genre.tracks) do makeTrackCard(track) end
+					if genre.id == "other" then
+						sectionLabel("OTHER  •  CATALOG TRACKS")
+						local loading = card(54)
+						label(loading, "Loading tracks assigned to Other…", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+						catalogRequestSerial += 1
+						local requestSerial = catalogRequestSerial
+						task.spawn(function()
+							local ok, result = pcall(function()
+								if typeof(Network.GetMusicCatalog) ~= "function" then error("Catalog network unavailable") end
+								return Network.GetMusicCatalog("", "other", 0, 50)
+							end)
+							if destroyed or requestSerial ~= catalogRequestSerial or selectedGenre ~= "other" then return end
+							if loading.Parent then loading:Destroy() end
+							local items = if ok and typeof(result) == "table" and typeof(result.items) == "table" then result.items else {}
+							sectionLabel("OTHER TRACKS  •  " .. tostring(#items))
+							for _, entry in ipairs(items) do
+								if typeof(entry) == "table" and typeof(entry.id) == "string" then
+									local tuple = TRACK_INDEX[entry.id]
+									if not tuple then
+										tuple = {entry.id, tostring(entry.title or "Untitled"), tostring(entry.artist or "Unknown Artist"), tonumber(entry.duration) or 1}
+										TRACK_INDEX[entry.id] = tuple
+										table.insert(ALL_TRACKS, tuple)
+									end
+									tuple[2] = tostring(entry.title or tuple[2])
+									tuple[3] = tostring(entry.artist or tuple[3])
+									tuple[4] = tonumber(entry.duration) or tuple[4]
+									TRACK_GENRE[entry.id] = {id = "other", name = "Other", color = genre.color}
+									makeTrackCard(tuple)
+								end
+							end
+							if #items == 0 then
+								local empty = card(58)
+								label(empty, if ok then "No tracks are assigned to Other yet. Staff can add one from the Audio ID tab." else "The catalog could not be loaded. Please try again.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+							end
+						end)
+					else
+						sectionLabel(string.upper(genre.name) .. "  •  " .. tostring(#genre.tracks) .. " TRACKS")
+						for _, track in ipairs(genre.tracks) do makeTrackCard(track) end
+					end
 					break
 				end
 			end
