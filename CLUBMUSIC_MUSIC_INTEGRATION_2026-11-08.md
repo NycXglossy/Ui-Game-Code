@@ -105,7 +105,9 @@ The global queue backend has been added as a separate atomic state service:
 - `ClubMusic_Global_Service_server_1.lua` requires that module and exposes
   server-only BindableFunction operations through `ServerStorage.ClubMusicGlobalAPI`:
   `GetGlobalQueueState`, `EnqueueGlobalQueueEntry`, `RemoveGlobalQueueEntry`,
-  `ClearGlobalQueue`, `AdvanceGlobalQueue`, `SetGlobalPlayback`, and
+  `ClearGlobalQueue`, `MoveUpGlobalQueueEntry`,
+  `PurgeGlobalUserQueueEntries`, `SetGlobalPlaylistRotation`,
+  `AdvanceGlobalQueue`, `SetGlobalPlayback`, and
   `GetGlobalPlaybackPosition`.
 - Shared state is stored under `ClubMusic_GlobalQueue_v1/globalState`.
   Queue mutations and compare-and-swap track transitions use DataStore
@@ -117,16 +119,7 @@ The global queue backend has been added as a separate atomic state service:
 - Playback state stores a shared server-time anchor, pause state, position,
   and track revision. A stale server cannot advance a newer track revision.
 
-**Important rollout status:** this is the backend/API foundation, not the
-completed live global-queue migration. The controller still has local queue
-mutation and playback paths that must be routed through these APIs before
-servers share one queue/current track. Do not publish this as a completed
-global-sync feature yet. The next integration stage must migrate request
-insertion, auto/playlist top-up, queue reorder/removal/clear, moderation
-purges, DJ skip, automatic end/watchdog transitions, pause/resume/restart,
-and late-join reconciliation together. Until that stage is complete, the
-existing local queue remains active and the new global queue store is not
-authoritative for live playback.
+The initial backend-only stage has since been followed by the controller migration documented below. The bridge now also exposes atomic queue reorder, requester moderation purge, and shared playlist-rotation operations.
 
 **Required installation:** copy the new ModuleScript into ServerStorage under
 the exact name above. The global service will fail startup if it is missing.
@@ -150,7 +143,7 @@ The Kohl's Admin Explorer `Unable to cast string to Array` and Building Tools ni
 
 **Global queue controller migration (2026-11-09): implemented at source level; runtime validation remains required.** When `ClubMusic_Global_Service` reports enabled, `UI_Server_Controller` now treats the shared DataStore queue/current track/playback anchor as authoritative. It routes catalog and Creator Hub requests, VIP-tier queue priority, Auto DJ top-up, playlist rotation, DJ reorder/remove/clear/skip, request-block moderation purges, pause/resume/restart, and automatic transitions through the global queue APIs. Queue notifications trigger immediate snapshot reconciliation; a 20-second bounded poll repairs missed notifications and corrects playback drift. Track transitions use compare-and-swap `trackRevision` so concurrent server Ended/watchdog events cannot consume two queue entries. New servers load the current track and seek to the shared playback position.
 
-The local queue remains active only when the global service explicitly reports disabled (ordinary Studio mode or intentional local-only configuration). If the global service reports enabled but shared queue storage cannot be read, the controller now fails closed for shared playback/requests rather than silently creating a server-local queue. Global queue operations are server-side only; client payloads never supply authoritative metadata or pass tiers.
+The local queue remains active in ordinary Studio mode when the global service is disabled by the checked-in Studio setting. In production, the global service is required by the existing join-time moderation gate. If it reports enabled but shared queue storage cannot be read, the controller fails closed for shared playback/requests rather than silently creating a server-local queue. Global queue operations are server-side only; client payloads never supply authoritative metadata or pass tiers.
 
 **Important deployment requirements:** install `MusicGlobalQueueService` as a ModuleScript at `ServerStorage/MusicGlobalQueueService`, update `ClubMusic_Global_Service` and `UI_Server_Controller` from this branch, and retain the existing `MusicCatalogService`, `MusicPlaylistService`, and receipt-hash modules. In production, enable the global service and ensure DataStoreService, MemoryStoreService (for shared budgets), and MessagingService are available. Keep `EnableInStudio = false` unless testing in an isolated test universe with Studio API access enabled. Do not mix old controller/global-service scripts with the new versions across active servers during rollout.
 
