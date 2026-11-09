@@ -758,6 +758,9 @@ local lastReloadAt: {[number]: number} = {}
 local reloadNonce: {[number]: number} = {}
 local pendingAudio: {[number]: boolean} = {}
 local lastActionByType: {[number]: {[string]: number}} = {}
+-- Admin-addon commands use their own per-action cooldown namespace so recent
+-- UI actions cannot reject a trusted command (and vice versa).
+local lastAdminActionByType: {[number]: {[string]: number}} = {}
 local lastStateInvoke: {[number]: number} = {}
 local lastCatalogInvoke: {[number]: number} = {}
 local lastAudioInspection: {[number]: number} = {}
@@ -2839,12 +2842,18 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 	-- Check every cooldown before recording timestamps. A rejected action must not
 	-- consume the cross-action interval and block an unrelated command immediately after it.
-	local actionTimes = lastActionByType[userId]
-	if not actionTimes then actionTimes = {}; lastActionByType[userId] = actionTimes end
+	-- Keep trusted admin commands in a separate per-action cooldown lane.
+	-- The shared action budgets above still protect the server, while this avoids
+	-- a normal DJ-booth/UI action accidentally blocking the equivalent admin command.
+	local actionTimesByPlayer = if trustedAdminCommand == true then lastAdminActionByType else lastActionByType
+	local actionTimes = actionTimesByPlayer[userId]
+	if not actionTimes then actionTimes = {}; actionTimesByPlayer[userId] = actionTimes end
 	local actionCooldown = ACTION_COOLDOWNS[action] or 0.2
 	local previousAction = actionTimes[action] or 0
 	if previousAction > 0 and now - previousAction < actionCooldown then
-		return false, "That ClubMusic action is cooling down."
+		return false, if trustedAdminCommand == true
+			then "That ClubMusic admin command is cooling down. Try again shortly."
+			else "That ClubMusic action is cooling down."
 	end
 
 	if trustedAdminCommand == true then
@@ -4181,6 +4190,7 @@ Players.PlayerRemoving:Connect(function(player)
 	lastActionAt[userId] = nil
 	lastAdminActionAt[userId] = nil
 	lastActionByType[userId] = nil
+	lastAdminActionByType[userId] = nil
 	perPlayerActionBuckets[userId] = nil
 	saveQueued[userId] = nil
 	saveAgain[userId] = nil
