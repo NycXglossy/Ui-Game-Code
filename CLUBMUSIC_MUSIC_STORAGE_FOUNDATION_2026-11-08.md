@@ -325,3 +325,28 @@ start the client before/after the server controller, temporarily delay a
 required ModuleScript, play/stop a playlist, finish the current track, enqueue
 player requests at each tier, edit/delete the active playlist, and verify
 normal Auto DJ resumes after STOP.
+
+
+## Startup readiness and playback watchdog hardening
+
+The client now allows up to 30 seconds for the server-owned readiness marker,
+rather than treating a three-second cold-start delay as a failed controller.
+The network module reports the server's startup stage and any published startup
+error when the deadline expires; the bootstrap includes that diagnostic in its
+final startup message. The controller publishes bounded stages while loading
+its storage modules, initializing persistent storage, building the controller,
+and binding the remotes. It still marks `Ready=true` only after the server
+action handler is connected.
+
+The playback clock now has a bounded recovery watchdog. It advances at the
+configured track duration as before, but also recovers when a loaded Sound has
+stopped unexpectedly, or when an asset never finishes loading within the
+45-second ceiling. Paused playback is excluded. Track transitions are guarded
+by a generation check and a synchronous transition lock, so the duration
+clock and watchdog cannot both advance the same track. This does not guarantee
+that Roblox audio permissions or asset availability are valid; it provides
+server-side recovery when playback cannot proceed.
+
+No Roblox Studio runtime, multi-client, real audio asset, or Luau typecheck was
+run for this change. Test a valid audio asset, an unavailable/private asset,
+a paused track, normal completion, manual skip, and playlist rotation.
