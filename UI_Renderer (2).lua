@@ -1382,10 +1382,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local favorites: any = state.favorites
 		local isFavorite = typeof(favorites) == "table" and favorites[id] == true
 		local starPosition = if compact then
-			(if canAddToPlaylist then (if canRemove then -218 else -150) else (if canRemove then -166 else -98))
+			(if canAddToPlaylist then (if canRemove then -218 else -150) else (if canRemove then -166 else -132))
 		else (if canAddToPlaylist then (if canRemove then -282 else -202) else (if canRemove then -202 else -138))
 		local requestPosition = if compact then
-			(if canAddToPlaylist then (if canRemove then -184 else -116) else (if canRemove then -132 else -8))
+			(if canAddToPlaylist then (if canRemove then -184 else -116) else (if canRemove then -132 else -90))
 		else (if canAddToPlaylist then (if canRemove then -240 else -160) else (if canRemove then -160 else -96))
 		local buttonY = if compact then 49 else 18
 		local starWidth = if compact then (if canAddToPlaylist or canRemove then 28 else 32) else 32
