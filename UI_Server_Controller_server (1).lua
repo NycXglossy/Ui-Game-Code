@@ -106,10 +106,17 @@ local CONFIG = {
 	TitleSlotPrices = { [2] = 99, [3] = 199 } :: {[number]: number}, -- Display only; set to match the products.
 }
 
+-- Publish the remote contract before loading storage modules so clients can
+-- wait safely even when catalog initialization is delayed.
 -- The catalog is server-owned. The controller remains the only authority
 -- for request limits, moderation, queue priority, and playback.
-local MusicCatalogService = require(game:GetService("ServerStorage"):WaitForChild("MusicCatalogService"))
-local MusicPlaylistService = require(game:GetService("ServerStorage"):WaitForChild("MusicPlaylistService"))
+local serverStorage = game:GetService("ServerStorage")
+local catalogModule = serverStorage:WaitForChild("MusicCatalogService", 20)
+local playlistModule = serverStorage:WaitForChild("MusicPlaylistService", 20)
+assert(catalogModule and catalogModule:IsA("ModuleScript"), "[ClubMusic] Missing ServerStorage.MusicCatalogService ModuleScript.")
+assert(playlistModule and playlistModule:IsA("ModuleScript"), "[ClubMusic] Missing ServerStorage.MusicPlaylistService ModuleScript.")
+local MusicCatalogService = require(catalogModule)
+local MusicPlaylistService = require(playlistModule)
 
 type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string? }
 
@@ -428,6 +435,10 @@ type PendingReceiptMemory = { profile: Profile, productData: {[string]: any} }
 local receiptMemoryPending: {[string]: PendingReceiptMemory} = {}
 local receiptMemoryApplied: {[string]: Profile} = {}
 local queue: {QueueEntry} = {}
+local activePlaylistId: string? = nil
+local activePlaylistName = ""
+local activePlaylistTracks: {Track} = {}
+local activePlaylistCursor = 1
 local nowPlaying = {
 	trackId = "",
 	title = "",
@@ -553,6 +564,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	ReloadSong = CONFIG.ReloadCooldownSeconds, ToggleFavorite = 0.2, VoteSkip = 0.5,
 	CatalogAddAudio = 10, CatalogRemoveTrack = 2,
 	PlaylistCreate = 2, PlaylistDelete = 1, PlaylistAddTrack = 0.5, PlaylistRemoveTrack = 0.5, PlaylistMoveTrack = 0.5,
+	DJPlayPlaylist = 2, DJStopPlaylist = 1,
 	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
 	ModBlockUser = 0.5, ModSetVip = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
@@ -1179,12 +1191,118 @@ local function pickAutoTrack(): Track
 	return TRACK_BY_ID[ALL_TRACK_IDS[random:NextInteger(1, #ALL_TRACK_IDS)]]
 end
 
+local function nextPlaylistTrack(): Track?
+	if not activePlaylistId or #activePlaylistTracks == 0 then return nil end
+	for _ = 1, #activePlaylistTracks do
+		if activePlaylistCursor > #activePlaylistTracks then activePlaylistCursor = 1 end
+		local track = activePlaylistTracks[activePlaylistCursor]
+		activePlaylistCursor += 1
+		if TRACK_BY_ID[track.id] then return track end
+	end
+	return nil
+end
+
 local function topUpAuto()
 	local guard = 0
 	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
 		guard += 1
-		table.insert(queue, makeEntry(pickAutoTrack(), "auto", nil))
+		local playlistTrack = nextPlaylistTrack()
+		if playlistTrack then
+			table.insert(queue, makeEntry(playlistTrack, "playlist", nil))
+		else
+			if activePlaylistId then
+				warn("[ClubMusic] Active playlist has no playable catalog tracks; returning to Auto DJ.")
+				activePlaylistId = nil
+				activePlaylistName = ""
+				table.clear(activePlaylistTracks)
+				activePlaylistCursor = 1
+			end
+			table.insert(queue, makeEntry(pickAutoTrack(), "auto", nil))
+		end
 	end
+end
+
+local function clearAutomaticQueue()
+	for index = #queue, 1, -1 do
+		if queue[index].source ~= "player" then table.remove(queue, index) end
+	end
+end
+
+local function reloadActivePlaylist(): boolean
+	if not activePlaylistId then return false end
+	for _, playlist in ipairs(MusicPlaylistService:GetAll()) do
+		if playlist.id == activePlaylistId then
+			local validTracks: {Track} = {}
+			for _, trackId in ipairs(playlist.trackIds) do
+				local track = TRACK_BY_ID[trackId]
+				if track then table.insert(validTracks, track) end
+			end
+			if #validTracks == 0 then
+				activePlaylistId = nil
+				activePlaylistName = ""
+				table.clear(activePlaylistTracks)
+				activePlaylistCursor = 1
+				return false
+			end
+			activePlaylistName = playlist.name
+			activePlaylistTracks = validTracks
+			activePlaylistCursor = 1
+			return true
+		end
+	end
+	activePlaylistId = nil
+	activePlaylistName = ""
+	table.clear(activePlaylistTracks)
+	activePlaylistCursor = 1
+	return false
+end
+
+local function startPlaylistRotation(player: Player, playlistId: any): boolean
+	if not isValidString(playlistId, 64) then
+		notify(player, "Choose a valid playlist.", "warn")
+		return false
+	end
+	local found: any = nil
+	for _, playlist in ipairs(MusicPlaylistService:GetAll()) do
+		if playlist.id == playlistId then found = playlist; break end
+	end
+	if not found then
+		notify(player, "Playlist not found. Refresh the playlist list and try again.", "warn")
+		return false
+	end
+	local validTracks: {Track} = {}
+	for _, trackId in ipairs(found.trackIds) do
+		local track = TRACK_BY_ID[trackId]
+		if track then table.insert(validTracks, track) end
+	end
+	if #validTracks == 0 then
+		notify(player, "This playlist has no tracks available in the current catalog.", "warn")
+		return false
+	end
+	activePlaylistId = found.id
+	activePlaylistName = found.name
+	activePlaylistTracks = validTracks
+	activePlaylistCursor = 1
+	clearAutomaticQueue()
+	topUpAuto()
+	notify(player, "Playlist rotation enabled: " .. activePlaylistName .. ". The current track will finish first.", "ok")
+	return true
+end
+
+local function stopPlaylistRotation(player: Player?)
+	if not activePlaylistId then
+		if player then notify(player, "No playlist rotation is active.", "info") end
+		return false
+	end
+	local stoppedName = activePlaylistName
+	activePlaylistId = nil
+	activePlaylistName = ""
+	table.clear(activePlaylistTracks)
+	activePlaylistCursor = 1
+	clearAutomaticQueue()
+	topUpAuto()
+	if player then notify(player, "Playlist rotation stopped: " .. stoppedName .. ".", "ok") end
+	return true
 end
 
 local function setNowPlaying(entry: QueueEntry)
@@ -1194,7 +1312,7 @@ local function setNowPlaying(entry: QueueEntry)
 	nowPlaying.genre = entry.genre
 	nowPlaying.duration = math.max(1, entry.duration)
 	nowPlaying.elapsed = 0
-	nowPlaying.dj = "Automated Selector"
+	nowPlaying.dj = if entry.source == "playlist" then "Playlist: " .. activePlaylistName else "Automated Selector"
 	nowPlaying.source = entry.source
 	nowPlaying.requestedBy = entry.requestedBy
 	nowPlaying.vip = entry.vip
@@ -1297,6 +1415,7 @@ local function snapshotFor(player: Player)
 			genre = nowPlaying.genre, duration = nowPlaying.duration, elapsed = nowPlaying.elapsed,
 			dj = nowPlaying.dj, source = nowPlaying.source, requestedBy = nowPlaying.requestedBy,
 			vip = nowPlaying.vip, soundId = nowPlaying.soundId, paused = playbackPaused,
+			playlist = {active = activePlaylistId ~= nil, id = activePlaylistId, name = activePlaylistName},
 		},
 		reloadNonce = reloadNonce[player.UserId] or 0,
 		favorites = favorites,
@@ -2105,6 +2224,14 @@ local function handleAction(player: Player, action: any, payload: any)
 			ok, message = MusicPlaylistService:Create(payload.name)
 		elseif action == "PlaylistDelete" then
 			ok, message = MusicPlaylistService:Delete(payload.playlistId)
+			if ok and activePlaylistId == payload.playlistId then
+				activePlaylistId = nil
+				activePlaylistName = ""
+				table.clear(activePlaylistTracks)
+				activePlaylistCursor = 1
+				clearAutomaticQueue()
+				topUpAuto()
+			end
 		elseif action == "PlaylistAddTrack" then
 			local trackId = payload.trackId
 			if not isValidString(trackId, 24) or not TRACK_BY_ID[trackId] then
@@ -2115,6 +2242,13 @@ local function handleAction(player: Player, action: any, payload: any)
 			ok, message = MusicPlaylistService:RemoveTrack(payload.playlistId, payload.trackId)
 		elseif action == "PlaylistMoveTrack" then
 			ok, message = MusicPlaylistService:MoveTrack(payload.playlistId, payload.trackId, payload.position)
+		end
+		if ok and activePlaylistId == payload.playlistId
+			and (action == "PlaylistAddTrack" or action == "PlaylistRemoveTrack" or action == "PlaylistMoveTrack") then
+			if reloadActivePlaylist() then
+				clearAutomaticQueue()
+				topUpAuto()
+			end
 		end
 		notify(player, message, if ok then "ok" else "warn")
 		if ok then publishState(nil) end
@@ -2412,6 +2546,21 @@ local function handleAction(player: Player, action: any, payload: any)
 	end
 
 	-- Staff ----------------------------------------------------------------------------
+
+	if action == "DJPlayPlaylist" then
+		if not isStaff(player) then notify(player, "Only staff can start playlist rotation.", "warn"); return end
+		if not playlistStorageReady or not MusicPlaylistService:IsReady() then
+			notify(player, "Playlist storage is unavailable.", "warn"); return
+		end
+		if startPlaylistRotation(player, payload.playlistId) then publishState(nil) end
+		return
+	end
+
+	if action == "DJStopPlaylist" then
+		if not isStaff(player) then notify(player, "Only staff can stop playlist rotation.", "warn"); return end
+		if stopPlaylistRotation(player) then publishState(nil) end
+		return
+	end
 
 	if action == "DJMoveUp" then
 		if not isStaff(player) then return end
