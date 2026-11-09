@@ -2,22 +2,11 @@
 -- MusicCatalogService
 -- Place as ModuleScript: ServerStorage/MusicCatalogService
 --
--- Server-owned metadata catalog. This module does not own playback, queueing,
--- permissions, DataStores, or Sound instances. The UI_Server_Controller remains
--- authoritative for every request and playback decision.
+-- Server-owned metadata catalog with a bounded DataStore-backed custom-track overlay.
+-- This module does not own playback, queueing, or permissions. The UI_Server_Controller
+-- remains authoritative for every request and playback decision.
 
 local MusicCatalogService = {}
-
-local DataStoreService = game:GetService("DataStoreService")
-local RunService = game:GetService("RunService")
-local catalogStore = DataStoreService:GetDataStore("ClubMusic_Catalog_v1")
-local CATALOG_KEY = "custom_tracks"
-local MAX_CUSTOM_TRACKS = 200
-local customTracks: {[string]: Track} = {}
-local storageInitialized = false
-local storagePersistent = false
-local storageReady = false
-local storageWriteBusy = false
 
 export type Track = {
 	id: string,
@@ -29,6 +18,17 @@ export type Track = {
 	assetId: number?,
 	soundId: string?,
 }
+
+local DataStoreService = game:GetService("DataStoreService")
+local RunService = game:GetService("RunService")
+local catalogStore = DataStoreService:GetDataStore("ClubMusic_Catalog_v1")
+local CATALOG_KEY = "custom_tracks"
+local MAX_CUSTOM_TRACKS = 200
+local customTracks: {[string]: Track} = {}
+local storageInitialized = false
+local storagePersistent = false
+local storageReady = false
+local storageWriteBusy = false
 
 type Genre = {
 	id: string,
@@ -146,15 +146,6 @@ local function sanitizeStoredTrack(value: any): Track?
 		assetId=assetId, soundId="rbxassetid://" .. tostring(assetId)}
 end
 
-local function serializeCustomTracks(source: {[string]: Track}): {any}
-	local result = {}
-	for _, track in pairs(source) do
-		table.insert(result, {assetId=track.assetId, genreId=track.genreId, title=track.title,
-			artist=track.artist, duration=track.duration, genre=track.genre})
-	end
-	table.sort(result, function(a, b) return a.assetId < b.assetId end)
-	return result
-end
 
 function MusicCatalogService:Initialize(studioUseDataStore: boolean?, budgetCallback: (() -> boolean)?): boolean
 	if storageInitialized then return storageReady end
