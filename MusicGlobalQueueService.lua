@@ -62,7 +62,7 @@ type State = {
 
 local cachedSnapshot: State? = nil
 local cachedSnapshotAt = 0
-local SNAPSHOT_CACHE_SECONDS = 1.25
+local SNAPSHOT_CACHE_SECONDS = 3
 
 local function finite(value: any): boolean
 	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
