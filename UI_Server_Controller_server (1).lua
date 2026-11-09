@@ -3421,6 +3421,13 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 	if action == "DJSkip" then
 		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
+		-- Kohl's Admin can dispatch the same command while an automatic or
+		-- admin-triggered transition is still yielding on shared queue work.
+		-- The active transition already owns this track change; do not call
+		-- advance() a second time or surface its internal lock as a warning.
+		if trustedAdminCommand == true and transitionInProgress then
+			return true, "A track transition is already being processed; no second skip was sent."
+		end
 		local advanced, transitionError = advance()
 		if not advanced then
 			local reason = tostring(transitionError or "The shared track transition could not be confirmed.")
