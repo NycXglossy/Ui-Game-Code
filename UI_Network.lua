@@ -16,7 +16,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local FOLDER_NAME = "ClubMusicRemotes"
-local REMOTE_TIMEOUT = 30
+local REMOTE_TIMEOUT = 3
 local MAX_STATE_DEPTH = 8
 local MAX_STATE_ENTRIES = 2500
 local MAX_NOTICE_TEXT = 400
@@ -28,6 +28,7 @@ local initialized = false
 local initializing = false
 local destroyed = false
 local receivedState = false
+local lastInitWarningAt = 0
 
 local actionRemote: RemoteEvent? = nil
 local catalogFunction: RemoteFunction? = nil
@@ -47,6 +48,8 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	PlaylistAddTrack = true,
 	PlaylistRemoveTrack = true,
 	PlaylistMoveTrack = true,
+	DJPlayPlaylist = true,
+	DJStopPlaylist = true,
 	RequestAudioAsset = true,
 	ReloadSong = true,
 	ToggleFavorite = true,
@@ -81,6 +84,8 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	PlaylistAddTrack = 0.5,
 	PlaylistRemoveTrack = 0.5,
 	PlaylistMoveTrack = 0.5,
+	DJPlayPlaylist = 2,
+	DJStopPlaylist = 1,
 	RequestAudioAsset = 10,
 	ReloadSong = 3,
 	ToggleFavorite = 0.2,
@@ -229,8 +234,9 @@ function Network.Init(): boolean
 
 	local ok, err = pcall(function()
 		local foundFolder = ReplicatedStorage:WaitForChild(FOLDER_NAME, REMOTE_TIMEOUT)
-		assert(foundFolder ~= nil and foundFolder:IsA("Folder"),
-			"UI_Network: ReplicatedStorage.ClubMusicRemotes not found. Is UI_Server_Controller running?")
+		if not foundFolder or not foundFolder:IsA("Folder") then
+			error("Waiting for ReplicatedStorage.ClubMusicRemotes; the server controller may still be starting.")
+		end
 
 		local action = waitForRemote(foundFolder, "RequestAction", "RemoteEvent") :: RemoteEvent
 		local stateRemote = waitForRemote(foundFolder, "StateChanged", "RemoteEvent") :: RemoteEvent
@@ -266,8 +272,12 @@ function Network.Init(): boolean
 		table.clear(connections)
 		actionRemote = nil
 		catalogFunction = nil
+		playlistFunction = nil
 		initialized = false
-		warn("[ClubMusic Network] Initialization failed: " .. tostring(err))
+		if os.clock() - lastInitWarningAt >= 10 then
+			lastInitWarningAt = os.clock()
+			warn("[ClubMusic Network] Initialization is waiting for server remotes: " .. tostring(err))
+		end
 		return false
 	end
 	return true
