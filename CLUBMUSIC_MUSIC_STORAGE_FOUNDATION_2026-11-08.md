@@ -331,8 +331,9 @@ normal Auto DJ resumes after STOP.
 
 The client now allows up to 45 seconds for the server-owned readiness
 marker, rather than treating a three-second cold-start delay as a failed
-controller. The bootstrap makes two bounded initialization attempts instead of
-repeating a long readiness wait indefinitely. The network module reports the
+controller. The network waits up to 20 seconds for the server-created remote folder and
+up to 45 seconds for its readiness marker. The bootstrap makes two bounded
+initialization attempts instead of repeating a long readiness wait indefinitely. The network module reports the
 server's startup stage and any published startup error when the deadline
 expires; the bootstrap includes that diagnostic in its final startup message.
 The controller publishes bounded stages while loading its storage modules,
