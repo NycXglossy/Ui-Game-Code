@@ -17,7 +17,7 @@ end
 
 local loader = selected:FindFirstChild("Loader", true)
 assert(loader and loader:IsA("Script"), "Could not find Kohl's Admin Loader Script.")
-local mainModule = loader:FindFirstChild("MainModule")
+local mainModule = loader:FindFirstChild("MainModule") or loader:FindFirstChild("MainModuleLegacy")
 assert(mainModule and mainModule:IsA("ModuleScript"), "Bundled Loader.MainModule is missing; refusing external fallback.")
 
 local loaderSource = loader.Source
@@ -42,11 +42,11 @@ if CONFIG then
 	if legacy ~= nil then
 		LEGACY = legacy
 	end
-end]=]
+end
+local MAIN_MODULE_NAME = if LEGACY then "MainModuleLegacy" else "MainModule"]=]
 local newConfig = [=[-- Security hardening: load only the reviewed, bundled MainModule.
 -- Do not fetch executable code from Creator Store or an external asset at runtime.
 local Package = script.Parent
-local MAIN_MODULE_NAME = "MainModule"
 local LEGACY = false
 
 local CONFIG = Package:FindFirstChild("Config")
