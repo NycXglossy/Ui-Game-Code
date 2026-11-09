@@ -158,7 +158,7 @@ local MusicCatalogService = catalogRequireResult
 local MusicPlaylistService = playlistRequireResult
 remotes:SetAttribute("StartupStage", "InitializingStorage")
 
-type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string? }
+type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string?, artworkAssetId: number? }
 
 local TRACK_BY_ID: {[string]: Track} = {}
 local ALL_TRACK_IDS: {string} = {}
@@ -618,6 +618,7 @@ for _, catalogTrack in ipairs(MusicCatalogService:GetAllTracks()) do
 		genre = catalogTrack.genre,
 		assetId = catalogTrack.assetId,
 		soundId = catalogTrack.soundId,
+		artworkAssetId = catalogTrack.artworkAssetId,
 	}
 	TRACK_BY_ID[track.id] = track
 	table.insert(ALL_TRACK_IDS, track.id)
@@ -2610,11 +2611,15 @@ local function handleAction(player: Player, action: any, payload: any)
 		end
 		local assetId = payload.assetId
 		local genreId = payload.genreId
+		local artworkAssetId = payload.artworkAssetId
 		if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then
 			notify(player, "Enter a valid audio asset ID.", "warn"); return
 		end
 		if typeof(genreId) ~= "string" or #genreId > 24 then
 			notify(player, "Choose a valid catalog genre.", "warn"); return
+		end
+		if artworkAssetId ~= nil and (typeof(artworkAssetId) ~= "number" or artworkAssetId ~= artworkAssetId or artworkAssetId % 1 ~= 0 or artworkAssetId <= 0 or artworkAssetId > 9007199254740991) then
+			notify(player, "Artwork must be a valid Roblox image asset ID.", "warn"); return
 		end
 		if CONFIG.RestrictAudioToAllowlist and not table.find(CONFIG.AllowedAudioAssetIds, assetId) then
 			notify(player, "That audio asset is not on the approved list.", "warn"); return
@@ -2644,7 +2649,7 @@ local function handleAction(player: Player, action: any, payload: any)
 		if player.Parent ~= Players or not isStaff(player) then return end
 		local budgetReady = waitForDataStoreBudget(5)
 		if not budgetReady then notify(player, "Shared DataStore budget is unavailable; catalog was not changed.", "warn"); return end
-		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId)
+		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId, artworkAssetId)
 		if not saved then notify(player, message, "warn"); return end
 		local trackId = "custom-" .. tostring(assetId)
 		local track = MusicCatalogService:GetTrackById(trackId)
