@@ -603,6 +603,9 @@ local function onQueueChanged(message)
 	local data = if typeof(message) == "table" then message.Data else nil
 	if not validEnvelope(data) or data.kind ~= "QueueChanged" or not finiteNumber(data.revision) then return end
 	if not unseen(data.id) then return end
+	-- The originating controller already applies the state returned by its
+	-- successful mutation. Ignore our own echo to avoid a redundant DataStore read.
+	if data.senderJob == JOB_ID then return end
 	-- MessagingService is an invalidation signal: discard this server's short-lived
 	-- snapshot cache before the controller asks for the authoritative queue state.
 	if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
@@ -671,7 +674,7 @@ task.spawn(function()
 				end
 			end
 		end
-		task.wait(30 + math.random(0, 10))
+		task.wait(60 + math.random(0, 15))
 	end
 end)
 
