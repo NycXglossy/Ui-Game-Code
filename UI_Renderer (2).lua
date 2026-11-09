@@ -3429,13 +3429,23 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		stepper(form, 366, "Height offset (above head)", function() return draft.height end, function(v) draft.height = v end, 0, 8, 0.25, "studs")
 		stepper(form, 398, "View distance", function() return draft.distance end, function(v) draft.distance = v end, 20, 200, 10, "studs")
 
-		actionButton(form, "SAVE TITLE", UDim2.fromOffset(12, 434), UDim2.new(0.5, -16, 0, 34), function()
+		local saveButton = actionButton(form, "SAVE TITLE", UDim2.fromOffset(12, 434), UDim2.new(0.5, -16, 0, 36), function()
 			saveTitleDraft(draft)
 		end, C.Magenta)
-		actionButton(form, "RESET", UDim2.new(0.5, 4, 0, 434), UDim2.new(0.5, -16, 0, 34), function()
+		local resetButton = actionButton(form, "RESET", UDim2.new(0.5, 4, 0, 434), UDim2.new(0.5, -16, 0, 36), function()
 			titleDraft = nil
 			refreshTitleTab()
 		end, C.SurfaceLight)
+		-- Keep the primary and secondary actions paired for predictable controller navigation.
+		saveButton.NextSelectionRight = resetButton
+		resetButton.NextSelectionLeft = saveButton
+		if compactTitleEditor then
+			for _, button in ipairs({ saveButton, resetButton }) do
+				button.TextSize = 10
+				button.TextWrapped = false
+				make("UITextSizeConstraint", { MinTextSize = 9, MaxTextSize = 10 }, button)
+			end
+		end
 	end
 
 	local function renderTitleManage()
