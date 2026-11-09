@@ -1621,8 +1621,6 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					table.insert(matches, track)
 				end
 			end
-			label(content, string.format("SEARCH RESULTS  •  %d MATCH%s", #matches, if #matches == 1 then "" else "ES"),
-				UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 0), C.Cyan, 11, true).Visible = false
 			sectionLabel("SEARCH RESULTS  •  " .. tostring(#matches))
 			if #matches == 0 then
 				local emptySearch = card(62)
