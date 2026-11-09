@@ -417,6 +417,31 @@ local function formatTime(seconds: number): string
 	return string.format("%d:%02d", math.floor(value / 60), value % 60)
 end
 
+-- Explicit selection feedback keeps controller focus visible across all menu controls.
+local function bindFocusFeedback(button: GuiButton, outline: UIStroke?, baseColor: Color3?)
+	button.Selectable = true
+	button.SelectionGroup = false
+	local normalColor = baseColor or button.BackgroundColor3
+	local function setFocused(focused: boolean)
+		if outline and outline.Parent then
+			outline.Color = if focused then C.Cyan else normalColor
+			outline.Transparency = if focused then 0 else 0.58
+			outline.Thickness = if focused then 2.5 else 1
+		end
+		if button.Parent and button:IsA("TextButton") then
+			button.BackgroundColor3 = if focused then normalColor:Lerp(C.Cyan, 0.16) else normalColor
+		end
+	end
+	button.SelectionGained:Connect(function() setFocused(true) end)
+	button.SelectionLost:Connect(function() setFocused(false) end)
+	button.MouseEnter:Connect(function()
+		if not UserInputService.GamepadEnabled or GuiService.SelectedObject ~= button then setFocused(true) end
+	end)
+	button.MouseLeave:Connect(function()
+		if GuiService.SelectedObject ~= button then setFocused(false) end
+	end)
+end
+
 local function safeCall(callback: any, ...)
 	if typeof(callback) == "function" then
 		local ok, err = pcall(callback, ...)
@@ -673,7 +698,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		ZIndex = 10,
 	}, gui) :: TextButton
 	corner(toggleButton, 18)
-	stroke(toggleButton, C.Cyan, 2)
+	local toggleOutline = stroke(toggleButton, C.Cyan, 2)
+	bindFocusFeedback(toggleButton, toggleOutline, C.Magenta)
 
 	-- Top bar HUD: always-visible now-playing strip (tap it to open the club panel).
 	local hud = make("TextButton", {
@@ -689,6 +715,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	corner(hud, 15)
 	local hudOutline = stroke(hud, C.Gold, 1)
 	hudOutline.Transparency = 0.28
+	bindFocusFeedback(hud, hudOutline, Color3.fromRGB(17, 19, 29))
 	make("UIGradient", {Rotation=0, Color=ColorSequence.new(Color3.fromRGB(28,25,39), Color3.fromRGB(17,21,31))}, hud)
 	local hudConstraint = make("UISizeConstraint", { MaxSize = Vector2.new(560, 42) }, hud)
 	local hudScale = make("UIScale", { Scale = 1 }, hud)
@@ -1150,10 +1177,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			TextSize = 11,
 			Font = BOLD,
 			AutoButtonColor = true,
+			Selectable = true,
 		}, parent) :: TextButton
 		corner(button, 11)
 		local outline = stroke(button, color or C.Magenta, 1)
 		outline.Transparency = 0.64
+		bindFocusFeedback(button, outline, color or C.Magenta)
 		make("UIGradient", {
 			Color = ColorSequence.new({
 				ColorSequenceKeypoint.new(0, (color or C.Magenta):Lerp(C.White, 0.10)),
@@ -1886,7 +1915,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			-- The client never guesses whether a playlist is active from button clicks.
 			local rotation = if playback and typeof(playback.playlist) == "table" then playback.playlist else nil
 			local rotationActive = rotation ~= nil and rotation.active == true
-			local rotationCard = card(76)
+			local rotationPosition = if rotationActive then tonumber(rotation.currentPosition) else nil
+			local rotationTotal = if rotationActive then tonumber(rotation.totalTracks) else nil
+			local rotationRemaining = if rotationActive then tonumber(rotation.remainingBeforeLoop) else nil
+			local hasPosition = rotationPosition ~= nil and rotationTotal ~= nil and rotationTotal > 0
+			local rotationCard = card(if hasPosition then 100 else 76)
 			label(rotationCard, "PLAYLIST ROTATION", UDim2.fromOffset(12, 7), UDim2.new(1, -120, 0, 16), C.Gold, 10, true)
 			local rotationBadge = make("TextLabel", {
 				Name = "PlaylistRotationState",
@@ -1907,6 +1940,29 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				then "Repeating playlist order • " .. nz(if playback then playback.title else nil, "Waiting for next track")
 				else "No staff playlist is currently controlling track selection."
 			label(rotationCard, rotationDetail, UDim2.fromOffset(12, 51), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
+			if hasPosition then
+				local safePosition = math.clamp(math.floor(rotationPosition :: number), 1, math.floor(rotationTotal :: number))
+				local safeTotal = math.max(1, math.floor(rotationTotal :: number))
+				local remaining = math.max(0, math.floor(rotationRemaining or (safeTotal - safePosition)))
+				local progressTrack = make("Frame", {
+					Name = "PlaylistLoopProgressTrack",
+					Position = UDim2.fromOffset(12, 76),
+					Size = UDim2.new(1, -24, 0, 5),
+					BackgroundColor3 = C.SurfaceLight,
+					BorderSizePixel = 0,
+				}, rotationCard)
+				corner(progressTrack, 3)
+				local progressFill = make("Frame", {
+					Name = "PlaylistLoopProgressFill",
+					Size = UDim2.fromScale(safePosition / safeTotal, 1),
+					BackgroundColor3 = C.Cyan,
+					BorderSizePixel = 0,
+				}, progressTrack)
+				corner(progressFill, 3)
+				label(rotationCard,
+					string.format("TRACK %d OF %d  •  %d %s UNTIL LOOP", safePosition, safeTotal, remaining, if remaining == 1 then "TRACK" else "TRACKS"),
+					UDim2.fromOffset(12, 83), UDim2.new(1, -24, 0, 13), C.Cyan, 9, true)
+			end
 
 			local monitor = card(82)
 			label(monitor, "PLAYBACK SNAPSHOT", UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 17), C.Gold, 10, true)
@@ -3374,11 +3430,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			BackgroundTransparency = 0.08,
 			Text = "",
 			AutoButtonColor = true,
+			Selectable = true,
 			LayoutOrder = index,
 		}, nav) :: TextButton
 		corner(button, 12)
 		local navStroke = stroke(button, C.Gold, 1)
 		navStroke.Transparency = 0.58
+		bindFocusFeedback(button, navStroke, Color3.fromRGB(25, 30, 43))
 		local iconBadge = make("Frame", {
 			Name = "IconBadge",
 			Position = UDim2.fromOffset(7, 6),
@@ -3437,6 +3495,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Size = panelTarget,
 		}):Play()
 		renderTab()
+		if UserInputService.GamepadEnabled then
+			task.defer(function()
+				if expanded and navButtons[activeTab] and navButtons[activeTab].Visible then
+					GuiService.SelectedObject = navButtons[activeTab]
+				end
+			end)
+		end
 	end
 
 	local function close()
@@ -3446,6 +3511,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		shade.Visible = false
 		panel.Visible = false
 		toggleButton.Visible = true
+		if UserInputService.GamepadEnabled then GuiService.SelectedObject = toggleButton end
 	end
 
 	toggleButton.Activated:Connect(open)
