@@ -3725,6 +3725,38 @@ stateFunction.OnServerInvoke = function(player: Player)
 	return snapshot
 end
 
+-- Server-only integration point for trusted admin addons (for example Kohl's Admin).
+-- This is deliberately not replicated. Every request is re-authorized by ClubMusic's
+-- own rank cache and then passes through the same action budgets/cooldowns/handlers.
+local adminBridge = getOrCreate(ServerStorage, "BindableFunction", "ClubMusicAdminBridge") :: BindableFunction
+local ADMIN_BRIDGE_ACTIONS: {[string]: string} = {
+	Skip = "DJSkip",
+	TogglePause = "DJPause",
+	Restart = "DJRestart",
+	ToggleRequestLock = "DJToggleLock",
+	ClearQueue = "DJClearQueue",
+}
+adminBridge.OnInvoke = function(caller: any, operation: any): (boolean, string)
+	if typeof(caller) ~= "Instance" or not caller:IsA("Player") or caller.Parent ~= Players then
+		return false, "A live player caller is required."
+	end
+	if typeof(operation) ~= "string" or #operation > 32 then
+		return false, "Invalid ClubMusic admin operation."
+	end
+	local action = ADMIN_BRIDGE_ACTIONS[operation]
+	if not action then return false, "That ClubMusic admin operation is not exposed." end
+	if not isStaff(caller) then return false, "ClubMusic staff permission is required." end
+	if action == "DJClearQueue" and not isAdmin(caller) then
+		return false, "ClubMusic administrator permission is required to clear the queue."
+	end
+	local ok, err = pcall(handleAction, caller, action, {})
+	if not ok then
+		warn("[ClubMusic Admin Bridge] Action failed: " .. tostring(err))
+		return false, "ClubMusic could not process that action."
+	end
+	return true, "ClubMusic action submitted to the authoritative controller."
+end
+
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
 	local ok, err = pcall(handleAction, player, action, payload)
