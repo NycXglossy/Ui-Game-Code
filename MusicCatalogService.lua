@@ -160,10 +160,13 @@ function MusicCatalogService:Initialize(studioUseDataStore: boolean?, budgetCall
 		storageInitializing = false
 		return true
 	end
-	if budgetCallback and not budgetCallback() then
-		warn("[ClubMusic Catalog] Shared DataStore budget unavailable; initialization may be retried.")
-		storageInitializing = false
-		return false
+	if budgetCallback then
+		local budgetOk, budgetAvailable = pcall(budgetCallback)
+		if not budgetOk or budgetAvailable ~= true then
+			warn("[ClubMusic Catalog] Shared DataStore budget unavailable; initialization may be retried.")
+			storageInitializing = false
+			return false
+		end
 	end
 	local ok, stored = pcall(function() return catalogStore:GetAsync(CATALOG_KEY) end)
 	if not ok then
@@ -199,9 +202,12 @@ function MusicCatalogService:Refresh(budgetCallback: (() -> boolean)?): boolean
 	if not storagePersistent then return true end
 	if storageWriteBusy then return false end
 	storageWriteBusy = true
-	if budgetCallback and not budgetCallback() then
-		storageWriteBusy = false
-		return false
+	if budgetCallback then
+		local budgetOk, budgetAvailable = pcall(budgetCallback)
+		if not budgetOk or budgetAvailable ~= true then
+			storageWriteBusy = false
+			return false
+		end
 	end
 	local ok, stored = pcall(function() return catalogStore:GetAsync(CATALOG_KEY) end)
 	if not ok then
