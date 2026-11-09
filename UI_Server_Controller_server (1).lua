@@ -496,6 +496,11 @@ type PendingReceiptMemory = { profile: Profile, productData: {[string]: any} }
 local receiptMemoryPending: {[string]: PendingReceiptMemory} = {}
 local receiptMemoryApplied: {[string]: Profile} = {}
 local queue: {QueueEntry} = {}
+local globalQueueMode = false
+local globalTrackRevision = 0
+local globalQueueSyncBusy = false
+local syncGlobalQueueSnapshot: (() -> boolean)? = nil
+local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
 local activePlaylistId: string? = nil
 local activePlaylistName = ""
 local activePlaylistTracks: {Track} = {}
@@ -1406,33 +1411,146 @@ local function setNowPlaying(entry: QueueEntry)
 	table.clear(skipVotes)
 end
 
+-- Shared queue mirror. The global DataStore is authoritative when the global
+-- service is enabled; the local table remains a detached UI mirror only.
+local function applyGlobalQueueState(state: any): boolean
+	if typeof(state) ~= "table" or typeof(state.queue) ~= "table"
+		or typeof(state.playback) ~= "table" then return false end
+	table.clear(queue)
+	for _, raw in ipairs(state.queue) do
+		if typeof(raw) == "table" and typeof(raw.id) == "string" and typeof(raw.trackId) == "string"
+			and typeof(raw.title) == "string" and typeof(raw.artist) == "string"
+			and typeof(raw.duration) == "number" and typeof(raw.userId) == "number"
+			and typeof(raw.source) == "string" then
+			table.insert(queue, {
+				id = raw.id, trackId = raw.trackId, title = raw.title, artist = raw.artist,
+				duration = raw.duration, requestedBy = tostring(raw.requestedBy or "Auto DJ"),
+				userId = raw.userId, genre = tostring(raw.genre or "Unknown"), source = raw.source,
+				vip = raw.vip == true, passTier = tonumber(raw.passTier) or 0,
+				soundId = tostring(raw.soundId or ""),
+			})
+		end
+	end
+	for userId in pairs(requestCounts) do requestCounts[userId] = nil end
+	for _, entry in ipairs(queue) do
+		if entry.source == "player" and Players:GetPlayerByUserId(entry.userId) then
+			requestCounts[entry.userId] = (requestCounts[entry.userId] or 0) + 1
+		end
+	end
+	local revision = tonumber(state.playback.trackRevision) or 0
+	local current = state.current
+	if typeof(current) == "table" and typeof(current.trackId) == "string" then
+		if revision ~= globalTrackRevision or nowPlaying.trackId ~= current.trackId then
+			local entry: QueueEntry = {
+				id = tostring(current.id), trackId = current.trackId, title = tostring(current.title),
+				artist = tostring(current.artist), duration = tonumber(current.duration) or 1,
+				requestedBy = tostring(current.requestedBy or "Auto DJ"), userId = tonumber(current.userId) or 0,
+				genre = tostring(current.genre or "Unknown"), source = tostring(current.source or "auto"),
+				vip = current.vip == true, passTier = tonumber(current.passTier) or 0,
+				soundId = tostring(current.soundId or ""),
+			}
+			setNowPlaying(entry)
+			globalTrackRevision = revision
+		end
+		local positionCallOk, position = globalInvoke("GetGlobalPlaybackPosition", state)
+		if positionCallOk and isFiniteNumber(position) then
+			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
+			playbackPaused = state.playback.paused == true
+			pcall(function()
+				if musicSound.SoundId ~= nowPlaying.soundId and nowPlaying.soundId ~= "" then
+					startServerMusic(nowPlaying.soundId)
+				end
+				if musicSound.IsLoaded and math.abs(musicSound.TimePosition - nowPlaying.elapsed) > 2 then
+					musicSound.TimePosition = nowPlaying.elapsed
+				end
+				if playbackPaused then musicSound:Pause()
+				elseif not musicSound.IsPlaying and nowPlaying.soundId ~= "" then musicSound:Play() end
+			end)
+		end
+	else
+		if nowPlaying.trackId ~= "" then
+			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
+			nowPlaying.elapsed = 0; stopServerMusic()
+		end
+		playbackPaused = true
+		globalTrackRevision = revision
+	end
+	return true
+end
+
+syncGlobalQueueSnapshot = function(): boolean
+	if not globalQueueMode or globalQueueSyncBusy then return false end
+	globalQueueSyncBusy = true
+	local callOk, readOk, state = globalInvoke("GetGlobalQueueState")
+	local applied = callOk and readOk == true and applyGlobalQueueState(state)
+	globalQueueSyncBusy = false
+	if applied then publishState(nil) end
+	return applied == true
+end
+
+enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
+	local callOk, writeOk, state, message = globalInvoke("EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize)
+	if not callOk or writeOk ~= true then return false, tostring(message or "Global queue is unavailable.") end
+	if typeof(state) == "table" then applyGlobalQueueState(state) end
+	return true, nil
+end
+
 local function advance(expectedGeneration: number?): boolean
 	-- Every transition is synchronous and generation-checked. This prevents the
 	-- duration clock and playback watchdog from advancing the same track twice.
 	if transitionInProgress then return false end
 	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then return false end
 	transitionInProgress = true
+	if globalQueueMode then
+		local fallback = makeEntry(pickAutoTrack(), "auto", nil)
+		local callOk, advanced, state, message = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
+		if callOk and advanced == true and typeof(state) == "table" then
+			applyGlobalQueueState(state)
+			transitionInProgress = false
+			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			return true
+		end
+		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		transitionInProgress = false
+		if message and tostring(message) ~= "" then warn("[ClubMusic] Global transition was not applied: " .. tostring(message)) end
+		return false
+	end
 	local ok, err = pcall(function()
 		local nextEntry = table.remove(queue, 1)
-		if nextEntry then
-			releaseSlot(nextEntry)
-		else
-			nextEntry = makeEntry(pickAutoTrack(), "auto", nil)
-		end
+		if nextEntry then releaseSlot(nextEntry)
+		else nextEntry = makeEntry(pickAutoTrack(), "auto", nil) end
 		setNowPlaying(nextEntry :: QueueEntry)
 		topUpAuto()
 	end)
 	transitionInProgress = false
-	if not ok then
-		warn("[ClubMusic] Track transition failed: " .. tostring(err))
-		return false
-	end
+	if not ok then warn("[ClubMusic] Track transition failed: " .. tostring(err)); return false end
 	return true
 end
 
 -- Boot: start with an auto-selected track and a visible auto queue.
 setNowPlaying(makeEntry(TRACK_BY_ID["edm-0"], "auto", nil))
 topUpAuto()
+
+-- Switch to shared authority only when the separately configured global service
+-- confirms it is enabled. Studio remains local unless explicitly enabled there.
+task.spawn(function()
+	local enabledCallOk, enabled = globalInvoke("IsEnabled")
+	if not enabledCallOk or enabled ~= true then return end
+	globalQueueMode = true
+	local readOk = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
+	if not readOk then
+		globalQueueMode = false
+		warn("[ClubMusic] Global queue could not be loaded; refusing a local-only queue in this server.")
+		return
+	end
+	if nowPlaying.trackId == "" then
+		local fallback = makeEntry(pickAutoTrack(), "auto", nil)
+		local callOk, advanced, state = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
+		if callOk and advanced == true and typeof(state) == "table" then applyGlobalQueueState(state)
+		elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+	end
+	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+end)
 
 -- Skip voting ---------------------------------------------------------------------
 
