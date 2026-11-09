@@ -90,8 +90,8 @@ local REWARDS = {
 }
 local TAGS = {
 	{id="vip",label="VIP",source="VIP Pass",owned=false,a=Color3.fromRGB(244,114,182),b=Color3.fromRGB(217,70,239)},
-	{id="party",label="Party Animal",source="Dance 10 hours",owned=false,a=Color3.fromRGB(251,146,60),b=Color3.fromRGB(252,211,77)},
-	{id="wave",label="Wave Rider",source="Login streak",owned=false,a=Color3.fromRGB(103,232,249),b=Color3.fromRGB(14,165,233)},
+	{id="party",label="Party Animal",source="Spend 10 hours at the festival",owned=false,a=Color3.fromRGB(251,146,60),b=Color3.fromRGB(252,211,77)},
+	{id="wave",label="Wave Rider",source="7-day login streak",owned=false,a=Color3.fromRGB(103,232,249),b=Color3.fromRGB(14,165,233)},
 	{id="tiki",label="Tiki Legend",source="Shop",owned=false,price=400,a=Color3.fromRGB(252,211,77),b=Color3.fromRGB(239,68,68)},
 	{id="sunset",label="Sunset Soul",source="Shop",owned=false,price=250,a=Color3.fromRGB(236,72,153),b=Color3.fromRGB(253,224,71)},
 	{id="bass",label="Bass Head",source="Shop",owned=false,price=150,a=Color3.fromRGB(167,139,250),b=Color3.fromRGB(99,102,241)},
@@ -2966,6 +2966,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local tagCard = card(72)
 			label(tagCard, tag.label, UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), tag.a, 14, true)
 			label(tagCard, tag.source, UDim2.fromOffset(12, 35), UDim2.new(1, -130, 0, 18), C.Muted, 10, false)
+			if tag.id == "party" and not isOwned then
+				local hours = math.min(10, math.floor((tonumber(state.clubPlaySeconds) or 0) / 3600))
+				label(tagCard, string.format("%d / 10 HOURS", hours), UDim2.new(1, -112, 1, -17), UDim2.fromOffset(100, 14), C.Cyan, 9, true)
+			end
 			local buttonText = if equipped == tag.id then "EQUIPPED" elseif isOwned then "EQUIP" else "LOCKED"
 			actionButton(tagCard, buttonText, UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
 				if not isOwned then notify("Unlock this title tag first.", C.Red); return end
