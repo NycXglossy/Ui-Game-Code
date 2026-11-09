@@ -1707,40 +1707,92 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 
 		local compactMusic = currentDevice == "Mobile"
-		local favoriteCard = card(if compactMusic then 76 else 62)
-		label(favoriteCard, "★ Favorites", UDim2.fromOffset(12, if compactMusic then 5 else 7), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
-		label(favoriteCard, string.format("%d saved track%s", #favoriteIds, if #favoriteIds == 1 then "" else "s"), UDim2.fromOffset(12, if compactMusic then 27 else 31), UDim2.new(1, -130, 0, 17), C.Muted, 10, false)
-		actionButton(favoriteCard, if selectedGenre == "favorites" then "HIDE" else "VIEW TRACKS",
-			if compactMusic then UDim2.new(1, -112, 0, 42) else UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
-			selectedGenre = if selectedGenre == "favorites" then "" else "favorites"
-			clearContent()
-			renderMusic()
-		end, C.Gold)
+		local function collectionGrid(name: string): Frame
+			local grid = make("Frame", {
+				Name = name,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, content) :: Frame
+			make("UIGridLayout", {
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				CellSize = UDim2.new(if compactMusic then 1 else 0.5, -5, 0, 82),
+				CellPadding = UDim2.fromOffset(8, 8),
+			}, grid)
+			return grid
+		end
+
+		sectionLabel("COLLECTIONS")
+		local shortcuts = collectionGrid("MusicCollectionShortcuts")
+		local likedTile = card(82, shortcuts)
+			label(likedTile, "★  LIKED SONGS", UDim2.fromOffset(12, 10), UDim2.new(1, -24, 0, 22), C.Gold, 13, true)
+			label(likedTile, string.format("%d saved track%s", #favoriteIds, if #favoriteIds == 1 then "" else "s"), UDim2.fromOffset(12, 35), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
+			badge(likedTile, "YOUR MIX", C.Gold, UDim2.new(1, -82, 1, -27), 70)
+			local likedHit = actionButton(likedTile, if selectedGenre == "favorites" then "HIDE" else "OPEN",
+				UDim2.new(1, -68, 0, 7), UDim2.fromOffset(58, 24), function()
+				selectedGenre = if selectedGenre == "favorites" then "" else "favorites"
+					clearContent()
+					renderMusic()
+				end, C.Gold)
+			likedHit.TextSize = 9
+		local allTile = card(82, shortcuts)
+			label(allTile, "♫  ALL TRACKS", UDim2.fromOffset(12, 10), UDim2.new(1, -24, 0, 22), C.Cyan, 13, true)
+			label(allTile, string.format("%d tracks in the catalog", #ALL_TRACKS), UDim2.fromOffset(12, 35), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
+			badge(allTile, "FULL LIBRARY", C.Cyan, UDim2.new(1, -96, 1, -27), 84)
+			local allHit = actionButton(allTile, if selectedGenre == "all" then "HIDE" else "OPEN",
+				UDim2.new(1, -68, 0, 7), UDim2.fromOffset(58, 24), function()
+				selectedGenre = if selectedGenre == "all" then "" else "all"
+					clearContent()
+					renderMusic()
+				end, C.Cyan)
+			allHit.TextSize = 9
+
 		if selectedGenre == "favorites" then
+			sectionLabel("LIKED SONGS  •  " .. tostring(#favoriteIds))
 			if #favoriteIds == 0 then
-				local empty = card(52)
-				label(empty, "Tap ☆ on any track to save it here.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+				local empty = card(56)
+				label(empty, "Tap ☆ on any track to save it to your collection.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
 			else
 				for _, id in ipairs(favoriteIds) do
 					makeTrackCard(TRACK_INDEX[id])
 				end
 			end
+			return
+		elseif selectedGenre == "all" then
+			sectionLabel("ALL TRACKS  •  " .. tostring(#ALL_TRACKS))
+			for _, track in ipairs(ALL_TRACKS) do makeTrackCard(track) end
+			return
 		end
 
-		sectionLabel("BROWSE GENRES")
+		sectionLabel("EXPLORE BY GENRE")
+		local genresGrid = collectionGrid("MusicGenreCollections")
 		for _, genre in ipairs(GENRES) do
-			local genreCard = card(if compactMusic then 76 else 62)
-			label(genreCard, genre.name, UDim2.fromOffset(12, if compactMusic then 5 else 7), UDim2.new(1, -120, 0, 22), genre.color, 13, true)
-			label(genreCard, genre.tagline, UDim2.fromOffset(12, if compactMusic then 27 else 31), UDim2.new(1, -120, 0, 17), C.Muted, 10, false)
-			actionButton(genreCard, if selectedGenre == genre.id then "HIDE" else "VIEW TRACKS",
-				if compactMusic then UDim2.new(1, -112, 0, 42) else UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
-					selectedGenre = if selectedGenre == genre.id then "" else genre.id
+			local genreCard = card(82, genresGrid)
+			local accent = make("Frame", {
+				Name = "CollectionAccent",
+				Position = UDim2.fromOffset(0, 10),
+				Size = UDim2.fromOffset(3, 62),
+				BackgroundColor3 = genre.color,
+				BorderSizePixel = 0,
+			}, genreCard)
+			corner(accent, 2)
+			label(genreCard, string.upper(genre.name), UDim2.fromOffset(12, 9), UDim2.new(1, -24, 0, 22), genre.color, 12, true)
+			label(genreCard, genre.tagline, UDim2.fromOffset(12, 34), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
+			local genreHit = actionButton(genreCard, if selectedGenre == genre.id then "HIDE" else "EXPLORE",
+				UDim2.new(1, -88, 1, -29), UDim2.fromOffset(76, 23), function()
+				selectedGenre = if selectedGenre == genre.id then "" else genre.id
 					clearContent()
 					renderMusic()
 				end, genre.color)
-			if selectedGenre == genre.id then
-				for _, track in ipairs(genre.tracks) do
-					makeTrackCard(track)
+			genreHit.TextSize = 9
+		end
+
+		if selectedGenre ~= "" then
+			for _, genre in ipairs(GENRES) do
+				if genre.id == selectedGenre then
+					sectionLabel(string.upper(genre.name) .. "  •  " .. tostring(#genre.tracks) .. " TRACKS")
+					for _, track in ipairs(genre.tracks) do makeTrackCard(track) end
+					break
 				end
 			end
 		end
