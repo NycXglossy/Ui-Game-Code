@@ -486,6 +486,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local expanded = false
 	local activeTab = "Home"
 	local selectedGenre = "hiphop"
+	local musicSearchQuery = ""
 	local trackSearch = ""
 	local trackGenreFilter = "all"
 	local catalogOffset = 0
@@ -1584,6 +1585,54 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		table.sort(favoriteIds)
 
 		sectionLabel("YOUR LIBRARY")
+		local searchCard = card(54)
+		local searchBox = make("TextBox", {
+			Name = "MusicLibrarySearch",
+			Position = UDim2.fromOffset(12, 9),
+			Size = UDim2.new(1, -24, 0, 36),
+			BackgroundColor3 = C.Base,
+			TextColor3 = C.White,
+			PlaceholderColor3 = C.Muted,
+			PlaceholderText = "Search songs, artists, or genres…",
+			Text = musicSearchQuery,
+			TextSize = 12,
+			Font = FONT,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ClearTextOnFocus = false,
+		}, searchCard) :: TextBox
+		corner(searchBox, 10)
+		stroke(searchBox, C.SurfaceLight, 1).Transparency = 0.35
+		make("UIPadding", {PaddingLeft=UDim.new(0,12), PaddingRight=UDim.new(0,10)}, searchBox)
+		searchBox.FocusLost:Connect(function()
+			local nextQuery = string.sub(searchBox.Text, 1, 48)
+			if nextQuery == musicSearchQuery then return end
+			musicSearchQuery = nextQuery
+			selectedGenre = ""
+			if renderTabFn then renderTabFn() end
+		end)
+
+		local normalizedQuery = string.lower(string.gsub(musicSearchQuery, "^%s*(.-)%s*$", "%1"))
+		if normalizedQuery ~= "" then
+			local matches = {}
+			for _, track in ipairs(ALL_TRACKS) do
+				local genre = TRACK_GENRE[track[1]]
+				local searchable = string.lower(table.concat({tostring(track[2]), tostring(track[3]), tostring(genre and genre.name or "")}, " "))
+				if string.find(searchable, normalizedQuery, 1, true) then
+					table.insert(matches, track)
+				end
+			end
+			label(content, string.format("SEARCH RESULTS  •  %d MATCH%s", #matches, if #matches == 1 then "" else "ES"),
+				UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 0), C.Cyan, 11, true).Visible = false
+			sectionLabel("SEARCH RESULTS  •  " .. tostring(#matches))
+			if #matches == 0 then
+				local emptySearch = card(62)
+				label(emptySearch, "No matching tracks. Try another song, artist, or genre.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+			else
+				for _, track in ipairs(matches) do makeTrackCard(track) end
+			end
+			return
+		end
+
 		local compactMusic = currentDevice == "Mobile"
 		local favoriteCard = card(if compactMusic then 76 else 62)
 		label(favoriteCard, "★ Favorites", UDim2.fromOffset(12, if compactMusic then 5 else 7), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
