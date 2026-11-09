@@ -1240,7 +1240,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		local touchProfile = UserInputService.TouchEnabled or GuiService:IsTenFootInterface()
 		local minimumHeight = if touchProfile then 36 else 32
-		local minimumWidth = if touchProfile then 58 else 48
+		-- Compact icon-only queue controls keep their paired layout; labeled
+		-- actions receive a wider touch target without colliding with neighbors.
+		local minimumWidth = if iconKind then (if touchProfile then 40 else 34)
+			else (if touchProfile then 58 else 48)
 		local resolvedSize = UDim2.new(size.X.Scale, math.max(size.X.Offset, minimumWidth),
 			size.Y.Scale, math.max(size.Y.Offset, minimumHeight))
 		local displayText = if iconKind and iconKind ~= "reload" then "" elseif iconKind == "reload" then "RELOAD" else text
