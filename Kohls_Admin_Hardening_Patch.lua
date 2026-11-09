@@ -156,8 +156,19 @@ local newHandler = [=[local remoteEventCooldowns = {
 	KPing = 0.5,
 	KCam = 0.5,
 }
+-- Sensitive operations have a central minimum-power policy in addition to
+-- their handler-level checks. Power 5 is Kohl's Admin Owner and power 6 is Creator.
+local remoteEventMinimumPower = {
+	KDelete = 5,
+	KPaste = 5,
+	KUpdate = 5,
+}
 local remoteEventLast = {}
 local function allowRemoteEvent(player: Player, eventName: string): boolean
+	local requiredPower = remoteEventMinimumPower[eventName]
+	if requiredPower and f.getPower(player) < requiredPower then
+		return false
+	end
 	local now = os.clock()
 	local playerEvents = remoteEventLast[player]
 	if not playerEvents then
