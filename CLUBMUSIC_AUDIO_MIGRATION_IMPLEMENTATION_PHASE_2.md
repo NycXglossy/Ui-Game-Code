@@ -341,3 +341,7 @@ The Home dashboard now includes a horizontally scrollable set of featured genre 
 ## Complete Home genre navigation — phase 33
 
 Expanded the Home discovery strip to include every configured genre and added a direct All Tracks shortcut that clears the active search/filter before opening the catalog. This gives listeners both curated genre entry points and a one-step route to the complete catalog, while reusing the existing catalog state and request flow. Renderer source was re-fetched and verified; no Studio UI test was run.
+
+## Home favorite quick access — phase 34
+
+Added a compact Home favorites panel that reads the existing favorites snapshot, lists up to three saved tracks, and offers direct requests through the existing RequestTrack action. The panel includes an empty-state hint and a shortcut to the full Music library. It does not create a new favorites store, bypass request limits, or add network endpoints; request eligibility and limits remain server-authoritative. Renderer source was re-fetched and verified; no Studio UI test was run.
