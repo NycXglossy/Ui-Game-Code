@@ -74,7 +74,7 @@ end
 function ClubMusicErrorHandler.SafeRequire(moduleScript: Instance?, label: string): (boolean, any, string?)
 	if not moduleScript then
 		local id = ClubMusicErrorHandler.Report("ModuleLoader", "Find " .. label, "ModuleScript was not found", nil)
-		return false, nil, id
+		return false, "ModuleScript was not found: " .. label, id
 	end
 	if not moduleScript:IsA("ModuleScript") then
 		local id = ClubMusicErrorHandler.Report(
@@ -83,13 +83,13 @@ function ClubMusicErrorHandler.SafeRequire(moduleScript: Instance?, label: strin
 			"Expected ModuleScript; found " .. moduleScript.ClassName,
 			moduleScript
 		)
-		return false, nil, id
+		return false, "Expected ModuleScript; found " .. moduleScript.ClassName, id
 	end
 
 	local ok, result = pcall(require, moduleScript)
 	if not ok then
 		local id = ClubMusicErrorHandler.Report("ModuleLoader", "Require " .. label, result, moduleScript)
-		return false, nil, id
+		return false, result, id
 	end
 	return true, result, nil
 end
