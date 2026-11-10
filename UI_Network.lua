@@ -284,14 +284,29 @@ function Network.Init(): boolean
 
 		initialized = true
 		task.spawn(function()
-			local fetchOk, result = pcall(function()
-				return stateFunction:InvokeServer()
-			end)
-			-- A pushed update is authoritative if it arrived before this fetch completed.
-			if fetchOk and not receivedState then
-				applyState(result)
-			elseif not fetchOk then
-				warn("[ClubMusic Network] Initial state fetch failed: " .. tostring(result))
+			-- GetState is intentionally throttled on the server and may return nil
+			-- while its shared query budget is busy. A one-shot fetch can therefore
+			-- leave a late-joining client without a snapshot if the join broadcast
+			-- happened before this listener connected. Retry at a bounded interval;
+			-- any pushed StateChanged snapshot wins and cancels the remaining fetches.
+			local lastFetchError: string? = nil
+			for attempt = 1, 5 do
+				if destroyed or receivedState then return end
+				local fetchOk, result = pcall(function()
+					return stateFunction:InvokeServer()
+				end)
+				if fetchOk and typeof(result) == "table" then
+					-- A pushed update is authoritative if it arrived before this fetch completed.
+					if not receivedState then applyState(result) end
+					if receivedState then return end
+				elseif not fetchOk then
+					lastFetchError = tostring(result)
+				end
+				if attempt < 5 then task.wait(1.25) end
+			end
+			if not destroyed and not receivedState then
+				local detail = if lastFetchError then " Last error: " .. lastFetchError else " Server returned no snapshot."
+				warn("[ClubMusic Network] Initial state unavailable after 5 attempts." .. detail)
 			end
 		end)
 	end)
