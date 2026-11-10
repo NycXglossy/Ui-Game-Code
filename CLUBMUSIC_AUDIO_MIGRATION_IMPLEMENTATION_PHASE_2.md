@@ -272,3 +272,8 @@ Added an explicit controller-owned `destroyAudioCrossfadeManager(reason)` lifecy
 ## Guarded explicit crossfade entry point — phase 20
 
 Added `ControllerFunctions.beginAudioCrossfade(asset, duration)` as a deliberately explicit entry point. It requires an already-constructed optional crossfade manager, active non-paused playback, a numeric Roblox asset URI, and a duration from 0.25 through 12 seconds. It invokes the manager under `pcall` and returns a clear rejection rather than changing queue state or falling back to a second playback path. No automatic call sites were added. This is an integration seam for future UI/controller use, not permission to enable crossfade in production before Studio and multiplayer validation. The existing Sound remains canonical unless a caller explicitly initializes the manager and requests a transition. Source was re-fetched and compared after the update; no Roblox runtime tests were run.
+
+
+## Cancellation and teardown failure reporting — phase 21
+
+The crossfade manager now reports failures from incoming-deck stopping/cleanup and outgoing-gain restoration instead of always reporting cancellation success. Its `Cleanup()` method returns the cancellation result while still invalidating the transition and releasing its context. The controller's explicit destroy method now checks and reports a false cleanup result as well as thrown errors. The server package `ClubMusic_Audio_Server_Modules.rbxmx` was updated, and the embedded `ClubMusicAudioCrossfadeManager` source was re-extracted and verified byte-for-byte against the standalone module. The crossfade remains opt-in and is not activated automatically. Static source/package verification only; no Roblox Studio runtime tests were performed.
