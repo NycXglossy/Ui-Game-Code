@@ -103,8 +103,10 @@ function ServerMusicAudioHandler:GetTimeLength(): number
 end
 
 function ServerMusicAudioHandler:GetCurrentSoundId(): string?
-	local sound = self:GetSound()
-	return if sound then sound.SoundId else nil
+	if self.destroyed then return nil end
+	local snapshot = self:GetPlaybackSnapshot()
+	if typeof(snapshot.asset) == "string" then return snapshot.asset end
+	return nil
 end
 
 function ServerMusicAudioHandler:IsPlaying(): boolean
