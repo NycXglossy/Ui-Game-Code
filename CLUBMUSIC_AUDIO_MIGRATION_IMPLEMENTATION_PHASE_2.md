@@ -170,3 +170,12 @@ The current `ActiveMusicSoundCount` is also tied directly to the legacy Sound's 
 **Phase 8 decision: no second deck is instantiated and no playback route is switched.** The legacy Sound remains the sole live main-playback source. The next implementation must introduce a controller-owned active-deck contract and migrate all listed operations to it as one coordinated change, including failure rollback and cleanup of the outgoing deck after a successful atomic commit. The transition must not be enabled until that migration is complete and validated in Roblox Studio with multiple clients.
 
 Static audit only. No Roblox Studio runtime, audio-output, interruption, or multiplayer tests were run.
+
+
+## Backend-neutral playback facade inspection — phase 9
+
+The controller-owned `MusicPlaybackManager` now prefers the injected `GetAudioSnapshot` contract for both `IsPlaying()` and elapsed-position fallback. It uses the legacy `Sound` accessor only when a usable snapshot is unavailable. This removes two read-only facade dependencies on a concrete Sound instance and lets future controller injection expose an AudioPlayer-backed snapshot without changing callers of the facade.
+
+The existing controller still injects its canonical `ServerMusicSound`, and the controller's own play/stop/pause/resume, seek, reconciliation, watchdog, and SoundGroup routing paths remain unchanged. This is a compatibility improvement, not a playback cutover: no AudioPlayer deck is constructed, no second output is started, and crossfade remains disabled.
+
+Static source checks confirmed the snapshot-first paths and retained Sound fallback. Roblox Studio playback and multiplayer validation have not been run.
