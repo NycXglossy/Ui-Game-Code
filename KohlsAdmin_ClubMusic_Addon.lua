@@ -251,4 +251,13 @@ return function(_K: any)
 	register("clubmusic-maintenance", "Show or change ClubMusic global maintenance mode.", "Administration", "OperationalMaintenance", {"cmmaintenance"}, {
 		{type = "string", name = "Action", description = "Use on [message], off, or status.", optional = true},
 	})
+
+	-- DJ sessions are session ownership metadata only. ClubMusic independently
+	-- verifies the active caller and target against its server-side staff ranks.
+	register("clubmusic-djsession", "Show the active ClubMusic DJ session.", "General", "DJSessionStatus", {"cmdjsession"})
+	register("clubmusic-djstart", "Start your ClubMusic DJ session.", "General", "DJSessionStart", {"cmdjstart"})
+	register("clubmusic-djhandoff", "Hand off your DJ session to a connected staff member by numeric UserId.", "General", "DJSessionHandoff", {"cmdjhandoff"}, {
+		{type = "string", name = "UserId", description = "Numeric UserId of the connected ClubMusic staff member.", optional = false},
+	})
+	register("clubmusic-djend", "End your active ClubMusic DJ session.", "General", "DJSessionEnd", {"cmdjend"})
 end
