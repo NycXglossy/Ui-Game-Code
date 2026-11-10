@@ -7,9 +7,13 @@ function Service.new(d)
 end
 function Service:Set(enabled,message,actor)
  if typeof(enabled)~="boolean" then return false,"Invalid maintenance flag." end
+ if message~=nil and (typeof(message)~="string" or #message>240) then return false,"Maintenance message must be 240 characters or fewer." end
+ if message~=nil then
+  local msgOk,msgErr=self.d.configService:Set("maintenanceMessage",message,actor)
+  if not msgOk then return false,msgErr end
+ end
  local ok,err=self.d.configService:Set("maintenanceEnabled",enabled,actor)
  if not ok then return false,err end
- if message~=nil then local msgOk,msgErr=self.d.configService:Set("maintenanceMessage",tostring(message),actor); if not msgOk then return false,msgErr end end
  if self.d.publish then pcall(self.d.publish,{kind="Maintenance",enabled=enabled,message=self.d.configService:Get("maintenanceMessage")}) end
  return true
 end
