@@ -292,3 +292,8 @@ The wide-desktop rail now groups existing destinations under Listen, Festival, a
 ## Active navigation state styling — phase 24
 
 Added a narrow gold active-destination marker to the desktop side rail. It appears only for the selected tab in side-rail mode, while the existing selected background, icon, and label styling remains shared across layouts. The marker is hidden in compact horizontal navigation to avoid changing its geometry. This is presentation-only and preserves all existing tab routing and permission checks. Renderer source was re-fetched and compared after the update; no Studio visual test was run.
+
+
+## Dedicated staff playlist destination — phase 25
+
+Added a dedicated Playlists destination to the client navigation for authorized staff. It reuses the existing server-backed playlist manager UI and existing `GetMusicPlaylists`, create/play/delete/reorder/remove actions; it does not create another playlist store or remote. The All Tracks destination now focuses on the paginated catalog and retains the selected-playlist add-destination affordance, so staff can choose a playlist in Playlists and then add catalog tracks from All Tracks. The Playlists tab is hidden and guarded by the existing staff permission level. A native playlist-list icon was added to the navigation. Renderer source was re-fetched and compared after the update; no Studio permission/UI test was run.
