@@ -1048,6 +1048,18 @@ bindFunction("GetGlobalHealth", function()
 	return true, globalHealthService:GetStatus()
 end)
 
+bindFunction("RunGlobalReconciliation", function(actorUserId: any)
+	if not SERVICE_ENABLED or not globalStateReconciliationService
+		or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalConfig") then
+		return false, "Owner-level authorization and an enabled global service are required."
+	end
+	local ok, result = pcall(globalStateReconciliationService.Reconcile, globalStateReconciliationService)
+	if not ok or result ~= true then
+		return false, "Read-only queue reconciliation could not complete."
+	end
+	return true, globalStateReconciliationService:GetStatus()
+end)
+
 -- Server-only diagnostic snapshot for trusted scripts in ServerStorage.
 -- This API performs no DataStore/MessagingService calls and never changes service state.
 bindFunction("GetGlobalDiagnostics", function()
