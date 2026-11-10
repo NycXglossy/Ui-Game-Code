@@ -9,6 +9,8 @@ ServerMusicAudioHandler.__index = ServerMusicAudioHandler
 export type Context = {
 	Sound: Sound?,
 	Backend: any?,
+	GetSound: (() -> Sound?)?,
+	GetSnapshot: (() -> any)?,
 	GetPaused: (() -> boolean)?,
 	Play: ((string, number?) -> (boolean, string?))?,
 	Stop: (() -> (boolean, string?))?,
@@ -44,7 +46,7 @@ end
 
 function ServerMusicAudioHandler:GetSound(): Sound?
 	if self.destroyed then return nil end
-	local sound = self.context.Sound
+	local sound = if typeof(self.context.GetSound) == "function" then self.context.GetSound() else self.context.Sound
 	return if sound and sound.Parent then sound else nil
 end
 
@@ -60,6 +62,10 @@ end
 function ServerMusicAudioHandler:GetPlaybackSnapshot()
 	if self.destroyed then
 		return { kind = "Unavailable", ready = false, playing = false, paused = false, position = 0, length = 0, asset = "" }
+	end
+	if typeof(self.context.GetSnapshot) == "function" then
+		local ok, snapshot = pcall(self.context.GetSnapshot)
+		if ok and typeof(snapshot) == "table" then return snapshot end
 	end
 	local backend = self.context.Backend
 	if typeof(backend) == "table" then
