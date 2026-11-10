@@ -1602,7 +1602,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 		end
 
-		label(nowCard, nz(now.title, "The stage is warming up"), if stackedArtwork then UDim2.fromOffset(12, 130) else UDim2.fromOffset(leftInset, 8), if stackedArtwork then UDim2.new(1, -24, 0, 25) else UDim2.new(1, -(rightInset + 88), 0, 24), C.White, if stackedArtwork then 15 else 16, true)
+		local titleLabel = label(nowCard, nz(now.title, "The stage is warming up"), if stackedArtwork then UDim2.fromOffset(12, 130) else UDim2.fromOffset(leftInset, 8), if stackedArtwork then UDim2.new(1, -24, 0, 25) else UDim2.new(1, -(rightInset + 88), 0, 24), C.White, if stackedArtwork then 15 else 16, true)
+		titleLabel.TextWrapped = false
+		titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 		local paused = live and now.paused == true
 		local liveColor = if paused then C.Orange elseif live then C.Green else C.SurfaceLight
 		local liveBadge = make("TextLabel", {
@@ -1622,7 +1624,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if now.source == "player" and nz(now.requestedBy, "") ~= "" then
 			detail ..= "  •  requested by " .. tostring(now.requestedBy)
 		end
-		label(nowCard, detail, if stackedArtwork then UDim2.fromOffset(12, 156) else UDim2.fromOffset(leftInset, 34), UDim2.new(1, -(leftInset + 14), 0, 18), C.Muted, 11, false)
+		local detailLabel = label(nowCard, detail, if stackedArtwork then UDim2.fromOffset(12, 156) else UDim2.fromOffset(leftInset, 34), UDim2.new(1, -(leftInset + 14), 0, 18), C.Muted, 11, false)
+		detailLabel.TextWrapped = false
+		detailLabel.TextTruncate = Enum.TextTruncate.AtEnd
 		local bar = make("Frame", {
 			Position = UDim2.fromOffset(leftInset, if stackedArtwork then 196 else 66),
 			Size = UDim2.new(1, -(leftInset + 14), 0, 6),
