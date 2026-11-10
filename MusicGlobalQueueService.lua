@@ -56,6 +56,8 @@ type State = {
 	playback: Playback,
 	rotation: Rotation,
 	autoQueueHold: boolean,
+	catalogRevision: number,
+	catalogRemovalTrackId: string?,
 	updatedAt: number,
 	updatedBy: number,
 }
@@ -151,6 +153,8 @@ local function defaultState(): State
 		playback = {paused = false, position = 0, anchorTime = Workspace:GetServerTimeNow(), trackRevision = 0, restartRevision = 0},
 		rotation = {enabled = false, id = "", name = "", trackIds = {}, cursor = 1},
 		autoQueueHold = false,
+		catalogRevision = 0,
+		catalogRemovalTrackId = nil,
 		updatedAt = os.time(),
 		updatedBy = 0,
 	}
@@ -163,6 +167,9 @@ local function sanitizeState(raw: any): State
 	state.updatedAt = if finite(raw.updatedAt) then math.max(0, math.floor(raw.updatedAt)) else os.time()
 	state.updatedBy = if finite(raw.updatedBy) then math.max(0, math.floor(raw.updatedBy)) else 0
 	state.autoQueueHold = raw.autoQueueHold == true
+	state.catalogRevision = if finite(raw.catalogRevision)
+		then math.clamp(math.floor(raw.catalogRevision), 0, MAX_SAFE_INTEGER) else 0
+	state.catalogRemovalTrackId = if cleanText(raw.catalogRemovalTrackId, 32) then raw.catalogRemovalTrackId else nil
 	state.current = sanitizeEntry(raw.current)
 	if typeof(raw.queue) == "table" then
 		local seenIds: {[string]: boolean} = {}
@@ -282,11 +289,20 @@ function MusicGlobalQueueService:GetSnapshot(): (boolean, State?, string?)
 	return true, detached(cachedSnapshot), nil
 end
 
-function MusicGlobalQueueService:Enqueue(rawEntry: any, maxPlayerRequests: number?): (boolean, State?, string?)
+function MusicGlobalQueueService:Enqueue(rawEntry: any, maxPlayerRequests: number?, expectedCatalogRevision: any): (boolean, State?, string?)
 	local entry = sanitizeEntry(rawEntry)
 	if not entry then return false, nil, "Invalid queue entry." end
+	if not finite(expectedCatalogRevision) or expectedCatalogRevision < 0 then
+		return false, nil, "A valid catalog revision is required."
+	end
 	local playerCap = if finite(maxPlayerRequests) then math.clamp(math.floor(maxPlayerRequests), 1, MAX_QUEUE) else MAX_QUEUE
 	return transact(function(state)
+		if math.floor(expectedCatalogRevision) ~= state.catalogRevision then
+			return false, "Catalog changed on another server; refresh and retry."
+		end
+		if state.catalogRemovalTrackId == entry.trackId then
+			return false, "That catalog track is being removed; try again shortly."
+		end
 		if state.autoQueueHold and entry.source ~= "player" then
 			return false, "Automatic queue refill is paused until the current track changes."
 		end
@@ -326,7 +342,10 @@ end
 -- Commit automatic refill entries in one transaction. Queue target and playlist
 -- cursor are checked inside UpdateAsync, preventing concurrent servers from
 -- overfilling the Auto DJ queue or consuming the same rotation positions.
-function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any, targetQueueSize: any): (boolean, State?, string?)
+function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any, targetQueueSize: any, expectedCatalogRevision: any): (boolean, State?, string?)
+	if not finite(expectedCatalogRevision) or expectedCatalogRevision < 0 then
+		return false, nil, "A valid catalog revision is required."
+	end
 	if typeof(rawEntries) ~= "table" or #rawEntries < 1 or #rawEntries > 10 then
 		return false, nil, "Invalid automatic queue batch."
 	end
@@ -346,6 +365,9 @@ function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any
 	end
 	if #entries ~= #rawEntries then return false, nil, "Automatic queue batch must be a dense array." end
 	return transact(function(state)
+		if math.floor(expectedCatalogRevision) ~= state.catalogRevision then
+			return false, "Catalog changed on another server; refresh and retry."
+		end
 		if state.autoQueueHold then return false, "Automatic queue refill is paused until the current track changes." end
 		if #state.queue >= target then return false, "The global automatic queue target is already filled." end
 		local seenIds: {[string]: boolean} = {}
@@ -361,6 +383,9 @@ function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any
 		local added = 0
 		for _, entry in ipairs(entries) do
 			if #state.queue >= target or #state.queue >= hardLimit then break end
+			if state.catalogRemovalTrackId == entry.trackId then
+				return false, "An automatic track is being removed from the catalog; refresh and retry."
+			end
 			if seenIds[entry.id] or seenTracks[entry.trackId] then
 				return false, "Automatic queue batch contains a duplicate or already-playing track."
 			end
@@ -470,10 +495,17 @@ end
 
 -- Compare-and-swap transition: only one server can consume a given current
 -- track revision. The caller supplies a server-validated fallback when empty.
-function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEntry: any): (boolean, State?, string?)
+function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEntry: any, expectedCatalogRevision: any): (boolean, State?, string?)
 	if not finite(expectedTrackRevision) or expectedTrackRevision < 0 then return false, nil, "Invalid track revision." end
+	if not finite(expectedCatalogRevision) or expectedCatalogRevision < 0 then return false, nil, "A valid catalog revision is required." end
 	local fallback = sanitizeEntry(fallbackEntry)
 	return transact(function(state)
+		if math.floor(expectedCatalogRevision) ~= state.catalogRevision then
+			return false, "Catalog changed on another server; refresh and retry."
+		end
+		if state.catalogRemovalTrackId ~= nil and fallback and fallback.trackId == state.catalogRemovalTrackId then
+			return false, "The fallback track is being removed from the catalog."
+		end
 		if state.playback.trackRevision ~= math.floor(expectedTrackRevision) then
 			return false, "Track already advanced by another server."
 		end
@@ -498,6 +530,64 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 		state.playback.anchorTime = Workspace:GetServerTimeNow()
 		state.playback.trackRevision += 1
 		state.autoQueueHold = false
+		return true
+	end)
+end
+
+-- Catalog revisions fence stale server-side catalog caches from shared queue writes.
+-- A removal reservation is committed in this same DataStore before the separate
+-- catalog DataStore is changed. It remains pending until the controller confirms
+-- the catalog result, so a server crash cannot reopen the enqueue race.
+function MusicGlobalQueueService:ReserveCatalogRemoval(trackId: any, expectedCatalogRevision: any): (boolean, State?, string?)
+	if not cleanText(trackId, 32) or not string.match(trackId, "^[%w%-_]+$")
+		or not finite(expectedCatalogRevision) or expectedCatalogRevision < 0 then
+		return false, nil, "Invalid catalog removal request."
+	end
+	return transact(function(state)
+		if math.floor(expectedCatalogRevision) ~= state.catalogRevision then
+			return false, "Catalog changed on another server; refresh and retry."
+		end
+		if state.catalogRemovalTrackId == trackId then
+			return false, "Catalog removal is already reserved for this track."
+		end
+		if state.catalogRemovalTrackId ~= nil then
+			return false, "Another catalog removal is already in progress."
+		end
+		if state.current and state.current.trackId == trackId then
+			return false, "That track is currently playing globally."
+		end
+		for _, entry in ipairs(state.queue) do
+			if entry.trackId == trackId then return false, "That track is in the shared queue. Remove it first." end
+		end
+		if state.catalogRevision >= MAX_SAFE_INTEGER then
+			return false, "Catalog revision limit reached; removal is paused for safe recovery."
+		end
+		state.catalogRevision += 1
+		state.catalogRemovalTrackId = trackId
+		return true
+	end)
+end
+
+function MusicGlobalQueueService:CompleteCatalogRemoval(trackId: any): (boolean, State?, string?)
+	if not cleanText(trackId, 32) then return false, nil, "Invalid catalog track ID." end
+	return transact(function(state)
+		if state.catalogRemovalTrackId ~= trackId then
+			return false, "No matching catalog removal reservation exists."
+		end
+		state.catalogRemovalTrackId = nil
+		return true
+	end)
+end
+
+function MusicGlobalQueueService:AdvanceCatalogRevision(): (boolean, State?, string?)
+	return transact(function(state)
+		if state.catalogRemovalTrackId ~= nil then
+			return false, "A catalog removal is still in progress."
+		end
+		if state.catalogRevision >= MAX_SAFE_INTEGER then
+			return false, "Catalog revision limit reached; catalog writes are paused for safe recovery."
+		end
+		state.catalogRevision += 1
 		return true
 	end)
 end
