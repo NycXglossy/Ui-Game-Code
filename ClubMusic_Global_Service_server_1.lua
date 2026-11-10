@@ -872,7 +872,14 @@ globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Serv
 if globalWatchdogService then globalWatchdogService:Start() end
 
 -- Security services remain independent; authorization denies by default until a trusted resolver exists.
-globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {}, {"Start", "GetStatus", "Check"})
+globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {
+	resolvePermission = function(actorUserId, permission)
+		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
+		if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then return false end
+		local ok, allowed = pcall(function() return resolver:Invoke(actorUserId, permission) end)
+		return ok and allowed == true
+	end,
+}, {"Start", "GetStatus", "Check"})
 if globalAuthorizationService then globalAuthorizationService:Start() end
 local function authorizeGlobalActor(actorUserId: any, permission: string): boolean
 	if not globalAuthorizationService then return false end
