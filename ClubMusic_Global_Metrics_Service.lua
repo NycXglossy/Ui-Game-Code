@@ -3,7 +3,7 @@
 local Service={}; Service.__index=Service
 function Service.new(d)
  assert(type(d)=="table" and type(d.isEnabled)=="function" and d.memoryStoreService,"Metrics dependencies missing")
- local self=setmetatable({d=d,counters={},latency={},lastFlush=0,lastError=nil},Service)
+ local self=setmetatable({d=d,counters={},latency={},lastFlush=0,lastError=nil,aggregateCache=nil},Service)
  self.map=d.memoryStoreService:GetHashMap(d.mapName or "ClubMusic_GlobalMetrics_v1"); return self
 end
 function Service:Record(name,value)
@@ -33,12 +33,12 @@ function Service:GetAggregate()
  if not self.d.isEnabled() then return false,nil,"Disabled" end
  local ok,value=pcall(function() return self.map:GetAsync("aggregate") end)
  if not ok then self.lastError=tostring(value); return false,nil,self.lastError end
- return true,if typeof(value)=="table" then table.clone(value) else {counters={},latency={},updatedAt=0}
+ self.aggregateCache=if typeof(value)=="table" then table.clone(value) else {counters={},latency={},updatedAt=0}
+ return true,self.aggregateCache
 end
 function Service:GetStatus()
- local aggregateOk,aggregate,aggregateError=self:GetAggregate()
- return {state=if not self.d.isEnabled() then "Disabled" else if self.lastError or not aggregateOk then "Degraded" else "Healthy",
-  counters=table.clone(self.counters),aggregate=aggregate,lastFlush=self.lastFlush,lastError=self.lastError or aggregateError}
+ return {state=if not self.d.isEnabled() then "Disabled" else if self.lastError then "Degraded" else "Healthy",
+  counters=table.clone(self.counters),aggregate=self.aggregateCache,lastFlush=self.lastFlush,lastError=self.lastError}
 end
 function Service:Start() if self.running then return false end; self.running=true; task.spawn(function() while self.running do self:Flush(); task.wait(60) end end); return true end
 function Service:Stop() self.running=false; self:Flush() end
