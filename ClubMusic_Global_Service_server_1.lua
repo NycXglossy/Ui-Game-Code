@@ -808,13 +808,22 @@ globalRegistryService = createOperationalService("ClubMusic_Global_Server_Regist
 }, {"Start", "GetStatus", "GetServers"})
 if globalRegistryService then globalRegistryService:Start() end
 
-globalEventLogService = createOperationalService("ClubMusic_Global_Event_Log_Service", sharedDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
+local auditDependencies = table.clone(sharedDependencies)
+auditDependencies.isEnabled = function()
+	return SERVICE_ENABLED and globalConfigService ~= nil and globalConfigService:Get("auditEnabled") == true
+end
+local metricsDependencies = table.clone(sharedDependencies)
+metricsDependencies.isEnabled = function()
+	return SERVICE_ENABLED and globalConfigService ~= nil and globalConfigService:Get("metricsEnabled") == true
+end
+
+globalEventLogService = createOperationalService("ClubMusic_Global_Event_Log_Service", auditDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
 if globalEventLogService then globalEventLogService:Start() end
 
-globalMetricsService = createOperationalService("ClubMusic_Global_Metrics_Service", sharedDependencies, {"Start", "GetStatus", "GetAggregate", "Record", "ObserveLatency"})
+globalMetricsService = createOperationalService("ClubMusic_Global_Metrics_Service", metricsDependencies, {"Start", "GetStatus", "GetAggregate", "Record", "ObserveLatency"})
 if globalMetricsService then globalMetricsService:Start() end
 
-globalAuditService = createOperationalService("ClubMusic_Global_Audit_Service", sharedDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
+globalAuditService = createOperationalService("ClubMusic_Global_Audit_Service", auditDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
 if globalAuditService then globalAuditService:Start() end
 
 globalRateLimitService = createOperationalService("ClubMusic_Global_RateLimit_Service", {
