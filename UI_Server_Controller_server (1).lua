@@ -1030,6 +1030,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			transitionRevision = audioSourceRevision
 			local ok, value = ControllerFunctions.getAudioGain(transitionOutgoing)
 			if not ok then error("Outgoing audio gain is unavailable.") end
+			ControllerFunctions.crossfadeOutgoingBaseGain = value
 			return value
 		end,
 		SetOutgoingGain = function(value: number)
@@ -1082,6 +1083,31 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return false
 			end
 
+			-- If the global CAS has committed but a local source operation fails,
+			-- continue the authoritative track on the existing controller source.
+			-- The manager will treat this as a completed fallback and will not leak
+			-- the already-prepared incoming deck.
+			local function recoverCommittedGlobalTrack(): boolean
+				if not isGlobalTransition then return false end
+				activeAudioSource = outgoing
+				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
+				local baseGain = tonumber(ControllerFunctions.crossfadeOutgoingBaseGain) or 1
+				pcall(function() ControllerFunctions.setAudioGain(math.clamp(baseGain, 0, 1), outgoing) end)
+				ControllerFunctions.setNowPlaying(entry, true)
+				local fallbackAsset = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
+				ControllerFunctions.startServerMusic(fallbackAsset)
+				pcall(function() incoming:Stop() end)
+				local cleanupOk, cleanupResult = pcall(function() return incoming:Cleanup() end)
+				if not cleanupOk or cleanupResult == false then
+					warn("[ClubMusic][Crossfade] Incoming deck cleanup failed after global fallback.")
+				end
+				task.defer(function()
+					ControllerFunctions.topUpAuto()
+					publishState(nil)
+				end)
+				return true
+			end
+
 			-- Stop the outgoing source before changing ownership. If it cannot be
 			-- stopped, leave the old source authoritative so Cancel can restore gain.
 			local outgoingSnapshot = ControllerFunctions.getAudioSnapshot()
@@ -1098,13 +1124,17 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				end
 				return false
 			end)
-			if not stopOk or stopResult == false then return false end
+			if not stopOk or stopResult == false then
+				if recoverCommittedGlobalTrack() then return true end
+				return false
+			end
 
 			activeAudioSource = { kind = "Backend", backend = incoming }
 			local bindOk = pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
 			if not bindOk then
 				activeAudioSource = outgoing
 				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
+				if recoverCommittedGlobalTrack() then return true end
 				if outgoingWasPlaying then
 					pcall(function()
 						if outgoing.kind == "Backend" then
