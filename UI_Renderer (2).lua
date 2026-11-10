@@ -4360,7 +4360,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		nav.CanvasPosition = Vector2.zero
 		navDivider.Visible = sideRailMode
 		for index, heading in ipairs(navGroupLabels) do
-			heading.Visible = sideRailMode
+			heading.Visible = sideRailMode and (index ~= 3 or perm() >= 1)
 			heading.LayoutOrder = if index == 1 then 10 elseif index == 2 then 70 else 130
 		end
 		if sideRailMode then
