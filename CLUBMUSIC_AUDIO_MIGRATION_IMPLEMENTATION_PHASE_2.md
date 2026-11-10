@@ -85,3 +85,27 @@ Follow-up commits:
 The local preview output is targeted to the mounting player because Roblox documents `AudioDeviceOutput.Player` as the intended listener; an unset Player routes the stream to everyone. The probe uses AudioPlayer.Asset and IsReady, with ContentProvider.PreloadAsync retained for the existing asynchronous inspection contract.
 
 These changes are source-integrated but still require Studio validation of private/restricted assets, output routing, preview cancellation, and concurrent timeout cleanup.
+
+
+## DJ session controller integration — phase 3
+
+The optional `ClubMusicDJSessionManager` is now connected to the server controller when installed at `ServerStorage/ClubMusicAudioModules/ClubMusicDJSessionManager`. It is a session-ownership facade only: it does not grant staff rank, change queue ownership, or control playback.
+
+Kohl's Admin exposes these commands:
+- `;cmdjsession` — show the active local-server DJ session.
+- `;cmdjstart` — start a session for the caller.
+- `;cmdjhandoff <UserId>` — hand off to a connected player who already has ClubMusic staff permission.
+- `;cmdjend` — end the caller's active session.
+
+The controller independently verifies the caller's ClubMusic staff rank. Handoff verifies the target is connected and is already ClubMusic staff. The manager records a bounded 50-entry in-memory history and automatically ends the active session if its owner disconnects. Sessions are local to each game server and are not cross-server DJ leases.
+
+The server package must be dragged into Studio so the module is present. If the optional module is absent or fails to load, the rest of ClubMusic continues to start and the DJ session commands report that the module is unavailable.
+
+## Remaining audio integration gates
+
+- Player-local volume/preferences are still not connected to the live shared music stream. The current canonical output is the server-owned `ServerMusicSound` routed through `MusicGroup`; attaching a local fader only to the staff preview would not provide per-player control of the main music and would be misleading.
+- Crossfade is not enabled. The current controller still owns playback transitions; crossfade needs two real decks and one cancellation token covering skip, clear, restart, pause, reconciliation, and shutdown.
+- Spatial audio remains opt-in. A real venue emitter/listener placement and routing policy must be supplied before creating any route.
+- Audio quality profiles remain gain/speed presets, not EQ or effects processing.
+
+No Roblox Studio runtime or multiplayer tests have been run for this phase. Verify the module folder, start/handoff/end flows with two authorized staff accounts, and player departure cleanup in Studio before relying on it in a live server.
