@@ -39,13 +39,28 @@ local function invoke(label: string, callback: () -> any)
 	return ok, result
 end
 
-local baselineOk, baseline = pcall(function()
-	return stateFunction:InvokeServer()
-end)
-if not baselineOk or typeof(baseline) ~= "table" then
-	warn("[ClubMusic Security Test] Could not capture baseline state; action non-mutation check will be skipped.")
-	baseline = nil
+local function captureState(label: string)
+	-- GetState can legitimately return nil when its local/shared query budget
+	-- is exhausted or its cooldown is active. Retry slowly and report the
+	-- distinction instead of treating one nil response as a test failure.
+	for attempt = 1, 4 do
+		local ok, result = pcall(function()
+			return stateFunction:InvokeServer()
+		end)
+		if ok and typeof(result) == "table" then
+			print("[ClubMusic Security Test] STATE:", label, "captured on attempt", attempt)
+			return result
+		end
+		warn("[ClubMusic Security Test] STATE:", label, "unavailable on attempt", attempt,
+			"transportOk=", ok, "resultType=", if ok then typeof(result) else "error",
+			if not ok then tostring(result) else "")
+		if attempt < 4 then task.wait(1.5) end
+	end
+	warn("[ClubMusic Security Test] Could not capture " .. label .. " after retries; state comparison will be skipped.")
+	return nil
 end
+
+local baseline = captureState("baseline")
 
 print("[ClubMusic Security Test] Starting malformed-input smoke tests.")
 
@@ -96,11 +111,23 @@ for _, testCase in ipairs(catalogCases) do
 	task.wait(0.85)
 end
 
-local finalStateOk, finalState = pcall(function()
-	return stateFunction:InvokeServer()
+-- A valid control query helps distinguish malformed-argument rejection
+-- from a catalog service/budget outage. It must return a table to be useful.
+task.wait(1.25)
+local validCatalogOk, validCatalog = pcall(function()
+	return catalogFunction:InvokeServer("", "", 0, 10)
 end)
+if validCatalogOk and typeof(validCatalog) == "table" then
+	print("[ClubMusic Security Test] CONTROL PASS: valid catalog query returned table.")
+else
+	warn("[ClubMusic Security Test] CONTROL INCONCLUSIVE: valid catalog query returned",
+		if validCatalogOk then typeof(validCatalog) else "transport error",
+		if not validCatalogOk then tostring(validCatalog) else "")
+end
 
-if baseline and finalStateOk and typeof(finalState) == "table" then
+local finalState = captureState("post-test")
+
+if baseline and typeof(finalState) == "table" then
 	local unchanged = true
 	local function check(label: string, before: any, after: any)
 		if before ~= after then
