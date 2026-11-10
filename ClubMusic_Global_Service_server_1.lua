@@ -780,6 +780,8 @@ end
 local sharedDependencies = {
 	isEnabled = function() return SERVICE_ENABLED end,
 	memoryStoreService = MemoryStoreService,
+	dataStore = DataStoreService:GetDataStore("ClubMusic_GlobalConfig_v1"),
+	allowStoreOperation = allowGlobalQueueStoreOperation,
 	jobId = JOB_ID,
 	guid = function() return HttpService:GenerateGUID(false) end,
 }
