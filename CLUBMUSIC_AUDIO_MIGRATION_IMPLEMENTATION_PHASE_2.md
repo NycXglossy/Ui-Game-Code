@@ -120,3 +120,14 @@ This preserves one shared playback source while allowing each client to apply it
 The renderer cleans up the preference manager on both explicit UI destruction and GUI destruction. Staff preview gain follows the same local volume setting.
 
 **Validation boundary:** source changes and package contents can be checked in GitHub, but client-local SoundGroup behavior, device output, mute/restore behavior, and two-client volume independence still require Roblox Studio testing with two clients. Do not remove the legacy `ServerMusicSound` or `MusicGroup`.
+
+
+## Crossfade coordinator hardening — phase 5
+
+The standalone `ClubMusicAudioCrossfadeManager` now invalidates its generation before cancellation, stops and cleans the incoming deck defensively, restores outgoing gain after an interrupted or failed fade, validates the incoming deck contract, and protects deck calls and transition callbacks with `pcall`. It also checks that the same incoming deck still owns the active transition before committing.
+
+The controller must provide an atomic `OnCommit` callback: it must transfer playback ownership completely or return false without partially changing ownership. This manager update does **not** connect crossfade to the live controller, create a second active output, or change the legacy `ServerMusicSound` path. Crossfade remains opt-in and inactive until a coordinated dual-deck controller cutover covers skip, clear, pause, restart, reconciliation, watchdog, and shutdown.
+
+The server RBXMX package is refreshed with this exact manager source. Reinstall it by dragging the updated `ClubMusic_Audio_Server_Modules.rbxmx` into Studio and replacing the existing module folder contents as appropriate; do not import the standalone manager into a second active copy.
+
+Static checks cover cancellation invalidation, gain restoration, protected deck calls, incoming-deck ownership checks, and package/source parity. Roblox Studio playback and interruption tests have not been run.
