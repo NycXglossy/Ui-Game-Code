@@ -96,8 +96,17 @@ return function(_K: any)
 
 		local serverStorage = game:GetService("ServerStorage")
 		local bridge = serverStorage:FindFirstChild("ClubMusicAdminBridge")
+		-- The shared addon can initialize before the ClubMusic controller finishes
+		-- starting. Give the server-only bridge a short, bounded readiness window
+		-- instead of failing an otherwise-valid first command during startup.
+		if not bridge then
+			local waitOk, waitedBridge = pcall(function()
+				return serverStorage:WaitForChild("ClubMusicAdminBridge", 5)
+			end)
+			if waitOk then bridge = waitedBridge end
+		end
 		if not bridge or not bridge:IsA("BindableFunction") then
-			return finish(context, operation, "error", "ClubMusic admin bridge is unavailable. Check the server controller installation.")
+			return finish(context, operation, "error", "ClubMusic admin bridge is unavailable. Check the server controller installation and startup Output.")
 		end
 
 		local ok, accepted, message = pcall(function()
