@@ -680,12 +680,14 @@ ControllerFunctions.setAudioAsset = function(asset: string)
 	return true, nil
 end
 ControllerFunctions.seekAudio = function(position: number)
+	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Seek(position) end
 	source.instance.TimePosition = position
 	return true, nil
 end
 ControllerFunctions.playAudio = function()
+	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Play() end
 	source.instance:Play()
@@ -699,12 +701,14 @@ ControllerFunctions.stopAudio = function()
 	return true, nil
 end
 ControllerFunctions.pauseAudio = function()
+	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Pause() end
 	source.instance:Pause()
 	return true, nil
 end
 ControllerFunctions.resumeAudio = function()
+	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Resume() end
 	source.instance:Resume()
