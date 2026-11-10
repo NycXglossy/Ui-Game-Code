@@ -750,6 +750,8 @@ local autoQueueHold = false
 local globalQueueRevision = 0
 -- Catalog revision fences every shared enqueue/advance against stale local caches.
 local globalCatalogRevision = 0
+local globalCatalogChangeTrackId: string? = nil
+local globalCatalogChangeKind: string? = nil
 local localCatalogRevision = 0
 local refreshLocalCatalog: (() -> boolean)? = nil
 local globalQueueSyncBusy = false
@@ -1771,6 +1773,9 @@ local function applyGlobalQueueState(state: any): boolean
 	if not isFiniteNumber(catalogRevision) or catalogRevision < 0 or catalogRevision % 1 ~= 0
 		or catalogRevision > 9007199254740991 then return false end
 	globalCatalogRevision = math.max(globalCatalogRevision, catalogRevision)
+	globalCatalogChangeTrackId = if typeof(state.catalogChangeTrackId) == "string" then state.catalogChangeTrackId else nil
+	globalCatalogChangeKind = if state.catalogChangeKind == "add" or state.catalogChangeKind == "remove"
+		then state.catalogChangeKind else nil
 	if typeof(state.rotation) == "table" and state.rotation.enabled == true
 		and typeof(state.rotation.trackIds) == "table" then
 		activePlaylistId = tostring(state.rotation.id)
@@ -3301,6 +3306,17 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		end
 
 		local track = TRACK_BY_ID[trackId]
+		if globalQueueMode and not track then
+			-- A missing local record is valid only for an interrupted removal.
+			-- Refresh once so stale caches are not mistaken for completed deletion.
+			if syncGlobalQueueSnapshot and not syncGlobalQueueSnapshot() then
+				notify(player, "The shared catalog state could not be verified; track was not removed.", "warn"); return
+			end
+			if refreshLocalCatalog and refreshLocalCatalog() then track = TRACK_BY_ID[trackId] end
+			if not track and not (globalCatalogChangeTrackId == trackId and globalCatalogChangeKind == "remove") then
+				notify(player, "Custom catalog track not found.", "warn"); return
+			end
+		end
 		if not globalQueueMode then
 			if not track or track.assetId == nil then
 				notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
