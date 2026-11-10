@@ -957,6 +957,11 @@ ControllerFunctions.cancelAudioTransition = function(reason: string?)
 		warn("[ClubMusic] Audio transition cancellation reported a failure (" .. tostring(reason or "unspecified") .. "): " .. tostring(result))
 		return false
 	end
+	pendingCrossfadeEntry = nil
+	pendingCrossfadeToken = -1
+	pendingCrossfadeGlobalRevision = -1
+	pendingCrossfadeGlobalCommitted = false
+	pendingCrossfadeDeadline = 0
 	return true
 end
 
@@ -2551,6 +2556,8 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 			and pendingCrossfadeToken == audioTransitionTrackToken
 			and pendingCrossfadeGlobalRevision >= 0
 			and revision > pendingCrossfadeGlobalRevision
+			and state.playback.paused ~= true
+			and restartRevision <= previousRestartRevision
 			and typeof(current) == "table" and current.id == pendingPreparedEntry.id
 		if preservePreparedCrossfade then pendingCrossfadeGlobalCommitted = true end
 		if nowPlaying.trackId ~= current.trackId and not preservePreparedCrossfade then
@@ -2568,6 +2575,12 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 		-- Apply it even if the optional position helper is temporarily unavailable.
 		playbackPaused = state.playback.paused == true
 		local restartObserved = globalPlaybackInitialized and restartRevision > previousRestartRevision
+		if playbackPaused and not preservePreparedCrossfade then
+			local pendingManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
+			if pendingManager and pendingManager.active then
+				ControllerFunctions.cancelAudioTransition("global-snapshot-pause")
+			end
+		end
 		if preservePreparedCrossfade then
 			-- Keep the outgoing deck untouched until the prepared incoming deck
 			-- completes its local fade and commits controller ownership.
