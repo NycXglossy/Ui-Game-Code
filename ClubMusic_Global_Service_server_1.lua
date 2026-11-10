@@ -876,6 +876,10 @@ if globalWatchdogService then globalWatchdogService:Start() end
 
 -- Security services remain independent; authorization denies by default until a trusted resolver exists.
 globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {
+	isResolverAvailable = function()
+		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
+		return resolver ~= nil and resolver:IsA("BindableFunction") and resolver.Parent == ServerStorage
+	end,
 	resolvePermission = function(actorUserId, permission)
 		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
 		if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then return false end
@@ -928,6 +932,7 @@ if globalIdempotencyService then globalIdempotencyService:Start() end
 
 globalIncidentResponseService = createOperationalService("ClubMusic_Global_Incident_Response_Service", {
 	isEnabled = function() return SERVICE_ENABLED end,
+	memoryStoreService = MemoryStoreService,
 	authorize = authorizeGlobalActor,
 	guid = function() return HttpService:GenerateGUID(false) end,
 	onChange = function(action, incident)
@@ -1132,7 +1137,7 @@ bindFunction("ResolveGlobalSecurityIncident", function(id: any, actorUserId: any
 end)
 bindFunction("GetGlobalSecurityIncidents", function(limit: any)
 	if not globalIncidentResponseService then return false, {} end
-	return true, globalIncidentResponseService:GetRecent(limit)
+	return globalIncidentResponseService:GetRecent(limit)
 end)
 
 local function validEnvelope(data: any, topic: string): boolean
