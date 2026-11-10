@@ -45,7 +45,7 @@ The reservation is completed only after:
 1. The catalog refresh confirms the removed record is absent (or the removal call succeeds).
 2. Any active shared playlist rotation has been synchronized.
 
-If the catalog write outcome is uncertain, the reservation remains active. If the controller stops midway, retrying `;cmremove custom-<assetId>` resumes the same reservation. The reservation is deliberately not auto-expired: expiring it could reopen the race if the catalog write had committed just before a server stopped.
+If the catalog write outcome is uncertain, the reservation remains active. If the controller stops midway, retrying the catalog removal from the ClubMusic staff catalog UI for that same track resumes the same reservation. The reservation is deliberately not auto-expired: expiring it could reopen the race if the catalog write had committed just before a server stopped.
 
 ### Recovery behavior
 
