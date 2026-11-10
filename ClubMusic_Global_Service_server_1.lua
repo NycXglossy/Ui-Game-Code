@@ -1069,29 +1069,73 @@ bindFunction("ReportSignal", function(userId: any, signal: any, detail: any)
 	local cleanSignal = cleanText(signal, 48)
 	local cleanDetail = if detail == nil then "" else cleanText(detail, 180)
 	if not key or not cleanSignal then return false end
-	-- Reports are intentionally aggregated locally; do not publish attacker-controlled details globally.
 	local reportKey = key .. ":" .. cleanSignal
 	local previous = signalCounts[reportKey]
 	if previous == nil then
 		local keyCount = 0
 		for _ in pairs(signalCounts) do keyCount += 1 end
-		-- Diagnostics are best-effort; cap unique keys to prevent memory growth.
 		if keyCount >= MAX_SIGNAL_KEYS then return false end
 		previous = 0
 	end
 	local count = previous + 1
 	signalCounts[reportKey] = math.min(count, 100)
+	if globalSecurityMonitorService then pcall(globalSecurityMonitorService.Record, globalSecurityMonitorService, cleanSignal, key) end
 	if count == 1 then warn("[ClubMusic Global] Suspicious signal user=" .. key .. " type=" .. cleanSignal .. " detail=" .. (cleanDetail or "")) end
 	return true
 end)
 
-local function validEnvelope(data: any): boolean
-	if typeof(data) ~= "table" then return false end
-	if data.version ~= 1 or data.senderJob == JOB_ID then return false end
-	if typeof(data.id) ~= "string" or #data.id > 64 then return false end
-	if not finiteNumber(data.at) or math.abs(os.time() - data.at) > 120 then return false end
-	local ok, encoded = pcall(function() return HttpService:JSONEncode(data) end)
-	return ok and #encoded <= CONFIG.MaxMessageBytes
+bindFunction("AuthorizeGlobalAction", function(actorUserId: any, permission: any)
+	if typeof(permission) ~= "string" then return false, "Invalid permission." end
+	return authorizeGlobalActor(actorUserId, permission)
+end)
+bindFunction("GetGlobalSecurityStatus", function()
+	return true, {
+		Authorization = if globalAuthorizationService then globalAuthorizationService:GetStatus() else {state = "Unavailable"},
+		Monitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else {state = "Unavailable"},
+		MessageValidation = if globalMessageValidationService then globalMessageValidationService:GetStatus() else {state = "Unavailable"},
+		Idempotency = if globalIdempotencyService then globalIdempotencyService:GetStatus() else {state = "Unavailable"},
+		IncidentResponse = if globalIncidentResponseService then globalIncidentResponseService:GetStatus() else {state = "Unavailable"},
+		Policy = if globalSecurityPolicyService then globalSecurityPolicyService:GetAll() else nil,
+	}
+end)
+bindFunction("GetGlobalSecurityPolicy", function()
+	if not globalSecurityPolicyService then return false, nil end
+	return true, globalSecurityPolicyService:GetAll()
+end)
+bindFunction("SetGlobalSecurityPolicy", function(key: any, value: any, actorUserId: any)
+	if not globalSecurityPolicyService or typeof(key) ~= "string" then return false, "Policy service unavailable." end
+	return globalSecurityPolicyService:Set(key, value, actorUserId)
+end)
+bindFunction("ReserveGlobalOperation", function(operationId: any, ttlSeconds: any)
+	if not globalIdempotencyService then return false, "Idempotency service unavailable." end
+	return globalIdempotencyService:Reserve(operationId, ttlSeconds)
+end)
+bindFunction("OpenGlobalSecurityIncident", function(kind: any, summary: any, actorUserId: any)
+	if not globalIncidentResponseService then return false, "Incident service unavailable." end
+	return globalIncidentResponseService:Open(kind, summary, actorUserId)
+end)
+bindFunction("ResolveGlobalSecurityIncident", function(id: any, actorUserId: any)
+	if not globalIncidentResponseService then return false, "Incident service unavailable." end
+	return globalIncidentResponseService:Resolve(id, actorUserId)
+end)
+bindFunction("GetGlobalSecurityIncidents", function(limit: any)
+	if not globalIncidentResponseService then return false, {} end
+	return true, globalIncidentResponseService:GetRecent(limit)
+end)
+
+local function validEnvelope(data: any, topic: string): boolean
+	local valid, reason = false, "Message validation service unavailable."
+	if globalMessageValidationService then
+		valid, reason = globalMessageValidationService:Validate(topic, data)
+	else
+		valid = typeof(data) == "table" and data.version == 1 and data.senderJob ~= JOB_ID
+			and typeof(data.id) == "string" and #data.id > 0 and #data.id <= 64
+			and finiteNumber(data.at) and math.abs(os.time() - data.at) <= 120
+	end
+	if not valid and globalSecurityMonitorService then
+		pcall(globalSecurityMonitorService.Record, globalSecurityMonitorService, "invalid_message", topic)
+	end
+	return valid
 end
 
 local seenMessages: {[string]: number} = {}
@@ -1115,14 +1159,14 @@ end
 
 local function onAnnouncement(message)
 	local data = message.Data
-	if not validEnvelope(data) or data.kind ~= "Announcement" or not unseen(data.id) then return end
+	if not validEnvelope(data, "Announcements") or data.kind ~= "Announcement" or not unseen(data.id) then return end
 	local clean = cleanText(data.text, CONFIG.MaxAnnouncementLength)
 	if clean then globalEventBindable:Fire({kind = "Announcement", text = clean, actorUserId = data.actorUserId}) end
 end
 
 local function onModeration(message)
 	local data = message.Data
-	if not validEnvelope(data) or data.kind ~= "Moderation" or not unseen(data.id) then return end
+	if not validEnvelope(data, "Moderation") or data.kind ~= "Moderation" or not unseen(data.id) then return end
 	if not finiteNumber(data.userId) or (data.field ~= "globalBan" and data.field ~= "requestBlocked")
 		or typeof(data.value) ~= "boolean" then return end
 	globalEventBindable:Fire({kind = "Moderation", userId = data.userId, field = data.field, value = data.value, reason = cleanText(data.reason, CONFIG.MaxModerationReasonLength)})
@@ -1130,7 +1174,7 @@ end
 
 local function onXPBoost(message)
 	local data = if typeof(message) == "table" and typeof(message.Data) == "table" then message.Data else message
-	if typeof(data) ~= "table" or data.kind ~= "XPBoost"
+	if not validEnvelope(data, "XPBoost") or data.kind ~= "XPBoost"
 		or (data.multiplier ~= 1 and data.multiplier ~= 2 and data.multiplier ~= 4)
 		or not finiteNumber(data.expiresAt) or data.expiresAt < 0 then return end
 	local lowerExpiry = if finiteNumber(data.lowerExpiresAt) and data.lowerExpiresAt > os.time() then math.floor(data.lowerExpiresAt) else 0
@@ -1139,7 +1183,7 @@ end
 
 local function onDJ(message)
 	local data = message.Data
-	if not validEnvelope(data) or data.kind ~= "DJ" or not unseen(data.id) then return end
+	if not validEnvelope(data, "DJ") or data.kind ~= "DJ" or not unseen(data.id) then return end
 	if not allowedDJCommands[data.command] or not finiteNumber(data.actorUserId) then return end
 	local payload = if typeof(data.payload) == "table" then data.payload else {}
 	if data.command == "SetRequestLock" and typeof(payload.locked) ~= "boolean" then return end
@@ -1150,14 +1194,14 @@ end
 
 local function onCatalog(message)
 	local data = message.Data
-	if not validEnvelope(data) or data.kind ~= "Catalog" or not unseen(data.id) then return end
+	if not validEnvelope(data, "Catalog") or data.kind ~= "Catalog" or not unseen(data.id) then return end
 	-- The message carries invalidation only, never track metadata or executable commands.
 	globalEventBindable:Fire({kind = "Catalog", senderJob = data.senderJob, at = data.at})
 end
 
 local function onQueueChanged(message)
 	local data = if typeof(message) == "table" then message.Data else nil
-	if not validEnvelope(data) then return end
+	if not validEnvelope(data, "Queue") then return end
 	if data.kind == "ServerHeartbeat" then
 		if typeof(data.serverJob) ~= "string" or #data.serverJob < 1 or #data.serverJob > 64
 			or data.serverJob ~= data.senderJob or data.serverJob == JOB_ID then return end
