@@ -149,3 +149,30 @@ The bridge records denied/invalid security administration attempts through the e
 5. Publish to a controlled test environment and inspect `GetGlobalSecurityStatus` and `GetGlobalOperationalStatus`.
 
 This is static source integration only. Roblox Studio runtime, rank resolver behavior, MemoryStore atomic reservation behavior, and multi-server message handling still require your published test.
+
+
+## Kohl's Admin operational command bridge
+
+The server-only ClubMusic Admin bridge now exposes the operational service APIs through a fixed command allowlist. Kohl's Admin's Administration group is supplemented by independent ClubMusic rank authorization:
+
+- Admin (rank level 2): `;cmhealth`, `;cmservices`, `;cmmetrics`
+- Co-owner/Owner (rank level 3): `;cmdiagnostics`, `;cmerrors`, `;cmsecuritylog`, `;cmserverlist`, `;cmratelimit`, `;cmconfig`, `;cmrecovery`
+- Owner-level (rank level 3): `;cmreconcile`, `;cmmaintenance status|on|off`
+
+All inspection commands are read-only and share the addon's per-player inspection throttle. Error output is metadata-only (error ID, subsystem, operation); tracebacks and raw error messages are not exposed in command output. The server list omits JobIds. Reconciliation explicitly invokes the existing read-only state observer; it does not rewrite queue/catalog data. Maintenance changes require explicit `on` or `off` and are authorized again by the global API. The command reports maintenance configuration state; this setting is not represented as a guaranteed player-request enforcement gate.
+
+New aliases:
+- `;cmhealth`
+- `;cmdiagnostics`
+- `;cmservices`
+- `;cmerrors`
+- `;cmmetrics`
+- `;cmsecuritylog`
+- `;cmserverlist`
+- `;cmratelimit`
+- `;cmconfig`
+- `;cmrecovery`
+- `;cmreconcile`
+- `;cmmaintenance status`, `;cmmaintenance on [message]`, `;cmmaintenance off`
+
+These additions do not change the existing playback commands or the six security commands.
