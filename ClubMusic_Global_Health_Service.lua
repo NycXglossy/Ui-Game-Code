@@ -11,6 +11,7 @@ export type Dependencies = {
     apiFolder: Instance,
     queueModule: Instance,
     intervalSeconds: number?,
+    reportError: ((string, string, any, Instance?) -> any)?,
 }
 
 function HealthService.new(dependencies: Dependencies)
@@ -89,6 +90,9 @@ function HealthService:Start(): boolean
             local signature = state .. "|" .. detail
             if signature ~= self.lastSignature then
                 self.lastSignature = signature
+                if state == "Degraded" and type(dependencies.reportError) == "function" then
+                    pcall(dependencies.reportError, "GlobalHealth", "HealthCheck", detail, dependencies.apiFolder)
+                end
                 if state == "Healthy" then
                     print("[ClubMusic Global Health] " .. detail)
                 elseif state ~= "Disabled" then
