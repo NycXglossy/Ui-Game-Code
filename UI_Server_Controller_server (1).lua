@@ -2046,10 +2046,7 @@ task.spawn(function()
 				-- Use the controller's generation-checked transition path. It owns
 				-- the transition lock, authoritative CAS, snapshot application, and
 				-- post-transition queue refill; do not issue a parallel raw advance.
-				local recovered, recoveryError = advance(globalTrackRevision)
-				if not recovered and recoveryError then
-					warn("[ClubMusic] Global playback recovery is still pending: " .. tostring(recoveryError))
-				end
+				advance(globalTrackRevision)
 			end
 			-- Queue refill is performed by the server that wins the atomic track transition.
 			-- Periodic repair only refreshes missed state notifications; it must not make every server race to refill.
