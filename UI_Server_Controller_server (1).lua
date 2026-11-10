@@ -596,16 +596,16 @@ local queue: any = {}
 local queueManager: any = nil
 local globalQueueMode = false
 local globalTrackRevision = 0
-local globalPlaybackEndTime = 0
+ControllerFunctions.globalPlaybackEndTime = 0
 local localCatalogRevision = 0
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local nowPlaying: any = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
-local pendingCrossfadeGlobalRevision = -1
-local pendingCrossfadeGlobalCommitted = false
-local pendingCrossfadeDeadline = 0
+ControllerFunctions.pendingCrossfadeGlobalRevision = -1
+ControllerFunctions.pendingCrossfadeGlobalCommitted = false
+ControllerFunctions.pendingCrossfadeDeadline = 0
 local audioTransitionTrackToken = 0
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
