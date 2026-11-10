@@ -1943,7 +1943,12 @@ enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
 		for _, entry in ipairs(entries) do
 			if not TRACK_BY_ID[entry.trackId] then allTracksPresent = false; break end
 		end
-		if not allTracksPresent then return false, "An automatic track is no longer in the shared catalog; refill will be rebuilt." end
+		if not allTracksPresent then
+			-- Rebuild the Auto DJ batch from the refreshed catalog rather than
+			-- leaving a short queue after a stale server selected a deleted ID.
+			task.defer(topUpAuto)
+			return false, "An automatic track is no longer in the shared catalog; refill is being rebuilt."
+		end
 		callOk, writeOk, state, message = globalInvoke(
 			"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget, localCatalogRevision
 		)
@@ -3263,6 +3268,11 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			end
 			track = TRACK_BY_ID[trackId]
 			if track and track.assetId == nil then
+				local releaseCallOk, released, releaseState = globalInvoke("CompleteCatalogRemoval", trackId)
+				if typeof(releaseState) == "table" then applyGlobalQueueState(releaseState) end
+				if not releaseCallOk or released ~= true then
+					warn("[ClubMusic] Could not release an invalid catalog removal reservation.")
+				end
 				notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
 			end
 		end
