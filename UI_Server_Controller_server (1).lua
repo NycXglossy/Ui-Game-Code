@@ -134,7 +134,9 @@ local stateFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction",
 local catalogFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
 local playlistFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
 
-local serverStorage = game:GetService("ServerStorage")
+local ServerStorage = game:GetService("ServerStorage")
+-- Keep the established lowercase alias for existing storage-module loaders.
+local serverStorage = ServerStorage
 
 -- Diagnostics are optional: a missing handler must never prevent ClubMusic startup.
 local diagnosticsModule = serverStorage:FindFirstChild("ClubMusicErrorHandler")
@@ -1088,7 +1090,6 @@ end
 
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
-local ServerStorage = game:GetService("ServerStorage")
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
 local receiptHashModule = ServerStorage:WaitForChild("ClubMusic_ReceiptHash", 20)
 if not receiptHashModule or not receiptHashModule:IsA("ModuleScript") then
