@@ -21,7 +21,9 @@ The global queue DataStore state now includes:
 - `catalogChangeTrackId`: the ID currently being added or removed.
 - `catalogChangeKind`: `add` or `remove`.
 
-The new fields are backward-compatible with existing schema-version-1 queue state. The sanitizer defaults older records to revision zero and preserves the earlier in-branch removal reservation field during rollout.
+Only one catalog mutation reservation is active at a time. Add and remove reservations reject each other, preventing a restore from racing a removal.
+
+The new fields are backward-compatible with existing schema-version-1 queue state. The sanitizer defaults older records to revision zero and migrates the earlier in-branch `catalogRemovalTrackId` field to a removal reservation during rollout.
 
 ### Queue write fencing
 
