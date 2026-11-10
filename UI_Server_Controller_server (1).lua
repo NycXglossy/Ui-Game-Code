@@ -744,6 +744,23 @@ if not queueManagerRequireOk then
 	error("[ClubMusic] MusicQueueManager failed to load: " .. tostring(queueManagerRequireResult))
 end
 local MusicQueueManager = queueManagerRequireResult
+ControllerFunctions.ChildManagerModules = {}
+for _, moduleName in ipairs({
+	"ServerMusicAudioHandler",
+	"MusicPlaybackManager",
+	"MusicPlaylistManager",
+	"MusicSkipVoteManager",
+}) do
+	local moduleScript = ServerStorageForQueue:WaitForChild(moduleName, 20)
+	if not moduleScript or not moduleScript:IsA("ModuleScript") then
+		error("[ClubMusic] Missing ServerStorage." .. moduleName .. " ModuleScript.")
+	end
+	local requireOk, requireResult = pcall(require, moduleScript)
+	if not requireOk or typeof(requireResult) ~= "table" then
+		error("[ClubMusic] " .. moduleName .. " failed to load: " .. tostring(requireResult))
+	end
+	ControllerFunctions.ChildManagerModules[moduleName] = requireResult
+end
 local queueManager: any = nil
 local globalQueueMode = false
 local globalTrackRevision = 0
@@ -3684,18 +3701,13 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "VoteSkip" then
-		if skipVotes[player.UserId] then
-			notify(player, "You already voted to skip this track.", "warn")
+		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.SkipVote
+		if not manager then
+			notify(player, "Skip voting is temporarily unavailable.", "warn")
 			return
 		end
-		skipVotes[player.UserId] = true
-		if ControllerFunctions.checkSkipVotes() then
-			ControllerFunctions.broadcast("Track skipped by vote.", "ok")
-		else
-			local votes, needed = ControllerFunctions.skipStatus(nil)
-			notify(player, string.format("Skip vote counted (%d/%d).", votes, needed), "ok")
-		end
-		publishState(nil)
+		local accepted, message = manager:CastVote(player)
+		if accepted ~= true then notify(player, tostring(message or "Skip vote was rejected."), "warn") end
 		return
 	end
 
@@ -3706,13 +3718,15 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not playlistStorageReady or not MusicPlaylistService:IsReady() then
 			notify(player, "Playlist storage is unavailable.", "warn"); return
 		end
-		if ControllerFunctions.startPlaylistRotation(player, payload.playlistId) then publishState(nil) end
+		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playlist
+		if manager and manager:StartRotation(player, payload.playlistId) then publishState(nil) end
 		return
 	end
 
 	if action == "DJStopPlaylist" then
 		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can stop playlist rotation.", "warn"); return end
-		if ControllerFunctions.stopPlaylistRotation(player) then publishState(nil) end
+		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playlist
+		if manager and manager:StopRotation(player) then publishState(nil) end
 		return
 	end
 
@@ -4273,6 +4287,98 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	return true, if typeof(message) == "string" then message else "ClubMusic action accepted."
 end
 
+-- Construct the child managers only after their controller-owned callbacks and
+-- service state exist. These instances are facades; they do not start independent
+-- playback loops, sounds, queues, playlist cursors, or vote timers.
+ControllerFunctions.ChildManagers = {}
+local childManagerModules = ControllerFunctions.ChildManagerModules
+local audioManagerOk, audioManager = pcall(childManagerModules.ServerMusicAudioHandler.new, {
+	Sound = musicSound,
+	GetPaused = function() return playbackPaused end,
+})
+if not audioManagerOk then error("[ClubMusic] ServerMusicAudioHandler initialization failed: " .. tostring(audioManager)) end
+ControllerFunctions.ChildManagers.Audio = audioManager
+
+local playbackManagerOk, playbackManager = pcall(childManagerModules.MusicPlaybackManager.new, {
+	GetSnapshot = function()
+		return {
+			nowPlaying = table.clone(nowPlaying),
+			playbackPaused = playbackPaused,
+		}
+	end,
+	GetSound = function() return musicSound end,
+	GetElapsedTime = function() return nowPlaying.elapsed end,
+	TogglePause = function(player: Player)
+		return ControllerFunctions.handleAction(player, "DJPause", {}, false)
+	end,
+	RestartTrack = function(player: Player)
+		return ControllerFunctions.handleAction(player, "DJRestart", {}, false)
+	end,
+})
+if not playbackManagerOk then error("[ClubMusic] MusicPlaybackManager initialization failed: " .. tostring(playbackManager)) end
+ControllerFunctions.ChildManagers.Playback = playbackManager
+
+local playlistManagerOk, playlistManager = pcall(childManagerModules.MusicPlaylistManager.new, {
+	Service = MusicPlaylistService,
+	GetRotationState = function()
+		local trackIds = {}
+		for _, track in ipairs(activePlaylistTracks) do table.insert(trackIds, track.id) end
+		return {
+			active = activePlaylistId ~= nil or globalPlaylistRotationEnabled,
+			playlistId = activePlaylistId,
+			name = activePlaylistName,
+			cursor = activePlaylistCursor,
+			trackIds = trackIds,
+			global = globalQueueMode,
+		}
+	end,
+	StartRotation = function(player: Player, playlistId: any)
+		return ControllerFunctions.startPlaylistRotation(player, playlistId), nil
+	end,
+	StopRotation = function(player: Player)
+		return ControllerFunctions.stopPlaylistRotation(player), nil
+	end,
+	SelectNextTrack = function()
+		return ControllerFunctions.nextPlaylistTrack()
+	end,
+})
+if not playlistManagerOk then error("[ClubMusic] MusicPlaylistManager initialization failed: " .. tostring(playlistManager)) end
+ControllerFunctions.ChildManagers.Playlist = playlistManager
+
+local skipVoteManagerOk, skipVoteManager = pcall(childManagerModules.MusicSkipVoteManager.new, {
+	GetVoteState = function()
+		local votes, needed = ControllerFunctions.skipStatus(nil)
+		return {
+			active = nowPlaying.trackId ~= "",
+			votes = votes,
+			needed = needed,
+			playerCount = #Players:GetPlayers(),
+		}
+	end,
+	CastVote = function(player: Player)
+		if skipVotes[player.UserId] then return false, "You already voted to skip this track." end
+		skipVotes[player.UserId] = true
+		if ControllerFunctions.checkSkipVotes() then
+			ControllerFunctions.broadcast("Track skipped by vote.", "ok")
+		else
+			local votes, needed = ControllerFunctions.skipStatus(nil)
+			notify(player, string.format("Skip vote counted (%d/%d).", votes, needed), "ok")
+		end
+		publishState(nil)
+		return true, "Skip vote counted."
+	end,
+	RemoveVoter = function(userId: number)
+		skipVotes[userId] = nil
+		-- Defer until Players:GetPlayers() no longer includes the departing player.
+		task.defer(function()
+			if ControllerFunctions.checkSkipVotes() then ControllerFunctions.broadcast("Track skipped by vote.", "ok") end
+			publishState(nil)
+		end)
+	end,
+})
+if not skipVoteManagerOk then error("[ClubMusic] MusicSkipVoteManager initialization failed: " .. tostring(skipVoteManager)) end
+ControllerFunctions.ChildManagers.SkipVote = skipVoteManager
+
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
 	local ok, err = pcall(ControllerFunctions.handleAction, player, action, payload)
@@ -4730,12 +4836,17 @@ Players.PlayerRemoving:Connect(function(player)
 	sultanPass[userId] = nil
 	tempVip[userId] = nil
 	blockedUsers[userId] = nil
-	skipVotes[userId] = nil
-	-- The leaving player may still be counted by GetPlayers(); re-check next frame.
-	task.defer(function()
-		if ControllerFunctions.checkSkipVotes() then ControllerFunctions.broadcast("Track skipped by vote.", "ok") end
-		publishState(nil)
-	end)
+	local voteManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.SkipVote
+	if voteManager then
+		voteManager:UpdateVoteOnPlayerLeave(userId)
+	else
+		skipVotes[userId] = nil
+		-- The leaving player may still be counted by GetPlayers(); re-check next frame.
+		task.defer(function()
+			if ControllerFunctions.checkSkipVotes() then ControllerFunctions.broadcast("Track skipped by vote.", "ok") end
+			publishState(nil)
+		end)
+	end
 end)
 
 for _, player in ipairs(Players:GetPlayers()) do
