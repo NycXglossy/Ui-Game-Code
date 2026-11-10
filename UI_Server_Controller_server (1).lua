@@ -914,12 +914,14 @@ ControllerFunctions.destroyAudioCrossfadeManager = function(reason: string?): (b
 	local ok, result, detail = pcall(function()
 		return crossfade:Cleanup()
 	end)
+	-- Cleanup permanently destroys this manager even when it reports a resource
+	-- cleanup failure, so never leave a dead instance registered as reusable.
+	if managers.Crossfade == crossfade then
+		managers.Crossfade = nil
+	end
 	if not ok or result == false then
 		warn("[ClubMusic] Audio crossfade cleanup failed (" .. tostring(reason or "unspecified") .. "): " .. tostring(detail or result))
 		return false, "Audio crossfade manager cleanup failed."
-	end
-	if managers.Crossfade == crossfade then
-		managers.Crossfade = nil
 	end
 	return true, nil
 end
