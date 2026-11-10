@@ -1937,7 +1937,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function renderHome()
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
-		sectionLabel("NOW PLAYING  /  LIVE QUEUE")
+		local homeHeading = sectionLabel("NOW PLAYING  /  LIVE QUEUE")
+		local homeHeadingTitle = homeHeading:FindFirstChild("SectionTitle")
+		if homeHeadingTitle and homeHeadingTitle:IsA("TextLabel") then
+			homeHeadingTitle.Size = UDim2.new(1, -100, 0, 25)
+		end
+		actionButton(homeHeading, "FULL PLAYER", UDim2.new(1, -92, 0, 3), UDim2.fromOffset(84, 24), function()
+			activeTab = "Music"
+			if renderTabFn then renderTabFn() end
+		end, C.Cyan)
 
 		-- Choose the side-by-side player/queue layout from measured content width,
 		-- not the device label. Desktop windows can be narrow, and tablet/console
