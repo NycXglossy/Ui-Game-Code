@@ -1853,9 +1853,17 @@ end
 syncGlobalQueueSnapshot = function(): boolean
 	if not globalQueueMode or globalQueueSyncBusy then return false end
 	globalQueueSyncBusy = true
-	local callOk, readOk, state = globalInvoke("GetGlobalQueueState")
-	local applied = callOk and readOk == true and applyGlobalQueueState(state)
+	-- A malformed or unexpectedly-shaped bridge response must not strand the
+	-- sync lock. Keep the whole read/apply path protected and always release it.
+	local syncOk, applied = pcall(function(): boolean
+		local callOk, readOk, state = globalInvoke("GetGlobalQueueState")
+		return callOk == true and readOk == true and applyGlobalQueueState(state)
+	end)
 	globalQueueSyncBusy = false
+	if not syncOk then
+		warn("[ClubMusic] Global queue snapshot reconciliation failed: " .. tostring(applied))
+		return false
+	end
 	if applied then publishState(nil) end
 	return applied == true
 end
