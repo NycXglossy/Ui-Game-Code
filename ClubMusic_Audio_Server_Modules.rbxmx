@@ -221,8 +221,9 @@ local function safeMethod(object: any, methodName: string, ...: any): (boolean, 
 end
 
 local function setOutgoingGain(context: any, gain: number): boolean
+	-- Missing gain control is a hard failure, never a silent full-volume fallback.
 	if typeof(context) ~= "table" or typeof(context.SetOutgoingGain) ~= "function" then
-		return true
+		return false
 	end
 	local ok, result = pcall(context.SetOutgoingGain, gain)
 	return ok and result ~= false
