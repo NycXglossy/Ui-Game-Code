@@ -73,6 +73,12 @@ local globalMaintenanceService: any = nil
 local globalMetricsService: any = nil
 local globalAuditService: any = nil
 local globalRateLimitService: any = nil
+local globalAuthorizationService: any = nil
+local globalSecurityMonitorService: any = nil
+local globalMessageValidationService: any = nil
+local globalIdempotencyService: any = nil
+local globalIncidentResponseService: any = nil
+local globalSecurityPolicyService: any = nil
 local budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
 local moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 local globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
@@ -865,6 +871,60 @@ globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Serv
 }, {"Start", "GetStatus", "Check"})
 if globalWatchdogService then globalWatchdogService:Start() end
 
+-- Security services remain independent; authorization denies by default until a trusted resolver exists.
+globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {}, {"Start", "GetStatus", "Check"})
+if globalAuthorizationService then globalAuthorizationService:Start() end
+local function authorizeGlobalActor(actorUserId: any, permission: string): boolean
+	if not globalAuthorizationService then return false end
+	local ok, allowed = pcall(globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission)
+	return ok and allowed == true
+end
+
+globalSecurityPolicyService = createOperationalService("ClubMusic_Global_Security_Policy_Service", {
+	authorize = authorizeGlobalActor,
+	onChange = function(key, value, revision, actor)
+		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", actor, key, "policy-update") end
+		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecurityPolicyChanged", key, "Info") end
+	end,
+}, {"Start", "GetStatus", "Get", "GetAll", "Set"})
+if globalSecurityPolicyService then globalSecurityPolicyService:Start() end
+
+globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Security_Monitor_Service", {
+	isEnabled = function() return SERVICE_ENABLED and globalSecurityPolicyService ~= nil and globalSecurityPolicyService:Get("monitoringEnabled") == true end,
+	threshold = if globalSecurityPolicyService then globalSecurityPolicyService:Get("suspiciousSignalThreshold") else 8,
+	onAlert = function(signal, count)
+		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", 0, signal, "threshold-reached:" .. tostring(count)) end
+		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecuritySignal", signal, "Warning") end
+	end,
+}, {"Start", "GetStatus", "Record"})
+if globalSecurityMonitorService then globalSecurityMonitorService:Start() end
+
+globalMessageValidationService = createOperationalService("ClubMusic_Global_Message_Validation_Service", {
+	getJobId = function() return JOB_ID end,
+	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
+	maxBytes = if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxBytes") else CONFIG.MaxMessageBytes,
+	getMaxAge = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxAgeSeconds") else 120 end,
+}, {"Start", "GetStatus", "Validate"})
+if globalMessageValidationService then globalMessageValidationService:Start() end
+
+globalIdempotencyService = createOperationalService("ClubMusic_Global_Idempotency_Service", {
+	isEnabled = function() return SERVICE_ENABLED end,
+	memoryStoreService = MemoryStoreService,
+	guid = function() return HttpService:GenerateGUID(false) end,
+}, {"Start", "GetStatus", "Reserve"})
+if globalIdempotencyService then globalIdempotencyService:Start() end
+
+globalIncidentResponseService = createOperationalService("ClubMusic_Global_Incident_Response_Service", {
+	isEnabled = function() return SERVICE_ENABLED end,
+	authorize = authorizeGlobalActor,
+	guid = function() return HttpService:GenerateGUID(false) end,
+	onChange = function(action, incident)
+		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", incident.actorUserId, incident.kind, "incident-" .. action) end
+		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecurityIncident", incident.kind .. ":" .. incident.id, action) end
+	end,
+}, {"Start", "GetStatus", "Open", "Resolve", "GetRecent"})
+if globalIncidentResponseService then globalIncidentResponseService:Start() end
+
 globalEventBindable.Event:Connect(function(event)
 	if typeof(event) ~= "table" then return end
 	local kind = tostring(event.kind or "Unknown")
@@ -913,6 +973,12 @@ bindFunction("GetGlobalOperationalStatus", function()
 		Metrics = if globalMetricsService then globalMetricsService:GetStatus() else {state = "Unavailable"},
 		Audit = if globalAuditService then globalAuditService:GetStatus() else {state = "Unavailable"},
 		RateLimit = if globalRateLimitService then globalRateLimitService:GetStatus() else {state = "Unavailable"},
+		Authorization = if globalAuthorizationService then globalAuthorizationService:GetStatus() else {state = "Unavailable"},
+		SecurityMonitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else {state = "Unavailable"},
+		MessageValidation = if globalMessageValidationService then globalMessageValidationService:GetStatus() else {state = "Unavailable"},
+		Idempotency = if globalIdempotencyService then globalIdempotencyService:GetStatus() else {state = "Unavailable"},
+		IncidentResponse = if globalIncidentResponseService then globalIncidentResponseService:GetStatus() else {state = "Unavailable"},
+		SecurityPolicy = if globalSecurityPolicyService then globalSecurityPolicyService:GetStatus() else {state = "Unavailable"},
 	}
 	return true, status
 end)
@@ -990,6 +1056,9 @@ bindFunction("GetGlobalDiagnostics", function()
 			registry = if globalRegistryService then globalRegistryService:GetStatus() else nil,
 			metrics = if globalMetricsService then globalMetricsService:GetStatus() else nil,
 			watchdog = if globalWatchdogService then globalWatchdogService:GetStatus() else nil,
+			securityMonitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else nil,
+			messageValidation = if globalMessageValidationService then globalMessageValidationService:GetStatus() else nil,
+			idempotency = if globalIdempotencyService then globalIdempotencyService:GetStatus() else nil,
 		},
 	}
 end)
