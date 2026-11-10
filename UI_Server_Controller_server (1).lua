@@ -1071,7 +1071,6 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return false
 			end
 
-			audioSourceRevision += 1
 			-- Commit only the exact queue entry whose asset was prepared.
 			local popped = queueManager and queueManager:PopNext()
 			if popped ~= entry then
@@ -1085,6 +1084,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				end
 				return false
 			end
+			audioSourceRevision += 1
 			ControllerFunctions.setNowPlaying(entry, true)
 			task.defer(function()
 				ControllerFunctions.topUpAuto()
