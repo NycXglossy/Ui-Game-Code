@@ -693,9 +693,6 @@ local function reportOperationalError(subsystem: string, operation: string, err:
 			pcall(globalMetricsService.Record, globalMetricsService, "playbackFailure", 1)
 		end
 	end
-	if globalEventLogService then
-		pcall(globalEventLogService.Record, globalEventLogService, "OperationalError", tostring(subsystem) .. "." .. tostring(operation), "Error")
-	end
 	if globalErrorHandler then
 		local reportOk, reportResult = pcall(
 			globalErrorHandler.Report,
@@ -941,6 +938,22 @@ globalIncidentResponseService = createOperationalService("ClubMusic_Global_Incid
 	end,
 }, {"Start", "GetStatus", "Open", "Resolve", "GetRecent"})
 if globalIncidentResponseService then globalIncidentResponseService:Start() end
+
+-- Route the shared ErrorHandler's new, deduplicated records into the existing
+-- operational event log. Only metadata is forwarded; messages and tracebacks
+-- remain in the bounded local diagnostic history and server Output.
+if globalErrorHandler and type(globalErrorHandler.SetReporter) == "function" then
+	local reporterOk, reporterResult = pcall(globalErrorHandler.SetReporter, function(record)
+		if typeof(record) ~= "table" or not globalEventLogService then return end
+		local subsystem = if typeof(record.subsystem) == "string" then string.sub(record.subsystem, 1, 64) else "Unknown"
+		local operation = if typeof(record.operation) == "string" then string.sub(record.operation, 1, 96) else "Unknown"
+		local errorId = if typeof(record.id) == "string" then string.sub(record.id, 1, 32) else "Unknown"
+		pcall(globalEventLogService.Record, globalEventLogService, "OperationalError", subsystem .. "." .. operation .. ":" .. errorId, "Error")
+	end)
+	if not reporterOk or reporterResult ~= true then
+		warn("[ClubMusic Global] Could not connect ErrorHandler telemetry reporter: " .. tostring(reporterResult))
+	end
+end
 
 globalEventBindable.Event:Connect(function(event)
 	if typeof(event) ~= "table" then return end
