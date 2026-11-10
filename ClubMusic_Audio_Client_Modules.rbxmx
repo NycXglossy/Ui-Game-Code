@@ -12,6 +12,13 @@ local function finite(value)
 	return typeof(value) == "number" and value == value and math.abs(value) < math.huge
 end
 
+local VALID_PROFILES = {
+	Standard = true,
+	Soft = true,
+	Bass = true,
+	Night = true,
+}
+
 function Preferences.new(context)
 	assert(typeof(context) == "table", "Player preferences require a local audio context.")
 	assert(typeof(context.SetLocalGain) == "function", "Player preferences require SetLocalGain.")
@@ -37,13 +44,27 @@ function Preferences:SetMuted(value: boolean)
 end
 
 function Preferences:SetProfile(value: string)
-	if self.destroyed or typeof(value) ~= "string" or #value > 24 then return false, "Invalid preference profile." end
+	if self.destroyed or typeof(value) ~= "string" or not VALID_PROFILES[value] then
+		return false, "Unknown preference profile."
+	end
+	local previous = self.profile
 	self.profile = value
 	if typeof(self.context.SetLocalProfile) == "function" then
 		local ok, result = pcall(self.context.SetLocalProfile, value)
-		if not ok or result == false then return false, "Local profile could not be applied." end
+		if not ok or result == false then
+			self.profile = previous
+			return false, "Local profile could not be applied."
+		end
 	end
-	return self:Apply()
+	local applied, message = self:Apply()
+	if not applied then
+		self.profile = previous
+		if typeof(self.context.SetLocalProfile) == "function" then
+			pcall(self.context.SetLocalProfile, previous)
+		end
+		return false, message
+	end
+	return true, nil
 end
 
 function Preferences:Apply()
