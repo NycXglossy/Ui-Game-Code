@@ -596,6 +596,7 @@ local queue: any = {}
 local queueManager: any = nil
 local globalQueueMode = false
 local globalTrackRevision = 0
+local globalPlaybackEndTime = 0
 local localCatalogRevision = 0
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local nowPlaying: any = nil
