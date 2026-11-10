@@ -1141,18 +1141,23 @@ bindFunction("GetGlobalSecurityIncidents", function(limit: any)
 end)
 
 local function validEnvelope(data: any, topic: string): boolean
-	local valid, reason = false, "Message validation service unavailable."
-	if globalMessageValidationService then
-		valid, reason = globalMessageValidationService:Validate(topic, data)
-	else
-		valid = typeof(data) == "table" and data.version == 1 and data.senderJob ~= JOB_ID
-			and typeof(data.id) == "string" and #data.id > 0 and #data.id <= 64
-			and finiteNumber(data.at) and math.abs(os.time() - data.at) <= 120
+	-- Cross-server messages must never fall back to a weaker envelope check.
+	-- If the dedicated validator is missing or failed to initialize, reject the
+	-- message and let the existing subscription/reconciliation paths recover.
+	if not globalMessageValidationService then
+		if globalSecurityMonitorService then
+			pcall(globalSecurityMonitorService.Record, globalSecurityMonitorService, "message_validator_unavailable", topic)
+		end
+		return false
 	end
-	if not valid and globalSecurityMonitorService then
-		pcall(globalSecurityMonitorService.Record, globalSecurityMonitorService, "invalid_message", topic)
+	local ok, valid = pcall(globalMessageValidationService.Validate, globalMessageValidationService, topic, data)
+	if not ok or valid ~= true then
+		if globalSecurityMonitorService then
+			pcall(globalSecurityMonitorService.Record, globalSecurityMonitorService, "invalid_message", topic)
+		end
+		return false
 	end
-	return valid
+	return true
 end
 
 local seenMessages: {[string]: number} = {}
