@@ -7,6 +7,9 @@ function Service.new(d)
 end
 function Service:Consume(key,capacity,refill,cost)
  if not self.d.isEnabled() then return true,true end
+ if type(key)~="string" or #key<1 or #key>100 or type(capacity)~="number" or capacity<=0
+  or type(refill)~="number" or refill<0 or type(cost)~="number" or cost<=0 or cost>capacity
+  or capacity==math.huge or refill==math.huge or cost==math.huge then return false,false end
  self.checks+=1
  local ok,shared=self.d.consumeShared(key,capacity,refill,cost)
  if not ok then self.rejected+=1 end
