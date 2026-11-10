@@ -217,3 +217,9 @@ A focused review of the dormant handoff against the actual ClubMusicAudioBackend
 The backend contract confirms that Play(nil, position) is supported after SetAsset(asset), and that Pause() preserves its position in backend state before stopping the AudioPlayer. This phase therefore fixes controller-side contract and lifecycle handling without changing the backend module or its package.
 
 **Safety boundary remains unchanged:** the backend is still not constructed by the controller, the adoption seam is still not called automatically, the legacy ServerMusicSound remains the only live main output, and crossfade remains disabled. These are static source changes only; asset readiness, actual audio output, rollback behavior, and multiplayer behavior still require Roblox Studio validation before cutover.
+
+## Crossfade readiness gate — phase 13
+
+The standalone crossfade coordinator and the server RBXMX package now require incoming decks to expose SetAsset and IsReady. A transition first mutes the incoming deck, assigns the requested asset, and waits up to eight seconds for readiness before starting playback and beginning the fade. If readiness times out or the operation is cancelled, the incoming deck is stopped and cleaned up while the outgoing controller-owned deck is restored to full gain. This prevents a buffering AudioPlayer from causing the currently audible track to fade prematurely.
+
+The manager remains dormant: the server controller does not instantiate it, no crossfade is started, and the existing ServerMusicSound remains the live main output. No Roblox Studio playback or multiplayer tests were run; this change is source/package preparation only.
