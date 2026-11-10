@@ -17,8 +17,9 @@ Branch: `audit/hardened-clubmusic-2026-11-08`
 - Existing skip, pause/resume, restart, queue clear, track replacement, source adoption, global reconciliation, and shutdown cancellation hooks remain in place.
 - The incoming deck starts muted.
 - Outgoing gain is captured and restored on cancellation/failure.
-- A 2-second boundary grace period allows a completed fade to finish its ownership commit but prevents a stuck transition from blocking the normal advance path.
-- Tracks without valid audio assets, silent catalog entries, and short tracks are not crossfaded.
+- A 2-second boundary grace period allows a fade that has reached the end to finish its ownership commit but prevents a stuck transition from blocking normal advance.
+- Tracks without valid audio assets, silent catalog entries, and tracks too short for the configured fade are not crossfaded.
+- Failed queue-pop or source-binding commits restore the outgoing source before the manager's cancellation restores its gain.
 
 ### Timing
 - Preparation lead: 14 seconds.
@@ -28,7 +29,7 @@ Branch: `audit/hardened-clubmusic-2026-11-08`
 
 ## Deliberate scope boundary
 
-Automatic crossfade currently runs only in local queue mode. It is deliberately skipped when the cross-server global queue is authoritative. That mode needs a distributed reservation/commit protocol so every server can fade to the same authoritative next track without competing to advance the global queue or reverting to the legacy source on reconciliation.
+Automatic crossfade currently runs only in local queue mode. It is deliberately skipped when the cross-server global queue is authoritative. That mode needs a distributed reservation/commit protocol so every server can fade to the same authoritative next track without competing to advance the global queue or reverting to the legacy source during reconciliation.
 
 ## Files changed
 - `UI_Server_Controller_server (1).lua`
