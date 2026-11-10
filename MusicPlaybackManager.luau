@@ -12,8 +12,8 @@ export type Context = {
 	GetElapsedTime: (() -> number)?,
 	PlayTrack: ((any, any?) -> (boolean, string?))?,
 	StopTrack: (() -> (boolean, string?))?,
-	TogglePause: (() -> (boolean, string?))?,
-	RestartTrack: (() -> (boolean, string?))?,
+	TogglePause: ((Player) -> (boolean, string?))?,
+	RestartTrack: ((Player) -> (boolean, string?))?,
 }
 
 local function call(callback: any, ...)
@@ -103,14 +103,20 @@ function MusicPlaybackManager:Stop()
 	return call(self.context.StopTrack)
 end
 
-function MusicPlaybackManager:Pause()
+function MusicPlaybackManager:Pause(player: Player)
 	if self.destroyed then return false, "Playback adapter has been cleaned up." end
-	return call(self.context.TogglePause)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent == nil then
+		return false, "A connected player is required."
+	end
+	return call(self.context.TogglePause, player)
 end
 
-function MusicPlaybackManager:Restart()
+function MusicPlaybackManager:Restart(player: Player)
 	if self.destroyed then return false, "Playback adapter has been cleaned up." end
-	return call(self.context.RestartTrack)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent == nil then
+		return false, "A connected player is required."
+	end
+	return call(self.context.RestartTrack, player)
 end
 
 function MusicPlaybackManager:Reset()
