@@ -4,18 +4,48 @@ local Players = game:GetService("Players")
 local MusicValidationService = {}
 MusicValidationService.__index = MusicValidationService
 
-function MusicValidationService.new(config)
+function MusicValidationService.new(config, assetInfoProvider)
 	local self = setmetatable({}, MusicValidationService)
-
-	self.config = config
-	-- Add default cache duration if not in config
-	self.config.MUSIC_ID_CACHE_DURATION = config.MUSIC_ID_CACHE_DURATION or 3600
-
+	self.config = config or {}
+	self.config.MUSIC_ID_CACHE_DURATION = self.config.MUSIC_ID_CACHE_DURATION or 3600
+	self.cacheTTLSeconds = math.clamp(tonumber(self.config.CacheTTLSeconds) or 300, 1, 3600)
+	self.maxCacheEntries = math.clamp(math.floor(tonumber(self.config.MaxCacheEntries) or 128), 16, 1024)
+	self.assetInfoProvider = if typeof(assetInfoProvider) == "function" then assetInfoProvider else function(assetId)
+		return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
+	end
 	self.musicIdCache = {}
 	self.playerCooldowns = {}
 	self.playerLastAction = {}
-
 	return self
+end
+
+-- Metadata cache only. The controller still performs its separate preload and
+-- experience-permission check; a cache hit never proves that audio is playable.
+function MusicValidationService:GetAudioAssetInfo(assetId)
+	local numericId = tonumber(assetId)
+	if not numericId or numericId < 1 or numericId % 1 ~= 0 then
+		return false, "Invalid audio asset ID."
+	end
+	local key = tostring(numericId)
+	local now = os.clock()
+	local cached = self.musicIdCache[key]
+	if cached and now - cached.timestamp < self.cacheTTLSeconds then
+		return cached.valid, cached.data or cached.error
+	end
+	local ok, info = pcall(self.assetInfoProvider, numericId)
+	if not ok or typeof(info) ~= "table" then
+		return false, "Audio asset metadata is temporarily unavailable."
+	end
+	self.musicIdCache[key] = { valid = true, data = info, timestamp = now }
+	local count, oldestKey, oldestTime = 0, nil, nil
+	for cacheKey, item in pairs(self.musicIdCache) do
+		count += 1
+		if not oldestTime or item.timestamp < oldestTime then
+			oldestKey, oldestTime = cacheKey, item.timestamp
+		end
+	end
+	if count > self.maxCacheEntries and oldestKey then self.musicIdCache[oldestKey] = nil end
+	return true, info
 end
 
 -- ====================================
