@@ -8,6 +8,7 @@ HealthService.__index = HealthService
 export type Dependencies = {
     isEnabled: () -> boolean,
     getRecoveryStatus: () -> {[string]: any},
+    getSyncStatus: () -> {[string]: any},
     apiFolder: Instance,
     queueModule: Instance,
     intervalSeconds: number?,
@@ -18,6 +19,7 @@ function HealthService.new(dependencies: Dependencies)
     assert(type(dependencies) == "table", "HealthService requires dependencies")
     assert(type(dependencies.isEnabled) == "function", "HealthService requires isEnabled")
     assert(type(dependencies.getRecoveryStatus) == "function", "HealthService requires getRecoveryStatus")
+    assert(type(dependencies.getSyncStatus) == "function", "HealthService requires getSyncStatus")
     assert(typeof(dependencies.apiFolder) == "Instance", "HealthService requires apiFolder")
     assert(typeof(dependencies.queueModule) == "Instance", "HealthService requires queueModule")
 
@@ -46,6 +48,7 @@ function HealthService:Start(): boolean
             local dependencies = self.dependencies
             local enabledOk, enabled = pcall(dependencies.isEnabled)
             local recoveryOk, recovery = pcall(dependencies.getRecoveryStatus)
+            local syncOk, sync = pcall(dependencies.getSyncStatus)
             local apiReady = dependencies.apiFolder.Parent ~= nil
                 and dependencies.apiFolder:FindFirstChild("GlobalEvent") ~= nil
             local queueReady = dependencies.queueModule:IsA("ModuleScript")
@@ -64,6 +67,15 @@ function HealthService:Start(): boolean
             if not queueReady then
                 state = "Degraded"
                 table.insert(details, "Global queue module is missing or has the wrong class.")
+            end
+            if not syncOk or type(sync) ~= "table" then
+                state = "Degraded"
+                table.insert(details, "Cross-server synchronization status is unavailable.")
+            elseif sync.state == "Degraded" then
+                state = "Degraded"
+                table.insert(details, tostring(sync.detail or "Cross-server messaging heartbeat has stopped."))
+            elseif sync.state == "Unverified" or sync.state == "Starting" then
+                table.insert(details, tostring(sync.detail or "No other server has been observed yet; cross-server sync is unverified."))
             end
             if not recoveryOk or type(recovery) ~= "table" then
                 state = "Degraded"
@@ -85,6 +97,8 @@ function HealthService:Start(): boolean
                 detail = detail,
                 updatedAt = os.time(),
                 recoveryState = if recoveryOk and type(recovery) == "table" then recovery.state else "Unavailable",
+                syncState = if syncOk and type(sync) == "table" then sync.state else "Unavailable",
+                syncStatus = if syncOk and type(sync) == "table" then table.clone(sync) else nil,
             }
 
             local signature = state .. "|" .. detail
