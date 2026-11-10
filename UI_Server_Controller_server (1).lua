@@ -601,6 +601,7 @@ local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
 local pendingCrossfadeGlobalRevision = -1
 local pendingCrossfadeGlobalCommitted = false
+local pendingCrossfadeDeadline = 0
 local audioTransitionTrackToken = 0
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
@@ -1009,6 +1010,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			return BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService"), InitialGain = 0 })
 		end,
 		GetRemainingTime = function()
+			if globalQueueMode and pendingCrossfadeGlobalRevision >= 0 and pendingCrossfadeDeadline > 0 then
+				return math.max(0, pendingCrossfadeDeadline - game:GetService("Workspace"):GetServerTimeNow())
+			end
 			if not nowPlaying then return 0 end
 			return math.max(0, (tonumber(nowPlaying.duration) or 0) - (tonumber(nowPlaying.elapsed) or 0))
 		end,
@@ -1128,6 +1132,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			ControllerFunctions.setNowPlaying(entry, true)
 			pendingCrossfadeGlobalRevision = -1
 			pendingCrossfadeGlobalCommitted = false
+			pendingCrossfadeDeadline = 0
 			task.defer(function()
 				ControllerFunctions.topUpAuto()
 				publishState(nil)
@@ -1427,6 +1432,7 @@ for _, moduleName in ipairs({
 	ControllerFunctions.ChildManagerModules[moduleName] = requireResult
 end
 local globalTrackRevision = 0
+local globalPlaybackEndTime = 0
 local globalRestartRevision = 0
 local autoQueueHold = false
 -- Queue mutations have their own revision, independent of playback transitions.
@@ -2444,6 +2450,7 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	pendingCrossfadeToken = -1
 	pendingCrossfadeGlobalRevision = -1
 	pendingCrossfadeGlobalCommitted = false
+	pendingCrossfadeDeadline = 0
 	crossfadeAttemptedGeneration = -1
 	crossfadeBoundaryWaitGeneration = -1
 	autoQueueHold = false
@@ -2531,6 +2538,12 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 	if not ControllerFunctions.isFiniteNumber(restartRevision) or restartRevision < 0 or restartRevision % 1 ~= 0 then return false end
 	local current = state.current
 	if typeof(current) == "table" and typeof(current.trackId) == "string" then
+		local playbackAnchor = tonumber(state.playback.anchorTime)
+		local playbackBasePosition = tonumber(state.playback.position) or 0
+		local currentDuration = tonumber(current.duration) or 1
+		if ControllerFunctions.isFiniteNumber(playbackAnchor) and ControllerFunctions.isFiniteNumber(playbackBasePosition) then
+			globalPlaybackEndTime = playbackAnchor + math.max(0, currentDuration - playbackBasePosition)
+		end
 		local pendingManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
 		local pendingPreparedEntry = pendingCrossfadeEntry
 		local preservePreparedCrossfade = pendingManager ~= nil and pendingManager.active == true
@@ -2586,6 +2599,7 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 		globalRestartRevision = restartRevision
 		globalPlaybackInitialized = true
 	else
+		globalPlaybackEndTime = 0
 		if nowPlaying.trackId ~= "" then
 			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
 			nowPlaying.genre = ""; nowPlaying.duration = 1; nowPlaying.elapsed = 0
@@ -6109,6 +6123,9 @@ task.spawn(function()
 		if not playbackPaused and nowPlaying.trackId ~= ""
 			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
 			local remaining = nowPlaying.duration - nowPlaying.elapsed
+			if globalQueueMode and globalPlaybackEndTime > 0 then
+				remaining = math.max(0, globalPlaybackEndTime - game:GetService("Workspace"):GetServerTimeNow())
+			end
 			local managers = ControllerFunctions.ChildManagers
 			local crossfade = managers and managers.Crossfade
 			local nextEntry = queue[1]
@@ -6127,12 +6144,14 @@ task.spawn(function()
 				pendingCrossfadeToken = audioTransitionTrackToken
 				pendingCrossfadeGlobalRevision = if globalQueueMode then globalTrackRevision else -1
 				pendingCrossfadeGlobalCommitted = false
+				pendingCrossfadeDeadline = if globalQueueMode then globalPlaybackEndTime else 0
 				local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
 				if not started then
 					pendingCrossfadeEntry = nil
 					pendingCrossfadeToken = -1
 					pendingCrossfadeGlobalRevision = -1
 					pendingCrossfadeGlobalCommitted = false
+					pendingCrossfadeDeadline = 0
 					warn("[ClubMusic][Crossfade] Automatic transition was not started; normal track advance remains available: " .. tostring(startError))
 				end
 			end
