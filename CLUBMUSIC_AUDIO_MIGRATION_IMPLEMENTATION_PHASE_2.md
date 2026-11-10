@@ -255,3 +255,10 @@ This is controller wiring preparation, not activation. Existing `ServerMusicSoun
 Hardened the incoming-deck creation path against a brief audible startup window. `ClubMusicAudioBackend.new` now accepts an optional `InitialGain` setting, clamps it to 0–1, and applies it to the AudioFader before the graph is connected for playback. The controller's crossfade deck factory passes `InitialGain = 0`, so a newly created incoming deck is silent from construction rather than relying on a later `SetGain(0)` call to mute it.
 
 The standalone backend and the embedded ModuleScript source in `ClubMusic_Audio_Server_Modules.rbxmx` were verified byte-for-byte after the update. The controller source was re-fetched and verified. This remains dormant preparation; no crossfade activation or Studio runtime test was performed.
+
+
+## Crossfade commit cleanup and rollback — phase 18
+
+The controller's crossfade commit callback now validates that the incoming AudioPlayer is actually playing before ownership transfer. It snapshots the outgoing playhead, stops the outgoing Sound or backend before switching the active-source reference, and refuses to commit if the outgoing source cannot be stopped. If rebinding the active playback signal fails, it restores the outgoing source reference and attempts to restart the previous source at its captured position; the transition manager can then cancel and restore the captured outgoing gain. After a successful bind, the controller increments the source revision and cleans up a retired backend. This prevents a successfully crossfaded legacy Sound from continuing to run silently at zero gain and reduces the chance of a failed commit leaving two live sources.
+
+The change remains dormant: the crossfade manager is not constructed at startup and no transition is automatically started. Existing ServerMusicSound remains the live output until an explicitly invoked, Studio-validated cutover. GitHub source was re-fetched and compared after the update. No Roblox Studio runtime, playback, cancellation, or multiplayer tests were run.
