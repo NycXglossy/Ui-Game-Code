@@ -47,3 +47,24 @@ The modern backend, crossfade, spatial routing, and local output graph remain op
 Static source inspection confirmed the controller currently accesses `musicSound` directly in playback start/stop, global synchronization, pause/resume, and watchdog paths. This confirms why switching the backend or deleting the legacy Sound objects at this stage would be unsafe.
 
 No Roblox Studio runtime, audio permission, device output, or multiplayer tests have been run as part of these commits.
+
+
+## Follow-up integration update — backend-neutral inspection
+
+Three existing playback integration files were updated after the initial module commits:
+
+- `ServerMusicAudioHandler.luau` now exposes a read-only `GetPlaybackSnapshot()` contract. It supports the existing marked canonical Sound and an injected AudioPlayer backend without taking ownership of either.
+- `MusicPlaybackManager.luau` now accepts the optional snapshot provider and classifies modern backend readiness, playback, pause, and stopped/buffering states. The legacy Sound inspection remains the fallback.
+- `UI_Server_Controller_server (1).lua` now supplies the existing audio adapter's snapshot to the playback manager. The active controller still supplies the legacy Sound, so runtime behavior remains on the existing fallback.
+
+Follow-up commits:
+- `a8cc90b` — backend-neutral audio adapter snapshot.
+- `6c12c5c` — backend-neutral playback quality inspection.
+- `f2c0fec` — controller diagnostic snapshot bridge.
+- `62c31c7` — guard optional legacy Sound accessor.
+
+This is a compatibility seam only. It does **not** activate AudioPlayer playback, migrate AudioProbe, replace client volume routing, enable crossfade, or remove Sound/SoundGroup.
+
+### Audio routing constraint confirmed against current Roblox documentation
+
+A server-created AudioDeviceOutput with no Player assigned is heard by everyone. A Player-targeted AudioDeviceOutput can target one player. Therefore a true individual-volume design must provide separate per-player output/fader routes (or a verified client-local route) and must not leave a global output active alongside those routes, or listeners can receive duplicate audio. The existing renderer's local SoundGroup fallback is retained until that routing is implemented. See the Roblox Creator Hub AudioDeviceOutput and Audio objects documentation.
