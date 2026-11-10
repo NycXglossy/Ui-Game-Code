@@ -613,6 +613,22 @@ musicSound:GetPropertyChangedSignal("Playing"):Connect(ControllerFunctions.refre
 local playbackPaused = false
 local lastGlobalPlaybackRevision = 0
 
+-- One controller-owned cancellation seam for a future dual-deck transition.
+-- It is deliberately a no-op until a Crossfade manager is safely constructed.
+ControllerFunctions.cancelAudioTransition = function(reason: string?)
+	local managers = ControllerFunctions.ChildManagers
+	local crossfade = managers and managers.Crossfade
+	if not crossfade then return true end
+	local ok, result = pcall(function()
+		return crossfade:Cancel(reason)
+	end)
+	if not ok or result == false then
+		warn("[ClubMusic] Audio transition cancellation reported a failure (" .. tostring(reason or "unspecified") .. "): " .. tostring(result))
+		return false
+	end
+	return true
+end
+
 ControllerFunctions.stopServerMusic = function()
 	pcall(function()
 		musicSound:Stop()
@@ -1871,6 +1887,7 @@ local playbackGeneration = 0
 local transitionInProgress = false
 
 ControllerFunctions.setNowPlaying = function(entry: QueueEntry)
+	ControllerFunctions.cancelAudioTransition("track-change")
 	playbackGeneration += 1
 	autoQueueHold = false
 	nowPlaying.trackId = entry.trackId
@@ -1970,6 +1987,7 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 		playbackPaused = state.playback.paused == true
 		local restartObserved = globalPlaybackInitialized and restartRevision > previousRestartRevision
 		if restartObserved then
+			ControllerFunctions.cancelAudioTransition("global-restart-reconcile")
 			nowPlaying.elapsed = 0
 			pcall(function() ControllerFunctions.startServerMusic(nowPlaying.soundId) end)
 		elseif ControllerFunctions.isFiniteNumber(state.playback.position) then
@@ -2109,6 +2127,7 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then
 		return false, "The current track changed before the transition started."
 	end
+	ControllerFunctions.cancelAudioTransition("advance")
 	transitionInProgress = true
 	if globalQueueMode then
 		-- Always release the transition lock, including when fallback selection,
@@ -3897,6 +3916,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
+		ControllerFunctions.cancelAudioTransition(if desiredPaused then "pause" else "resume")
 		if globalQueueMode then
 			local position = nowPlaying.elapsed
 			pcall(function() if musicSound.IsLoaded then position = musicSound.TimePosition end end)
@@ -3929,6 +3949,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	if action == "DJRestart" then
 		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
+		ControllerFunctions.cancelAudioTransition("restart")
 		if globalQueueMode then
 			local callOk, restarted, state, message = ControllerFunctions.globalInvoke("SetGlobalPlayback", false, 0, globalTrackRevision, true)
 			if not callOk or restarted ~= true or typeof(state) ~= "table" then
@@ -3952,6 +3973,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJClearQueue" then
 		if not ControllerFunctions.isAdmin(player) then return false, "ClubMusic administrator permission is required." end
+		ControllerFunctions.cancelAudioTransition("queue-clear")
 		if globalQueueMode then
 			local callOk, cleared, state, message = ControllerFunctions.globalInvoke("ClearGlobalQueue")
 			if not callOk or cleared ~= true then
@@ -5077,6 +5099,7 @@ ControllerFunctions.applyGlobalPlaybackControl = function(command: string, paylo
 	if revision <= lastGlobalPlaybackRevision then return false end
 	if command == "SetPlaybackPaused" then
 		if typeof(payload.paused) ~= "boolean" then return false end
+		ControllerFunctions.cancelAudioTransition(if payload.paused then "global-pause" else "global-resume")
 		playbackPaused = payload.paused
 		if ControllerFunctions.isFiniteNumber(payload.position) then
 			nowPlaying.elapsed = math.clamp(payload.position, 0, nowPlaying.duration)
@@ -5088,6 +5111,7 @@ ControllerFunctions.applyGlobalPlaybackControl = function(command: string, paylo
 			if playbackPaused then musicSound:Pause() else musicSound:Resume() end
 		end)
 	elseif command == "Restart" then
+		ControllerFunctions.cancelAudioTransition("global-restart")
 		nowPlaying.elapsed = 0
 		playbackPaused = false
 		ControllerFunctions.startServerMusic(nowPlaying.soundId)
@@ -5500,6 +5524,7 @@ task.spawn(function()
 end)
 
 game:BindToClose(function()
+	ControllerFunctions.cancelAudioTransition("server-shutdown")
 	-- Studio memory mode has no durable profile backend and never acquires a
 	-- DataStore session lease. PlayerRemoving may already have cleared the
 	-- in-memory profile while the player is still briefly returned by GetPlayers().
