@@ -1681,6 +1681,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		-- Volume slider
 		local muteButton = make("TextButton", {
+			Name = "MuteVolumeButton",
 			Position = UDim2.fromOffset(leftInset, if stackedArtwork then 282 else 148),
 			Size = UDim2.fromOffset(30, 26),
 			BackgroundColor3 = C.SurfaceLight,
@@ -1688,6 +1689,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			TextColor3 = C.White,
 			TextSize = 14,
 			Font = BOLD,
+			Selectable = true,
+			Active = true,
 		}, nowCard) :: TextButton
 		corner(muteButton, 8)
 		local muteOutline = stroke(muteButton, C.Cyan, 1)
@@ -1735,6 +1738,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local function refreshVolumeUI()
 			volFill.Size = UDim2.fromScale(volume, 1)
 			knob.Position = UDim2.new(volume, 0, 0.5, 0)
+			muteButton:SetAttribute("Muted", volume <= 0)
 			percent.Text = string.format("%d%%", math.floor(volume * 100 + 0.5))
 			for _, arc in ipairs(volumeIcon:GetChildren()) do
 				if arc:IsA("Frame") and arc:GetAttribute("SoundArc") == true then arc.Visible = volume > 0 end
