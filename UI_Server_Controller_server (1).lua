@@ -4108,6 +4108,11 @@ local function refreshLocalCatalog(): boolean
 end
 
 local function applyGlobalPlaybackControl(command: string, payload: any): boolean
+	-- When the shared queue is active, its playback snapshot is authoritative.
+	-- The legacy playbackControl store is a separate compatibility path; applying
+	-- its delayed reconciliation events here could overwrite a newer queue pause
+	-- or restart with stale state.
+	if globalQueueMode then return false end
 	-- Playback revisions are monotonic integer sequence numbers. Reject malformed
 	-- fractional/unsafe values instead of silently rounding them into a valid revision.
 	if typeof(payload) ~= "table" or not isFiniteNumber(payload.revision)
