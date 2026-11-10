@@ -7,7 +7,7 @@ function Service.new(d)
 end
 function Service:Reserve(operationId,ttlSeconds)
  if not self.d.isEnabled() or type(operationId)~="string" or #operationId<1 or #operationId>47 then return false,"Invalid or disabled operation." end
- local ttl=math.clamp(math.floor(tonumber(ttlSeconds) or 120),30,600)
+ local ttl=math.clamp(math.floor(tonumber(ttlSeconds) or (self.d.getDefaultTtl and self.d.getDefaultTtl()) or 120),30,600)
  local token=self.d.guid()
  local ok,result=pcall(function()
   return self.map:UpdateAsync("op:"..operationId,function(old)
