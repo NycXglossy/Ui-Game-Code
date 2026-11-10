@@ -2233,7 +2233,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local actionSpace = if staffLevel >= 1 then 100 else 12
 			local row = card(62)
 			label(row, string.format("%02d", index), UDim2.fromOffset(8, 21), UDim2.fromOffset(27, 18), C.Gold, 11, true)
-			local artworkId = TRACK_ARTWORK[trackId]
+			-- Prefer artwork supplied by the live queue item, then fall back to the
+			-- catalog mapping so custom tracks keep their cover in every queue view.
+			local artworkId = tonumber(item.artworkAssetId) or TRACK_ARTWORK[trackId]
 			local artworkTint = if genre and typeof(genre.color) == "Color3" then genre.color else C.Cyan
 			if artworkId and artworkId > 0 then
 				local cover = make("ImageLabel", {
