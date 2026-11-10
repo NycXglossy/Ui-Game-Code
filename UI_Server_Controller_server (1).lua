@@ -748,6 +748,10 @@ local autoQueueHold = false
 -- Queue mutations have their own revision, independent of playback transitions.
 -- This prevents delayed MessagingService snapshots from restoring an older queue.
 local globalQueueRevision = 0
+-- Catalog revision fences every shared enqueue/advance against stale local caches.
+local globalCatalogRevision = 0
+local localCatalogRevision = 0
+local refreshLocalCatalog: (() -> boolean)? = nil
 local globalQueueSyncBusy = false
 local globalQueueRefreshScheduled = false
 local globalPlaybackInitialized = false
@@ -1758,11 +1762,15 @@ local function applyGlobalQueueState(state: any): boolean
 	-- Queue and playback revisions are separate monotonic counters. A snapshot
 	-- must be fresh for both dimensions before it can replace the local mirror.
 	local queueRevision = tonumber(state.revision)
+	local catalogRevision = tonumber(state.catalogRevision) or 0
 	local revision = tonumber(state.playback.trackRevision)
 	if not isFiniteNumber(queueRevision) or queueRevision < 0 or queueRevision % 1 ~= 0
 		or queueRevision > 9007199254740991 or queueRevision < globalQueueRevision then return false end
 	if not isFiniteNumber(revision) or revision < 0 or revision % 1 ~= 0
 		or revision > 9007199254740991 or revision < globalTrackRevision then return false end
+	if not isFiniteNumber(catalogRevision) or catalogRevision < 0 or catalogRevision % 1 ~= 0
+		or catalogRevision > 9007199254740991 then return false end
+	globalCatalogRevision = math.max(globalCatalogRevision, catalogRevision)
 	if typeof(state.rotation) == "table" and state.rotation.enabled == true
 		and typeof(state.rotation.trackIds) == "table" then
 		activePlaylistId = tostring(state.rotation.id)
@@ -1905,25 +1913,45 @@ syncGlobalQueueSnapshot = function(): boolean
 end
 
 enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
-	local callOk, writeOk, state, message = globalInvoke("EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize)
+	local callOk, writeOk, state, message = globalInvoke(
+		"EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize, localCatalogRevision
+	)
 	if typeof(state) == "table" then applyGlobalQueueState(state) end
-	if not callOk or writeOk ~= true then
-		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		return false, tostring(message or "Global queue is unavailable.")
+	if callOk and writeOk == true then return true, nil end
+	if tostring(message) == "Catalog changed on another server; refresh and retry."
+		and refreshLocalCatalog and refreshLocalCatalog() then
+		if not TRACK_BY_ID[entry.trackId] then return false, "That track is no longer in the shared catalog." end
+		callOk, writeOk, state, message = globalInvoke(
+			"EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize, localCatalogRevision
+		)
+		if typeof(state) == "table" then applyGlobalQueueState(state) end
+		if callOk and writeOk == true then return true, nil end
 	end
-	return true, nil
+	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+	return false, tostring(message or "Global queue is unavailable.")
 end
 
 enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
 	local callOk, writeOk, state, message = globalInvoke(
-		"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget
+		"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget, localCatalogRevision
 	)
 	if typeof(state) == "table" then applyGlobalQueueState(state) end
-	if not callOk or writeOk ~= true then
-		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		return false, tostring(message or "Global automatic queue refill is unavailable.")
+	if callOk and writeOk == true then return true, nil end
+	if tostring(message) == "Catalog changed on another server; refresh and retry."
+		and refreshLocalCatalog and refreshLocalCatalog() then
+		local allTracksPresent = true
+		for _, entry in ipairs(entries) do
+			if not TRACK_BY_ID[entry.trackId] then allTracksPresent = false; break end
+		end
+		if not allTracksPresent then return false, "An automatic track is no longer in the shared catalog; refill will be rebuilt." end
+		callOk, writeOk, state, message = globalInvoke(
+			"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget, localCatalogRevision
+		)
+		if typeof(state) == "table" then applyGlobalQueueState(state) end
+		if callOk and writeOk == true then return true, nil end
 	end
-	return true, nil
+	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+	return false, tostring(message or "Global automatic queue refill is unavailable.")
 end
 
 local function advance(expectedGeneration: number?): (boolean, string?)
@@ -1944,7 +1972,9 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 			local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
 			local function attemptGlobalAdvance(): (boolean, string?)
 				local expectedRevision = globalTrackRevision
-				local callOk, didAdvance, state, message = globalInvoke("AdvanceGlobalQueue", expectedRevision, fallback)
+				local callOk, didAdvance, state, message = globalInvoke(
+					"AdvanceGlobalQueue", expectedRevision, fallback, localCatalogRevision
+				)
 				if callOk and didAdvance == true and typeof(state) == "table" then
 					if not applyGlobalQueueState(state) then
 						return false, "The shared transition was accepted, but its state snapshot could not be applied."
@@ -2039,10 +2069,17 @@ task.spawn(function()
 		warn("[ClubMusic] Global queue could not be loaded; shared playback and requests remain fail-closed.")
 		return
 	end
+	if localCatalogRevision ~= globalCatalogRevision then
+		while refreshLocalCatalog == nil do task.wait(0.1) end
+		if not refreshLocalCatalog() then
+			warn("[ClubMusic] Catalog revision could not be synchronized; global queue writes remain blocked on this server.")
+			return
+		end
+	end
 	if nowPlaying.trackId == "" then
 		local playlistFallback = nextPlaylistTrack()
 		local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
-		local callOk, advanced, state = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
+		local callOk, advanced, state = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback, localCatalogRevision)
 		if callOk and advanced == true and typeof(state) == "table" then applyGlobalQueueState(state)
 		elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 	end
@@ -3126,8 +3163,17 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		local track = MusicCatalogService:GetTrackById(trackId)
 		if track then
 			TRACK_BY_ID[trackId] = track
-			table.insert(ALL_TRACK_IDS, trackId)
+			if not table.find(ALL_TRACK_IDS, trackId) then table.insert(ALL_TRACK_IDS, trackId) end
 			table.sort(ALL_TRACK_IDS)
+		end
+		if globalQueueMode then
+			local revisionCallOk, revised, revisionState, revisionMessage = globalInvoke("AdvanceCatalogRevision")
+			if revisionCallOk and revised == true and typeof(revisionState) == "table" then
+				applyGlobalQueueState(revisionState)
+				localCatalogRevision = globalCatalogRevision
+			else
+				warn("[ClubMusic] Catalog addition saved, but shared catalog revision could not be advanced: " .. tostring(revisionMessage))
+			end
 		end
 		local publishOk, published = globalInvoke("PublishCatalogChange")
 		if not publishOk or published ~= true then
@@ -4115,7 +4161,7 @@ end
 local lastCatalogRefreshAt = 0
 local catalogRefreshBusy = false
 
-local function refreshLocalCatalog(): boolean
+refreshLocalCatalog = function(): boolean
 	if catalogRefreshBusy or not catalogStorageReady then return false end
 	catalogRefreshBusy = true
 	local refreshed = false
@@ -4163,6 +4209,7 @@ local function refreshLocalCatalog(): boolean
 	if not ok then warn("[ClubMusic] Catalog refresh failed: " .. tostring(err)) end
 	if refreshed then
 		lastCatalogRefreshAt = os.clock()
+		localCatalogRevision = globalCatalogRevision
 		publishState(nil)
 	end
 	return refreshed
@@ -4231,7 +4278,10 @@ local function handleGlobalMessage(message: any)
 	end
 	if message.kind == "Catalog" then
 		if os.clock() - lastCatalogRefreshAt < 3 then return end
-		task.spawn(refreshLocalCatalog)
+		task.spawn(function()
+			if globalQueueMode and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			if refreshLocalCatalog then refreshLocalCatalog() end
+		end)
 		return
 	end
 	if message.kind == "XPBoost" and (message.multiplier == 1 or message.multiplier == 2 or message.multiplier == 4)
