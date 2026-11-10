@@ -8,7 +8,7 @@ Adds operational visibility and bounded recovery checks to the existing cross-se
 
 - `ClubMusic_Global_Health_Service.lua` — ModuleScript for service-health reporting.
 - `ClubMusic_Global_Recovery_Service.lua` — ModuleScript for retrying transient authoritative queue reads.
-- `ClubMusic_Global_Service_server_1.lua` — existing ServerScriptService Script, updated to load and start both modules and expose a health query.
+- `ClubMusic_Global_Service_server_1.lua` — existing ServerScriptService Script, updated to load and start both modules, expose a health query, and forward operational failures to `ClubMusicErrorHandler`.
 
 ## Installation
 
@@ -54,3 +54,16 @@ The recovery module never plays audio, advances playback, enqueues entries, or c
 - GitHub files were fetched after commit and their resulting blob hashes were confirmed.
 - Static source checks confirmed both modules exist, the existing global service wires them optionally, the health query is registered, and the recovery module contains no queue mutation or reservation-clearing path.
 - No Roblox Studio runtime or live multi-server test was run by the assistant. Verify in a dedicated test universe before publishing.
+
+
+## Error-handler integration
+
+The existing `ServerStorage.ClubMusicErrorHandler` is loaded optionally by the global service. The same ModuleScript instance is shared by `require()` within each server process, so health and recovery diagnostics enter the same bounded local error history used by the UI controller on that server.
+
+- Health reports a transition into a degraded health state.
+- Recovery reports a transition into a degraded shared-storage probe state.
+- Repeated identical states are not reported every polling cycle; each service reports only when its state/detail signature changes.
+- The error handler remains a reporting sink. It does not start recovery, and recovery does not call back into the error handler for a retry decision.
+- If the error handler is absent or fails, the global service falls back to `warn()`; the operational services remain optional and must not block startup.
+
+This history is per server process, not a cross-server central database. Cross-server aggregation is not added in this phase.
