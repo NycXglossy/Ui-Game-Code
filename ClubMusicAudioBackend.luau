@@ -46,6 +46,14 @@ function Backend.new(config: Config?)
 	player.PlaybackSpeed = math.clamp(if finite(config.PlaybackSpeed) then config.PlaybackSpeed else 1, 0.05, 20)
 	player.Parent = root
 
+	local equalizer = Instance.new("AudioEqualizer")
+	equalizer.Name = "MusicEqualizer"
+	equalizer.MidRange = NumberRange.new(400, 3000)
+	equalizer.LowGain = 0
+	equalizer.MidGain = 0
+	equalizer.HighGain = 0
+	equalizer.Parent = root
+
 	local fader = Instance.new("AudioFader")
 	fader.Name = "MusicFader"
 	fader.Volume = math.clamp(if finite(config.InitialGain) then config.InitialGain else 1, 0, 1)
@@ -56,15 +64,17 @@ function Backend.new(config: Config?)
 	if config.OutputPlayer then output.Player = config.OutputPlayer end
 	output.Parent = root
 
-	local inputWire = makeWire(root, player, fader)
+	local inputWire = makeWire(root, player, equalizer)
+	local equalizerWire = makeWire(root, equalizer, fader)
 	local outputWire = makeWire(root, fader, output)
 
 	return setmetatable({
 		root = root,
 		player = player,
 		fader = fader,
+		equalizer = equalizer,
 		output = output,
-		wires = { inputWire, outputWire },
+		wires = { inputWire, equalizerWire, outputWire },
 		destroyed = false,
 		paused = false,
 		pausedAt = 0,
@@ -177,6 +187,24 @@ function Backend:GetGain(): number
 	return math.clamp(self.fader.Volume, 0, 1)
 end
 
+function Backend:SetEqualizer(lowGain: number, midGain: number, highGain: number): (boolean, string?)
+	if not self:IsAvailable() or not self.equalizer
+		or not finite(lowGain) or not finite(midGain) or not finite(highGain) then
+		return false, "Invalid equalizer settings."
+	end
+	self.equalizer.LowGain = math.clamp(lowGain, -20, 10)
+	self.equalizer.MidGain = math.clamp(midGain, -20, 10)
+	self.equalizer.HighGain = math.clamp(highGain, -20, 10)
+	return true, nil
+end
+
+function Backend:GetEqualizer(): {low: number, mid: number, high: number}
+	if not self:IsAvailable() or not self.equalizer then
+		return { low = 0, mid = 0, high = 0 }
+	end
+	return { low = self.equalizer.LowGain, mid = self.equalizer.MidGain, high = self.equalizer.HighGain }
+end
+
 function Backend:SetPlaybackSpeed(value: number): (boolean, string?)
 	if not self:IsAvailable() or not finite(value) then return false, "Invalid playback speed." end
 	self.player.PlaybackSpeed = math.clamp(value, 0.5, 2)
@@ -194,6 +222,7 @@ function Backend:Cleanup()
 	self.root = nil
 	self.player = nil
 	self.fader = nil
+	self.equalizer = nil
 	self.output = nil
 	table.clear(self.wires)
 end
