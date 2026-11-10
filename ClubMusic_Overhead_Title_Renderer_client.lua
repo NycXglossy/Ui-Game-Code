@@ -8,7 +8,7 @@
 --
 -- Expected attributes:
 -- ShowCustomTitle, CustomTitle, TitleEffect, TitleSet, TitleColors,
--- TitleSpeed, TitleFont, TitleStyle, TitleHeight, TitleDistance
+-- TitleSpeed, TitleFont, TitleStyle, TitleTextSize, TitleHeight, TitleDistance
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -281,6 +281,12 @@ local function createGui(state: PlayerState, character: Model, head: BasePart)
 	label.TextStrokeTransparency = 0.72
 	label.Parent = billboard
 
+	local textSizeConstraint = Instance.new("UITextSizeConstraint")
+	textSizeConstraint.Name = "TitleTextSizeConstraint"
+	textSizeConstraint.MinTextSize = 10
+	textSizeConstraint.MaxTextSize = 20
+	textSizeConstraint.Parent = label
+
 	local gradient = Instance.new("UIGradient")
 	gradient.Enabled = false
 	gradient.Parent = label
@@ -345,6 +351,12 @@ local function refreshState(state: PlayerState)
 	tagLabel.Text = tagText
 	tagLabel.TextColor3 = tagColor or Color3.fromRGB(244, 211, 120)
 	label.Visible = titleVisible
+	local desiredTextSize = math.floor(boundedNumber(player:GetAttribute("TitleTextSize"), 20, 14, 32) + 0.5)
+	local sizeConstraint = label:FindFirstChild("TitleTextSizeConstraint")
+	if sizeConstraint and sizeConstraint:IsA("UITextSizeConstraint") then
+		sizeConstraint.MaxTextSize = desiredTextSize
+		sizeConstraint.MinTextSize = math.max(10, math.floor(desiredTextSize * 0.65))
+	end
 	billboard.MaxDistance = boundedNumber(player:GetAttribute("TitleDistance"), 80, 20, 200)
 	billboard.StudsOffset = Vector3.new(
 		0,
@@ -431,6 +443,7 @@ local function bindPlayer(player: Player)
 		"TitleSpeed",
 		"TitleFont",
 		"TitleStyle",
+		"TitleTextSize",
 		"TitleHeight",
 		"TitleDistance",
 	}
