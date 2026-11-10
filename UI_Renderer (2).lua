@@ -1746,8 +1746,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local function refreshVolumeUI()
 			volFill.Size = UDim2.fromScale(volume, 1)
 			knob.Position = UDim2.new(volume, 0, 0.5, 0)
-			muteButton:SetAttribute("Muted", volume <= 0)
-			percent.Text = string.format("%d%%", math.floor(volume * 100 + 0.5))
+			local muted = volume <= 0
+			muteButton:SetAttribute("Muted", muted)
+			muteButton.BackgroundColor3 = if muted then C.SurfaceLight else C.Surface
+			muteOutline.Color = if muted then C.Orange else C.Cyan
+			percent.Text = if muted then "MUTED" else string.format("%d%%", math.floor(volume * 100 + 0.5))
 			for _, arc in ipairs(volumeIcon:GetChildren()) do
 				if arc:IsA("Frame") and arc:GetAttribute("SoundArc") == true then arc.Visible = volume > 0 end
 			end
