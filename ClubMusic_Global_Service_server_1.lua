@@ -64,6 +64,15 @@ local CONFIG = {
 local IS_STUDIO = RunService:IsStudio()
 local SERVICE_ENABLED = CONFIG.Enabled and (not IS_STUDIO or CONFIG.EnableInStudio)
 local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false)
+local globalRegistryService: any = nil
+local globalEventLogService: any = nil
+local globalWatchdogService: any = nil
+local globalConfigService: any = nil
+local globalStateReconciliationService: any = nil
+local globalMaintenanceService: any = nil
+local globalMetricsService: any = nil
+local globalAuditService: any = nil
+local globalRateLimitService: any = nil
 local budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
 local moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 local globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
@@ -243,6 +252,16 @@ local function publishTopic(topic: string, payload: {[string]: any}): boolean
 	payload.at = os.time()
 	local ok, err = pcall(function() MessagingService:PublishAsync(topic, payload) end)
 	if not ok then warn("[ClubMusic Global] Publish failed: " .. tostring(err)); return false end
+	if globalMetricsService then pcall(globalMetricsService.Record, globalMetricsService, "publish:" .. tostring(payload.kind or "unknown"), 1) end
+	if globalAuditService then
+		if payload.kind == "DJ" then
+			pcall(globalAuditService.Record, globalAuditService, "AdminAction", payload.actorUserId, tostring(payload.command), tostring(payload.command))
+		elseif payload.kind == "Catalog" then
+			pcall(globalAuditService.Record, globalAuditService, "CatalogChange", 0, "catalog", "invalidate")
+		elseif payload.kind == "QueueChanged" then
+			pcall(globalAuditService.Record, globalAuditService, "GlobalQueueChange", 0, "global-queue", "changed")
+		end
+	end
 	return true
 end
 
@@ -728,6 +747,165 @@ if healthModule and globalRecoveryService then
 		warn("[ClubMusic Global] Could not initialize Global Health Service: " .. tostring(instance))
 	end
 end
+
+-- Operational services are optional modules and fail independently. They observe or
+-- coordinate shared state; none of them owns playback or the global queue controller.
+local function createOperationalService(moduleName: string, dependencies: {[string]: any}, requiredMethods: {string}): any?
+	local module = loadOptionalGlobalModule(moduleName)
+	if not module then return nil end
+	local ok, instance = pcall(function() return module.new(dependencies) end)
+	if not ok or typeof(instance) ~= "table" then
+		warn("[ClubMusic Global] Could not create " .. moduleName .. ": " .. tostring(instance))
+		return nil
+	end
+	for _, methodName in ipairs(requiredMethods) do
+		if type(instance[methodName]) ~= "function" then
+			warn("[ClubMusic Global] " .. moduleName .. " is missing method " .. methodName)
+			return nil
+		end
+	end
+	return instance
+end
+
+local sharedDependencies = {
+	isEnabled = function() return SERVICE_ENABLED end,
+	memoryStoreService = MemoryStoreService,
+	jobId = JOB_ID,
+	guid = function() return HttpService:GenerateGUID(false) end,
+}
+globalConfigService = createOperationalService("ClubMusic_Global_Config_Service", sharedDependencies, {"Start", "GetStatus", "Get", "Set"})
+if globalConfigService then globalConfigService:Start() end
+
+globalRegistryService = createOperationalService("ClubMusic_Global_Server_Registry", {
+	isEnabled = function() return SERVICE_ENABLED end,
+	memoryStoreService = MemoryStoreService,
+	jobId = JOB_ID,
+	getHealth = function()
+		return if globalHealthService then globalHealthService:GetStatus().localState else "Unknown"
+	end,
+}, {"Start", "GetStatus", "GetServers"})
+if globalRegistryService then globalRegistryService:Start() end
+
+globalEventLogService = createOperationalService("ClubMusic_Global_Event_Log_Service", sharedDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
+if globalEventLogService then globalEventLogService:Start() end
+
+globalMetricsService = createOperationalService("ClubMusic_Global_Metrics_Service", sharedDependencies, {"Start", "GetStatus", "Record", "ObserveLatency"})
+if globalMetricsService then globalMetricsService:Start() end
+
+globalAuditService = createOperationalService("ClubMusic_Global_Audit_Service", sharedDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
+if globalAuditService then globalAuditService:Start() end
+
+globalRateLimitService = createOperationalService("ClubMusic_Global_RateLimit_Service", {
+	isEnabled = function() return SERVICE_ENABLED end,
+	consumeShared = consumeShared,
+}, {"Start", "GetStatus", "Consume"})
+if globalRateLimitService then globalRateLimitService:Start() end
+
+globalMaintenanceService = if globalConfigService then createOperationalService("ClubMusic_Global_Maintenance_Service", {
+	isEnabled = function() return SERVICE_ENABLED end,
+	configService = globalConfigService,
+	publish = function(payload)
+		globalEventBindable:Fire(payload)
+		if globalEventLogService then globalEventLogService:Record("Maintenance", "Maintenance state changed", "Warning") end
+		if globalAuditService then globalAuditService:Record("Maintenance", 0, "global", if payload.enabled then "enabled" else "disabled") end
+	end,
+}, {"Start", "GetStatus", "Set"}) else nil
+if globalMaintenanceService then globalMaintenanceService:Start() end
+
+globalStateReconciliationService = createOperationalService("ClubMusic_Global_State_Reconciliation_Service", {
+	isEnabled = function() return SERVICE_ENABLED end,
+	getSnapshot = function() return MusicGlobalQueueService:GetSnapshot() end,
+}, {"Start", "GetStatus", "Reconcile"})
+if globalStateReconciliationService then globalStateReconciliationService:Start() end
+
+globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Service", {
+	isEnabled = function() return SERVICE_ENABLED end,
+	getChecks = function()
+		local health = if globalHealthService then globalHealthService:GetStatus() else nil
+		local recovery = if globalRecoveryService then globalRecoveryService:GetStatus() else nil
+		return {
+			LocalHealth = health ~= nil and health.localState == "Healthy",
+			QueueModule = queueModule.Parent == ServerStorage and queueModule:IsA("ModuleScript"),
+			Recovery = recovery ~= nil and (recovery.state == "Healthy" or recovery.state == "Disabled"),
+			Registry = globalRegistryService ~= nil,
+		}
+	end,
+	reportError = reportOperationalError,
+}, {"Start", "GetStatus", "Check"})
+if globalWatchdogService then globalWatchdogService:Start() end
+
+globalEventBindable.Event:Connect(function(event)
+	if typeof(event) ~= "table" then return end
+	local kind = tostring(event.kind or "Unknown")
+	if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, kind, "Global event received", "Info") end
+	if globalMetricsService then pcall(globalMetricsService.Record, globalMetricsService, "event:" .. kind, 1) end
+	if globalAuditService then
+		if kind == "DJ" then
+			pcall(globalAuditService.Record, globalAuditService, "AdminAction", event.actorUserId, tostring(event.command or "unknown"), tostring(event.command or "unknown"))
+		elseif kind == "Catalog" then
+			pcall(globalAuditService.Record, globalAuditService, "CatalogChange", 0, "catalog", "received")
+		elseif kind == "QueueChanged" then
+			pcall(globalAuditService.Record, globalAuditService, "GlobalQueueChange", 0, "global-queue", "received")
+		elseif kind == "Moderation" then
+			pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", event.actorUserId, tostring(event.field or "moderation"), tostring(event.field or "moderation"))
+		end
+	end
+end)
+
+bindFunction("GetGlobalServers", function(limit: any)
+	if not globalRegistryService then return false, {}, "Registry unavailable." end
+	return globalRegistryService:GetServers(limit)
+end)
+bindFunction("GetGlobalMetrics", function()
+	return if globalMetricsService then true, globalMetricsService:GetStatus() else false, nil
+end)
+bindFunction("GetGlobalAudit", function(limit: any)
+	return if globalAuditService then globalAuditService:GetRecent(limit) else false, {}
+end)
+bindFunction("GetGlobalEventLog", function(limit: any)
+	return if globalEventLogService then globalEventLogService:GetRecent(limit) else false, {}
+end)
+bindFunction("GetGlobalOperationalStatus", function()
+	local status = {}
+	for name, service in pairs({
+		Registry = globalRegistryService, EventLog = globalEventLogService, Watchdog = globalWatchdogService,
+		Config = globalConfigService, Reconciliation = globalStateReconciliationService,
+		Maintenance = globalMaintenanceService, Metrics = globalMetricsService, Audit = globalAuditService,
+		RateLimit = globalRateLimitService,
+	}) do
+		status[name] = if service then service:GetStatus() else {state = "Unavailable"}
+	end
+	return true, status
+end)
+bindFunction("GetGlobalConfig", function()
+	return if globalConfigService then true, globalConfigService:GetStatus() else false, nil
+end)
+bindFunction("SetGlobalConfig", function(key: any, value: any, actorUserId: any)
+	if not SERVICE_ENABLED or not globalConfigService or typeof(actorUserId) ~= "number" then return false end
+	local ok, result = globalConfigService:Set(key, value, actorUserId)
+	if ok and globalAuditService then globalAuditService:Record("AdminAction", actorUserId, tostring(key), "config-update") end
+	return ok, result
+end)
+bindFunction("SetGlobalMaintenance", function(enabled: any, message: any, actorUserId: any)
+	if not SERVICE_ENABLED or not globalMaintenanceService or typeof(actorUserId) ~= "number" then return false end
+	local ok, err = globalMaintenanceService:Set(enabled, message, actorUserId)
+	return ok, err
+end)
+bindFunction("ConsumeGlobalRateLimit", function(key: any, capacity: any, refill: any, cost: any)
+	if not globalRateLimitService or typeof(key) ~= "string" or #key > 100
+		or not finiteNumber(capacity) or not finiteNumber(refill) or not finiteNumber(cost) then return false, false end
+	return globalRateLimitService:Consume(key, capacity, refill, cost)
+end)
+bindFunction("RecordGlobalMetric", function(name: any, value: any, latencySeconds: any)
+	if not globalMetricsService or typeof(name) ~= "string" or #name > 48 then return false end
+	globalMetricsService:Record(name, value)
+	if finiteNumber(latencySeconds) then globalMetricsService:ObserveLatency(name, latencySeconds) end
+	return true
+end)
+bindFunction("RecordGlobalAuditEvent", function(kind: any, actorUserId: any, target: any, action: any)
+	if not globalAuditService then return false end
+	return globalAuditService:Record(kind, actorUserId, target, action)
+end)
 
 bindFunction("GetGlobalHealth", function()
 	if not globalHealthService then return false, nil end
