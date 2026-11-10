@@ -1995,7 +1995,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function renderQueue()
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
 		local queue = getQueue()
-		sectionLabel("LIVE QUEUE  /  " .. tostring(#queue) .. " TRACKS")
+		local queueHeading = sectionLabel("LIVE QUEUE  /  " .. tostring(#queue) .. " TRACKS")
+		local queueHeadingTitle = queueHeading:FindFirstChild("SectionTitle")
+		if queueHeadingTitle and queueHeadingTitle:IsA("TextLabel") then
+			queueHeadingTitle.Size = UDim2.new(1, -112, 0, 25)
+		end
+		actionButton(queueHeading, "BROWSE", UDim2.new(1, -94, 0, 3), UDim2.fromOffset(86, 24), function()
+			activeTab = "All Tracks"
+			if renderTabFn then renderTabFn() end
+		end, C.SurfaceLight)
 		local current = card(66)
 		label(current, "NOW PLAYING", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 14), C.Cyan, 9, true)
 		label(current, if now then nz(now.title, "Unknown track") else "The stage is in standby",
