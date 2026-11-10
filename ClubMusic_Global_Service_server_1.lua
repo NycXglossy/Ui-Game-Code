@@ -881,6 +881,7 @@ local function authorizeGlobalActor(actorUserId: any, permission: string): boole
 end
 
 globalSecurityPolicyService = createOperationalService("ClubMusic_Global_Security_Policy_Service", {
+	configService = globalConfigService,
 	authorize = authorizeGlobalActor,
 	onChange = function(key, value, revision, actor)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", actor, key, "policy-update") end
@@ -891,7 +892,7 @@ if globalSecurityPolicyService then globalSecurityPolicyService:Start() end
 
 globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Security_Monitor_Service", {
 	isEnabled = function() return SERVICE_ENABLED and globalSecurityPolicyService ~= nil and globalSecurityPolicyService:Get("monitoringEnabled") == true end,
-	threshold = if globalSecurityPolicyService then globalSecurityPolicyService:Get("suspiciousSignalThreshold") else 8,
+	getThreshold = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("suspiciousSignalThreshold") else 8 end,
 	onAlert = function(signal, count)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", 0, signal, "threshold-reached:" .. tostring(count)) end
 		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecuritySignal", signal, "Warning") end
@@ -902,7 +903,7 @@ if globalSecurityMonitorService then globalSecurityMonitorService:Start() end
 globalMessageValidationService = createOperationalService("ClubMusic_Global_Message_Validation_Service", {
 	getJobId = function() return JOB_ID end,
 	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
-	maxBytes = if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxBytes") else CONFIG.MaxMessageBytes,
+	getMaxBytes = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxBytes") else CONFIG.MaxMessageBytes end,
 	getMaxAge = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxAgeSeconds") else 120 end,
 }, {"Start", "GetStatus", "Validate"})
 if globalMessageValidationService then globalMessageValidationService:Start() end
@@ -911,6 +912,7 @@ globalIdempotencyService = createOperationalService("ClubMusic_Global_Idempotenc
 	isEnabled = function() return SERVICE_ENABLED end,
 	memoryStoreService = MemoryStoreService,
 	guid = function() return HttpService:GenerateGUID(false) end,
+	getDefaultTtl = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("idempotencyTtlSeconds") else 120 end,
 }, {"Start", "GetStatus", "Reserve"})
 if globalIdempotencyService then globalIdempotencyService:Start() end
 
