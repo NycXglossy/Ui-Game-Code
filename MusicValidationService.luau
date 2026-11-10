@@ -14,6 +14,7 @@ function MusicValidationService.new(config, assetInfoProvider)
 		return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
 	end
 	self.musicIdCache = {}
+	self.audioAssetInfoCache = {}
 	self.playerCooldowns = {}
 	self.playerLastAction = {}
 	return self
@@ -28,7 +29,7 @@ function MusicValidationService:GetAudioAssetInfo(assetId)
 	end
 	local key = tostring(numericId)
 	local now = os.clock()
-	local cached = self.musicIdCache[key]
+	local cached = self.audioAssetInfoCache[key]
 	if cached and now - cached.timestamp < self.cacheTTLSeconds then
 		return cached.valid, cached.data or cached.error
 	end
@@ -36,15 +37,15 @@ function MusicValidationService:GetAudioAssetInfo(assetId)
 	if not ok or typeof(info) ~= "table" then
 		return false, "Audio asset metadata is temporarily unavailable."
 	end
-	self.musicIdCache[key] = { valid = true, data = info, timestamp = now }
+	self.audioAssetInfoCache[key] = { valid = true, data = info, timestamp = now }
 	local count, oldestKey, oldestTime = 0, nil, nil
-	for cacheKey, item in pairs(self.musicIdCache) do
+	for cacheKey, item in pairs(self.audioAssetInfoCache) do
 		count += 1
 		if not oldestTime or item.timestamp < oldestTime then
 			oldestKey, oldestTime = cacheKey, item.timestamp
 		end
 	end
-	if count > self.maxCacheEntries and oldestKey then self.musicIdCache[oldestKey] = nil end
+	if count > self.maxCacheEntries and oldestKey then self.audioAssetInfoCache[oldestKey] = nil end
 	return true, info
 end
 
@@ -196,6 +197,7 @@ end
 
 function MusicValidationService:ClearCache()
 	self.musicIdCache = {}
+	self.audioAssetInfoCache = {}
 end
 
 function MusicValidationService:GetCacheStats()
