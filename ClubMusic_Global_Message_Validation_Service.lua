@@ -14,7 +14,7 @@ function Service:Validate(topic,data)
  if typeof(data.at)~="number" or data.at~=data.at or data.at==math.huge or data.at==-math.huge or math.abs(os.time()-data.at)>(self.d.getMaxAge and self.d.getMaxAge() or 120) then return reject("Invalid or expired timestamp.") end
  if not KINDS[topic][data.kind] then return reject("Message kind is not allowed for topic.") end
  local ok,encoded=pcall(function() return self.d.jsonEncode(data) end)
- if not ok or type(encoded)~="string" or #encoded>(self.d.maxBytes or 4096) then return reject("Message exceeds size limit or cannot be encoded.") end
+ if not ok or type(encoded)~="string" or #encoded>(self.d.getMaxBytes and self.d.getMaxBytes() or self.d.maxBytes or 4096) then return reject("Message exceeds size limit or cannot be encoded.") end
  self.accepted+=1; return true
 end
 function Service:GetStatus() return {state="Ready",accepted=self.accepted,rejected=self.rejected} end
