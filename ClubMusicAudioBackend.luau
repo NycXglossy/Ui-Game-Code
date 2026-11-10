@@ -12,6 +12,7 @@ export type Config = {
 	Name: string?,
 	Volume: number?,
 	PlaybackSpeed: number?,
+	InitialGain: number?,
 	OutputPlayer: Player?,
 }
 
@@ -47,7 +48,7 @@ function Backend.new(config: Config?)
 
 	local fader = Instance.new("AudioFader")
 	fader.Name = "MusicFader"
-	fader.Volume = 1
+	fader.Volume = math.clamp(if finite(config.InitialGain) then config.InitialGain else 1, 0, 1)
 	fader.Parent = root
 
 	local output = Instance.new("AudioDeviceOutput")
