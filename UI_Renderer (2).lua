@@ -658,6 +658,38 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local previewAudio: AudioPlayer? = nil
 	local previewFader: AudioFader? = nil
 	local previewGraph: Folder? = nil
+	local playerAudioPreferences: any = nil
+	local playerMusicGroup: SoundGroup? = nil
+
+	-- Player-local gain is applied only on this client to the canonical music
+	-- SoundGroup. The server keeps MusicGroup at unity and remains playback owner.
+	-- The same preference is mirrored to the local staff-preview fader.
+	local preferencesFolder = ReplicatedStorage:FindFirstChild("ClubMusicClientAudioModules")
+	local preferencesModule = preferencesFolder and preferencesFolder:FindFirstChild("ClubMusicPlayerPreferences")
+	local musicGroupCandidate = SoundService:FindFirstChild("MusicGroup")
+	if musicGroupCandidate and musicGroupCandidate:IsA("SoundGroup") then
+		playerMusicGroup = musicGroupCandidate
+	end
+	if preferencesModule and preferencesModule:IsA("ModuleScript") and playerMusicGroup then
+		local moduleOk, preferencesClass = pcall(require, preferencesModule)
+		if moduleOk and typeof(preferencesClass) == "table" and typeof(preferencesClass.new) == "function" then
+			local preferenceOk, preferenceInstance = pcall(preferencesClass.new, {
+				SetLocalGain = function(gain: number): boolean
+					if not playerMusicGroup or not playerMusicGroup.Parent then return false end
+					playerMusicGroup.Volume = math.clamp(gain, 0, 1)
+					if previewFader and previewFader.Parent then previewFader.Volume = math.clamp(gain, 0, 1) end
+					return true
+				end,
+			})
+			if preferenceOk then
+				playerAudioPreferences = preferenceInstance
+			else
+				warn("[ClubMusic UI] Player audio preferences could not initialize: " .. tostring(preferenceInstance))
+			end
+		else
+			warn("[ClubMusic UI] Player audio preference module failed to load: " .. tostring(preferencesClass))
+		end
+	end
 	local previewId: number? = nil
 	local renderTabFn: (() -> ())? = nil
 	local hudBottom = 54
@@ -1443,18 +1475,20 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return false, ""
 	end
 
-	-- Volume is a client-side setting. It is forwarded to Network.SetVolume if provided,
-	-- otherwise to the canonical SoundGroup named "MusicGroup" in SoundService (if one exists).
+	-- Volume is strictly client-local: preferences modify this client's replicated
+	-- SoundGroup instance and the local preview fader, never a server RemoteFunction.
 	local function applyVolume(value: number)
 		volume = math.clamp(value, 0, 1)
 		if volume > 0 then lastVolume = volume end
 		gui:SetAttribute("Volume", volume)
-		if previewFader then previewFader.Volume = volume end
-		if typeof(Network.SetVolume) == "function" then
-			pcall(Network.SetVolume, volume)
+		if playerAudioPreferences then
+			local ok, accepted = pcall(function() return playerAudioPreferences:SetVolume(volume) end)
+			if not ok or accepted ~= true then
+				warn("[ClubMusic UI] Local volume preference could not be applied.")
+			end
 		else
-			local group = SoundService:FindFirstChild("MusicGroup")
-			if group and group:IsA("SoundGroup") then group.Volume = volume end
+			if playerMusicGroup and playerMusicGroup.Parent then playerMusicGroup.Volume = volume end
+			if previewFader and previewFader.Parent then previewFader.Volume = volume end
 		end
 	end
 
@@ -4372,6 +4406,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			destroyed = true
 			lookupSerial += 1
 			stopPreview()
+			if playerAudioPreferences then
+				pcall(function() playerAudioPreferences:Cleanup() end)
+				playerAudioPreferences = nil
+			end
 			for _, connection in ipairs(connections) do
 				pcall(function()
 					if connection.Connected then connection:Disconnect() end
@@ -4387,6 +4425,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			destroyed = true
 			lookupSerial += 1
 			stopPreview()
+			if playerAudioPreferences then
+				pcall(function() playerAudioPreferences:Cleanup() end)
+				playerAudioPreferences = nil
+			end
 			for _, connection in ipairs(connections) do
 				pcall(function() if connection.Connected then connection:Disconnect() end end)
 			end
