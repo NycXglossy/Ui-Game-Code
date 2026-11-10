@@ -9,6 +9,17 @@ local DEDUPE_WINDOW_SECONDS = 10
 local nextErrorId = 0
 local records: {{id: string, at: number, subsystem: string, operation: string, message: string, traceback: string}} = {}
 local recentByKey: {[string]: {at: number, id: string, repeats: number}} = {}
+local reporter: ((any) -> ())? = nil
+
+-- Optional telemetry bridge. The reporter receives metadata only and is always
+-- isolated from the original error path; reporting failures never replace errors.
+function ClubMusicErrorHandler.SetReporter(callback: any): boolean
+	if callback ~= nil and typeof(callback) ~= "function" then
+		return false
+	end
+	reporter = callback
+	return true
+end
 
 local function safeString(value: any): string
 	local ok, result = pcall(tostring, value)
@@ -68,6 +79,14 @@ function ClubMusicErrorHandler.Report(subsystem: string, operation: string, err:
 		.. " | Context=" .. contextPath .. " | " .. message
 	pcall(warn, detail)
 	pcall(warn, trace)
+	if reporter then
+		pcall(reporter, {
+			id = errorId,
+			at = now,
+			subsystem = string.sub(safeString(subsystem), 1, 64),
+			operation = string.sub(safeString(operation), 1, 96),
+		})
+	end
 	return errorId
 end
 
