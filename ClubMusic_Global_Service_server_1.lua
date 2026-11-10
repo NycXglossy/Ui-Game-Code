@@ -849,7 +849,7 @@ globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Serv
 			LocalHealth = health ~= nil and health.localState == "Healthy",
 			QueueModule = queueModule.Parent == ServerStorage and queueModule:IsA("ModuleScript"),
 			Recovery = recovery ~= nil and (recovery.state == "Healthy" or recovery.state == "Disabled"),
-			Registry = globalRegistryService ~= nil,
+			Registry = globalRegistryService ~= nil and globalRegistryService:GetStatus().state == "Healthy",
 		}
 	end,
 	reportError = reportOperationalError,
@@ -891,15 +891,17 @@ bindFunction("GetGlobalEventLog", function(limit: any)
 	return globalEventLogService:GetRecent(limit)
 end)
 bindFunction("GetGlobalOperationalStatus", function()
-	local status = {}
-	for name, service in pairs({
-		Registry = globalRegistryService, EventLog = globalEventLogService, Watchdog = globalWatchdogService,
-		Config = globalConfigService, Reconciliation = globalStateReconciliationService,
-		Maintenance = globalMaintenanceService, Metrics = globalMetricsService, Audit = globalAuditService,
-		RateLimit = globalRateLimitService,
-	}) do
-		status[name] = if service then service:GetStatus() else {state = "Unavailable"}
-	end
+	local status = {
+		Registry = if globalRegistryService then globalRegistryService:GetStatus() else {state = "Unavailable"},
+		EventLog = if globalEventLogService then globalEventLogService:GetStatus() else {state = "Unavailable"},
+		Watchdog = if globalWatchdogService then globalWatchdogService:GetStatus() else {state = "Unavailable"},
+		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
+		Reconciliation = if globalStateReconciliationService then globalStateReconciliationService:GetStatus() else {state = "Unavailable"},
+		Maintenance = if globalMaintenanceService then globalMaintenanceService:GetStatus() else {state = "Unavailable"},
+		Metrics = if globalMetricsService then globalMetricsService:GetStatus() else {state = "Unavailable"},
+		Audit = if globalAuditService then globalAuditService:GetStatus() else {state = "Unavailable"},
+		RateLimit = if globalRateLimitService then globalRateLimitService:GetStatus() else {state = "Unavailable"},
+	}
 	return true, status
 end)
 bindFunction("GetGlobalConfig", function()
