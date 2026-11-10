@@ -343,9 +343,19 @@ bindFunction("ConsumeActionBudget", function(userId: any, action: any, cost: any
 	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
 	if not key or typeof(action) ~= "string" or #action > 40 then return false end
-	local globalOk, globalShared = consumeShared("all:actions", CONFIG.GlobalActionCapacity, CONFIG.GlobalActionRefillPerSecond, if finiteNumber(cost) then cost else 1)
+	local globalOk, globalShared
+	if globalRateLimitService then
+		globalOk, globalShared = globalRateLimitService:Consume("all:actions", CONFIG.GlobalActionCapacity, CONFIG.GlobalActionRefillPerSecond, if finiteNumber(cost) then cost else 1)
+	else
+		globalOk, globalShared = consumeShared("all:actions", CONFIG.GlobalActionCapacity, CONFIG.GlobalActionRefillPerSecond, if finiteNumber(cost) then cost else 1)
+	end
 	if not globalShared or not globalOk then return false end
-	local playerOk, playerShared = consumeShared("user:" .. key, CONFIG.GlobalPlayerCapacity, CONFIG.GlobalPlayerRefillPerSecond, if finiteNumber(cost) then cost else 1)
+	local playerOk, playerShared
+	if globalRateLimitService then
+		playerOk, playerShared = globalRateLimitService:Consume("user:" .. key, CONFIG.GlobalPlayerCapacity, CONFIG.GlobalPlayerRefillPerSecond, if finiteNumber(cost) then cost else 1)
+	else
+		playerOk, playerShared = consumeShared("user:" .. key, CONFIG.GlobalPlayerCapacity, CONFIG.GlobalPlayerRefillPerSecond, if finiteNumber(cost) then cost else 1)
+	end
 	-- Global action enforcement must not silently degrade to independent server buckets.
 	return playerShared and playerOk
 end)
@@ -857,13 +867,16 @@ bindFunction("GetGlobalServers", function(limit: any)
 	return globalRegistryService:GetServers(limit)
 end)
 bindFunction("GetGlobalMetrics", function()
-	return if globalMetricsService then true, globalMetricsService:GetStatus() else false, nil
+	if not globalMetricsService then return false, nil end
+	return true, globalMetricsService:GetStatus()
 end)
 bindFunction("GetGlobalAudit", function(limit: any)
-	return if globalAuditService then globalAuditService:GetRecent(limit) else false, {}
+	if not globalAuditService then return false, {} end
+	return globalAuditService:GetRecent(limit)
 end)
 bindFunction("GetGlobalEventLog", function(limit: any)
-	return if globalEventLogService then globalEventLogService:GetRecent(limit) else false, {}
+	if not globalEventLogService then return false, {} end
+	return globalEventLogService:GetRecent(limit)
 end)
 bindFunction("GetGlobalOperationalStatus", function()
 	local status = {}
@@ -878,10 +891,11 @@ bindFunction("GetGlobalOperationalStatus", function()
 	return true, status
 end)
 bindFunction("GetGlobalConfig", function()
-	return if globalConfigService then true, globalConfigService:GetStatus() else false, nil
+	if not globalConfigService then return false, nil end
+	return true, globalConfigService:GetStatus()
 end)
 bindFunction("SetGlobalConfig", function(key: any, value: any, actorUserId: any)
-	if not SERVICE_ENABLED or not globalConfigService or typeof(actorUserId) ~= "number" then return false end
+	if not SERVICE_ENABLED or not globalConfigService or not finiteNumber(actorUserId) then return false end
 	local ok, result = globalConfigService:Set(key, value, actorUserId)
 	if ok and globalAuditService then globalAuditService:Record("AdminAction", actorUserId, tostring(key), "config-update") end
 	return ok, result
