@@ -5,10 +5,10 @@ local Profiles = {}
 Profiles.__index = Profiles
 
 local DEFINITIONS = {
-	Standard = { playbackSpeed = 1, gain = 1 },
-	Soft = { playbackSpeed = 1, gain = 0.75 },
-	Bass = { playbackSpeed = 1, gain = 1 },
-	Night = { playbackSpeed = 1, gain = 0.55 },
+	Standard = { playbackSpeed = 1, gain = 1, low = 0, mid = 0, high = 0 },
+	Soft = { playbackSpeed = 1, gain = 0.9, low = -2, mid = 1, high = -2 },
+	Bass = { playbackSpeed = 1, gain = 1, low = 5, mid = 0, high = 1 },
+	Night = { playbackSpeed = 1, gain = 0.72, low = -3, mid = 1, high = -4 },
 }
 
 function Profiles.new(context)
@@ -33,6 +33,10 @@ function Profiles:Apply(name: string)
 	if typeof(self.context.SetGain) == "function" then
 		local ok, result = pcall(self.context.SetGain, profile.gain)
 		if not ok or result == false then return false, "Could not apply audio gain." end
+	end
+	if typeof(self.context.SetEqualizer) == "function" then
+		local ok, result = pcall(self.context.SetEqualizer, profile.low, profile.mid, profile.high)
+		if not ok or result == false then return false, "Could not apply equalizer settings." end
 	end
 	self.current = name
 	return true, name
