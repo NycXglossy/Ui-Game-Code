@@ -314,7 +314,7 @@ function MusicGlobalQueueService:Enqueue(rawEntry: any, maxPlayerRequests: numbe
 			return false, "Catalog changed on another server; refresh and retry."
 		end
 		if state.catalogChangeTrackId == entry.trackId then
-			return false, "That catalog track is being removed; try again shortly."
+			return false, "That catalog track is undergoing a change; try again shortly."
 		end
 		if state.autoQueueHold and entry.source ~= "player" then
 			return false, "Automatic queue refill is paused until the current track changes."
@@ -397,7 +397,7 @@ function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any
 		for _, entry in ipairs(entries) do
 			if #state.queue >= target or #state.queue >= hardLimit then break end
 			if state.catalogChangeTrackId == entry.trackId then
-				return false, "An automatic track is being removed from the catalog; refresh and retry."
+				return false, "An automatic track is undergoing a catalog change; refresh and retry."
 			end
 			if seenIds[entry.id] or seenTracks[entry.trackId] then
 				return false, "Automatic queue batch contains a duplicate or already-playing track."
@@ -517,7 +517,7 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 			return false, "Catalog changed on another server; refresh and retry."
 		end
 		if state.catalogChangeTrackId ~= nil and fallback and fallback.trackId == state.catalogChangeTrackId then
-			return false, "The fallback track is being removed from the catalog."
+			return false, "The fallback track is undergoing a catalog change."
 		end
 		if state.playback.trackRevision ~= math.floor(expectedTrackRevision) then
 			return false, "Track already advanced by another server."
