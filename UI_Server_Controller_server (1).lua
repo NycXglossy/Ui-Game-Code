@@ -3116,9 +3116,11 @@ ControllerFunctions.inspectAudioAsset = function(assetId: number): (boolean, str
 	if not loadedOk or not isLoaded or length <= 0 then
 		return false, "Audio could not be loaded (it may be private or not allowed in this experience).", "", 0, false
 	end
-	local title = tostring(info.Name or "Untitled audio")
-	local creator = if typeof(info.Creator) == "table" then tostring(info.Creator.Name or "Unknown") else "Unknown"
-	return true, ControllerFunctions.truncateUtf8(title, 60), ControllerFunctions.truncateUtf8(creator, 40), math.ceil(length), false
+	local normalized = musicValidation:NormalizeAudioMetadata(assetId, info, math.ceil(length))
+	if typeof(normalized) ~= "table" then
+		return false, "Audio metadata could not be normalized.", "", 0, false
+	end
+	return true, normalized.title, normalized.artist, normalized.duration, false
 end
 
 -- Saves a validated title slot. Returns true on success. Yields (text filtering).
