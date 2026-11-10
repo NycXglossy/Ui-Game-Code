@@ -4141,6 +4141,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function renderTab()
 		refreshNav()
 		local tabChanged = lastRenderedTab ~= activeTab
+		local renderedTab = activeTab
+		local previousCanvasPosition = content.CanvasPosition
 		lastRenderedTab = activeTab
 		if tabChanged then content.CanvasPosition = Vector2.zero end
 		clearContent()
@@ -4189,6 +4191,20 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 		end
 		applyMenuTypography()
+		if not tabChanged then
+			-- State snapshots can arrive while the player is reading a long page.
+			-- Rebuilding that page must not send the content scroller back to its top.
+			local restorePosition = previousCanvasPosition
+			task.defer(function()
+				if destroyed or activeTab ~= renderedTab or not content.Parent then return end
+				local maxX = math.max(0, content.AbsoluteCanvasSize.X - content.AbsoluteSize.X)
+				local maxY = math.max(0, content.AbsoluteCanvasSize.Y - content.AbsoluteSize.Y)
+				content.CanvasPosition = Vector2.new(
+					math.clamp(restorePosition.X, 0, maxX),
+					math.clamp(restorePosition.Y, 0, maxY)
+				)
+			end)
+		end
 		if tabChanged then
 			-- Keep the active destination visible in the horizontal navigation on
 			-- narrow screens and gamepad layouts without moving it on state refreshes.
