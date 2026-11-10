@@ -4198,10 +4198,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			-- State snapshots can arrive while the player is reading a long page.
 			-- Rebuilding that page must not send the content scroller back to its top.
 			local restorePosition = previousCanvasPosition
-			task.defer(function()
+			task.spawn(function()
+				-- AutomaticCanvasSize is recalculated after the rebuilt children are
+				-- measured. Waiting for layout to settle avoids clamping against a
+				-- temporary zero-height canvas (which would force the scroll to top).
+				RunService.Heartbeat:Wait()
+				RunService.Heartbeat:Wait()
 				if destroyed or renderRevision ~= contentRenderRevision or activeTab ~= renderedTab or not content.Parent then return end
+				local measuredHeight = math.max(content.AbsoluteCanvasSize.Y, contentLayout.AbsoluteContentSize.Y + 12)
 				local maxX = math.max(0, content.AbsoluteCanvasSize.X - content.AbsoluteSize.X)
-				local maxY = math.max(0, content.AbsoluteCanvasSize.Y - content.AbsoluteSize.Y)
+				local maxY = math.max(0, measuredHeight - content.AbsoluteSize.Y)
 				content.CanvasPosition = Vector2.new(
 					math.clamp(restorePosition.X, 0, maxX),
 					math.clamp(restorePosition.Y, 0, maxY)
