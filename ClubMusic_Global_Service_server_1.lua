@@ -569,6 +569,37 @@ end)
 local globalRecoveryService: any = nil
 local globalHealthService: any = nil
 
+-- Reuse the same per-server diagnostic handler used by the local UI controller.
+-- This is intentionally optional: diagnostics must never prevent global service startup.
+local globalErrorHandler: any = nil
+local errorHandlerModule = ServerStorage:FindFirstChild("ClubMusicErrorHandler")
+if errorHandlerModule and errorHandlerModule:IsA("ModuleScript") then
+	local handlerOk, handlerResult = pcall(require, errorHandlerModule)
+	if handlerOk and typeof(handlerResult) == "table" and type(handlerResult.Report) == "function" then
+		globalErrorHandler = handlerResult
+	else
+		warn("[ClubMusic Global] ClubMusicErrorHandler could not be loaded; using local warnings.")
+	end
+else
+	warn("[ClubMusic Global] ClubMusicErrorHandler is unavailable; using local warnings.")
+end
+
+local function reportOperationalError(subsystem: string, operation: string, err: any, context: Instance?)
+	if globalErrorHandler then
+		local reportOk, reportResult = pcall(
+			globalErrorHandler.Report,
+			subsystem,
+			operation,
+			err,
+			context or script
+		)
+		if reportOk then return reportResult end
+		warn("[ClubMusic Global] Error handler reporting failed: " .. tostring(reportResult))
+	end
+	warn("[ClubMusic Global][" .. subsystem .. "][" .. operation .. "] " .. tostring(err))
+	return nil
+end
+
 local function loadOptionalGlobalModule(moduleName: string): any?
 	local module = ServerStorage:FindFirstChild(moduleName)
 	if not module or not module:IsA("ModuleScript") then
@@ -603,6 +634,7 @@ if recoveryModule then
 			end,
 			initialRetrySeconds = 30,
 			maxRetrySeconds = 180,
+			reportError = reportOperationalError,
 		})
 	end)
 	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
@@ -622,6 +654,7 @@ if healthModule and globalRecoveryService then
 			apiFolder = apiFolder,
 			queueModule = queueModule,
 			intervalSeconds = 30,
+			reportError = reportOperationalError,
 		})
 	end)
 	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
