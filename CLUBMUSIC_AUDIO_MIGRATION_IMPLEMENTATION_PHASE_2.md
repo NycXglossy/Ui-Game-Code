@@ -327,3 +327,13 @@ When staff select a saved playlist in the dedicated Playlists destination, the p
 ## Queue-to-catalog navigation — phase 31
 
 The full Queue workspace now has a Browse shortcut in its section header, taking listeners and staff to the existing All Tracks catalog. This complements the Home-to-Queue shortcut and completes a simple dashboard → queue → catalog navigation loop without changing request validation or queue state. Renderer source was re-fetched and compared after the update; no Studio interaction test was run.
+
+## Controller-owned crossfade coordinator initialization — phase 32
+
+The server controller now initializes its optional crossfade coordinator after controller state and child-manager dependencies are ready. The startup path validates and requires the installed ClubMusicAudioBackend and ClubMusicAudioCrossfadeManager modules through the existing factory. Initialization failure is non-fatal and is reported clearly; the existing ServerMusicSound remains the active playback source.
+
+Coordinator construction does not create an incoming deck, change volume, start playback, or alter queue progression. A transition still requires the explicit beginAudioCrossfade(asset, duration) controller entry point, with its existing playback, asset, duration, source-ownership, and rollback guards. The server RBXMX package was checked to contain both backend and crossfade ModuleScripts. GitHub source was re-fetched and verified; no Roblox Studio runtime, audio-output, cancellation, or multiplayer test was run.
+
+## Home featured-genre discovery — phase 32
+
+The Home dashboard now includes a horizontally scrollable set of featured genre shortcuts. Selecting a genre opens the existing All Tracks catalog with that genre filter applied and the search cleared. The shortcuts reuse the current catalog query and pagination flow; no new remote, catalog store, or playback path was introduced. Renderer source was re-fetched and verified; no Roblox Studio visual or interaction test was run.
