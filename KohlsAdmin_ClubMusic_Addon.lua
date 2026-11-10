@@ -65,6 +65,32 @@ return function(_K: any)
 		end
 	end
 
+	local function sendInformationalNotice(player: Player, message: string)
+		local notifyOk, notifyError = pcall(function()
+			_K.Remote.Notify:Fire(player, {
+				From = player.UserId,
+				Text = message,
+				Duration = 5,
+			})
+		end)
+		if not notifyOk then
+			warn("[ClubMusic Kohl's Admin] Could not display informational notice: " .. tostring(notifyError))
+		end
+	end
+
+	local function isExpectedCooldown(operation: string, message: string): boolean
+		if operation == "Queue" or operation == "Status" then
+			return message == "ClubMusic inspection is cooling down. Try again shortly."
+		end
+		if operation == "Restart" then
+			return message == "ClubMusic restart was just triggered. Wait a moment before restarting again."
+		end
+		if operation == "TogglePause" or operation == "ToggleRequestLock" then
+			return message == "That ClubMusic toggle was just used. Wait a moment before toggling it again."
+		end
+		return false
+	end
+
 	local function finish(context: any, operation: string, outcome: string, message: string): string?
 		logOutcome(context, operation, outcome)
 		-- Kohl's Admin treats every non-nil string returned by run() as an
@@ -92,7 +118,10 @@ return function(_K: any)
 			local now = os.clock()
 			local previous = lastInspectionAt[caller.UserId] or 0
 			if previous > 0 and now - previous < INSPECTION_COOLDOWN_SECONDS then
-				return finish(context, operation, "rejected", "ClubMusic inspection is cooling down. Try again shortly.")
+				local cooldownMessage = "ClubMusic inspection is cooling down. Try again shortly."
+				logOutcome(context, operation, "throttled")
+				sendInformationalNotice(caller, cooldownMessage)
+				return nil
 			end
 			lastInspectionAt[caller.UserId] = now
 		end
@@ -133,6 +162,11 @@ return function(_K: any)
 
 		if accepted ~= true then
 			local rejectionMessage = if typeof(message) == "string" then message else "ClubMusic rejected that command."
+			if isExpectedCooldown(operation, rejectionMessage) then
+				logOutcome(context, operation, "throttled")
+				sendInformationalNotice(caller, rejectionMessage)
+				return nil
+			end
 			return finish(context, operation, "rejected", rejectionMessage)
 		end
 
