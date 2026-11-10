@@ -4371,9 +4371,13 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return false, "A live player caller is required."
 	end
 	if typeof(operation) ~= "string" or #operation > 32 then
+		ControllerFunctions.adminBridgeReportSignal(caller, "admin_bridge_invalid_operation", "invalid operation name")
 		return false, "Invalid ClubMusic admin operation."
 	end
-	if not ControllerFunctions.isStaff(caller) then return false, "ClubMusic staff permission is required." end
+	if not ControllerFunctions.isStaff(caller) then
+		ControllerFunctions.adminBridgeReportSignal(caller, "admin_bridge_access_denied", operation)
+		return false, "ClubMusic staff permission is required."
+	end
 	-- Read-only status and queue inspection do not enter the action handler or
 	-- consume mutation cooldowns. Global inspection refreshes the authoritative mirror.
 	if operation == "Status" then
@@ -4514,6 +4518,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	end
 	if not action then return false, "That ClubMusic admin operation is not exposed." end
 	if action == "DJClearQueue" and not ControllerFunctions.isAdmin(caller) then
+		ControllerFunctions.adminBridgeReportSignal(caller, "admin_bridge_access_denied", operation)
 		return false, "ClubMusic administrator permission is required to clear the queue."
 	end
 	local ok, accepted, message = pcall(ControllerFunctions.handleAction, caller, action, payload, true)
