@@ -154,8 +154,26 @@ if not playlistRequireOk then
 	remotes:SetAttribute("StartupError", "MusicPlaylistService require failed: " .. string.sub(tostring(playlistRequireResult), 1, 180))
 	error("[ClubMusic] MusicPlaylistService failed to load: " .. tostring(playlistRequireResult))
 end
+local validationModule = serverStorage:WaitForChild("MusicValidationService", 20)
+if not validationModule or not validationModule:IsA("ModuleScript") then
+	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicValidationService ModuleScript.")
+	error("[ClubMusic] Missing ServerStorage.MusicValidationService ModuleScript.")
+end
+local validationRequireOk, validationRequireResult = pcall(require, validationModule)
+if not validationRequireOk then
+	remotes:SetAttribute("StartupError", "MusicValidationService require failed: " .. string.sub(tostring(validationRequireResult), 1, 180))
+	error("[ClubMusic] MusicValidationService failed to load: " .. tostring(validationRequireResult))
+end
+
 local MusicCatalogService = catalogRequireResult
 local MusicPlaylistService = playlistRequireResult
+local MusicValidationService = validationRequireResult
+local musicValidation = MusicValidationService.new({
+	CacheTTLSeconds = 300,
+	MaxCacheEntries = 128,
+}, function(assetId: number)
+	return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
+end)
 remotes:SetAttribute("StartupStage", "InitializingStorage")
 
 type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string?, artworkAssetId: number? }
@@ -2835,12 +2853,13 @@ end
 
 -- Yields. Confirms an asset is an audio file, loadable by this experience, and returns its real length.
 local function inspectAudioAsset(assetId: number): (boolean, string, string, number, boolean)
-	local ok, info = pcall(function()
-		return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
-	end)
-	if not ok or typeof(info) ~= "table" then
-		return false, "Audio asset not found.", "", 0, false
+	-- Cache metadata only. Every request still creates and preloads an AudioProbe
+	-- below, so a metadata cache hit never bypasses experience permission/playability checks.
+	local infoOk, infoOrError = musicValidation:GetAudioAssetInfo(assetId)
+	if not infoOk then
+		return false, tostring(infoOrError), "", 0, false
 	end
+	local info = infoOrError :: any
 	if info.AssetTypeId ~= Enum.AssetType.Audio.Value then
 		return false, "That asset is not an audio file.", "", 0, false
 	end
