@@ -3409,6 +3409,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			end
 			profile.favorites[trackId] = true
 		end
+		scheduleProfileSave(player)
 		publishState(player)
 		return
 	end
