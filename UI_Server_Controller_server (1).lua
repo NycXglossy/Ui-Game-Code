@@ -4313,6 +4313,33 @@ end
 -- Server-only integration point for trusted admin addons (for example Kohl's Admin).
 -- This is deliberately not replicated. Every request is re-authorized by ClubMusic's
 -- own rank cache and then passes through the same action budgets/cooldowns/handlers.
+-- Narrow server-only permission resolver for the global security authorization adapter.
+-- Uses the same server-verified rank cache as the existing admin bridge.
+local authorizationResolver = ControllerFunctions.getOrCreate(
+	ServerStorage,
+	"BindableFunction",
+	"ClubMusicAuthorizationResolver"
+) :: BindableFunction
+local GLOBAL_PERMISSION_LEVELS = {
+	GlobalDJ = 1,
+	GlobalModeration = 2,
+	GlobalAnnouncement = 2,
+	GlobalConfig = 3,
+	SecurityPolicy = 3,
+	IncidentResponse = 3,
+}
+authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): boolean
+	if typeof(actorUserId) ~= "number" or actorUserId < 1 or actorUserId % 1 ~= 0
+		or typeof(permission) ~= "string" then
+		return false
+	end
+	local requiredLevel = GLOBAL_PERMISSION_LEVELS[permission]
+	if not requiredLevel then return false end
+	local player = Players:GetPlayerByUserId(math.floor(actorUserId))
+	if not player or player.Parent ~= Players then return false end
+	return ControllerFunctions.getLevel(player) >= requiredLevel
+end
+
 local adminBridge = ControllerFunctions.getOrCreate(ServerStorage, "BindableFunction", "ClubMusicAdminBridge") :: BindableFunction
 local ADMIN_BRIDGE_ACTIONS: {[string]: string} = {
 	Skip = "DJSkip",
