@@ -181,7 +181,9 @@ return function(_K: any)
 		local successMessage = if typeof(message) == "string" then message else "ClubMusic action submitted."
 		-- Read-only commands have no ClubMusic state-change Notice, so display
 		-- their result through Kohl's Admin's supported informational toast API.
-		if operation == "Status" or operation == "Queue" then
+		if operation == "Status" or operation == "Queue"
+			or operation == "DJSessionStatus" or operation == "DJSessionStart"
+			or operation == "DJSessionHandoff" or operation == "DJSessionEnd" then
 			local notifyOk, notifyError = pcall(function()
 				_K.Remote.Notify:Fire(caller, {
 					From = caller.UserId,
