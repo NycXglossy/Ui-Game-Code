@@ -6063,7 +6063,8 @@ task.spawn(function()
 				and string.match(nextAsset, "^rbxassetid://%d+$") ~= nil
 			if crossfade and not crossfade.destroyed and not crossfade.active
 				and crossfadeAttemptedGeneration ~= currentGeneration
-				and remaining <= CONFIG.CrossfadePrepareLeadSeconds and remaining > 0
+				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
+				and remaining > (CONFIG.CrossfadeDurationSeconds + 1)
 				and typeof(nextEntry) == "table" and validNextAsset
 				and ControllerFunctions.getAudioSnapshot().playing == true then
 				crossfadeAttemptedGeneration = currentGeneration
