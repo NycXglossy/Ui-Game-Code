@@ -1044,6 +1044,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local panelScale = make("UIScale", { Scale = 1 }, panel)
 	local panelTarget = UDim2.new(0.88, 0, 0.82, 0)
 	local currentDevice = "Desktop"
+	local sideRailMode = false
 
 	local header = make("Frame", {
 		Name = "Header",
@@ -1132,11 +1133,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		CanvasSize = UDim2.new(0, 0, 0, 0),
 		AutomaticCanvasSize = Enum.AutomaticSize.X,
 	}, panel) :: ScrollingFrame
-	make("UIListLayout", {
+	local navLayout = make("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Padding = UDim.new(0, 6),
-	}, nav)
+	}, nav) :: UIListLayout
 	make("UIPadding", {
 		PaddingLeft = UDim.new(0, 12),
 		PaddingRight = UDim.new(0, 12),
@@ -4071,23 +4072,35 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if selectedButton then
 				task.defer(function()
 					if destroyed or not selectedButton.Parent or not nav.Parent then return end
-					local left = selectedButton.AbsolutePosition.X - nav.AbsolutePosition.X + nav.CanvasPosition.X
-					local right = left + selectedButton.AbsoluteSize.X
-					local visibleLeft = nav.CanvasPosition.X
-					local visibleRight = visibleLeft + nav.AbsoluteSize.X
-					local targetX = visibleLeft
-					if left < visibleLeft then
-						targetX = left
-					elseif right > visibleRight then
-						targetX = right - nav.AbsoluteSize.X
+							if sideRailMode then
+						local top = selectedButton.AbsolutePosition.Y - nav.AbsolutePosition.Y + nav.CanvasPosition.Y
+						local bottom = top + selectedButton.AbsoluteSize.Y
+						local visibleTop = nav.CanvasPosition.Y
+						local visibleBottom = visibleTop + nav.AbsoluteSize.Y
+						local targetY = visibleTop
+						if top < visibleTop then targetY = top
+						elseif bottom > visibleBottom then targetY = bottom - nav.AbsoluteSize.Y
+						else return end
+						local maxY = math.max(0, nav.AbsoluteCanvasSize.Y - nav.AbsoluteSize.Y)
+					targetY = math.clamp(targetY, 0, maxY)
+						TweenService:Create(nav, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+							CanvasPosition = Vector2.new(0, targetY),
+						}):Play()
 					else
-						return
+						local left = selectedButton.AbsolutePosition.X - nav.AbsolutePosition.X + nav.CanvasPosition.X
+						local right = left + selectedButton.AbsoluteSize.X
+						local visibleLeft = nav.CanvasPosition.X
+						local visibleRight = visibleLeft + nav.AbsoluteSize.X
+						local targetX = visibleLeft
+						if left < visibleLeft then targetX = left
+						elseif right > visibleRight then targetX = right - nav.AbsoluteSize.X
+						else return end
+						local maxX = math.max(0, nav.AbsoluteCanvasSize.X - nav.AbsoluteSize.X)
+						targetX = math.clamp(targetX, 0, maxX)
+						TweenService:Create(nav, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+							CanvasPosition = Vector2.new(targetX, 0),
+						}):Play()
 					end
-					local maxX = math.max(0, nav.AbsoluteCanvasSize.X - nav.AbsoluteSize.X)
-					targetX = math.clamp(targetX, 0, maxX)
-					TweenService:Create(nav, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-						CanvasPosition = Vector2.new(targetX, 0),
-					}):Play()
 				end)
 			end
 		end
@@ -4224,13 +4237,29 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		toggleButton.Size = UDim2.fromOffset(profile.toggle, profile.toggle)
 		toggleButton.Position = profile.togglePos
 		toggleButton.TextSize = math.floor(profile.toggle * 0.52)
+		sideRailMode = currentDevice == "Desktop" and viewport.X >= 1180 and viewport.Y >= 650
 		local compactNav = currentDevice == "Mobile" or currentDevice == "Tablet"
 		local navHeight = if compactNav then 36 else 40
 		local iconSize = if currentDevice == "Mobile" then 23 elseif currentDevice == "Tablet" then 25 else 27
 		local badgeOffset = if compactNav then 6 else 7
+		navLayout.FillDirection = if sideRailMode then Enum.FillDirection.Vertical else Enum.FillDirection.Horizontal
+		nav.ScrollingDirection = if sideRailMode then Enum.ScrollingDirection.Y else Enum.ScrollingDirection.X
+		nav.AutomaticCanvasSize = if sideRailMode then Enum.AutomaticSize.Y else Enum.AutomaticSize.X
+		nav.CanvasPosition = Vector2.zero
+		if sideRailMode then
+			nav.Position = UDim2.fromOffset(0, 76)
+			nav.Size = UDim2.new(0, 150, 1, -76)
+			content.Position = UDim2.fromOffset(162, 88)
+			content.Size = UDim2.new(1, -174, 1, -100)
+		else
+			nav.Position = UDim2.fromOffset(0, 76)
+			nav.Size = UDim2.new(1, 0, 0, 46)
+			content.Position = UDim2.fromOffset(12, 130)
+			content.Size = UDim2.new(1, -24, 1, -142)
+		end
 		for name, button in pairs(navButtons) do
-			local width = if compactNav then 108 else 120
-			if name == "Daily Rewards" or name == "XP & Boosts" then width += 12 end
+			local width = if sideRailMode then 136 elseif compactNav then 108 else 120
+			if not sideRailMode and (name == "Daily Rewards" or name == "XP & Boosts") then width += 12 end
 			button.Size = UDim2.fromOffset(width, navHeight)
 			local badge = navIconBadges[name]
 			local glyph = navIconLabels[name]
