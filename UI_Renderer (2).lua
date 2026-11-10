@@ -1555,7 +1555,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
 		local showArtwork = artworkMode == true
 		local expandedArtwork = expandedMode == true
-		local stackedArtwork = expandedArtwork and currentDevice == "Mobile"
+		-- Expanded player layouts can also become narrow on tablets, split-screen,
+		-- and resized desktop windows. Stack the cover above the metadata whenever
+		-- the measured content column cannot safely fit the side-by-side artwork.
+		local parentWidth = if parent and parent:IsA("GuiObject") then parent.AbsoluteSize.X else content.AbsoluteSize.X
+		local stackedArtwork = expandedArtwork and (currentDevice == "Mobile" or (parentWidth > 0 and parentWidth < 520))
 		local leftInset = if stackedArtwork then 14 elseif showArtwork then 108 else 14
 		local rightInset = if stackedArtwork then 14 elseif showArtwork then 122 else 28
 		local nowCard = card(if stackedArtwork then 354 elseif expandedArtwork then 228 elseif showArtwork then 210 else 182, parent)
