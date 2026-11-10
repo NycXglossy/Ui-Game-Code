@@ -149,3 +149,24 @@ Static source checks were performed after commit. Roblox Studio playback, crossf
 The crossfade manager now requires the controller context to provide `SetOutgoingGain` at construction. Previously this callback was optional, which meant the incoming deck could fade from zero to full gain while the outgoing deck remained at full gain. That would create overlapping full-volume playback rather than a controlled crossfade. The manager now refuses to initialize without an explicit outgoing-deck gain controller, and the gain helper fails closed if that callback is ever missing or errors. This is a fail-fast contract check; it does not construct decks, instantiate the manager in the live controller, or activate crossfade.
 
 The standalone module and `ClubMusic_Audio_Server_Modules.rbxmx` package are synchronized. The legacy `ServerMusicSound` remains the only live main-playback output. Controller ownership, pause/seek/watchdog/reconciliation routing, atomic deck adoption, and Roblox Studio validation are still required before enabling crossfade.
+
+
+## Dual-deck controller ownership audit — phase 8
+
+The next cutover was deliberately held at the ownership boundary after inspecting the complete current controller source. The live controller still has 37 textual `musicSound` references spanning these responsibilities:
+
+- Canonical instance creation, SoundGroup assignment, gain/speed defaults, managed attributes, and the active-sound counter.
+- Track start/stop and SoundId replacement.
+- Global playback reconciliation, elapsed-position correction, pause, resume, and stop.
+- Local pause/resume position capture and restoration.
+- Global pause/resume position restoration.
+- Playback watchdog state/length inspection and error-report context.
+- The existing `ServerMusicAudioHandler` and `MusicPlaybackManager` callbacks, which still expose the canonical Sound.
+
+The backend module creates a global `AudioDeviceOutput` when no target Player is supplied. The current main output is also server-wide. Constructing a modern deck before controller ownership and every playback/inspection path are redirected would therefore create two audible sources. A crossfade manager alone cannot make this safe: its outgoing-gain callback and commit callback must operate on the exact active deck, while the controller's watchdog, reconciliation, pause/resume, seek, and playback snapshot must all follow that same deck after commit.
+
+The current `ActiveMusicSoundCount` is also tied directly to the legacy Sound's `Playing` signal and assumes one controller-managed Sound. That diagnostic must be made backend-neutral before an AudioPlayer can become canonical; otherwise the published count becomes inaccurate during and after handoff.
+
+**Phase 8 decision: no second deck is instantiated and no playback route is switched.** The legacy Sound remains the sole live main-playback source. The next implementation must introduce a controller-owned active-deck contract and migrate all listed operations to it as one coordinated change, including failure rollback and cleanup of the outgoing deck after a successful atomic commit. The transition must not be enabled until that migration is complete and validated in Roblox Studio with multiple clients.
+
+Static audit only. No Roblox Studio runtime, audio-output, interruption, or multiplayer tests were run.
