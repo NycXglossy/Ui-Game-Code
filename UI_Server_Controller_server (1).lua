@@ -695,7 +695,7 @@ type QueueEntry = {
 	genre: string,
 	source: string, -- "player" | "auto" | "playlist"
 	vip: boolean,
-	ControllerFunctions.passTier: number?,
+	passTier: number?,
 	soundId: string?,
 }
 type TitleSlot = {
@@ -1514,7 +1514,7 @@ ControllerFunctions.makeEntry = function(track: Track, source: string, player: P
 		genre = track.genre,
 		source = source,
 		vip = if player then ControllerFunctions.isVip(player) else false,
-		ControllerFunctions.passTier = if player then ControllerFunctions.passTier(player) else 0,
+		passTier = if player then ControllerFunctions.passTier(player) else 0,
 		soundId = track.soundId or CONFIG.SoundIds[track.id],
 	}
 end
@@ -1552,7 +1552,7 @@ ControllerFunctions.insertIndex = function(tier: number): number
 	for index, entry in ipairs(queue) do
 		if entry.source == "player" then
 			lastPlayer = index
-			local existingTier = tonumber(entry.ControllerFunctions.passTier) or (entry.vip and 1 or 0)
+			local existingTier = tonumber(entry.passTier) or (entry.vip and 1 or 0)
 			if tier > 0 and existingTier >= tier then insertAt = index end
 		end
 	end
@@ -1816,7 +1816,7 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 				id = raw.id, trackId = raw.trackId, title = raw.title, artist = raw.artist,
 				duration = raw.duration, requestedBy = tostring(raw.requestedBy or "Auto DJ"),
 				userId = raw.userId, genre = tostring(raw.genre or "Unknown"), source = raw.source,
-				vip = raw.vip == true, ControllerFunctions.passTier = tonumber(raw.ControllerFunctions.passTier) or 0,
+				vip = raw.vip == true, passTier = tonumber(raw.passTier) or 0,
 				soundId = tostring(raw.soundId or ""),
 			})
 		end
@@ -1838,7 +1838,7 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 				artist = tostring(current.artist), duration = tonumber(current.duration) or 1,
 				requestedBy = tostring(current.requestedBy or "Auto DJ"), userId = tonumber(current.userId) or 0,
 				genre = tostring(current.genre or "Unknown"), source = tostring(current.source or "auto"),
-				vip = current.vip == true, ControllerFunctions.passTier = tonumber(current.ControllerFunctions.passTier) or 0,
+				vip = current.vip == true, passTier = tonumber(current.passTier) or 0,
 				soundId = tostring(current.soundId or ""),
 			}
 			ControllerFunctions.setNowPlaying(entry)
@@ -2279,7 +2279,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		vipGamePassId = CONFIG.VipGamePassId,
 		vvipGamePassId = CONFIG.VvipGamePassId,
 		sultanGamePassId = CONFIG.TikiTideSultanPassId,
-		ControllerFunctions.passTier = ControllerFunctions.passTier(player),
+		passTier = ControllerFunctions.passTier(player),
 		passName = if ControllerFunctions.isSultan(player) then "TIKI TIDE SULTAN" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
 		passPerks = {
 			vip = { slots = CONFIG.VipMaxRequestsPerPlayer, cooldown = CONFIG.VipCooldownSeconds },
