@@ -32,11 +32,19 @@ end
 local function invoke(label: string, callback: () -> any)
 	local ok, result = pcall(callback)
 	if ok then
-		print("[ClubMusic Security Test] PASS transport:", label, "returned", typeof(result))
+		print("[ClubMusic Security Test] SENT:", label, "returned", typeof(result))
 	else
-		warn("[ClubMusic Security Test] FAIL transport:", label, tostring(result))
+		warn("[ClubMusic Security Test] TRANSPORT ERROR:", label, tostring(result))
 	end
 	return ok, result
+end
+
+local baselineOk, baseline = pcall(function()
+	return stateFunction:InvokeServer()
+end)
+if not baselineOk or typeof(baseline) ~= "table" then
+	warn("[ClubMusic Security Test] Could not capture baseline state; action non-mutation check will be skipped.")
+	baseline = nil
 end
 
 print("[ClubMusic Security Test] Starting malformed-input smoke tests.")
@@ -88,9 +96,42 @@ for _, testCase in ipairs(catalogCases) do
 	task.wait(0.85)
 end
 
-invoke("GetState", function()
+local finalStateOk, finalState = pcall(function()
 	return stateFunction:InvokeServer()
 end)
+
+if baseline and finalStateOk and typeof(finalState) == "table" then
+	local unchanged = true
+	local function check(label: string, before: any, after: any)
+		if before ~= after then
+			unchanged = false
+			warn("[ClubMusic Security Test] STATE CHANGED:", label, tostring(before), "->", tostring(after))
+		end
+	end
+	check("current track", baseline.nowPlaying and baseline.nowPlaying.trackId, finalState.nowPlaying and finalState.nowPlaying.trackId)
+	check("paused state", baseline.nowPlaying and baseline.nowPlaying.paused, finalState.nowPlaying and finalState.nowPlaying.paused)
+	check("request lock", baseline.locked, finalState.locked)
+	check("request count", baseline.requests and baseline.requests.used, finalState.requests and finalState.requests.used)
+	local beforeQueue = baseline.queue or {}
+	local afterQueue = finalState.queue or {}
+	if #beforeQueue ~= #afterQueue then
+		unchanged = false
+		warn("[ClubMusic Security Test] STATE CHANGED: queue length", #beforeQueue, "->", #afterQueue)
+	else
+		for index, entry in ipairs(beforeQueue) do
+			if entry.id ~= afterQueue[index].id then
+				unchanged = false
+				warn("[ClubMusic Security Test] STATE CHANGED: queue entry", index, tostring(entry.id), "->", tostring(afterQueue[index].id))
+				break
+			end
+		end
+	end
+	if unchanged then
+		print("[ClubMusic Security Test] PASS: malformed action probes did not change the observed playback, lock, request, or queue state.")
+	end
+elseif baseline then
+	warn("[ClubMusic Security Test] Could not verify post-test state; inspect server state manually.")
+end
 
 task.wait(0.85)
 
@@ -99,4 +140,4 @@ invoke("GetMusicPlaylists", function()
 end)
 
 print("[ClubMusic Security Test] Finished. Check Server Output for unexpected handler errors.")
-print("[ClubMusic Security Test] A PASS transport result only means the call completed; verify rejected inputs caused no state change.")
+print("[ClubMusic Security Test] SENT confirms only that FireServer was called; the state comparison checks selected observable fields.")
