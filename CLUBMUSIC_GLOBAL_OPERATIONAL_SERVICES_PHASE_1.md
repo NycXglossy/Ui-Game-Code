@@ -118,6 +118,19 @@ These validated keys are stored in the existing shared `ClubMusic_GlobalConfig_v
 
 Incident kinds are allowlisted: `SecurityAlert`, `ServiceDegraded`, `AbuseReport`, and `ManualReview`. Security monitoring currently records invalid message envelopes and explicit `ReportSignal` calls; it does not infer malicious intent from a single event.
 
+### Kohl's Admin security bridge integration
+
+The shared Kohl's Admin addon and controller-owned ClubMusicAdminBridge expose the security services through the existing Kohl's Admin command system. These commands are registered in the Administration group and are independently checked against the controller's server-verified rank cache and the global Authorization Service:
+
+- ;cmsecurity — administrator-level summary of Authorization, Security Monitor, Message Validation, Idempotency, Incident Response, and policy revision.
+- ;cmincidents — co-owner/owner view of recent security incidents.
+- ;cmincident <kind> <summary> — co-owner/owner opens an allowlisted incident (SecurityAlert, ServiceDegraded, AbuseReport, or ManualReview).
+- ;cmresolve <incidentId> — co-owner/owner resolves an incident.
+- ;cmpolicy — co-owner/owner views validated shared security policy.
+- ;cmpolicyset <key> <value> — co-owner/owner updates a validated policy value. For example: cmpolicyset suspiciousSignalThreshold 10 or cmpolicyset monitoringEnabled false.
+
+The bridge records denied/invalid security administration attempts through the existing Security Monitor. Incident and policy mutations continue through their existing service authorization and audit hooks. Message Validation remains enforced at the cross-server message receiver; Idempotency remains available for operations with stable retry IDs and is not misused to suppress separate repeated DJ commands. Existing music command names and behavior are unchanged.
+
 ### Final security hardening
 
 - The shared Config Service validates security-policy numeric ranges itself, so the generic `SetGlobalConfig` API cannot bypass the stricter Security Policy Service checks. Invalid persisted policy values are replaced with safe defaults when loaded.
