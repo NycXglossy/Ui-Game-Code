@@ -51,7 +51,7 @@ These are BindableFunctions inside ServerStorage, not public RemoteFunctions. On
 - `metricsEnabled` (boolean; default true)
 - `auditEnabled` (boolean; default true)
 
-The keys are validated and unknown keys are rejected. The current phase records metrics/audit independently of these two advisory flags; those flags are reserved for follow-up policy wiring and must not be treated as access-control gates.
+The keys are validated and unknown keys are rejected. `metricsEnabled` gates metric collection/flush, and `auditEnabled` gates audit and operational event-log writes. `allowPlayerRequests` is exposed as shared policy state for trusted controller consumers; this phase does not independently block player requests, so it must not be treated as an access-control gate until the controller explicitly enforces it.
 
 ## Installation
 
