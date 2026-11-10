@@ -2140,7 +2140,24 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				local id = favoriteIds[index]
 				local track: any = TRACK_INDEX[id]
 				local rowY = 28 + (index - 1) * 34
-				label(favoriteCard, tostring(track[2]), UDim2.fromOffset(12, rowY), UDim2.new(1, -112, 0, 26), C.White, 10, true)
+				local favoriteGenre: any = TRACK_GENRE[id]
+				local favoriteArt = TRACK_ARTWORK[id]
+				local favoriteCover = make("Frame", {
+					Name = "FavoriteArtwork",
+					Position = UDim2.fromOffset(12, rowY + 1),
+					Size = UDim2.fromOffset(26, 26),
+					BackgroundColor3 = if favoriteGenre then favoriteGenre.color:Lerp(C.Base, 0.48) else C.SurfaceLight,
+					BorderSizePixel = 0,
+				}, favoriteCard)
+				corner(favoriteCover, 7)
+				if favoriteArt and favoriteArt > 0 then
+					make("ImageLabel", {Name="Artwork", Size=UDim2.fromScale(1, 1), BackgroundTransparency=1, Image="rbxassetid://" .. tostring(favoriteArt), ScaleType=Enum.ScaleType.Crop}, favoriteCover)
+				else
+					local disc = make("Frame", {AnchorPoint=Vector2.new(0.5, 0.5), Position=UDim2.fromScale(0.5, 0.5), Size=UDim2.fromOffset(16, 16), BackgroundColor3=if favoriteGenre then favoriteGenre.color else C.Cyan, BorderSizePixel=0}, favoriteCover)
+					corner(disc, 8)
+				end
+				label(favoriteCard, tostring(track[2]), UDim2.fromOffset(46, rowY), UDim2.new(1, -146, 0, 17), C.White, 10, true)
+				label(favoriteCard, tostring(track[3]), UDim2.fromOffset(46, rowY + 17), UDim2.new(1, -146, 0, 13), C.Muted, 8, false)
 				local disabled, reason = requestsDisabled()
 				actionButton(favoriteCard, if disabled then "LOCKED" else "REQUEST",
 					UDim2.new(1, -88, 0, rowY), UDim2.fromOffset(76, 26), function()
