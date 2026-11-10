@@ -1983,15 +1983,28 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 				local callOk, didAdvance, state, message = globalInvoke(
 					"AdvanceGlobalQueue", expectedRevision, fallback, localCatalogRevision
 				)
+				if typeof(state) == "table" then applyGlobalQueueState(state) end
 				if callOk and didAdvance == true and typeof(state) == "table" then
-					if not applyGlobalQueueState(state) then
-						return false, "The shared transition was accepted, but its state snapshot could not be applied."
-					end
 					return true, nil
 				end
 				return false, tostring(message or (if callOk then "The shared queue rejected the transition." else "The shared queue service is unavailable."))
 			end
 			local didAdvance, failureReason = attemptGlobalAdvance()
+			if not didAdvance and failureReason == "Catalog changed on another server; refresh and retry." then
+				-- The reservation/revision may have committed after the preflight
+				-- snapshot. Reconcile the catalog, then retry once with the refreshed
+				-- playlist cursor or a new Auto DJ fallback if the old ID disappeared.
+				if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
+					and refreshLocalCatalog and refreshLocalCatalog() then
+					if not TRACK_BY_ID[fallback.trackId] then
+						local refreshedPlaylistTrack = nextPlaylistTrack()
+						fallback = if refreshedPlaylistTrack
+							then makeEntry(refreshedPlaylistTrack, "playlist", nil)
+							else makeEntry(pickAutoTrack(), "auto", nil)
+					end
+					didAdvance, failureReason = attemptGlobalAdvance()
+				end
+			end
 			-- A stale revision means another server has already won this transition.
 			-- Refresh and accept that authoritative advance instead of issuing a
 			-- second skip against the newly-current track (which would double-skip).
