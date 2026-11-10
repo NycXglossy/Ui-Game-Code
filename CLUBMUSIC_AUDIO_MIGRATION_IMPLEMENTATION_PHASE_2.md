@@ -223,3 +223,10 @@ The backend contract confirms that Play(nil, position) is supported after SetAss
 The standalone crossfade coordinator and the server RBXMX package now require incoming decks to expose SetAsset and IsReady. A transition first mutes the incoming deck, assigns the requested asset, and waits up to eight seconds for readiness before starting playback and beginning the fade. If readiness times out or the operation is cancelled, the incoming deck is stopped and cleaned up while the outgoing controller-owned deck is restored to full gain. This prevents a buffering AudioPlayer from causing the currently audible track to fade prematurely.
 
 The manager remains dormant: the server controller does not instantiate it, no crossfade is started, and the existing ServerMusicSound remains the live main output. No Roblox Studio playback or multiplayer tests were run; this change is source/package preparation only.
+
+
+## Crossfade gain-profile preservation — phase 14
+
+The crossfade coordinator now requires a controller-provided `GetOutgoingGain()` callback in addition to `SetOutgoingGain()`. It captures the outgoing deck's validated gain (finite, between 0 and 1) before starting, scales both decks against that baseline during the fade, restores that exact baseline on cancellation/failure, and leaves the incoming deck at the same baseline after commit. This avoids silently restoring full gain or overwriting a reduced gain profile when a transition is interrupted.
+
+The standalone module and `ClubMusic_Audio_Server_Modules.rbxmx` embedded source are synchronized and were verified byte-for-byte after update. This remains preparation only: the controller does not instantiate crossfade, no dual-deck transition is active, and the legacy `ServerMusicSound` remains the live main output. The controller callback wiring and Studio validation are still required; no Roblox Studio runtime or multiplayer tests were run.
