@@ -931,7 +931,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 	local transitionRevision = nil
 	local context = {
 		CreateDeck = function()
-			return BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService") })
+			return BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService"), InitialGain = 0 })
 		end,
 		GetOutgoingGain = function()
 			transitionOutgoing = activeAudioSource
