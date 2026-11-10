@@ -3380,7 +3380,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			-- after deleting the catalog record but before finalizing, a retry sees
 			-- the missing record and safely completes the existing reservation.
 			if not refreshCatalogWhenReady() then
-				notify(player, "Removal is reserved globally, but the catalog could not be refreshed. Retry ;cmremove after storage recovers.", "warn")
+				notify(player, "Removal is reserved globally, but the catalog could not be refreshed. Retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
 				return
 			end
 			track = TRACK_BY_ID[trackId]
@@ -3415,7 +3415,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		end
 		if not removed then
 			if globalQueueMode then
-				notify(player, tostring(message) .. " The shared removal reservation remains active to prevent stale servers from queueing this track. Retry ;cmremove after storage recovers.", "warn")
+				notify(player, tostring(message) .. " The shared removal reservation remains active to prevent stale servers from queueing this track. Retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
 			else
 				notify(player, message, "warn")
 			end
@@ -3446,7 +3446,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 		if globalQueueMode then
 			if not rotationReady then
-				notify(player, "Catalog record is removed, but the shared playlist rotation is not synchronized. The safety reservation remains active; retry ;cmremove after storage recovers.", "warn")
+				notify(player, "Catalog record is removed, but the shared playlist rotation is not synchronized. The safety reservation remains active; retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
 				publishState(nil)
 				return
 			end
@@ -3454,7 +3454,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
 			if not completeCallOk or completed ~= true then
 				warn("[ClubMusic] Catalog record removed but shared reservation finalization is pending: " .. tostring(completeMessage))
-				notify(player, "Catalog record removed. Shared reservation finalization is pending; retry ;cmremove to finish safely.", "warn")
+				notify(player, "Catalog record removed. Shared reservation finalization is pending; retry the catalog removal from the staff catalog UI for this same track to finish safely.", "warn")
 				publishState(nil)
 				return
 			end
