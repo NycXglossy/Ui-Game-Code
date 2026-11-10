@@ -405,18 +405,18 @@ bindFunction("GetGlobalQueueState", function()
 	return MusicGlobalQueueService:GetSnapshot()
 end)
 
-bindFunction("EnqueueGlobalQueueEntry", function(entry: any, playerQueueCap: any)
+bindFunction("EnqueueGlobalQueueEntry", function(entry: any, playerQueueCap: any, catalogRevision: any)
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Enqueue(entry, playerQueueCap)
+	local ok, state, message = MusicGlobalQueueService:Enqueue(entry, playerQueueCap, catalogRevision)
 	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
 	return ok, state, message
 end)
 
-bindFunction("EnqueueGlobalQueueBatch", function(entries: any, maxQueueSize: any, targetQueueSize: any)
+bindFunction("EnqueueGlobalQueueBatch", function(entries: any, maxQueueSize: any, targetQueueSize: any, catalogRevision: any)
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:EnqueueBatch(entries, maxQueueSize, targetQueueSize)
+	local ok, state, message = MusicGlobalQueueService:EnqueueBatch(entries, maxQueueSize, targetQueueSize, catalogRevision)
 	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
 	return ok, state, message
 end)
@@ -461,11 +461,41 @@ bindFunction("ClearGlobalQueue", function()
 	return ok, state, message
 end)
 
-bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallbackEntry: any)
+bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallbackEntry: any, catalogRevision: any)
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry)
+	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry, catalogRevision)
 	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
+bindFunction("ReserveCatalogRemoval", function(trackId: any, catalogRevision: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
+	local ok, state, message = MusicGlobalQueueService:ReserveCatalogRemoval(trackId, catalogRevision)
+	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
+bindFunction("CompleteCatalogRemoval", function(trackId: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
+	local ok, state, message = MusicGlobalQueueService:CompleteCatalogRemoval(trackId)
+	if ok then
+		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
+		publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
+	end
+	return ok, state, message
+end)
+
+bindFunction("AdvanceCatalogRevision", function()
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
+	local ok, state, message = MusicGlobalQueueService:AdvanceCatalogRevision()
+	if ok then
+		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
+		publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
+	end
 	return ok, state, message
 end)
 
