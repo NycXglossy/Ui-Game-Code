@@ -54,7 +54,7 @@ function MusicPlaybackManager:GetCurrentSong()
 end
 
 function MusicPlaybackManager:GetSound(): Sound?
-	if self.destroyed then return nil end
+	if self.destroyed or typeof(self.context.GetSound) ~= "function" then return nil end
 	local ok, sound = pcall(self.context.GetSound)
 	if ok and typeof(sound) == "Instance" and sound:IsA("Sound") then return sound end
 	return nil
