@@ -677,6 +677,16 @@ else
 end
 
 local function reportOperationalError(subsystem: string, operation: string, err: any, context: Instance?)
+	local metricName = string.lower(tostring(subsystem)) .. ":" .. string.lower(tostring(operation))
+	if globalMetricsService then
+		pcall(globalMetricsService.Record, globalMetricsService, "error:" .. string.sub(metricName, 1, 42), 1)
+		if string.find(metricName, "playback", 1, true) or string.find(metricName, "audio", 1, true) then
+			pcall(globalMetricsService.Record, globalMetricsService, "playbackFailure", 1)
+		end
+	end
+	if globalEventLogService then
+		pcall(globalEventLogService.Record, globalEventLogService, "OperationalError", tostring(subsystem) .. "." .. tostring(operation), "Error")
+	end
 	if globalErrorHandler then
 		local reportOk, reportResult = pcall(
 			globalErrorHandler.Report,
@@ -962,6 +972,11 @@ bindFunction("GetGlobalDiagnostics", function()
 		syncStatus = getGlobalSyncStatus(),
 		errorHistoryAvailable = errorsAvailable,
 		recentErrors = errors,
+		operationalServices = {
+			registry = if globalRegistryService then globalRegistryService:GetStatus() else nil,
+			metrics = if globalMetricsService then globalMetricsService:GetStatus() else nil,
+			watchdog = if globalWatchdogService then globalWatchdogService:GetStatus() else nil,
+		},
 	}
 end)
 
