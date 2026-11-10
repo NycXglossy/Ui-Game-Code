@@ -1782,13 +1782,46 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		make("Frame", {Name="TrackAccent", Position=UDim2.fromOffset(0, if compact then 8 else 12), Size=UDim2.fromOffset(2, if compact then 68 else 42), BackgroundColor3=C.Gold, BackgroundTransparency=0.28, BorderSizePixel=0}, frame)
 
 		local artworkId = TRACK_ARTWORK[id]
-		local textX = if artworkId then 66 else 12
-		local artworkWidth = if artworkId then 54 else 0
+		-- Keep every catalog row aligned like a real music library. Tracks without
+		-- uploaded artwork receive a genre-tinted record tile instead of losing
+		-- the cover column and shifting their title/artist text left.
+		local textX = 66
+		local artworkWidth = 54
 		local titleInset = (if compact then (if string.sub(id, 1, 7) == "custom-" then -76 else -14) else (if canAddToPlaylist then (if canRemove then -330 else -250) else (if canRemove then -250 else -176))) - artworkWidth
 		local artistInset = if compact then -14 - artworkWidth else titleInset
 		if artworkId then
 			local cover = make("ImageLabel", {Name="CatalogArtwork", Position=UDim2.fromOffset(12, 8), Size=UDim2.fromOffset(46, 46), BackgroundColor3=C.Base, BorderSizePixel=0, Image="rbxassetid://" .. tostring(artworkId), ScaleType=Enum.ScaleType.Crop}, frame)
 			corner(cover, 8)
+		else
+			local genreInfo: any = TRACK_GENRE[id]
+			local coverColor = if genreInfo and typeof(genreInfo.color) == "Color3" then genreInfo.color else C.Cyan
+			local cover = make("Frame", {
+				Name = "CatalogArtworkPlaceholder",
+				Position = UDim2.fromOffset(12, 8),
+				Size = UDim2.fromOffset(46, 46),
+				BackgroundColor3 = coverColor:Lerp(C.Base, 0.62),
+				BorderSizePixel = 0,
+			}, frame)
+			corner(cover, 8)
+			stroke(cover, coverColor:Lerp(C.White, 0.18), 1).Transparency = 0.38
+			local record = make("Frame", {
+				Name = "RecordDisc",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(29, 29),
+				BackgroundColor3 = coverColor,
+				BorderSizePixel = 0,
+			}, cover)
+			corner(record, 15)
+			local recordLabel = make("Frame", {
+				Name = "RecordLabel",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(8, 8),
+				BackgroundColor3 = C.Base,
+				BorderSizePixel = 0,
+			}, record)
+			corner(recordLabel, 5)
 		end
 		label(frame, tostring(track[2]), UDim2.fromOffset(textX, if compact then 4 else 8), UDim2.new(1, titleInset, 0, 22), C.White, 13, true)
 		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(textX, if compact then 25 else 32), UDim2.new(1, artistInset, 0, 18), C.Muted, 11, false)
@@ -2623,6 +2656,19 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 
 		if showPlaylists == true then return end
+
+		local catalogIntro = card(64)
+		local introAccent = make("Frame", {
+			Name = "CatalogIntroAccent",
+			Position = UDim2.fromOffset(0, 9),
+			Size = UDim2.fromOffset(3, 46),
+			BackgroundColor3 = C.Gold,
+			BorderSizePixel = 0,
+		}, catalogIntro)
+		corner(introAccent, 2)
+		label(catalogIntro, "THE FESTIVAL CATALOG", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 16), C.Gold, 9, true)
+		label(catalogIntro, "Find your next favorite track", UDim2.fromOffset(12, 25), UDim2.new(1, -24, 0, 20), C.White, 13, true)
+		label(catalogIntro, "Search by title, artist or genre, then request it for the live queue.", UDim2.fromOffset(12, 45), UDim2.new(1, -24, 0, 13), C.Muted, 9, false)
 
 		if perm() >= 1 and selectedPlaylistId ~= nil then
 			local targetCard = card(42)
