@@ -171,9 +171,17 @@ local function sanitizeState(raw: any): State
 	state.autoQueueHold = raw.autoQueueHold == true
 	state.catalogRevision = if finite(raw.catalogRevision)
 		then math.clamp(math.floor(raw.catalogRevision), 0, MAX_SAFE_INTEGER) else 0
-	state.catalogChangeTrackId = if cleanText(raw.catalogChangeTrackId, 32) then raw.catalogChangeTrackId else nil
+	-- Accept the earlier in-branch reservation field during rollout so an
+	-- interrupted removal is not discarded when the service script is updated.
+	local pendingCatalogTrackId = if cleanText(raw.catalogChangeTrackId, 32)
+		then raw.catalogChangeTrackId
+		elseif cleanText(raw.catalogRemovalTrackId, 32) then raw.catalogRemovalTrackId
+		else nil
+	state.catalogChangeTrackId = pendingCatalogTrackId
 	state.catalogChangeKind = if raw.catalogChangeKind == "remove" or raw.catalogChangeKind == "add"
-		then raw.catalogChangeKind else nil
+		then raw.catalogChangeKind
+		elseif cleanText(raw.catalogRemovalTrackId, 32) then "remove"
+		else nil
 	if state.catalogChangeTrackId == nil then state.catalogChangeKind = nil end
 	state.current = sanitizeEntry(raw.current)
 	if typeof(raw.queue) == "table" then
