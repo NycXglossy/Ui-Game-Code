@@ -564,6 +564,79 @@ bindFunction("IsEnabled", function()
 	return SERVICE_ENABLED
 end)
 
+-- Optional operational services. They observe the existing global queue and
+-- never create a second playback controller or mutate queue ownership.
+local globalRecoveryService: any = nil
+local globalHealthService: any = nil
+
+local function loadOptionalGlobalModule(moduleName: string): any?
+	local module = ServerStorage:FindFirstChild(moduleName)
+	if not module or not module:IsA("ModuleScript") then
+		warn("[ClubMusic Global] Optional service module is missing: ServerStorage." .. moduleName)
+		return nil
+	end
+	local ok, result = pcall(require, module)
+	if not ok then
+		warn("[ClubMusic Global] Optional service failed to load (" .. moduleName .. "): " .. tostring(result))
+		return nil
+	end
+	if typeof(result) ~= "table" or type(result.new) ~= "function" then
+		warn("[ClubMusic Global] Optional service has an invalid module contract: " .. moduleName)
+		return nil
+	end
+	return result
+end
+
+local recoveryModule = loadOptionalGlobalModule("ClubMusic_Global_Recovery_Service")
+if recoveryModule then
+	local createOk, instance = pcall(function()
+		return recoveryModule.new({
+			isEnabled = function() return SERVICE_ENABLED end,
+			allowStoreOperation = allowGlobalQueueStoreOperation,
+			invalidateSnapshot = function()
+				if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
+					MusicGlobalQueueService:InvalidateSnapshot()
+				end
+			end,
+			getSnapshot = function()
+				return MusicGlobalQueueService:GetSnapshot()
+			end,
+			initialRetrySeconds = 30,
+			maxRetrySeconds = 180,
+		})
+	end)
+	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
+		globalRecoveryService = instance
+		globalRecoveryService:Start()
+	else
+		warn("[ClubMusic Global] Could not initialize Global Recovery Service: " .. tostring(instance))
+	end
+end
+
+local healthModule = loadOptionalGlobalModule("ClubMusic_Global_Health_Service")
+if healthModule and globalRecoveryService then
+	local createOk, instance = pcall(function()
+		return healthModule.new({
+			isEnabled = function() return SERVICE_ENABLED end,
+			getRecoveryStatus = function() return globalRecoveryService:GetStatus() end,
+			apiFolder = apiFolder,
+			queueModule = queueModule,
+			intervalSeconds = 30,
+		})
+	end)
+	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
+		globalHealthService = instance
+		globalHealthService:Start()
+	else
+		warn("[ClubMusic Global] Could not initialize Global Health Service: " .. tostring(instance))
+	end
+end
+
+bindFunction("GetGlobalHealth", function()
+	if not globalHealthService then return false, nil end
+	return true, globalHealthService:GetStatus()
+end)
+
 bindFunction("ReportSignal", function(userId: any, signal: any, detail: any)
 	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
