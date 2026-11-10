@@ -3188,52 +3188,93 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		if not isStaff(player) then notify(player, "Only staff can remove catalog tracks.", "warn"); return end
 		local trackId = payload.trackId
 		if not isValidString(trackId, 32) then return end
-		local track = TRACK_BY_ID[trackId]
-		if not track or track.assetId == nil then
-			notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
-		end
-		if nowPlaying.trackId == trackId then
-			notify(player, "That track is currently playing. Remove it after playback ends.", "warn"); return
-		end
-		if globalQueueMode then
-			-- The local queue is only a mirror in global mode. Read the authoritative
-			-- snapshot before deleting so a just-enqueued shared entry cannot be missed
-			-- merely because this server has not received its queue notification yet.
-			local readCallOk, readOk, sharedState = globalInvoke("GetGlobalQueueState")
-			if not readCallOk or readOk ~= true or typeof(sharedState) ~= "table"
-				or typeof(sharedState.queue) ~= "table" or typeof(sharedState.current) ~= "table" then
-				notify(player, "The shared queue could not be verified; track was not removed.", "warn"); return
-			end
-			if sharedState.current.trackId == trackId then
-				notify(player, "That track is currently playing across servers. Remove it after playback ends.", "warn"); return
-			end
-			for _, queued in ipairs(sharedState.queue) do
-				if typeof(queued) == "table" and queued.trackId == trackId then
-					notify(player, "That track is in the shared queue. Remove it from the queue first.", "warn"); return
-				end
-			end
-		end
-		for _, queued in ipairs(queue) do
-			if queued.trackId == trackId then
-				notify(player, "That track is queued. Remove it from the queue first.", "warn"); return
-			end
-		end
 		if not catalogStorageReady or not waitForDataStoreBudget(5) then
 			notify(player, "Catalog storage is unavailable; track was not removed.", "warn"); return
 		end
-		local removed, message = MusicCatalogService:RemoveCustomTrack(trackId)
-		if not removed then notify(player, message, "warn"); return end
+
+		local track = TRACK_BY_ID[trackId]
+		if not globalQueueMode then
+			if not track or track.assetId == nil then
+				notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
+			end
+			if nowPlaying.trackId == trackId then
+				notify(player, "That track is currently playing. Remove it after playback ends.", "warn"); return
+			end
+			for _, queued in ipairs(queue) do
+				if queued.trackId == trackId then
+					notify(player, "That track is queued. Remove it from the queue first.", "warn"); return
+				end
+			end
+		else
+			-- Reserve the ID atomically in the same DataStore used by every global
+			-- enqueue/advance. This closes the read-queue-then-delete race.
+			local reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
+				"ReserveCatalogRemoval", trackId, localCatalogRevision
+			)
+			if typeof(reserveState) == "table" then applyGlobalQueueState(reserveState) end
+			if reserveCallOk and reserved ~= true
+				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
+				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				if refreshLocalCatalog then refreshLocalCatalog() end
+				reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
+					"ReserveCatalogRemoval", trackId, localCatalogRevision
+				)
+				if typeof(reserveState) == "table" then applyGlobalQueueState(reserveState) end
+			end
+			local alreadyReserved = reserveCallOk and reserved ~= true
+				and tostring(reserveMessage) == "Catalog removal is already reserved for this track."
+			if not reserveCallOk or (reserved ~= true and not alreadyReserved) then
+				notify(player, tostring(reserveMessage or "The shared catalog could not reserve this removal."), "warn")
+				return
+			end
+			-- Refresh after the reservation's revision bump. If this server stopped
+			-- after deleting the catalog record but before finalizing, a retry sees
+			-- the missing record and safely completes the existing reservation.
+			if not refreshLocalCatalog or not refreshLocalCatalog() then
+				notify(player, "Removal is reserved globally, but the catalog could not be refreshed. Retry ;cmremove after storage recovers.", "warn")
+				return
+			end
+			track = TRACK_BY_ID[trackId]
+			if track and track.assetId == nil then
+				notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
+			end
+		end
+
+		local removed = false
+		local message = "Track removed from the shared catalog."
+		if track then
+			removed, message = MusicCatalogService:RemoveCustomTrack(trackId)
+			if not removed and globalQueueMode then
+				-- UpdateAsync can report an error after its write outcome becomes
+				-- uncertain. Re-read before deciding whether to keep the reservation.
+				if MusicCatalogService:Refresh() then
+					if MusicCatalogService:GetTrackById(trackId) == nil then
+						removed = true
+						message = "Catalog removal was already committed; shared reservation recovered."
+					end
+				end
+			end
+		else
+			-- A missing local record is acceptable only when this is a reserved
+			-- global retry and the authoritative catalog refresh confirmed absence.
+			removed = globalQueueMode == true
+		end
+		if not removed then
+			if globalQueueMode then
+				notify(player, tostring(message) .. " The shared removal reservation remains active to prevent stale servers from queueing this track. Retry ;cmremove after storage recovers.", "warn")
+			else
+				notify(player, message, "warn")
+			end
+			return
+		end
+
 		TRACK_BY_ID[trackId] = nil
 		for index, id in ipairs(ALL_TRACK_IDS) do
 			if id == trackId then table.remove(ALL_TRACK_IDS, index); break end
 		end
-		-- Remove the deleted track from the active in-memory rotation immediately.
-		-- The persistent playlist keeps its ID so restoration can make it playable again.
 		if activePlaylistId then
 			for index = #activePlaylistTracks, 1, -1 do
-				if activePlaylistTracks[index].id == trackId then
-					table.remove(activePlaylistTracks, index)
-				end
+				if activePlaylistTracks[index].id == trackId then table.remove(activePlaylistTracks, index) end
 			end
 			activePlaylistCursor = math.clamp(activePlaylistCursor, 1, math.max(1, #activePlaylistTracks))
 			if globalQueueMode then
@@ -3246,6 +3287,18 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 				topUpAuto()
 			end
 		end
+
+		if globalQueueMode then
+			local completeCallOk, completed, completeState, completeMessage = globalInvoke("CompleteCatalogRemoval", trackId)
+			if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
+			if not completeCallOk or completed ~= true then
+				warn("[ClubMusic] Catalog record removed but shared reservation finalization is pending: " .. tostring(completeMessage))
+				notify(player, "Catalog record removed. Shared reservation finalization is pending; retry ;cmremove to finish safely.", "warn")
+				publishState(nil)
+				return
+			end
+		end
+
 		local publishOk, published = globalInvoke("PublishCatalogChange")
 		if not publishOk or published ~= true then
 			warn("[ClubMusic] Catalog removal saved locally; cross-server invalidation publish failed.")
