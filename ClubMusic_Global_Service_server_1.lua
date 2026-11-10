@@ -670,6 +670,42 @@ bindFunction("GetGlobalHealth", function()
 	return true, globalHealthService:GetStatus()
 end)
 
+-- Server-only diagnostic snapshot for trusted scripts in ServerStorage.
+-- This API performs no DataStore/MessagingService calls and never changes service state.
+bindFunction("GetGlobalDiagnostics", function()
+	local healthOk, health = pcall(function()
+		return if globalHealthService then globalHealthService:GetStatus() else nil
+	end)
+	local recoveryOk, recovery = pcall(function()
+		return if globalRecoveryService then globalRecoveryService:GetStatus() else nil
+	end)
+	local errors = {}
+	local errorsAvailable = false
+	if globalErrorHandler and type(globalErrorHandler.GetRecentErrors) == "function" then
+		local errorsOk, result = pcall(globalErrorHandler.GetRecentErrors)
+		if errorsOk and typeof(result) == "table" then
+			errorsAvailable = true
+			local firstIndex = math.max(1, #result - 19)
+			for index = firstIndex, #result do
+				local record = result[index]
+				if typeof(record) == "table" then
+					table.insert(errors, table.clone(record))
+				end
+			end
+		end
+	end
+	return true, {
+		generatedAt = os.time(),
+		serviceEnabled = SERVICE_ENABLED,
+		healthAvailable = healthOk and health ~= nil,
+		health = if healthOk then health else nil,
+		recoveryAvailable = recoveryOk and recovery ~= nil,
+		recovery = if recoveryOk then recovery else nil,
+		errorHistoryAvailable = errorsAvailable,
+		recentErrors = errors,
+	}
+end)
+
 bindFunction("ReportSignal", function(userId: any, signal: any, detail: any)
 	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
