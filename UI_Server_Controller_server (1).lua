@@ -801,15 +801,19 @@ if not queueManagerModule or not queueManagerModule:IsA("ModuleScript") then
 	error("[ClubMusic] MusicQueueManager startup blocked. " .. detail)
 end
 
-local queueManagerRequireOk, queueManagerRequireResult
+local queueManagerRequireOk, queueManagerRequireResult, queueManagerErrorId
 if ControllerFunctions.ErrorHandler then
-	queueManagerRequireOk, queueManagerRequireResult = ControllerFunctions.ErrorHandler.SafeRequire(queueManagerModule, "ServerStorage.MusicQueueManager")
+	queueManagerRequireOk, queueManagerRequireResult, queueManagerErrorId = ControllerFunctions.ErrorHandler.SafeRequire(queueManagerModule, "ServerStorage.MusicQueueManager")
 else
 	queueManagerRequireOk, queueManagerRequireResult = pcall(require, queueManagerModule)
 end
 if not queueManagerRequireOk then
 	local detail = "MusicQueueManager failed to load: " .. tostring(queueManagerRequireResult)
-	ControllerFunctions.reportStartupError("ModuleLoader", "Require MusicQueueManager", detail, queueManagerModule)
+	if queueManagerErrorId then
+		pcall(function() remotes:SetAttribute("StartupError", "[" .. queueManagerErrorId .. "] " .. string.sub(detail, 1, 850)) end)
+	else
+		ControllerFunctions.reportStartupError("ModuleLoader", "Require MusicQueueManager", detail, queueManagerModule)
+	end
 	error("[ClubMusic] " .. detail)
 end
 if typeof(queueManagerRequireResult) ~= "table" or typeof(queueManagerRequireResult.new) ~= "function" then
@@ -839,15 +843,19 @@ for _, moduleName in ipairs({
 		error("[ClubMusic] " .. detail)
 	end
 
-	local requireOk, requireResult
+	local requireOk, requireResult, requireErrorId
 	if ControllerFunctions.ErrorHandler then
-		requireOk, requireResult = ControllerFunctions.ErrorHandler.SafeRequire(moduleScript, "ServerStorage." .. moduleName)
+		requireOk, requireResult, requireErrorId = ControllerFunctions.ErrorHandler.SafeRequire(moduleScript, "ServerStorage." .. moduleName)
 	else
 		requireOk, requireResult = pcall(require, moduleScript)
 	end
 	if not requireOk or typeof(requireResult) ~= "table" then
 		local detail = moduleName .. " failed to load or returned an invalid module table: " .. tostring(requireResult)
-		ControllerFunctions.reportStartupError("ModuleLoader", "Load " .. moduleName, detail, moduleScript)
+		if requireErrorId then
+			pcall(function() remotes:SetAttribute("StartupError", "[" .. requireErrorId .. "] " .. string.sub(detail, 1, 850)) end)
+		else
+			ControllerFunctions.reportStartupError("ModuleLoader", "Load " .. moduleName, detail, moduleScript)
+		end
 		error("[ClubMusic] " .. detail)
 	end
 	ControllerFunctions.ChildManagerModules[moduleName] = requireResult
