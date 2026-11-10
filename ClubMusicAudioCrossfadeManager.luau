@@ -31,6 +31,7 @@ end
 function Manager.new(context)
 	assert(typeof(context) == "table", "Crossfade manager requires controller context.")
 	assert(typeof(context.CreateDeck) == "function", "Crossfade manager requires CreateDeck.")
+	assert(typeof(context.SetOutgoingGain) == "function", "Crossfade manager requires SetOutgoingGain; refusing an unsafe full-volume dual-deck fade.")
 	assert(typeof(context.OnCommit) == "function", "Crossfade manager requires OnCommit.")
 	return setmetatable({
 		context = context,
