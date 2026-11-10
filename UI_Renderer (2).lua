@@ -2043,6 +2043,42 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				if renderTabFn then renderTabFn() end
 			end)
 		end
+
+		local favorites: any = state.favorites
+		local favoriteIds: {string} = {}
+		if typeof(favorites) == "table" then
+			for id, isFavorite in pairs(favorites) do
+				if isFavorite == true and typeof(id) == "string" and TRACK_INDEX[id] then
+					table.insert(favoriteIds, id)
+				end
+			end
+		end
+		table.sort(favoriteIds, function(a, b)
+			return string.lower(tostring(TRACK_INDEX[a][2])) < string.lower(tostring(TRACK_INDEX[b][2]))
+		end)
+		local favoriteCount = math.min(#favoriteIds, 3)
+		local favoriteCard = card(48 + math.max(1, favoriteCount) * 34)
+		label(favoriteCard, "YOUR FAVORITES", UDim2.fromOffset(12, 6), UDim2.new(1, -112, 0, 17), C.Gold, 10, true)
+		actionButton(favoriteCard, "LIBRARY", UDim2.new(1, -88, 0, 5), UDim2.fromOffset(76, 24), function()
+			activeTab = "Music"
+			if renderTabFn then renderTabFn() end
+		end, C.SurfaceLight)
+		if favoriteCount == 0 then
+			label(favoriteCard, "Save tracks with the star button and they will appear here.", UDim2.fromOffset(12, 25), UDim2.new(1, -24, 0, 22), C.Muted, 9, false)
+		else
+			for index = 1, favoriteCount do
+				local id = favoriteIds[index]
+				local track: any = TRACK_INDEX[id]
+				local rowY = 28 + (index - 1) * 34
+				label(favoriteCard, tostring(track[2]), UDim2.fromOffset(12, rowY), UDim2.new(1, -112, 0, 26), C.White, 10, true)
+				local disabled, reason = requestsDisabled()
+				actionButton(favoriteCard, if disabled then "LOCKED" else "REQUEST",
+					UDim2.new(1, -88, 0, rowY), UDim2.fromOffset(76, 26), function()
+					if disabled then notify(reason, C.Orange); return end
+					act("RequestTrack", {trackId = id}, id)
+				end, if disabled then C.SurfaceLight else C.Purple)
+			end
+		end
 	end
 
 	local function renderQueue()
