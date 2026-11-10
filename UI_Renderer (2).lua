@@ -4390,7 +4390,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function applyMenuTypography()
 		-- Keep typography readable without fighting the panel's device UIScale.
 		local scaleByDevice = {Desktop=1.04, Tablet=0.98, Mobile=0.92, Console=1.02, VR=0.96}
-		local textScale = scaleByDevice[currentDevice] or 1
+		local camera = workspace.CurrentCamera
+		local viewportWidth = if camera then camera.ViewportSize.X else 1280
+		-- A narrow desktop window needs the same typography restraint as a tablet;
+		-- do not let the device label override the actual available width.
+		local textScale = (scaleByDevice[currentDevice] or 1) * (if viewportWidth < 560 then 0.9 elseif viewportWidth < 760 then 0.95 else 1)
 		for _, item in ipairs(panel:GetDescendants()) do
 			if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
 				local baseSize = item:GetAttribute("ClubBaseTextSize")
@@ -4398,8 +4402,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					baseSize = item.TextSize
 					item:SetAttribute("ClubBaseTextSize", baseSize)
 				end
-				local minSize = if currentDevice == "Mobile" then 8 else 9
-				local maxSize = if currentDevice == "Mobile" then 25 else 28
+				local minSize = if currentDevice == "Mobile" or viewportWidth < 560 then 8 else 9
+				local maxSize = if currentDevice == "Mobile" then 25 elseif viewportWidth < 560 then 24 else 28
 				item.TextSize = math.clamp(math.floor(baseSize * textScale + 0.5), minSize, maxSize)
 				if item:IsA("TextButton") then
 					item.TextScaled = false
