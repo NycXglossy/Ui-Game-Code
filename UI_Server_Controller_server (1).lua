@@ -952,10 +952,46 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return false
 			end
 			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
-			if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer") then return false end
+			if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer")
+				or not player.IsPlaying then return false end
+
+			-- Stop the outgoing source before changing ownership. If it cannot be
+			-- stopped, leave the old source authoritative so Cancel can restore gain.
+			local outgoingSnapshot = ControllerFunctions.getAudioSnapshot()
+			local outgoingWasPlaying = typeof(outgoingSnapshot) == "table" and outgoingSnapshot.playing == true
+			local outgoingPosition = if typeof(outgoingSnapshot) == "table"
+				then math.max(0, tonumber(outgoingSnapshot.position) or 0) else 0
+			local stopOk, stopResult = pcall(function()
+				if outgoing.kind == "Backend" and outgoing.backend then
+					return outgoing.backend:Stop()
+				elseif outgoing.kind == "Sound" and outgoing.instance
+					and outgoing.instance:IsA("Sound") then
+					outgoing.instance:Stop()
+					return not outgoing.instance.IsPlaying
+				end
+				return false
+			end)
+			if not stopOk or stopResult == false then return false end
+
 			activeAudioSource = { kind = "Backend", backend = incoming }
+			local bindOk = pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
+			if not bindOk then
+				activeAudioSource = outgoing
+				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
+				if outgoingWasPlaying then
+					pcall(function()
+						if outgoing.kind == "Backend" then
+							outgoing.backend:Play(nil, outgoingPosition)
+						elseif outgoing.kind == "Sound" then
+							outgoing.instance.TimePosition = outgoingPosition
+							outgoing.instance:Play()
+						end
+					end)
+				end
+				return false
+			end
+
 			audioSourceRevision += 1
-			ControllerFunctions.bindActiveAudioPlayingSignal()
 			if outgoing.kind == "Backend" and outgoing.backend ~= incoming then
 				pcall(function() outgoing.backend:Cleanup() end)
 			end
