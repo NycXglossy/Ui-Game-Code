@@ -601,17 +601,34 @@ musicSound.PlaybackSpeed = 1
 musicSoundGroup.Volume = 1
 musicSound:SetAttribute("ManagedByClubMusicController", true)
 
--- The uploaded "Audio Sound Count" model is a Sound, not a counter script.
--- Publish a truthful count of controller-managed sounds currently playing.
--- This architecture owns exactly one such Sound, so the value is always 0 or 1.
+-- Publish the number of active controller-owned main outputs (0 or 1).
+-- The binding is refreshed whenever the canonical source changes.
+local activeAudioPlayingConnection: RBXScriptConnection? = nil
 ControllerFunctions.refreshActiveMusicSoundCount = function()
-	SoundService:SetAttribute("ActiveMusicSoundCount", if musicSound.IsPlaying then 1 else 0)
+	local snapshot = ControllerFunctions.getAudioSnapshot and ControllerFunctions.getAudioSnapshot() or nil
+	local playing = typeof(snapshot) == "table" and snapshot.playing == true
+	SoundService:SetAttribute("ActiveMusicSoundCount", if playing then 1 else 0)
 end
-ControllerFunctions.refreshActiveMusicSoundCount()
-musicSound:GetPropertyChangedSignal("Playing"):Connect(ControllerFunctions.refreshActiveMusicSoundCount)
+ControllerFunctions.bindActiveAudioPlayingSignal = function()
+	if activeAudioPlayingConnection then
+		activeAudioPlayingConnection:Disconnect()
+		activeAudioPlayingConnection = nil
+	end
+	local source = activeAudioSource
+	local signalInstance = if source.kind == "Backend" and source.backend
+		then source.backend:GetPlayer() else source.instance
+	if typeof(signalInstance) == "Instance" then
+		local ok, signal = pcall(function() return signalInstance:GetPropertyChangedSignal("IsPlaying") end)
+		if ok and signal then
+			activeAudioPlayingConnection = signal:Connect(ControllerFunctions.refreshActiveMusicSoundCount)
+		end
+	end
+	ControllerFunctions.refreshActiveMusicSoundCount()
+end
 
 local playbackPaused = false
 local lastGlobalPlaybackRevision = 0
+ControllerFunctions.bindActiveAudioPlayingSignal()
 
 -- One controller-owned source contract. The legacy Sound remains the active
 -- implementation until every route is migrated and a Studio cutover is validated.
@@ -688,6 +705,84 @@ ControllerFunctions.resumeAudio = function()
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Resume() end
 	source.instance:Resume()
+	return true, nil
+end
+
+-- Replace the canonical source only after a prepared backend is ready and can
+-- start silently. On any failure, restore the previous source and playhead.
+-- This seam is intentionally not called during startup; Studio cutover testing
+-- is still required before any production enablement.
+ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, string?)
+	if typeof(candidate) ~= "table" then return false, "A prepared audio backend is required." end
+	for _, methodName in ipairs({ "IsReady", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetGain", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
+		if typeof(candidate[methodName]) ~= "function" then return false, "Audio backend is missing " .. methodName .. "." end
+	end
+	local readyOk, ready = pcall(function() return candidate:IsReady() end)
+	if not readyOk or ready ~= true then return false, "Incoming audio backend is not ready." end
+	local playerOk, player = pcall(function() return candidate:GetPlayer() end)
+	if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer") then
+		return false, "Incoming audio backend has no valid AudioPlayer."
+	end
+	local outgoing = activeAudioSource
+	local outgoingSnapshot = ControllerFunctions.getAudioSnapshot()
+	local asset = tostring(outgoingSnapshot.asset or "")
+	if asset == "" then return false, "There is no active track to transfer." end
+	local position = math.max(0, tonumber(outgoingSnapshot.position) or 0)
+	local wasPlaying = outgoingSnapshot.playing == true
+	local wasPaused = playbackPaused
+	if wasPlaying and wasPaused then wasPlaying = false end
+	ControllerFunctions.cancelAudioTransition("audio-source-adoption")
+	local gainOk, gainResult = pcall(function() return candidate:SetGain(0) end)
+	if not gainOk or gainResult == false then return false, "Incoming audio backend could not be muted for handoff." end
+	local playOk, playResult = pcall(function() return candidate:Play(asset, position) end)
+	if not playOk or playResult == false then
+		pcall(function() candidate:Stop() end)
+		return false, "Incoming audio backend could not start for handoff."
+	end
+	if wasPaused then
+		local pauseOk, pauseResult = pcall(function() return candidate:Pause() end)
+		if not pauseOk or pauseResult == false then
+			pcall(function() candidate:Stop() end)
+			return false, "Incoming audio backend could not preserve the paused state."
+		end
+	elseif not wasPlaying then
+		pcall(function() candidate:Stop() end)
+		return false, "Outgoing audio was not actively playing; handoff was not committed."
+	end
+	activeAudioSource = { kind = "Backend", backend = candidate }
+	local outgoingStopOk = pcall(function()
+		if outgoing.kind == "Backend" then outgoing.backend:Stop()
+		else outgoing.instance:Stop() end
+	end)
+	if not outgoingStopOk then
+		activeAudioSource = outgoing
+		pcall(function() candidate:Stop() end)
+		if wasPlaying and not wasPaused then
+			pcall(function()
+				if outgoing.kind == "Backend" then outgoing.backend:Play(asset, position)
+				else outgoing.instance.TimePosition = position; outgoing.instance:Play() end
+			end)
+		end
+		ControllerFunctions.bindActiveAudioPlayingSignal()
+		return false, "Outgoing audio could not be stopped; previous source was restored."
+	end
+	local fullGainOk, fullGainResult = pcall(function() return candidate:SetGain(1) end)
+	if not fullGainOk or fullGainResult == false then
+		activeAudioSource = outgoing
+		pcall(function() candidate:Stop() end)
+		if wasPlaying and not wasPaused then
+			pcall(function()
+				if outgoing.kind == "Backend" then outgoing.backend:Play(asset, position)
+				else outgoing.instance.TimePosition = position; outgoing.instance:Play() end
+			end)
+		end
+		ControllerFunctions.bindActiveAudioPlayingSignal()
+		return false, "Incoming gain could not be restored; previous source was rolled back."
+	end
+	ControllerFunctions.bindActiveAudioPlayingSignal()
+	if outgoing.kind == "Backend" and outgoing.backend ~= candidate then
+		pcall(function() outgoing.backend:Cleanup() end)
+	end
 	return true, nil
 end
 
@@ -4873,6 +4968,11 @@ ControllerFunctions.ChildManagers = {}
 local childManagerModules = ControllerFunctions.ChildManagerModules
 local audioManagerOk, audioManager = pcall(childManagerModules.ServerMusicAudioHandler.new, {
 	Sound = musicSound,
+	GetSound = function()
+		local source = activeAudioSource
+		return if source.kind == "Sound" then source.instance else nil
+	end,
+	GetSnapshot = function() return ControllerFunctions.getAudioSnapshot() end,
 	GetPaused = function() return playbackPaused end,
 })
 if not audioManagerOk then error("[ClubMusic] ServerMusicAudioHandler initialization failed: " .. tostring(audioManager)) end
