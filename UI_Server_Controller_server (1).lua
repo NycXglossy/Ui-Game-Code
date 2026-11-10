@@ -927,23 +927,28 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 		or not managerOk or typeof(ManagerClass) ~= "table" or typeof(ManagerClass.new) ~= "function" then
 		return false, "Audio backend or crossfade module failed validation."
 	end
-	local outgoing = activeAudioSource
-	local outgoingRevision = audioSourceRevision
+	local transitionOutgoing = nil
+	local transitionRevision = nil
 	local context = {
 		CreateDeck = function()
 			return BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService") })
 		end,
 		GetOutgoingGain = function()
-			local ok, value = ControllerFunctions.getAudioGain(outgoing)
+			transitionOutgoing = activeAudioSource
+			transitionRevision = audioSourceRevision
+			local ok, value = ControllerFunctions.getAudioGain(transitionOutgoing)
 			if not ok then error("Outgoing audio gain is unavailable.") end
 			return value
 		end,
 		SetOutgoingGain = function(value: number)
-			if activeAudioSource ~= outgoing or audioSourceRevision ~= outgoingRevision then return false end
-			return ControllerFunctions.setAudioGain(value, outgoing)
+			if not transitionOutgoing or activeAudioSource ~= transitionOutgoing
+				or audioSourceRevision ~= transitionRevision then return false end
+			return ControllerFunctions.setAudioGain(value, transitionOutgoing)
 		end,
 		OnCommit = function(incoming: any): boolean
-			if activeAudioSource ~= outgoing or audioSourceRevision ~= outgoingRevision or playbackPaused then
+			local outgoing = transitionOutgoing
+			if not outgoing or activeAudioSource ~= outgoing
+				or audioSourceRevision ~= transitionRevision or playbackPaused then
 				return false
 			end
 			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
