@@ -42,13 +42,17 @@ The six uploaded modules come from a different legacy contract. They cannot safe
 - **MusicQueueManager: integrated as a shared-state adapter.** The controller requires `ServerStorage.MusicQueueManager`, injects its existing `queue` table and `releaseSlot` callback, and routes local queue insertion, pop/advance, moderation removal, staff removal, clear, and automatic-queue cleanup through the adapter. The adapter does not allocate a queue or per-player count table, so controller priority ordering, request-count ownership, snapshots, and global-queue mirror remain authoritative.
 - Controller commit: `7e705364c775070557aed8a98e2c291783046983`.
 - Module commit: `b98c863a1b80430a28b0e8bf4d1d103be247946c`.
-- **Not yet integrated:** MusicPlaybackManager, MusicPlaylistManager, MusicSkipVoteManager, MusicValidationService, and ServerMusicAudioHandler. They require compatibility refactors before activation; in particular, the playback and audio modules must not create a second Sound or playback clock, and the skip-vote module must not override the existing server vote policy.
+- **MusicValidationService: integrated as a metadata-only cache adapter.** The adapted module accepts an injected Marketplace metadata provider, validates finite positive integer asset IDs, caches only successful normalized metadata, expires entries after 300 seconds, and enforces a 128-entry LRU bound. It contains no RoleSystem dependency, player cooldowns, spam counters, permission decisions, or playback behavior.
+- Controller commit: `24076590e9d4a6c59b84ce791791328b47d19054`.
+- Module commit: `3b36d5366c52b2805e6579deeb558e5f8f829551`.
+- The controller still checks the asset type and creates/preloads a fresh AudioProbe on every inspection. Cache hits therefore do not bypass audio-load/playability verification, allowlists, staff checks, per-player cooldowns, global token budgets, or concurrent inspection limits.
+- **Not yet integrated:** MusicPlaybackManager, MusicPlaylistManager, MusicSkipVoteManager, and ServerMusicAudioHandler. They require compatibility refactors before activation; in particular, playback and audio modules must not create a second Sound or playback clock, and the skip-vote module must not override the existing server vote policy.
 - Static source checks confirmed the controller has no remaining direct player-request insertion call and that the manager references the injected controller queue. Roblox Studio runtime and multiplayer tests have not been run.
 
 ## Installation for this stage
 
-Create a ModuleScript named `MusicQueueManager` directly under `ServerStorage` and paste the contents of repository file `MusicQueueManager.lua`. Replace `ServerScriptService.UI_Server_Controller` with the updated `UI_Server_Controller_server (1).lua`. Do not place the ModuleScript under a nested folder unless the controller's `WaitForChild` path is changed too.
+Create ModuleScripts named `MusicQueueManager` and `MusicValidationService` directly under `ServerStorage`, using the matching repository files `MusicQueueManager.lua` and `MusicValidationService.lua`. Replace `ServerScriptService.UI_Server_Controller` with the updated `UI_Server_Controller_server (1).lua`. Do not place either ModuleScript under a nested folder unless its controller `WaitForChild` path is changed too.
 
 ## Current status
 
-Source retrieval and compatibility audit are complete. Queue-manager adapter integration is committed. The remaining five modules are deliberately not activated until their duplicate state ownership and legacy dependencies are removed.
+Source retrieval and compatibility audit are complete. Queue-manager shared-state adapter and validation metadata-cache adapter are committed. Four modules remain: MusicPlaybackManager, MusicPlaylistManager, MusicSkipVoteManager, and ServerMusicAudioHandler. They remain inactive until duplicate state ownership and legacy dependencies are removed. Static source checks are complete for the validation adapter; Roblox Studio runtime and multiplayer tests have not been run.
