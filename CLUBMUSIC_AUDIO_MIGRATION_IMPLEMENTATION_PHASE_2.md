@@ -277,3 +277,8 @@ Added `ControllerFunctions.beginAudioCrossfade(asset, duration)` as a deliberate
 ## Cancellation and teardown failure reporting — phase 21
 
 The crossfade manager now reports failures from incoming-deck stopping/cleanup and outgoing-gain restoration instead of always reporting cancellation success. Its `Cleanup()` method returns the cancellation result while still invalidating the transition and releasing its context. The controller's explicit destroy method now checks and reports a false cleanup result as well as thrown errors. The server package `ClubMusic_Audio_Server_Modules.rbxmx` was updated, and the embedded `ClubMusicAudioCrossfadeManager` source was re-extracted and verified byte-for-byte against the standalone module. The crossfade remains opt-in and is not activated automatically. Static source/package verification only; no Roblox Studio runtime tests were performed.
+
+
+## UI redesign foundation — phase 22
+
+The client renderer now supports a responsive desktop side-rail navigation mode on sufficiently wide desktop viewports. In this mode, the existing destinations move from a horizontal tab strip into a vertically scrollable rail, while the content region shifts right and expands vertically. The selected destination is scrolled into view vertically. Mobile, tablet, console, VR, and narrower desktop layouts retain the existing horizontal navigation and content geometry. This is a layout-only migration: existing tab renderers, catalog/search, queue, playlists, staff tools, network actions, and player controls are preserved; no new remotes or duplicate services were introduced. The renderer source was re-fetched and compared after the update. No Roblox Studio viewport/device runtime tests were run.
