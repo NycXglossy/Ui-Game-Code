@@ -3278,9 +3278,18 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			return
 		end
 		local audioBudgetCallOk, audioBudgetAllowed = globalInvoke("ConsumeAudioBudget", userId)
-		if audioBudgetCallOk and audioBudgetAllowed == false then
-			notify(player, "Global audio inspection capacity is busy. Please try again shortly.", "warn")
-			return
+		if RunService:IsStudio() then
+			if audioBudgetCallOk and audioBudgetAllowed == false then
+				notify(player, "Global audio inspection capacity is busy. Please try again shortly.", "warn")
+				return
+			end
+		else
+			-- Live servers must not silently fall back to independent per-server
+			-- audio limits when the shared cross-server budget is unavailable.
+			if not audioBudgetCallOk or audioBudgetAllowed ~= true then
+				notify(player, "Shared audio inspection capacity is unavailable. Try again shortly.", "warn")
+				return
+			end
 		end
 		local assetId = payload.assetId
 		if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then
