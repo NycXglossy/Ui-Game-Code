@@ -2131,11 +2131,52 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if renderTabFn then renderTabFn() end
 		end, C.SurfaceLight)
 		local current = card(66)
-		label(current, "NOW PLAYING", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 14), C.Cyan, 9, true)
+		local currentId = if now then currentTrackId(now) else nil
+		local currentGenre: any = if currentId then TRACK_GENRE[currentId] else nil
+		local currentArtwork = if now then tonumber(now.artworkAssetId) or (if currentId then TRACK_ARTWORK[currentId] else nil) else nil
+		if currentArtwork and currentArtwork > 0 then
+			local cover = make("ImageLabel", {
+				Name = "QueueCurrentArtwork",
+				Position = UDim2.fromOffset(10, 10),
+				Size = UDim2.fromOffset(46, 46),
+				BackgroundColor3 = C.Base,
+				BorderSizePixel = 0,
+				Image = "rbxassetid://" .. tostring(currentArtwork),
+				ScaleType = Enum.ScaleType.Crop,
+			}, current)
+			corner(cover, 9)
+		else
+			local tint = if currentGenre and typeof(currentGenre.color) == "Color3" then currentGenre.color else C.Cyan
+			local cover = make("Frame", {
+				Name = "QueueCurrentArtworkPlaceholder",
+				Position = UDim2.fromOffset(10, 10),
+				Size = UDim2.fromOffset(46, 46),
+				BackgroundColor3 = tint:Lerp(C.Base, 0.52),
+				BorderSizePixel = 0,
+			}, current)
+			corner(cover, 9)
+			local disc = make("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(27, 27),
+				BackgroundColor3 = tint,
+				BorderSizePixel = 0,
+			}, cover)
+			corner(disc, 14)
+			local center = make("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(7, 7),
+				BackgroundColor3 = C.Base,
+				BorderSizePixel = 0,
+			}, disc)
+			corner(center, 4)
+		end
+		label(current, "NOW PLAYING", UDim2.fromOffset(66, 5), UDim2.new(1, -166, 0, 14), C.Cyan, 9, true)
 		label(current, if now then nz(now.title, "Unknown track") else "The stage is in standby",
-			UDim2.fromOffset(12, 22), UDim2.new(1, -132, 0, 20), C.White, 12, true)
+			UDim2.fromOffset(66, 22), UDim2.new(1, -166, 0, 20), C.White, 12, true)
 		label(current, if now then nz(now.artist, "Unknown artist") else "No active track",
-			UDim2.fromOffset(12, 43), UDim2.new(1, -132, 0, 14), C.Muted, 9, false)
+			UDim2.fromOffset(66, 43), UDim2.new(1, -166, 0, 14), C.Muted, 9, false)
 		badge(current, if now and now.paused == true then "PAUSED" elseif now then "ON AIR" else "STANDBY",
 			if now and now.paused == true then C.Orange elseif now then C.Green else C.SurfaceLight,
 			UDim2.new(1, -92, 0.5, -12), 80)
