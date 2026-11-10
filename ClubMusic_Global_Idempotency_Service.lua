@@ -6,7 +6,7 @@ function Service.new(d)
  return setmetatable({d=d,map=d.memoryStoreService:GetHashMap(d.mapName or "ClubMusic_GlobalIdempotency_v1"),reserved=0,duplicates=0},Service)
 end
 function Service:Reserve(operationId,ttlSeconds)
- if not self.d.isEnabled() or type(operationId)~="string" or #operationId<1 or #operationId>128 then return false,"Invalid or disabled operation." end
+ if not self.d.isEnabled() or type(operationId)~="string" or #operationId<1 or #operationId>47 then return false,"Invalid or disabled operation." end
  local ttl=math.clamp(math.floor(tonumber(ttlSeconds) or 120),30,600)
  local token=self.d.guid()
  local ok,result=pcall(function()
