@@ -230,3 +230,12 @@ The manager remains dormant: the server controller does not instantiate it, no c
 The crossfade coordinator now requires a controller-provided `GetOutgoingGain()` callback in addition to `SetOutgoingGain()`. It captures the outgoing deck's validated gain (finite, between 0 and 1) before starting, scales both decks against that baseline during the fade, restores that exact baseline on cancellation/failure, and leaves the incoming deck at the same baseline after commit. This avoids silently restoring full gain or overwriting a reduced gain profile when a transition is interrupted.
 
 The standalone module and `ClubMusic_Audio_Server_Modules.rbxmx` embedded source are synchronized and were verified byte-for-byte after update. This remains preparation only: the controller does not instantiate crossfade, no dual-deck transition is active, and the legacy `ServerMusicSound` remains the live main output. The controller callback wiring and Studio validation are still required; no Roblox Studio runtime or multiplayer tests were run.
+
+
+## Controller-owned gain interface — phase 15
+
+The server controller now exposes backend-neutral `getAudioGain(sourceOverride?)` and `setAudioGain(value, sourceOverride?)` helpers. They validate the active source and constrain gain to a finite 0–1 range; the legacy Sound path reads/writes `Sound.Volume`, while the modern backend path uses its fader. The modern backend now exposes `GetGain()` for this contract.
+
+The dormant backend-adoption path now captures the outgoing source gain before preparing the candidate and applies that same gain after the outgoing source is stopped, instead of forcing the incoming backend to gain 1. The server RBXMX package embeds the updated backend module and was verified byte-for-byte against its standalone source.
+
+These interfaces prepare the controller callbacks required by crossfade (`GetOutgoingGain` / `SetOutgoingGain`), but the crossfade manager is still not instantiated or connected. The legacy `ServerMusicSound` remains the sole live main output. Source and package parity were verified in GitHub; no Roblox Studio runtime or multiplayer tests were run.
