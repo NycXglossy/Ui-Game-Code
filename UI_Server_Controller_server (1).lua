@@ -4506,6 +4506,194 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		if not ok then return false, tostring(policy) end
 		return true, "Security policy updated. " .. key .. " = " .. tostring(value)
 	end
+	-- Operational inspection commands use the same independent ClubMusic
+	-- authorization service as security administration. All inspection paths are
+	-- read-only; only explicit owner maintenance/reconcile requests reach setters.
+	local operationalPermission = ({
+		OperationalHealth = "GlobalModeration",
+		OperationalServices = "GlobalModeration",
+		OperationalDiagnostics = "GlobalConfig",
+		OperationalErrors = "GlobalConfig",
+		OperationalMetrics = "GlobalModeration",
+		OperationalSecurityLog = "IncidentResponse",
+		OperationalServers = "IncidentResponse",
+		OperationalRateLimit = "IncidentResponse",
+		OperationalConfig = "GlobalConfig",
+		OperationalRecovery = "GlobalConfig",
+		OperationalReconcile = "GlobalConfig",
+		OperationalMaintenance = "GlobalConfig",
+	} :: {[string]: string})[operation]
+	if operationalPermission then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, operationalPermission) then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_operational_access_denied", operation)
+			return false, if operationalPermission == "GlobalModeration"
+				then "ClubMusic administrator permission is required."
+				else "ClubMusic co-owner/owner permission is required."
+		end
+	end
+
+	if operation == "OperationalHealth" then
+		local ok, health = ControllerFunctions.adminBridgeGlobalCall("GetGlobalHealth")
+		if not ok or typeof(health) ~= "table" then return false, tostring(health or "Health status is unavailable.") end
+		return true, string.sub(string.format(
+			"ClubMusic Health: %s | Local: %s | Global: %s | Sync: %s (%d peers) | Recovery: %s\n%s",
+			tostring(health.state or "Unknown"), tostring(health.localState or "Unknown"),
+			tostring(health.serviceState or "Unknown"), tostring(health.syncState or "Unknown"),
+			math.clamp(tonumber(health.syncStatus and health.syncStatus.peerCount) or 0, 0, 999),
+			tostring(health.recoveryState or "Unknown"), string.sub(tostring(health.detail or health.localDetail or ""), 1, 500)
+		), 1, 1100)
+	end
+	if operation == "OperationalDiagnostics" then
+		local ok, snapshot = ControllerFunctions.adminBridgeGlobalCall("GetGlobalDiagnostics")
+		if not ok or typeof(snapshot) ~= "table" then return false, tostring(snapshot or "Diagnostic snapshot is unavailable.") end
+		local health = if typeof(snapshot.health) == "table" then snapshot.health else {}
+		local recovery = if typeof(snapshot.recovery) == "table" then snapshot.recovery else {}
+		local sync = if typeof(snapshot.syncStatus) == "table" then snapshot.syncStatus else {}
+		local services = if typeof(snapshot.operationalServices) == "table" then snapshot.operationalServices else {}
+		local lines = {
+			"ClubMusic Diagnostic Snapshot:",
+			"Generated: " .. os.date("!%Y-%m-%d %H:%M:%S UTC", tonumber(snapshot.generatedAt) or os.time()),
+			"Global enabled: " .. tostring(snapshot.serviceEnabled == true),
+			"Health: " .. tostring(health.state or "Unavailable") .. " / Local: " .. tostring(health.localState or "Unavailable"),
+			"Sync: " .. tostring(sync.state or "Unavailable") .. " / peers: " .. tostring(sync.peerCount or 0),
+			"Recovery: " .. tostring(recovery.state or "Unavailable"),
+			"Watchdog: " .. tostring(services.watchdog and services.watchdog.state or "Unavailable"),
+			"Error history: " .. tostring(snapshot.errorHistoryAvailable == true),
+		}
+		return true, string.sub(table.concat(lines, "\n"), 1, 1300)
+	end
+	if operation == "OperationalServices" then
+		local ok, services = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
+		if not ok or typeof(services) ~= "table" then return false, tostring(services or "Operational service status is unavailable.") end
+		local keys = {}
+		for key in pairs(services) do table.insert(keys, tostring(key)) end
+		table.sort(keys)
+		local lines = {"ClubMusic Service Status:"}
+		for _, key in ipairs(keys) do
+			local item = services[key]
+			table.insert(lines, key .. ": " .. tostring(if typeof(item) == "table" then item.state or "Unknown" else "Unavailable"))
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1500)
+	end
+	if operation == "OperationalErrors" then
+		local ok, snapshot = ControllerFunctions.adminBridgeGlobalCall("GetGlobalDiagnostics")
+		if not ok or typeof(snapshot) ~= "table" then return false, tostring(snapshot or "Diagnostic history is unavailable.") end
+		if snapshot.errorHistoryAvailable ~= true then return true, "ClubMusic error history is unavailable; check whether ClubMusicErrorHandler is installed." end
+		local errors = if typeof(snapshot.recentErrors) == "table" then snapshot.recentErrors else {}
+		if #errors == 0 then return true, "No recent ClubMusic errors are recorded." end
+		local lines = {"Recent ClubMusic errors (metadata only):"}
+		for index = math.max(1, #errors - 7), #errors do
+			local item = errors[index]
+			if typeof(item) == "table" then
+				table.insert(lines, string.format("%s | %s / %s | repeats not included",
+					tostring(item.id or "?"), tostring(item.subsystem or "?"), tostring(item.operation or "?")))
+			end
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1200)
+	end
+	if operation == "OperationalMetrics" then
+		local ok, metrics = ControllerFunctions.adminBridgeGlobalCall("GetGlobalMetrics")
+		if not ok or typeof(metrics) ~= "table" then return false, tostring(metrics or "Metrics are unavailable or disabled.") end
+		local aggregate = if typeof(metrics.aggregate) == "table" then metrics.aggregate else {}
+		local counters = if typeof(aggregate.counters) == "table" then aggregate.counters else {}
+		local keys = {}
+		for key in pairs(counters) do table.insert(keys, tostring(key)) end
+		table.sort(keys)
+		local lines = {"ClubMusic Metrics (" .. tostring(metrics.state or "Unknown") .. "):"}
+		for index = 1, math.min(#keys, 12) do
+			local key = keys[index]
+			table.insert(lines, key .. " = " .. tostring(counters[key]))
+		end
+		if #keys == 0 then table.insert(lines, "No aggregated counters are available yet.") end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1400)
+	end
+	if operation == "OperationalSecurityLog" then
+		local ok, entries = ControllerFunctions.adminBridgeGlobalCall("GetGlobalAudit", 30)
+		if not ok or typeof(entries) ~= "table" then return false, tostring(entries or "Security audit log is unavailable.") end
+		local lines = {"Recent ClubMusic security audit events:"}
+		local count = 0
+		for _, item in ipairs(entries) do
+			if typeof(item) == "table" and item.kind == "SecurityEvent" then
+				count += 1
+				table.insert(lines, string.format("%s | actor %s | %s | %s",
+					tostring(item.at or "?"), tostring(item.actorUserId or "?"),
+					string.sub(tostring(item.target or "?"), 1, 48), string.sub(tostring(item.action or "?"), 1, 64)))
+				if count >= 8 then break end
+			end
+		end
+		if count == 0 then table.insert(lines, "No recent security audit events were found in the latest audit page.") end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1500)
+	end
+	if operation == "OperationalServers" then
+		local ok, servers = ControllerFunctions.adminBridgeGlobalCall("GetGlobalServers", 12)
+		if not ok or typeof(servers) ~= "table" then return false, tostring(servers or "Server registry is unavailable.") end
+		local lines = {"Registered ClubMusic servers (up to 12):"}
+		for index, item in ipairs(servers) do
+			if index > 12 then break end
+			if typeof(item) == "table" then
+				table.insert(lines, string.format("%d. Place %s | %d/%d players | health %s | heartbeat %s",
+					index, tostring(item.placeId or "?"), math.clamp(tonumber(item.players) or 0, 0, 1000),
+					math.clamp(tonumber(item.maxPlayers) or 0, 0, 1000), tostring(item.health or "Unknown"),
+					os.date("!%H:%M:%S", tonumber(item.updatedAt) or 0)))
+			end
+		end
+		if #servers == 0 then table.insert(lines, "No active registry entries were returned.") end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1300)
+	end
+	if operation == "OperationalRateLimit" then
+		local ok, services = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
+		local item = if ok and typeof(services) == "table" then services.RateLimit else nil
+		if typeof(item) ~= "table" then return false, "Rate-limit service status is unavailable." end
+		return true, string.format("ClubMusic Rate Limits: %s | checks %s | rejected %s | shared failures %s | existing shared buckets: %s",
+			tostring(item.state or "Unknown"), tostring(item.checks or 0), tostring(item.rejected or 0),
+			tostring(item.sharedFailures or 0), tostring(item.usesExistingBuckets == true))
+	end
+	if operation == "OperationalConfig" then
+		local ok, config = ControllerFunctions.adminBridgeGlobalCall("GetGlobalConfig")
+		if not ok or typeof(config) ~= "table" then return false, tostring(config or "Global configuration is unavailable.") end
+		local values = if typeof(config.values) == "table" then config.values else {}
+		local keys = {}
+		for key in pairs(values) do table.insert(keys, tostring(key)) end
+		table.sort(keys)
+		local lines = {"ClubMusic Global Config (revision " .. tostring(config.revision or "?") .. "):"}
+		for _, key in ipairs(keys) do
+			local value = values[key]
+			if key == "maintenanceMessage" then value = string.sub(tostring(value), 1, 80) end
+			table.insert(lines, key .. " = " .. tostring(value))
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1500)
+	end
+	if operation == "OperationalRecovery" then
+		local ok, snapshot = ControllerFunctions.adminBridgeGlobalCall("GetGlobalDiagnostics")
+		if not ok or typeof(snapshot) ~= "table" then return false, tostring(snapshot or "Recovery status is unavailable.") end
+		local recovery = if typeof(snapshot.recovery) == "table" then snapshot.recovery else {}
+		return true, string.sub("ClubMusic Recovery: " .. tostring(recovery.state or "Unavailable")
+			.. " | attempts " .. tostring(recovery.attempts or 0) .. " | " .. tostring(recovery.detail or ""), 1, 900)
+	end
+	if operation == "OperationalReconcile" then
+		local ok, result = ControllerFunctions.adminBridgeGlobalCall("RunGlobalReconciliation", caller.UserId)
+		if not ok then return false, tostring(result or "Read-only reconciliation failed.") end
+		local status = if typeof(result) == "table" then result else {}
+		return true, "Read-only reconciliation: " .. tostring(status.state or "Unknown") .. " | " .. tostring(status.detail or "")
+	end
+	if operation == "OperationalMaintenance" then
+		local command = if typeof(argument) == "string" then string.sub(argument, 1, 240) else "status"
+		local action, message = string.match(command, "^(%a+)%s*(.*)$")
+		if not action or action == "" then action = "status" end
+		action = string.lower(action)
+		if action == "status" then
+			local ok, services = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
+			local item = if ok and typeof(services) == "table" then services.Maintenance else nil
+			if typeof(item) ~= "table" then return false, "Maintenance service status is unavailable." end
+			return true, "ClubMusic Maintenance: " .. tostring(item.enabled == true) .. " | revision " .. tostring(item.revision or "?") .. " | " .. tostring(item.message or "")
+		end
+		if action ~= "on" and action ~= "off" then return false, "Usage: ;cmmaintenance status OR ;cmmaintenance on [message] OR ;cmmaintenance off" end
+		local enabled = action == "on"
+		local maintenanceMessage = if enabled and message ~= "" then message else nil
+		local ok, result = ControllerFunctions.adminBridgeGlobalCall("SetGlobalMaintenance", enabled, maintenanceMessage, caller.UserId)
+		if not ok then return false, tostring(result or "Maintenance setting was rejected.") end
+		return true, "ClubMusic global maintenance mode " .. (if enabled then "enabled." else "disabled.")
+	end
 	local action = ADMIN_BRIDGE_ACTIONS[operation]
 	local payload = {}
 	if operation == "RemoveQueueEntry" then
