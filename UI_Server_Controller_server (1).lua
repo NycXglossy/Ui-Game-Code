@@ -905,6 +905,69 @@ ControllerFunctions.cancelAudioTransition = function(reason: string?)
 	return true
 end
 
+-- Explicit, dormant factory for the controller-owned dual-deck coordinator.
+-- Nothing is constructed at startup; Studio validation must precede any call.
+ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
+	local managers = ControllerFunctions.ChildManagers
+	if typeof(managers) ~= "table" then return false, "Audio manager registry is unavailable." end
+	if managers.Crossfade then return false, "An audio crossfade manager already exists." end
+	local modules = ServerStorage:FindFirstChild("ClubMusicAudioModules")
+	if not modules or not modules:IsA("Folder") then
+		return false, "ServerStorage.ClubMusicAudioModules is not installed."
+	end
+	local backendModule = modules:FindFirstChild("ClubMusicAudioBackend")
+	local crossfadeModule = modules:FindFirstChild("ClubMusicAudioCrossfadeManager")
+	if not backendModule or not backendModule:IsA("ModuleScript")
+		or not crossfadeModule or not crossfadeModule:IsA("ModuleScript") then
+		return false, "Audio backend and crossfade ModuleScripts are both required."
+	end
+	local backendOk, BackendClass = pcall(require, backendModule)
+	local managerOk, ManagerClass = pcall(require, crossfadeModule)
+	if not backendOk or typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function"
+		or not managerOk or typeof(ManagerClass) ~= "table" or typeof(ManagerClass.new) ~= "function" then
+		return false, "Audio backend or crossfade module failed validation."
+	end
+	local outgoing = activeAudioSource
+	local outgoingRevision = audioSourceRevision
+	local context = {
+		CreateDeck = function()
+			return BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService") })
+		end,
+		GetOutgoingGain = function()
+			local ok, value = ControllerFunctions.getAudioGain(outgoing)
+			if not ok then error("Outgoing audio gain is unavailable.") end
+			return value
+		end,
+		SetOutgoingGain = function(value: number)
+			if activeAudioSource ~= outgoing or audioSourceRevision ~= outgoingRevision then return false end
+			return ControllerFunctions.setAudioGain(value, outgoing)
+		end,
+		OnCommit = function(incoming: any): boolean
+			if activeAudioSource ~= outgoing or audioSourceRevision ~= outgoingRevision or playbackPaused then
+				return false
+			end
+			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
+			if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer") then return false end
+			activeAudioSource = { kind = "Backend", backend = incoming }
+			audioSourceRevision += 1
+			ControllerFunctions.bindActiveAudioPlayingSignal()
+			if outgoing.kind == "Backend" and outgoing.backend ~= incoming then
+				pcall(function() outgoing.backend:Cleanup() end)
+			end
+			return true
+		end,
+	}
+	local managerCreateOk, manager = pcall(ManagerClass.new, context)
+	if not managerCreateOk or typeof(manager) ~= "table"
+		or typeof(manager.Begin) ~= "function" or typeof(manager.Cancel) ~= "function"
+		or typeof(manager.Cleanup) ~= "function" then
+		return false, "Crossfade manager could not be constructed safely."
+	end
+	managers.Crossfade = manager
+	return true, nil
+end
+
+
 ControllerFunctions.stopServerMusic = function()
 	pcall(function() ControllerFunctions.stopAudio() end)
 	ControllerFunctions.refreshActiveMusicSoundCount()
