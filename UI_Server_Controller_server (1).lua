@@ -754,6 +754,17 @@ local globalCatalogChangeTrackId: string? = nil
 local globalCatalogChangeKind: string? = nil
 local localCatalogRevision = 0
 local refreshLocalCatalog: (() -> boolean)? = nil
+local function refreshCatalogWhenReady(): boolean
+	-- The controller publishes its remote contract before the cross-server
+	-- invalidation listener is defined. A very early UI action waits briefly for
+	-- that initializer rather than stranding a catalog reservation.
+	for _ = 1, 100 do
+		local callback = refreshLocalCatalog
+		if callback then return callback() end
+		task.wait(0.05)
+	end
+	return false
+end
 local globalQueueSyncBusy = false
 local globalQueueRefreshScheduled = false
 local globalPlaybackInitialized = false
@@ -1924,7 +1935,7 @@ enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
 	if typeof(state) == "table" then applyGlobalQueueState(state) end
 	if callOk and writeOk == true then return true, nil end
 	if tostring(message) == "Catalog changed on another server; refresh and retry."
-		and refreshLocalCatalog and refreshLocalCatalog() then
+		and refreshCatalogWhenReady() then
 		if not TRACK_BY_ID[entry.trackId] then return false, "That track is no longer in the shared catalog." end
 		callOk, writeOk, state, message = globalInvoke(
 			"EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize, localCatalogRevision
@@ -1980,7 +1991,7 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 			-- data before choosing a fallback so removed IDs are never replayed.
 			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			if localCatalogRevision ~= globalCatalogRevision then
-				if not refreshLocalCatalog or not refreshLocalCatalog() then
+				if not refreshCatalogWhenReady() then
 					return false, "The shared catalog is updating; track transition will retry."
 				end
 			end
@@ -2101,8 +2112,7 @@ task.spawn(function()
 		return
 	end
 	if localCatalogRevision ~= globalCatalogRevision then
-		while refreshLocalCatalog == nil do task.wait(0.1) end
-		if not refreshLocalCatalog() then
+		if not refreshCatalogWhenReady() then
 			warn("[ClubMusic] Catalog revision could not be synchronized; global queue writes remain blocked on this server.")
 			return
 		end
@@ -3200,7 +3210,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			if reserveCallOk and reserved ~= true
 				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
 				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				if refreshLocalCatalog then refreshLocalCatalog() end
+				refreshCatalogWhenReady()
 				reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
 					"ReserveCatalogAddition", trackId, localCatalogRevision
 				)
@@ -3242,7 +3252,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId, artworkAssetId)
 		if not saved and globalQueueMode and tostring(message) == "That audio was added by another server already. Refresh the catalog." then
-			if refreshLocalCatalog and refreshLocalCatalog() and TRACK_BY_ID[trackId] then
+			if refreshCatalogWhenReady() and TRACK_BY_ID[trackId] then
 				saved = true
 				message = "Track was added by another server; shared catalog state recovered."
 			end
