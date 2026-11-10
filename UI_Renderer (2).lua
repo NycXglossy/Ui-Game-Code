@@ -4697,9 +4697,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local nextSideRailMode = currentDevice == "Desktop" and viewport.X >= 1180 and viewport.Y >= 650
 		local navigationModeChanged = sideRailMode ~= nextSideRailMode
 		sideRailMode = nextSideRailMode
-		local compactNav = currentDevice == "Mobile" or currentDevice == "Tablet"
+		local compactNav = currentDevice == "Mobile" or currentDevice == "Tablet" or viewport.X < 700
 		local navHeight = if compactNav then 36 else 40
-		local iconSize = if currentDevice == "Mobile" then 23 elseif currentDevice == "Tablet" then 25 else 27
+		local iconSize = if currentDevice == "Mobile" then 23 elseif currentDevice == "Tablet" or viewport.X < 700 then 25 else 27
 		local badgeOffset = if compactNav then 6 else 7
 		navLayout.FillDirection = if sideRailMode then Enum.FillDirection.Vertical else Enum.FillDirection.Horizontal
 		nav.ScrollingDirection = if sideRailMode then Enum.ScrollingDirection.Y else Enum.ScrollingDirection.X
