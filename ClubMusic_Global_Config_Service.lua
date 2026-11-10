@@ -22,7 +22,7 @@ function Service:Refresh()
  if not self.d.allowStoreOperation() then self.state="Degraded"; self.lastError="Shared DataStore budget unavailable."; return false end
  local ok,value=pcall(function() return self.store:GetAsync("config") end)
  if not ok then self.state="Degraded"; self.lastError=tostring(value); return false end
- if typeof(value)=="table" then self.values=validate(value.values); self.revision=if type(value.revision)=="number" then math.max(0,math.floor(value.revision)) else 0 end end
+ if typeof(value)=="table" then self.values=validate(value.values); self.revision=if type(value.revision)=="number" then math.max(0,math.floor(value.revision)) else 0 end
  self.state="Healthy"; self.lastError=nil; return true
 end
 function Service:Set(key,value,actor)
