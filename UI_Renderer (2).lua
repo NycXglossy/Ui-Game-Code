@@ -1770,7 +1770,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local id = tostring(track[1])
 		local canRemove = allowCatalogRemoval == true and perm() >= 1 and string.sub(id, 1, 7) == "custom-"
 		local canAddToPlaylist = targetPlaylistId ~= nil and perm() >= 1
-		local compact = currentDevice == "Mobile"
+		-- Use the actual result-column width as well as the device profile. A
+		-- narrow desktop window or split-screen tablet needs the same two-row
+		-- action layout as a phone; otherwise the request controls crowd the title.
+		local availableWidth = if parent and parent:IsA("GuiObject") then parent.AbsoluteSize.X else content.AbsoluteSize.X
+		local compact = currentDevice == "Mobile" or (availableWidth > 0 and availableWidth < 520)
 		local frame = make("Frame", {
 			Size = UDim2.new(1, -4, 0, if compact then 84 else 66),
 			BackgroundColor3 = C.Surface,
