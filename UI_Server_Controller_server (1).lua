@@ -905,6 +905,25 @@ ControllerFunctions.cancelAudioTransition = function(reason: string?)
 	return true
 end
 
+-- Destroy the optional coordinator explicitly during teardown. Cleanup invalidates
+-- any waiting transition, destroys its incoming deck, and restores outgoing gain.
+ControllerFunctions.destroyAudioCrossfadeManager = function(reason: string?): (boolean, string?)
+	local managers = ControllerFunctions.ChildManagers
+	local crossfade = managers and managers.Crossfade
+	if not crossfade then return true, nil end
+	local ok, result = pcall(function()
+		crossfade:Cleanup()
+	end)
+	if not ok then
+		warn("[ClubMusic] Audio crossfade cleanup failed (" .. tostring(reason or "unspecified") .. "): " .. tostring(result))
+		return false, "Audio crossfade manager cleanup failed."
+	end
+	if managers.Crossfade == crossfade then
+		managers.Crossfade = nil
+	end
+	return true, nil
+end
+
 -- Explicit, dormant factory for the controller-owned dual-deck coordinator.
 -- Nothing is constructed at startup; Studio validation must precede any call.
 ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
@@ -5910,7 +5929,7 @@ task.spawn(function()
 end)
 
 game:BindToClose(function()
-	ControllerFunctions.cancelAudioTransition("server-shutdown")
+	ControllerFunctions.destroyAudioCrossfadeManager("server-shutdown")
 	-- Studio memory mode has no durable profile backend and never acquires a
 	-- DataStore session lease. PlayerRemoving may already have cleared the
 	-- in-memory profile while the player is still briefly returned by GetPlayers().
