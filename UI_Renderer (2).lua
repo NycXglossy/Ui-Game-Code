@@ -635,6 +635,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local expanded = false
 	local activeTab = "Home"
 	local lastRenderedTab: string? = nil
+	local contentRenderRevision = 0
 	local selectedGenre = "hiphop"
 	local musicSearchQuery = ""
 	local trackSearch = ""
@@ -4142,6 +4143,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		refreshNav()
 		local tabChanged = lastRenderedTab ~= activeTab
 		local renderedTab = activeTab
+		contentRenderRevision += 1
+		local renderRevision = contentRenderRevision
 		local previousCanvasPosition = content.CanvasPosition
 		lastRenderedTab = activeTab
 		if tabChanged then content.CanvasPosition = Vector2.zero end
@@ -4196,7 +4199,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			-- Rebuilding that page must not send the content scroller back to its top.
 			local restorePosition = previousCanvasPosition
 			task.defer(function()
-				if destroyed or activeTab ~= renderedTab or not content.Parent then return end
+				if destroyed or renderRevision ~= contentRenderRevision or activeTab ~= renderedTab or not content.Parent then return end
 				local maxX = math.max(0, content.AbsoluteCanvasSize.X - content.AbsoluteSize.X)
 				local maxY = math.max(0, content.AbsoluteCanvasSize.Y - content.AbsoluteSize.Y)
 				content.CanvasPosition = Vector2.new(
