@@ -18,6 +18,7 @@ Branch: `audit/hardened-clubmusic-2026-11-08`
 ### Safety and fallback
 - A second normal track advance is held while the crossfade manager is completing its commit, avoiding a race between the fade and the playback clock.
 - A global queue-head change, stale track revision, failed CAS, unavailable global service, or unconfirmed authoritative entry causes the fade to cancel and restores the outgoing gain; normal global queue advancement remains the fallback.
+- If the global CAS has committed but a local source stop/bind operation fails, the controller resumes the committed track on its existing active source, restores its captured gain, and cleans the prepared incoming deck rather than leaving that server on the previous song.
 - Pause and restart reconciliation cancel prepared transitions rather than allowing a fade to continue across a changed playback state.
 - Existing request queue, playlist rotation, skip, admin, and playback control ownership remain in the controller/global queue service. The crossfade manager does not own queue policy.
 
