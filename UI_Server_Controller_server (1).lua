@@ -3183,22 +3183,98 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		if player.Parent ~= Players or not isStaff(player) then return end
 		local budgetReady = waitForDataStoreBudget(5)
 		if not budgetReady then notify(player, "Shared DataStore budget is unavailable; catalog was not changed.", "warn"); return end
-		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId, artworkAssetId)
-		if not saved then notify(player, message, "warn"); return end
 		local trackId = "custom-" .. tostring(assetId)
+		local additionReserved = false
+		if globalQueueMode then
+			-- Serialize additions as well as removals. This prevents a restore/add
+			-- from racing a removal reservation for the same catalog ID.
+			local reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
+				"ReserveCatalogAddition", trackId, localCatalogRevision
+			)
+			if typeof(reserveState) == "table" then applyGlobalQueueState(reserveState) end
+			if reserveCallOk and reserved ~= true
+				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
+				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				if refreshLocalCatalog then refreshLocalCatalog() end
+				reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
+					"ReserveCatalogAddition", trackId, localCatalogRevision
+				)
+				if typeof(reserveState) == "table" then applyGlobalQueueState(reserveState) end
+			end
+			local alreadyReserved = reserveCallOk and reserved ~= true
+				and tostring(reserveMessage) == "Catalog addition is already reserved for this track."
+			if not reserveCallOk or (reserved ~= true and not alreadyReserved) then
+				notify(player, tostring(reserveMessage or "The shared catalog could not reserve this addition."), "warn")
+				return
+			end
+			additionReserved = true
+			if not refreshLocalCatalog or not refreshLocalCatalog() then
+				notify(player, "Catalog addition is reserved globally, but the catalog could not be refreshed. Retry the audio addition after storage recovers.", "warn")
+				return
+			end
+			local existingTrack = TRACK_BY_ID[trackId]
+			if existingTrack then
+				if alreadyReserved then
+					local completeCallOk, completed, completeState, completeMessage = globalInvoke("CompleteCatalogAddition", trackId)
+					if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
+					if completeCallOk and completed == true then
+						notify(player, "The previously saved catalog addition was recovered and synchronized.", "ok")
+					else
+						notify(player, "The track is saved, but its shared addition reservation remains pending. Retry the addition to finish recovery.", "warn")
+					end
+				else
+					local completeCallOk, completed, completeState = globalInvoke("CompleteCatalogAddition", trackId)
+					if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
+					if not completeCallOk or completed ~= true then
+						notify(player, "That track is already in the catalog; reservation cleanup is pending.", "warn")
+					else
+						notify(player, "That audio is already in the catalog.", "warn")
+					end
+				end
+				return
+			end
+		end
+
+		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId, artworkAssetId)
+		if not saved and globalQueueMode and tostring(message) == "That audio was added by another server already. Refresh the catalog." then
+			if refreshLocalCatalog and refreshLocalCatalog() and TRACK_BY_ID[trackId] then
+				saved = true
+				message = "Track was added by another server; shared catalog state recovered."
+			end
+		end
+		if not saved then
+			if globalQueueMode and additionReserved then
+				local uncertain = tostring(message) == "Catalog save failed. Try again later."
+					or tostring(message) == "The catalog update could not be confirmed; refresh and retry."
+				if not uncertain then
+					local releaseCallOk, released, releaseState = globalInvoke("CompleteCatalogAddition", trackId)
+					if typeof(releaseState) == "table" then applyGlobalQueueState(releaseState) end
+					if not releaseCallOk or released ~= true then
+						warn("[ClubMusic] Could not release rejected catalog addition reservation.")
+					end
+				else
+					notify(player, tostring(message) .. " The shared addition reservation remains active so stale servers cannot queue this ID. Retry the audio addition to recover.", "warn")
+					return
+				end
+			end
+			notify(player, message, "warn")
+			return
+		end
+
 		local track = MusicCatalogService:GetTrackById(trackId)
 		if track then
 			TRACK_BY_ID[trackId] = track
 			if not table.find(ALL_TRACK_IDS, trackId) then table.insert(ALL_TRACK_IDS, trackId) end
 			table.sort(ALL_TRACK_IDS)
 		end
-		if globalQueueMode then
-			local revisionCallOk, revised, revisionState, revisionMessage = globalInvoke("AdvanceCatalogRevision")
-			if revisionCallOk and revised == true and typeof(revisionState) == "table" then
-				applyGlobalQueueState(revisionState)
-				localCatalogRevision = globalCatalogRevision
-			else
-				warn("[ClubMusic] Catalog addition saved, but shared catalog revision could not be advanced: " .. tostring(revisionMessage))
+		if globalQueueMode and additionReserved then
+			local completeCallOk, completed, completeState, completeMessage = globalInvoke("CompleteCatalogAddition", trackId)
+			if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
+			if not completeCallOk or completed ~= true then
+				warn("[ClubMusic] Catalog addition saved but shared reservation finalization is pending: " .. tostring(completeMessage))
+				notify(player, "Track saved. Shared addition finalization is pending; retry the audio addition to finish safely.", "warn")
+				publishState(nil)
+				return
 			end
 		end
 		local publishOk, published = globalInvoke("PublishCatalogChange")
