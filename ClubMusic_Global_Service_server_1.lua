@@ -274,6 +274,8 @@ end
 local allowedDJCommands = {Skip = true, ClearQueue = true, SetRequestLock = true, SetPlaybackPaused = true, Restart = true}
 local function publishDJCommand(command: any, payload: any, actorUserId: any): (boolean, number?)
 	if not SERVICE_ENABLED or not allowedDJCommands[command] or not finiteNumber(actorUserId) then return false end
+	local permission = if command == "ClearQueue" then "GlobalModeration" else "GlobalDJ"
+	if not authorizeGlobalActor(actorUserId, permission) then return false end
 	if typeof(payload) ~= "table" then payload = {} end
 	local cleanPayload = {}
 	if command == "SetRequestLock" then
@@ -401,7 +403,7 @@ bindFunction("IsGloballyBanned", function(userId: any)
 end)
 
 bindFunction("SetGlobalBan", function(userId: any, banned: any, actorUserId: any, reason: any)
-	if not SERVICE_ENABLED or typeof(banned) ~= "boolean" or not finiteNumber(actorUserId) then return false end
+	if not SERVICE_ENABLED or typeof(banned) ~= "boolean" or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
 	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
 	if reason ~= nil and not cleanReason then return false end
 	return updateModeration(userId, "globalBan", banned, actorUserId, cleanReason)
@@ -415,13 +417,13 @@ bindFunction("IsRequestBlocked", function(userId: any)
 end)
 
 bindFunction("SetRequestBlocked", function(userId: any, blocked: any, actorUserId: any)
-	if not SERVICE_ENABLED or typeof(blocked) ~= "boolean" or not finiteNumber(actorUserId) then return false end
+	if not SERVICE_ENABLED or typeof(blocked) ~= "boolean" or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
 	return updateModeration(userId, "requestBlocked", blocked, actorUserId, nil)
 end)
 
 bindFunction("PublishAnnouncement", function(message: any, actorUserId: any)
 	local clean = cleanText(message, CONFIG.MaxAnnouncementLength)
-	if not SERVICE_ENABLED or not clean or not finiteNumber(actorUserId) then return false end
+	if not SERVICE_ENABLED or not clean or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalAnnouncement") then return false end
 	return publishTopic(CONFIG.Topics.Announcements, {kind = "Announcement", text = clean, actorUserId = math.floor(actorUserId)})
 end)
 
@@ -996,13 +998,13 @@ bindFunction("GetGlobalConfig", function()
 	return true, globalConfigService:GetStatus()
 end)
 bindFunction("SetGlobalConfig", function(key: any, value: any, actorUserId: any)
-	if not SERVICE_ENABLED or not globalConfigService or not finiteNumber(actorUserId) then return false end
+	if not SERVICE_ENABLED or not globalConfigService or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false end
 	local ok, result = globalConfigService:Set(key, value, actorUserId)
 	if ok and globalAuditService then globalAuditService:Record("AdminAction", actorUserId, tostring(key), "config-update") end
 	return ok, result
 end)
 bindFunction("SetGlobalMaintenance", function(enabled: any, message: any, actorUserId: any)
-	if not SERVICE_ENABLED or not globalMaintenanceService or typeof(actorUserId) ~= "number" then return false end
+	if not SERVICE_ENABLED or not globalMaintenanceService or typeof(actorUserId) ~= "number" or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false end
 	local ok, err = globalMaintenanceService:Set(enabled, message, actorUserId)
 	return ok, err
 end)
