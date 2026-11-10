@@ -5395,7 +5395,13 @@ task.spawn(function()
 			end)
 			shouldAdvance = loadedAndKnownLength or nowPlaying.elapsed >= 45
 			if shouldAdvance then
-				warn("[ClubMusic] Playback watchdog detected a stopped or unplayable track; advancing safely.")
+				local playbackAdapter = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playback
+				local quality = if playbackAdapter then playbackAdapter:InspectQuality() else nil
+				local reason = if typeof(quality) == "table" then tostring(quality.state or "Unknown") else "WatchdogStoppedTrack"
+				warn("[ClubMusic] Playback watchdog detected a stopped or unplayable track (" .. reason .. "); advancing safely.")
+				if ControllerFunctions.ErrorHandler then
+					ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, musicSound)
+				end
 			end
 		end
 
