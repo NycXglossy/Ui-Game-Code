@@ -1,4 +1,7 @@
 --!strict
+
+-- Keep controller helpers in one registry to stay below Luau's local-register limit.
+local ControllerFunctions: {[string]: any} = {}
 -- UI_Server_Controller (Security Hardened)
 -- Place as Script: ServerScriptService/UI_Server_Controller
 --
@@ -110,7 +113,7 @@ local CONFIG = {
 -- wait safely even when catalog initialization is delayed.
 -- The catalog is server-owned. The controller remains the only authority
 -- for request limits, moderation, queue priority, and playback.
-local function getOrCreate(parent: Instance, className: string, name: string): Instance
+ControllerFunctions.getOrCreate = function(parent: Instance, className: string, name: string): Instance
 	local found = parent:FindFirstChild(name)
 	if found and found.ClassName == className then return found end
 	if found then found:Destroy() end
@@ -120,16 +123,16 @@ local function getOrCreate(parent: Instance, className: string, name: string): I
 	return created
 end
 
-local remotes = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicRemotes") :: Folder
+local remotes = ControllerFunctions.getOrCreate(ReplicatedStorage, "Folder", "ClubMusicRemotes") :: Folder
 remotes:SetAttribute("Ready", false)
 remotes:SetAttribute("StartupStage", "LoadingStorageModules")
 remotes:SetAttribute("StartupError", nil)
-local actionRemote = getOrCreate(remotes, "RemoteEvent", "RequestAction") :: RemoteEvent
-local stateRemote = getOrCreate(remotes, "RemoteEvent", "StateChanged") :: RemoteEvent
-local noticeRemote = getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
-local stateFunction = getOrCreate(remotes, "RemoteFunction", "GetState") :: RemoteFunction
-local catalogFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
-local playlistFunction = getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
+local actionRemote = ControllerFunctions.getOrCreate(remotes, "RemoteEvent", "RequestAction") :: RemoteEvent
+local stateRemote = ControllerFunctions.getOrCreate(remotes, "RemoteEvent", "StateChanged") :: RemoteEvent
+local noticeRemote = ControllerFunctions.getOrCreate(remotes, "RemoteEvent", "Notice") :: RemoteEvent
+local stateFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetState") :: RemoteFunction
+local catalogFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
+local playlistFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
 
 local serverStorage = game:GetService("ServerStorage")
 remotes:SetAttribute("StartupStage", "LoadingMusicCatalogService")
@@ -513,7 +516,7 @@ local RGB_SPEED: {[string]: number} = { slow = 0.12, normal = 0.25, fast = 0.5 }
 local MAX_CUSTOM_TITLE_LENGTH = 24
 local TITLE_SLOT_COUNT = 3
 
-local function truncateUtf8(value: string, maxCharacters: number): string
+ControllerFunctions.truncateUtf8 = function(value: string, maxCharacters: number): string
 	local boundary = utf8.offset(value, maxCharacters + 1)
 	if boundary then
 		return string.sub(value, 1, boundary - 1)
@@ -536,8 +539,8 @@ local random = Random.new()
 -- existing assets are not shadowed by duplicate playback objects.
 -- The controller remains the only playback authority; clients may adjust the
 -- canonical SoundGroup locally for their own volume preference.
-local musicSoundGroup = getOrCreate(SoundService, "SoundGroup", "MusicGroup") :: SoundGroup
-local musicSound = getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
+local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGroup", "MusicGroup") :: SoundGroup
+local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
 -- This preserves other SoundService audio while removing the obsolete group.
@@ -561,24 +564,24 @@ musicSound:SetAttribute("ManagedByClubMusicController", true)
 -- The uploaded "Audio Sound Count" model is a Sound, not a counter script.
 -- Publish a truthful count of controller-managed sounds currently playing.
 -- This architecture owns exactly one such Sound, so the value is always 0 or 1.
-local function refreshActiveMusicSoundCount()
+ControllerFunctions.refreshActiveMusicSoundCount = function()
 	SoundService:SetAttribute("ActiveMusicSoundCount", if musicSound.IsPlaying then 1 else 0)
 end
-refreshActiveMusicSoundCount()
-musicSound:GetPropertyChangedSignal("Playing"):Connect(refreshActiveMusicSoundCount)
+ControllerFunctions.refreshActiveMusicSoundCount()
+musicSound:GetPropertyChangedSignal("Playing"):Connect(ControllerFunctions.refreshActiveMusicSoundCount)
 
 local playbackPaused = false
 local lastGlobalPlaybackRevision = 0
 
-local function stopServerMusic()
+ControllerFunctions.stopServerMusic = function()
 	pcall(function()
 		musicSound:Stop()
 	end)
-	refreshActiveMusicSoundCount()
+	ControllerFunctions.refreshActiveMusicSoundCount()
 end
 
-local function startServerMusic(soundId: any)
-	stopServerMusic()
+ControllerFunctions.startServerMusic = function(soundId: any)
+	ControllerFunctions.stopServerMusic()
 	if typeof(soundId) ~= "string" or #soundId > 64
 		or not string.match(soundId, "^rbxassetid://%d+$") then
 		musicSound.SoundId = ""
@@ -611,7 +614,7 @@ if not receiptHashOk then
 end
 local ReceiptHash = receiptHashResult
 local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI") or ServerStorage:WaitForChild("ClubMusicGlobalAPI", 15)
-local function globalInvoke(name: string, ...: any): any
+ControllerFunctions.globalInvoke = function(name: string, ...: any): any
 	-- Re-resolve on every call so the bridge recovers if its separate Script starts late.
 	if not globalApi or globalApi.Parent ~= ServerStorage or not globalApi:IsA("Folder") then
 		local discovered = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
@@ -639,7 +642,7 @@ local xpLastSaveAt: {[number]: number} = {}
 local settleAllXP: (() -> ())? = nil
 local xpStateDirty = false
 
-local function setGlobalXPState(multiplier: number, expiresAt: number, lowerExpiresAt: number?)
+ControllerFunctions.setGlobalXPState = function(multiplier: number, expiresAt: number, lowerExpiresAt: number?)
 	if multiplier ~= 1 and multiplier ~= 2 and multiplier ~= 4 then return end
 	if typeof(expiresAt) ~= "number" or expiresAt ~= expiresAt
 		or expiresAt == math.huge or expiresAt == -math.huge or expiresAt < 0 then return end
@@ -658,27 +661,27 @@ local function setGlobalXPState(multiplier: number, expiresAt: number, lowerExpi
 	xpStateDirty = true
 end
 
-local function refreshGlobalXPBoost()
+ControllerFunctions.refreshGlobalXPBoost = function()
 	if RunService:IsStudio() then
-		setGlobalXPState(studioXpBoostMultiplier, studioXpBoostExpiresAt)
+		ControllerFunctions.setGlobalXPState(studioXpBoostMultiplier, studioXpBoostExpiresAt)
 		return
 	end
-	local callOk, multiplier, expiresAt, lowerExpiresAt = globalInvoke("GetGlobalXPBoost")
+	local callOk, multiplier, expiresAt, lowerExpiresAt = ControllerFunctions.globalInvoke("GetGlobalXPBoost")
 	if callOk and typeof(multiplier) == "number" and multiplier == multiplier
 		and typeof(expiresAt) == "number" and expiresAt == expiresAt
 		and (multiplier == 1 or multiplier == 2 or multiplier == 4) then
-		setGlobalXPState(multiplier, expiresAt, lowerExpiresAt)
+		ControllerFunctions.setGlobalXPState(multiplier, expiresAt, lowerExpiresAt)
 	end
 	if cachedGlobalXpExpiresAt > 0 and cachedGlobalXpExpiresAt <= os.time() then
 		if cachedGlobalXpLowerExpiresAt > os.time() then
-			setGlobalXPState(2, cachedGlobalXpLowerExpiresAt)
+			ControllerFunctions.setGlobalXPState(2, cachedGlobalXpLowerExpiresAt)
 		else
-			setGlobalXPState(1, 0)
+			ControllerFunctions.setGlobalXPState(1, 0)
 		end
 	end
 end
 
-local configFolder = getOrCreate(ReplicatedStorage, "Folder", "ClubMusicConfig") :: Folder
+local configFolder = ControllerFunctions.getOrCreate(ReplicatedStorage, "Folder", "ClubMusicConfig") :: Folder
 configFolder:SetAttribute("GroupId", CONFIG.GroupId)
 
 type QueueEntry = {
@@ -692,7 +695,7 @@ type QueueEntry = {
 	genre: string,
 	source: string, -- "player" | "auto" | "playlist"
 	vip: boolean,
-	passTier: number?,
+	ControllerFunctions.passTier: number?,
 	soundId: string?,
 }
 type TitleSlot = {
@@ -754,7 +757,7 @@ local globalCatalogChangeTrackId: string? = nil
 local globalCatalogChangeKind: string? = nil
 local localCatalogRevision = 0
 local refreshLocalCatalog: (() -> boolean)? = nil
-local function refreshCatalogWhenReady(): boolean
+ControllerFunctions.refreshCatalogWhenReady = function(): boolean
 	-- The controller publishes its remote contract before the cross-server
 	-- invalidation listener is defined. A very early UI action waits briefly for
 	-- that initializer rather than stranding a catalog reservation.
@@ -815,7 +818,7 @@ local queueCounter = 0
 -- server instance. They are deliberately separate from per-player cooldowns.
 type TokenBucket = { tokens: number, capacity: number, refillPerSecond: number, updatedAt: number }
 
-local function newTokenBucket(capacity: number, refillPerSecond: number): TokenBucket
+ControllerFunctions.newTokenBucket = function(capacity: number, refillPerSecond: number): TokenBucket
 	return {
 		tokens = capacity,
 		capacity = capacity,
@@ -824,13 +827,13 @@ local function newTokenBucket(capacity: number, refillPerSecond: number): TokenB
 	}
 end
 
-local globalActionBucket = newTokenBucket(CONFIG.GlobalActionBurst, CONFIG.GlobalActionRefillPerSecond)
-local globalAudioBucket = newTokenBucket(CONFIG.GlobalAudioBurst, CONFIG.GlobalAudioRefillPerSecond)
-local globalStateQueryBucket = newTokenBucket(30, 15)
-local globalDataStoreBucket = newTokenBucket(CONFIG.GlobalDataStoreBurst, CONFIG.GlobalDataStoreRefillPerSecond)
+local globalActionBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalActionBurst, CONFIG.GlobalActionRefillPerSecond)
+local globalAudioBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalAudioBurst, CONFIG.GlobalAudioRefillPerSecond)
+local globalStateQueryBucket = ControllerFunctions.newTokenBucket(30, 15)
+local globalDataStoreBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalDataStoreBurst, CONFIG.GlobalDataStoreRefillPerSecond)
 local perPlayerActionBuckets: {[number]: TokenBucket} = {}
 
-local function consumeToken(bucket: TokenBucket, now: number, cost: number?): boolean
+ControllerFunctions.consumeToken = function(bucket: TokenBucket, now: number, cost: number?): boolean
 	local amount = cost or 1
 	local elapsed = math.max(0, now - bucket.updatedAt)
 	bucket.updatedAt = now
@@ -840,8 +843,8 @@ local function consumeToken(bucket: TokenBucket, now: number, cost: number?): bo
 	return true
 end
 
-local function waitForDataStoreBudget(maxWaitSeconds: number): boolean
-	local sharedStoreCallOk, sharedStoreAllowed = globalInvoke("ConsumeDataStoreBudget")
+ControllerFunctions.waitForDataStoreBudget = function(maxWaitSeconds: number): boolean
+	local sharedStoreCallOk, sharedStoreAllowed = ControllerFunctions.globalInvoke("ConsumeDataStoreBudget")
 	if RunService:IsStudio() then
 		if sharedStoreCallOk and sharedStoreAllowed == false then return false end
 	else
@@ -849,7 +852,7 @@ local function waitForDataStoreBudget(maxWaitSeconds: number): boolean
 	end
 	local startedAt = os.clock()
 	while true do
-		if consumeToken(globalDataStoreBucket, os.clock(), 1) then return true end
+		if ControllerFunctions.consumeToken(globalDataStoreBucket, os.clock(), 1) then return true end
 		if os.clock() - startedAt >= maxWaitSeconds then return false end
 		task.wait(0.1)
 	end
@@ -858,13 +861,13 @@ end
 -- Initialize storage with bounded retries. The services leave their initialization
 -- state retryable after transient budget/DataStore failures; built-in catalog tracks
 -- remain available even when persistent custom storage cannot be initialized.
-local function initializeStorageWithRetries(service: any, label: string): boolean
+ControllerFunctions.initializeStorageWithRetries = function(service: any, label: string): boolean
 	local delays = {0, 1, 2, 4}
 	for attempt, delaySeconds in ipairs(delays) do
 		if delaySeconds > 0 then task.wait(delaySeconds) end
 		local ok, ready = pcall(function()
 			return service:Initialize(CONFIG.StudioUseDataStore, function()
-				return waitForDataStoreBudget(5)
+				return ControllerFunctions.waitForDataStoreBudget(5)
 			end)
 		end)
 		if ok and ready == true then return true end
@@ -874,9 +877,9 @@ local function initializeStorageWithRetries(service: any, label: string): boolea
 	return false
 end
 
-local catalogStorageReady = initializeStorageWithRetries(MusicCatalogService, "MusicCatalogService")
+local catalogStorageReady = ControllerFunctions.initializeStorageWithRetries(MusicCatalogService, "MusicCatalogService")
 local playlistRefreshAt = 0
-local playlistStorageReady = initializeStorageWithRetries(MusicPlaylistService, "MusicPlaylistService")
+local playlistStorageReady = ControllerFunctions.initializeStorageWithRetries(MusicPlaylistService, "MusicPlaylistService")
 if not playlistStorageReady then
 	warn("[ClubMusic] Persistent playlists unavailable; playlist management is disabled for this server.")
 end
@@ -901,16 +904,16 @@ end
 table.sort(ALL_TRACK_IDS)
 remotes:SetAttribute("StartupStage", "BuildingController")
 
-local function consumeActionBudget(userId: number, now: number): boolean
+ControllerFunctions.consumeActionBudget = function(userId: number, now: number): boolean
 	local bucket = perPlayerActionBuckets[userId]
 	if not bucket then
-		bucket = newTokenBucket(CONFIG.PerPlayerActionBurst, CONFIG.PerPlayerActionRefillPerSecond)
+		bucket = ControllerFunctions.newTokenBucket(CONFIG.PerPlayerActionBurst, CONFIG.PerPlayerActionRefillPerSecond)
 		perPlayerActionBuckets[userId] = bucket
 	end
 	-- Consume the per-player bucket first. Only consume the global bucket when
 	-- the player has capacity, avoiding global-budget loss to one noisy player.
-	if not consumeToken(bucket, now, 1) then return false end
-	if not consumeToken(globalActionBucket, now, 1) then
+	if not ControllerFunctions.consumeToken(bucket, now, 1) then return false end
+	if not ControllerFunctions.consumeToken(globalActionBucket, now, 1) then
 		bucket.tokens = math.min(bucket.capacity, bucket.tokens + 1)
 		return false
 	end
@@ -930,11 +933,11 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	ClearTitleSlot = 0.5, SetTitleVisible = 0.3,
 }
 
-local function isFiniteNumber(value: any): boolean
+ControllerFunctions.isFiniteNumber = function(value: any): boolean
 	return typeof(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
-local function acquireProfileWriteLock(userId: number): boolean
+ControllerFunctions.acquireProfileWriteLock = function(userId: number): boolean
 	local startedAt = os.clock()
 	while profileWriteLocks[userId] do
 		if os.clock() - startedAt >= CONFIG.ProfileWriteLockTimeoutSeconds then
@@ -947,7 +950,7 @@ local function acquireProfileWriteLock(userId: number): boolean
 	return true
 end
 
-local function releaseProfileWriteLock(userId: number)
+ControllerFunctions.releaseProfileWriteLock = function(userId: number)
 	profileWriteLocks[userId] = nil
 end
 
@@ -965,7 +968,7 @@ local lastAutoGenre = ""
 
 -- Ranks, permissions and VIP -------------------------------------------------
 
-local function computeRank(player: Player): (string, number)
+ControllerFunctions.computeRank = function(player: Player): (string, number)
 	for _, id in ipairs(CONFIG.StaffUserIds) do
 		if id == player.UserId then return "OWNER", 4 end
 	end
@@ -983,71 +986,71 @@ local function computeRank(player: Player): (string, number)
 end
 
 -- Yields (group lookups). Never call from the per-second loop.
-local function refreshRank(player: Player)
-	local rank, level = computeRank(player)
+ControllerFunctions.refreshRank = function(player: Player)
+	local rank, level = ControllerFunctions.computeRank(player)
 	rankCache[player.UserId] = { rank = rank, level = level }
 end
 
-local function getRank(player: Player): string
+ControllerFunctions.getRank = function(player: Player): string
 	local cached = rankCache[player.UserId]
 	return if cached then cached.rank else "GUEST"
 end
 
 -- Permission level: 0 guest, 1 GROUP DJ, 2 ADMIN, 3 CO-OWNER, 4 OWNER
-local function getLevel(player: Player): number
+ControllerFunctions.getLevel = function(player: Player): number
 	local cached = rankCache[player.UserId]
 	return if cached then cached.level else 0
 end
 
-local function isStaff(player: Player): boolean
-	return getLevel(player) >= 1
+ControllerFunctions.isStaff = function(player: Player): boolean
+	return ControllerFunctions.getLevel(player) >= 1
 end
 
-local function isAdmin(player: Player): boolean
-	return getLevel(player) >= 2
+ControllerFunctions.isAdmin = function(player: Player): boolean
+	return ControllerFunctions.getLevel(player) >= 2
 end
 
-local function passTier(player: Player): number
+ControllerFunctions.passTier = function(player: Player): number
 	local userId = player.UserId
 	-- Staff receive the complete club membership tier by default. This is
 	-- derived from the server-verified staff rank, never from client attributes.
-	if getLevel(player) >= 1 then return 3 end
+	if ControllerFunctions.getLevel(player) >= 1 then return 3 end
 	if sultanPass[userId] == true then return 3 end
 	if vvipPass[userId] == true then return 2 end
 	if vipPass[userId] == true or tempVip[userId] == true then return 1 end
 	return 0
 end
 
-local function isVip(player: Player): boolean
-	return passTier(player) >= 1
+ControllerFunctions.isVip = function(player: Player): boolean
+	return ControllerFunctions.passTier(player) >= 1
 end
 
-local function isVvip(player: Player): boolean
-	return passTier(player) >= 2
+ControllerFunctions.isVvip = function(player: Player): boolean
+	return ControllerFunctions.passTier(player) >= 2
 end
 
-local function isSultan(player: Player): boolean
-	return passTier(player) >= 3
+ControllerFunctions.isSultan = function(player: Player): boolean
+	return ControllerFunctions.passTier(player) >= 3
 end
 
 -- Owners can moderate anyone but themselves; everyone else only moderates strictly lower ranks.
-local function canModerate(actor: Player, target: Player): boolean
+ControllerFunctions.canModerate = function(actor: Player, target: Player): boolean
 	if actor == target then return false end
-	local actorLevel = getLevel(actor)
+	local actorLevel = ControllerFunctions.getLevel(actor)
 	if actorLevel >= 4 then return true end
-	return getLevel(target) < actorLevel
+	return ControllerFunctions.getLevel(target) < actorLevel
 end
 
-local function applyVipAttribute(player: Player)
-	player:SetAttribute("IsVIP", isVip(player))
-	player:SetAttribute("IsVVIP", isVvip(player))
-	player:SetAttribute("IsTikiTideSultan", isSultan(player))
-	player:SetAttribute("ClubPassTier", passTier(player))
+ControllerFunctions.applyVipAttribute = function(player: Player)
+	player:SetAttribute("IsVIP", ControllerFunctions.isVip(player))
+	player:SetAttribute("IsVVIP", ControllerFunctions.isVvip(player))
+	player:SetAttribute("IsTikiTideSultan", ControllerFunctions.isSultan(player))
+	player:SetAttribute("ClubPassTier", ControllerFunctions.passTier(player))
 end
 
 -- Ownership is always checked by the server. Failed marketplace lookups fail closed
 -- for the affected pass and are retried by the periodic refresh.
-local function ownsGamePass(userId: number, passId: number): boolean
+ControllerFunctions.ownsGamePass = function(userId: number, passId: number): boolean
 	if passId <= 0 then return false end
 	local ok, owns = pcall(function()
 		return MarketplaceService:UserOwnsGamePassAsync(userId, passId)
@@ -1055,27 +1058,27 @@ local function ownsGamePass(userId: number, passId: number): boolean
 	return ok and owns == true
 end
 
-local function refreshVip(player: Player)
+ControllerFunctions.refreshVip = function(player: Player)
 	local userId = player.UserId
-	vipPass[userId] = ownsGamePass(userId, CONFIG.VipGamePassId)
-	vvipPass[userId] = ownsGamePass(userId, CONFIG.VvipGamePassId)
-	sultanPass[userId] = ownsGamePass(userId, CONFIG.TikiTideSultanPassId)
+	vipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VipGamePassId)
+	vvipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VvipGamePassId)
+	sultanPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.TikiTideSultanPassId)
 	if not vipPass[userId] and CONFIG.VipGroupRank > 0 and CONFIG.GroupId > 0 then
 		local ok, rank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
 		if ok and typeof(rank) == "number" and rank >= CONFIG.VipGroupRank then vipPass[userId] = true end
 	end
 end
 
-local function requestLimitFor(player: Player): number
-	local tier = passTier(player)
+ControllerFunctions.requestLimitFor = function(player: Player): number
+	local tier = ControllerFunctions.passTier(player)
 	if tier >= 3 then return CONFIG.SultanMaxRequestsPerPlayer end
 	if tier == 2 then return CONFIG.VvipMaxRequestsPerPlayer end
 	if tier == 1 then return CONFIG.VipMaxRequestsPerPlayer end
 	return CONFIG.MaxRequestsPerPlayer
 end
 
-local function cooldownFor(player: Player): number
-	local tier = passTier(player)
+ControllerFunctions.cooldownFor = function(player: Player): number
+	local tier = ControllerFunctions.passTier(player)
 	if tier >= 3 then return CONFIG.SultanCooldownSeconds end
 	if tier == 2 then return CONFIG.VvipCooldownSeconds end
 	if tier == 1 then return CONFIG.VipCooldownSeconds end
@@ -1085,7 +1088,7 @@ end
 -- Title slots -------------------------------------------------------------------
 
 -- Returns the hex colors for an effect/set (empty for RGB, which animates by speed instead).
-local function titleHexFor(effect: string, set: string): {string}
+ControllerFunctions.titleHexFor = function(effect: string, set: string): {string}
 	if effect == "rainbow" then
 		-- Palette-based rainbow sets (amethyst, fire, ocean, ...) reuse the two-color palettes above as a
 		-- circular list (color A, midpoint, color B, midpoint) that the client flows through the title.
@@ -1109,7 +1112,7 @@ local function titleHexFor(effect: string, set: string): {string}
 end
 
 -- Validates a stored/received slot. Returns nil when anything is out of the allowlists.
-local function sanitizeTitleSlot(data: any): TitleSlot?
+ControllerFunctions.sanitizeTitleSlot = function(data: any): TitleSlot?
 	if typeof(data) ~= "table" then return nil end
 	local text = data.text
 	if typeof(text) ~= "string" or #text > 256 then return nil end
@@ -1125,8 +1128,8 @@ local function sanitizeTitleSlot(data: any): TitleSlot?
 	if typeof(style) ~= "string" or TITLE_STYLES[style] ~= true then return nil end
 	local height = tonumber(data.heightOffset or data.height)
 	local distance = tonumber(data.viewDistance or data.distance)
-	if not isFiniteNumber(height) then height = 2.5 end
-	if not isFiniteNumber(distance) then distance = 80 end
+	if not ControllerFunctions.isFiniteNumber(height) then height = 2.5 end
+	if not ControllerFunctions.isFiniteNumber(distance) then distance = 80 end
 	return {
 		text = text,
 		effect = effect,
@@ -1138,7 +1141,7 @@ local function sanitizeTitleSlot(data: any): TitleSlot?
 	}
 end
 
-local function firstFilledSlot(profile: Profile): number?
+ControllerFunctions.firstFilledSlot = function(profile: Profile): number?
 	for i = 1, TITLE_SLOT_COUNT do
 		if profile.titleSlots[i] and i <= profile.unlockedSlots then return i end
 	end
@@ -1147,7 +1150,7 @@ end
 
 -- Mirrors the active slot onto player attributes for the overhead title script.
 -- Legacy attributes (CustomTitle/TitleColor/TitleStyle/ShowCustomTitle) are kept up to date as well.
-local function applyTitleAttributes(player: Player, profile: Profile)
+ControllerFunctions.applyTitleAttributes = function(player: Player, profile: Profile)
 	local slot = profile.titleSlots[profile.activeSlot]
 	-- Replicate the equipped collection tag on join as well as after equip actions.
 	-- The overhead renderer consumes this cosmetic attribute; ownership remains server-authoritative.
@@ -1174,7 +1177,7 @@ local function applyTitleAttributes(player: Player, profile: Profile)
 	player:SetAttribute("TitleStyle", slot.style)
 	player:SetAttribute("TitleEffect", slot.effect)
 	player:SetAttribute("TitleSet", slot.set)
-	player:SetAttribute("TitleColors", table.concat(titleHexFor(slot.effect, slot.set), ","))
+	player:SetAttribute("TitleColors", table.concat(ControllerFunctions.titleHexFor(slot.effect, slot.set), ","))
 	player:SetAttribute("TitleSpeed", if slot.effect == "rgb" then (RGB_SPEED[slot.set] or 0.25) elseif slot.effect == "shimmer" then 0.35 else 0)
 	player:SetAttribute("TitleShimmer", slot.effect == "shimmer")
 	player:SetAttribute("TitleFont", slot.font)
@@ -1183,7 +1186,7 @@ local function applyTitleAttributes(player: Player, profile: Profile)
 end
 
 -- Filters player-authored text on the server before storing or replicating it. Returns nil on failure.
-local function filterTitleText(player: Player, rawText: string): string?
+ControllerFunctions.filterTitleText = function(player: Player, rawText: string): string?
 	local trimmed = string.match(rawText, "^%s*(.-)%s*$") or ""
 	if trimmed == "" then return "" end
 	local ok, result = pcall(function()
@@ -1191,12 +1194,12 @@ local function filterTitleText(player: Player, rawText: string): string?
 		return filtered:GetNonChatStringForBroadcastAsync()
 	end)
 	if not ok or typeof(result) ~= "string" then return nil end
-	return truncateUtf8(result, MAX_CUSTOM_TITLE_LENGTH)
+	return ControllerFunctions.truncateUtf8(result, MAX_CUSTOM_TITLE_LENGTH)
 end
 
 -- Profiles --------------------------------------------------------------------
 
-local function defaultProfile(): Profile
+ControllerFunctions.defaultProfile = function(): Profile
 	return {
 		tickets = 0,
 		coins = 0,
@@ -1219,8 +1222,8 @@ local function defaultProfile(): Profile
 	}
 end
 
-local function loadProfile(player: Player)
-	local profile = defaultProfile()
+ControllerFunctions.loadProfile = function(player: Player)
+	local profile = ControllerFunctions.defaultProfile()
 	local data = nil
 	local ok = false
 	local lastError = "Profile session is already active on another server."
@@ -1232,7 +1235,7 @@ local function loadProfile(player: Player)
 		ok = true
 	else
 		for attempt = 1, 5 do
-			if not waitForDataStoreBudget(20) then
+			if not ControllerFunctions.waitForDataStoreBudget(20) then
 				lastError = "Server DataStore request budget is busy."
 				break
 			end
@@ -1310,7 +1313,7 @@ local function loadProfile(player: Player)
 		if typeof(data.titleSlots) == "table" then
 			for i = 1, TITLE_SLOT_COUNT do
 				local stored = data.titleSlots[tostring(i)] or data.titleSlots[i]
-				local clean = sanitizeTitleSlot(stored)
+				local clean = ControllerFunctions.sanitizeTitleSlot(stored)
 				if clean then
 					profile.titleSlots[i] = clean
 					hasValidNewTitle = true
@@ -1321,13 +1324,13 @@ local function loadProfile(player: Player)
 		if not hasValidNewTitle and typeof(data.customTitle) == "string" and data.customTitle ~= "" then
 			local legacyColor = if typeof(data.titleColor) == "string" and TITLE_COLORS[data.titleColor] == true then data.titleColor else "gold"
 			local legacyStyle = if typeof(data.titleStyle) == "string" and TITLE_STYLES[data.titleStyle] == true then data.titleStyle else "normal"
-			local legacy = sanitizeTitleSlot({
+			local legacy = ControllerFunctions.sanitizeTitleSlot({
 				text = data.customTitle, effect = "fixed", set = legacyColor, font = "gotham", style = legacyStyle,
 			})
 			if legacy then
 				-- Legacy text is player-authored. Re-filter it for broadcast before it
 				-- can be placed in replicated player attributes. Never fall back to raw text.
-				local filteredText = filterTitleText(player, legacy.text)
+				local filteredText = ControllerFunctions.filterTitleText(player, legacy.text)
 				if filteredText and filteredText ~= "" then
 					legacy.text = filteredText
 					profile.titleSlots[1] = legacy
@@ -1343,13 +1346,13 @@ local function loadProfile(player: Player)
 
 	-- Staff have all three custom-title slots unlocked automatically. Existing
 	-- player-owned slots and title data are preserved; this only raises access.
-	if isStaff(player) then
+	if ControllerFunctions.isStaff(player) then
 		profile.unlockedSlots = TITLE_SLOT_COUNT
 	end
 
 	-- The active slot must be unlocked and filled; otherwise fall back to the first filled slot.
 	if profile.activeSlot > profile.unlockedSlots or profile.titleSlots[profile.activeSlot] == nil then
-		profile.activeSlot = firstFilledSlot(profile) or 1
+		profile.activeSlot = ControllerFunctions.firstFilledSlot(profile) or 1
 	end
 
 	local today = math.floor(os.time() / 86400)
@@ -1374,11 +1377,11 @@ local function loadProfile(player: Player)
 	player:SetAttribute("LoginStreak", profile.loginStreak)
 	player:SetAttribute("ClaimedToday", profile.claimedToday)
 	player:SetAttribute("EquippedTag", profile.equippedTag or "")
-	applyTitleAttributes(player, profile)
+	ControllerFunctions.applyTitleAttributes(player, profile)
 	return true
 end
 
-local function saveProfile(player: Player)
+ControllerFunctions.saveProfile = function(player: Player)
 	-- Studio memory mode intentionally has no durable backend. The in-memory
 	-- profile remains authoritative for this test session; never call UpdateAsync.
 	if USE_STUDIO_MEMORY_PROFILES then
@@ -1388,11 +1391,11 @@ local function saveProfile(player: Player)
 	local userId = player.UserId
 	local profile = profiles[userId]
 	if not profile then return false end
-	if not acquireProfileWriteLock(userId) then return false end
+	if not ControllerFunctions.acquireProfileWriteLock(userId) then return false end
 	profile = profiles[userId]
-	if not profile then releaseProfileWriteLock(userId); return false end
-	if not waitForDataStoreBudget(8) then
-		releaseProfileWriteLock(userId)
+	if not profile then ControllerFunctions.releaseProfileWriteLock(userId); return false end
+	if not ControllerFunctions.waitForDataStoreBudget(8) then
+		ControllerFunctions.releaseProfileWriteLock(userId)
 		warn("[ClubMusic] Profile save deferred: server DataStore budget is busy for userId " .. tostring(userId))
 		return false
 	end
@@ -1459,7 +1462,7 @@ local function saveProfile(player: Player)
 			return output
 		end)
 	end)
-	releaseProfileWriteLock(userId)
+	ControllerFunctions.releaseProfileWriteLock(userId)
 	if not ok or typeof(result) ~= "table" then
 		warn("[ClubMusic] Profile save failed for " .. player.Name .. ": " .. tostring(result or "profile session ownership lost"))
 		if ownershipLost and player.Parent == Players then
@@ -1474,7 +1477,7 @@ end
 
 -- Collapse rapid profile mutations into one save. If another mutation happens
 -- during a save, schedule one follow-up instead of spawning an unbounded stack.
-local function scheduleProfileSave(player: Player)
+ControllerFunctions.scheduleProfileSave = function(player: Player)
 	local userId = player.UserId
 	if saveQueued[userId] then
 		saveAgain[userId] = true
@@ -1487,18 +1490,18 @@ local function scheduleProfileSave(player: Player)
 			saveAgain[userId] = nil
 			return
 		end
-		saveProfile(player)
+		ControllerFunctions.saveProfile(player)
 		saveQueued[userId] = nil
 		if saveAgain[userId] then
 			saveAgain[userId] = nil
-			scheduleProfileSave(player)
+			ControllerFunctions.scheduleProfileSave(player)
 		end
 	end)
 end
 
 -- Queue / Auto DJ ---------------------------------------------------------------
 
-local function makeEntry(track: Track, source: string, player: Player?): QueueEntry
+ControllerFunctions.makeEntry = function(track: Track, source: string, player: Player?): QueueEntry
 	queueCounter += 1
 	return {
 		id = "cm-" .. HttpService:GenerateGUID(false),
@@ -1510,13 +1513,13 @@ local function makeEntry(track: Track, source: string, player: Player?): QueueEn
 		userId = if player then player.UserId else 0,
 		genre = track.genre,
 		source = source,
-		vip = if player then isVip(player) else false,
-		passTier = if player then passTier(player) else 0,
+		vip = if player then ControllerFunctions.isVip(player) else false,
+		ControllerFunctions.passTier = if player then ControllerFunctions.passTier(player) else 0,
 		soundId = track.soundId or CONFIG.SoundIds[track.id],
 	}
 end
 
-local function releaseSlot(entry: QueueEntry)
+ControllerFunctions.releaseSlot = function(entry: QueueEntry)
 	if entry.source == "player" and entry.userId > 0 then
 		local remaining = (requestCounts[entry.userId] or 0) - 1
 		requestCounts[entry.userId] = if remaining > 0 then remaining else nil
@@ -1525,9 +1528,9 @@ end
 
 -- The manager is an adapter over this controller-owned table. It never creates a
 -- parallel queue and all request-slot accounting remains in releaseSlot above.
-queueManager = MusicQueueManager.new(queue, releaseSlot)
+queueManager = MusicQueueManager.new(queue, ControllerFunctions.releaseSlot)
 
-local function countPlayerEntries(): number
+ControllerFunctions.countPlayerEntries = function(): number
 	local n = 0
 	for _, entry in ipairs(queue) do
 		if entry.source == "player" then n += 1 end
@@ -1535,7 +1538,7 @@ local function countPlayerEntries(): number
 	return n
 end
 
-local function findQueueIndex(id: string): number?
+ControllerFunctions.findQueueIndex = function(id: string): number?
 	for index, entry in ipairs(queue) do
 		if entry.id == id then return index end
 	end
@@ -1543,13 +1546,13 @@ local function findQueueIndex(id: string): number?
 end
 
 -- Queue order: Sultan, VVIP, VIP, normal player requests, then auto tracks.
-local function insertIndex(tier: number): number
+ControllerFunctions.insertIndex = function(tier: number): number
 	local lastPlayer = 0
 	local insertAt = 0
 	for index, entry in ipairs(queue) do
 		if entry.source == "player" then
 			lastPlayer = index
-			local existingTier = tonumber(entry.passTier) or (entry.vip and 1 or 0)
+			local existingTier = tonumber(entry.ControllerFunctions.passTier) or (entry.vip and 1 or 0)
 			if tier > 0 and existingTier >= tier then insertAt = index end
 		end
 	end
@@ -1557,7 +1560,7 @@ local function insertIndex(tier: number): number
 	return lastPlayer + 1
 end
 
-local function pickAutoTrack(): Track
+ControllerFunctions.pickAutoTrack = function(): Track
 	local queued: {[string]: boolean} = {}
 	for _, entry in ipairs(queue) do queued[entry.trackId] = true end
 	local recentSet: {[string]: boolean} = {}
@@ -1582,7 +1585,7 @@ local function pickAutoTrack(): Track
 	return TRACK_BY_ID[ALL_TRACK_IDS[random:NextInteger(1, #ALL_TRACK_IDS)]]
 end
 
-local function nextPlaylistTrack(): Track?
+ControllerFunctions.nextPlaylistTrack = function(): Track?
 	if not activePlaylistId or #activePlaylistTracks == 0 then return nil end
 	for _ = 1, #activePlaylistTracks do
 		if activePlaylistCursor > #activePlaylistTracks then activePlaylistCursor = 1 end
@@ -1593,7 +1596,7 @@ local function nextPlaylistTrack(): Track?
 	return nil
 end
 
-local function topUpAuto()
+ControllerFunctions.topUpAuto = function()
 	if autoQueueHold then return end
 	if globalQueueMode then
 		-- Generate one refill and commit it atomically. The service rechecks the
@@ -1603,16 +1606,16 @@ local function topUpAuto()
 		local guard = 0
 		while #queue + #entries < CONFIG.AutoQueueTarget and guard < 10 do
 			guard += 1
-			local playlistTrack = nextPlaylistTrack()
+			local playlistTrack = ControllerFunctions.nextPlaylistTrack()
 			if playlistTrack then
-				table.insert(entries, makeEntry(playlistTrack, "playlist", nil))
+				table.insert(entries, ControllerFunctions.makeEntry(playlistTrack, "playlist", nil))
 			else
 				if activePlaylistId then
 					warn("[ClubMusic] Active playlist has no playable catalog tracks; returning to Auto DJ.")
 					activePlaylistId = nil; activePlaylistName = ""
 					table.clear(activePlaylistTracks); activePlaylistCursor = 1
 				end
-				table.insert(entries, makeEntry(pickAutoTrack(), "auto", nil))
+				table.insert(entries, ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil))
 			end
 		end
 		if #entries > 0 then enqueueGlobalQueueBatch(entries) end
@@ -1621,27 +1624,27 @@ local function topUpAuto()
 	local guard = 0
 	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
 		guard += 1
-		local playlistTrack = nextPlaylistTrack()
+		local playlistTrack = ControllerFunctions.nextPlaylistTrack()
 		local entry: QueueEntry
 		if playlistTrack then
-			entry = makeEntry(playlistTrack, "playlist", nil)
+			entry = ControllerFunctions.makeEntry(playlistTrack, "playlist", nil)
 		else
 			if activePlaylistId then
 				warn("[ClubMusic] Active playlist has no playable catalog tracks; returning to Auto DJ.")
 				activePlaylistId = nil; activePlaylistName = ""
 				table.clear(activePlaylistTracks); activePlaylistCursor = 1
 			end
-			entry = makeEntry(pickAutoTrack(), "auto", nil)
+			entry = ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
 		end
 		queueManager:Insert(#queue + 1, entry)
 	end
 end
 
-local function clearAutomaticQueue()
+ControllerFunctions.clearAutomaticQueue = function()
 	queueManager:ClearAutomatic()
 end
 
-local function reloadActivePlaylist(): boolean
+ControllerFunctions.reloadActivePlaylist = function(): boolean
 	if not activePlaylistId then return false end
 	for _, playlist in ipairs(MusicPlaylistService:GetAll()) do
 		if playlist.id == activePlaylistId then
@@ -1670,7 +1673,7 @@ local function reloadActivePlaylist(): boolean
 	return false
 end
 
-local function startPlaylistRotation(player: Player, playlistId: any): boolean
+ControllerFunctions.startPlaylistRotation = function(player: Player, playlistId: any): boolean
 	if typeof(playlistId) ~= "string" or #playlistId == 0 or #playlistId > 64 then
 		notify(player, "Choose a valid playlist.", "warn")
 		return false
@@ -1695,13 +1698,13 @@ local function startPlaylistRotation(player: Player, playlistId: any): boolean
 	if globalQueueMode then
 		local trackIds = {}
 		for _, playlistTrack in ipairs(validTracks) do table.insert(trackIds, playlistTrack.id) end
-		local callOk, changed, state, message = globalInvoke("SetGlobalPlaylistRotation", found.id, found.name, trackIds)
+		local callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlaylistRotation", found.id, found.name, trackIds)
 		if not callOk or changed ~= true or typeof(state) ~= "table" then
 			notify(player, tostring(message or "Global playlist rotation could not be started."), "warn")
 			return false
 		end
-		applyGlobalQueueState(state)
-		topUpAuto()
+		ControllerFunctions.applyGlobalQueueState(state)
+		ControllerFunctions.topUpAuto()
 		notify(player, "Global playlist rotation enabled: " .. found.name .. ".", "ok")
 		return true
 	end
@@ -1709,26 +1712,26 @@ local function startPlaylistRotation(player: Player, playlistId: any): boolean
 	activePlaylistName = found.name
 	activePlaylistTracks = validTracks
 	activePlaylistCursor = 1
-	clearAutomaticQueue()
-	topUpAuto()
+	ControllerFunctions.clearAutomaticQueue()
+	ControllerFunctions.topUpAuto()
 	notify(player, "Playlist rotation enabled: " .. activePlaylistName .. ". The current track will finish first.", "ok")
 	return true
 end
 
-local function stopPlaylistRotation(player: Player?)
+ControllerFunctions.stopPlaylistRotation = function(player: Player?)
 	if not activePlaylistId then
 		if player then notify(player, "No playlist rotation is active.", "info") end
 		return false
 	end
 	local stoppedName = activePlaylistName
 	if globalQueueMode then
-		local callOk, stopped, state, message = globalInvoke("SetGlobalPlaylistRotation", nil)
+		local callOk, stopped, state, message = ControllerFunctions.globalInvoke("SetGlobalPlaylistRotation", nil)
 		if not callOk or stopped ~= true or typeof(state) ~= "table" then
 			if player then notify(player, tostring(message or "Global playlist rotation could not be stopped."), "warn") end
 			return false
 		end
-		applyGlobalQueueState(state)
-		topUpAuto()
+		ControllerFunctions.applyGlobalQueueState(state)
+		ControllerFunctions.topUpAuto()
 		if player then notify(player, "Global playlist rotation stopped: " .. stoppedName .. ".", "ok") end
 		return true
 	end
@@ -1736,8 +1739,8 @@ local function stopPlaylistRotation(player: Player?)
 	activePlaylistName = ""
 	table.clear(activePlaylistTracks)
 	activePlaylistCursor = 1
-	clearAutomaticQueue()
-	topUpAuto()
+	ControllerFunctions.clearAutomaticQueue()
+	ControllerFunctions.topUpAuto()
 	if player then notify(player, "Playlist rotation stopped: " .. stoppedName .. ".", "ok") end
 	return true
 end
@@ -1745,7 +1748,7 @@ end
 local playbackGeneration = 0
 local transitionInProgress = false
 
-local function setNowPlaying(entry: QueueEntry)
+ControllerFunctions.setNowPlaying = function(entry: QueueEntry)
 	playbackGeneration += 1
 	autoQueueHold = false
 	nowPlaying.trackId = entry.trackId
@@ -1759,7 +1762,7 @@ local function setNowPlaying(entry: QueueEntry)
 	nowPlaying.requestedBy = if entry.source == "playlist" then activePlaylistName else entry.requestedBy
 	nowPlaying.vip = entry.vip
 	nowPlaying.soundId = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
-	startServerMusic(nowPlaying.soundId)
+	ControllerFunctions.startServerMusic(nowPlaying.soundId)
 
 	table.insert(recentTracks, entry.trackId)
 	while #recentTracks > CONFIG.AutoAvoidRecent do
@@ -1770,7 +1773,7 @@ end
 
 -- Shared queue mirror. The global DataStore is authoritative when the global
 -- service is enabled; the local table remains a detached UI mirror only.
-local function applyGlobalQueueState(state: any): boolean
+ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 	if typeof(state) ~= "table" or typeof(state.queue) ~= "table"
 		or typeof(state.playback) ~= "table" then return false end
 	-- Queue and playback revisions are separate monotonic counters. A snapshot
@@ -1778,11 +1781,11 @@ local function applyGlobalQueueState(state: any): boolean
 	local queueRevision = tonumber(state.revision)
 	local catalogRevision = tonumber(state.catalogRevision) or 0
 	local revision = tonumber(state.playback.trackRevision)
-	if not isFiniteNumber(queueRevision) or queueRevision < 0 or queueRevision % 1 ~= 0
+	if not ControllerFunctions.isFiniteNumber(queueRevision) or queueRevision < 0 or queueRevision % 1 ~= 0
 		or queueRevision > 9007199254740991 or queueRevision < globalQueueRevision then return false end
-	if not isFiniteNumber(revision) or revision < 0 or revision % 1 ~= 0
+	if not ControllerFunctions.isFiniteNumber(revision) or revision < 0 or revision % 1 ~= 0
 		or revision > 9007199254740991 or revision < globalTrackRevision then return false end
-	if not isFiniteNumber(catalogRevision) or catalogRevision < 0 or catalogRevision % 1 ~= 0
+	if not ControllerFunctions.isFiniteNumber(catalogRevision) or catalogRevision < 0 or catalogRevision % 1 ~= 0
 		or catalogRevision > 9007199254740991 then return false end
 	globalCatalogRevision = math.max(globalCatalogRevision, catalogRevision)
 	globalCatalogChangeTrackId = if typeof(state.catalogChangeTrackId) == "string" then state.catalogChangeTrackId else nil
@@ -1813,7 +1816,7 @@ local function applyGlobalQueueState(state: any): boolean
 				id = raw.id, trackId = raw.trackId, title = raw.title, artist = raw.artist,
 				duration = raw.duration, requestedBy = tostring(raw.requestedBy or "Auto DJ"),
 				userId = raw.userId, genre = tostring(raw.genre or "Unknown"), source = raw.source,
-				vip = raw.vip == true, passTier = tonumber(raw.passTier) or 0,
+				vip = raw.vip == true, ControllerFunctions.passTier = tonumber(raw.ControllerFunctions.passTier) or 0,
 				soundId = tostring(raw.soundId or ""),
 			})
 		end
@@ -1826,7 +1829,7 @@ local function applyGlobalQueueState(state: any): boolean
 	end
 	local previousRestartRevision = globalRestartRevision
 	local restartRevision = tonumber(state.playback.restartRevision) or 0
-	if not isFiniteNumber(restartRevision) or restartRevision < 0 or restartRevision % 1 ~= 0 then return false end
+	if not ControllerFunctions.isFiniteNumber(restartRevision) or restartRevision < 0 or restartRevision % 1 ~= 0 then return false end
 	local current = state.current
 	if typeof(current) == "table" and typeof(current.trackId) == "string" then
 		if nowPlaying.trackId ~= current.trackId then
@@ -1835,10 +1838,10 @@ local function applyGlobalQueueState(state: any): boolean
 				artist = tostring(current.artist), duration = tonumber(current.duration) or 1,
 				requestedBy = tostring(current.requestedBy or "Auto DJ"), userId = tonumber(current.userId) or 0,
 				genre = tostring(current.genre or "Unknown"), source = tostring(current.source or "auto"),
-				vip = current.vip == true, passTier = tonumber(current.passTier) or 0,
+				vip = current.vip == true, ControllerFunctions.passTier = tonumber(current.ControllerFunctions.passTier) or 0,
 				soundId = tostring(current.soundId or ""),
 			}
-			setNowPlaying(entry)
+			ControllerFunctions.setNowPlaying(entry)
 		end
 		-- Pause is authoritative state, not a side effect of a position lookup.
 		-- Apply it even if the optional position helper is temporarily unavailable.
@@ -1846,18 +1849,18 @@ local function applyGlobalQueueState(state: any): boolean
 		local restartObserved = globalPlaybackInitialized and restartRevision > previousRestartRevision
 		if restartObserved then
 			nowPlaying.elapsed = 0
-			pcall(function() startServerMusic(nowPlaying.soundId) end)
-		elseif isFiniteNumber(state.playback.position) then
+			pcall(function() ControllerFunctions.startServerMusic(nowPlaying.soundId) end)
+		elseif ControllerFunctions.isFiniteNumber(state.playback.position) then
 			nowPlaying.elapsed = math.clamp(state.playback.position, 0, nowPlaying.duration)
 		end
-		local positionCallOk, position = globalInvoke("GetGlobalPlaybackPosition", state)
-		if positionCallOk and isFiniteNumber(position) then
+		local positionCallOk, position = ControllerFunctions.globalInvoke("GetGlobalPlaybackPosition", state)
+		if positionCallOk and ControllerFunctions.isFiniteNumber(position) then
 			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
 		end
 		pcall(function()
 			if musicSound.SoundId ~= nowPlaying.soundId then
-				if nowPlaying.soundId ~= "" then startServerMusic(nowPlaying.soundId)
-				else stopServerMusic(); musicSound.SoundId = "" end
+				if nowPlaying.soundId ~= "" then ControllerFunctions.startServerMusic(nowPlaying.soundId)
+				else ControllerFunctions.stopServerMusic(); musicSound.SoundId = "" end
 			end
 			if musicSound.IsLoaded and math.abs(musicSound.TimePosition - nowPlaying.elapsed) > 2 then
 				musicSound.TimePosition = nowPlaying.elapsed
@@ -1874,7 +1877,7 @@ local function applyGlobalQueueState(state: any): boolean
 			nowPlaying.genre = ""; nowPlaying.duration = 1; nowPlaying.elapsed = 0
 			nowPlaying.dj = "Automated Selector"; nowPlaying.source = "auto"
 			nowPlaying.requestedBy = "Auto DJ"; nowPlaying.vip = false; nowPlaying.soundId = ""
-			stopServerMusic(); musicSound.SoundId = ""
+			ControllerFunctions.stopServerMusic(); musicSound.SoundId = ""
 		end
 		playbackPaused = true
 		globalTrackRevision = revision
@@ -1888,7 +1891,7 @@ end
 -- Playlist edits are persistent per playlist, but an active rotation is shared
 -- state. Republish its complete ordered track list atomically so every server
 -- drops stale automatic entries and resumes from the same rotation definition.
-local function syncGlobalPlaylistRotation(): (boolean, string?)
+ControllerFunctions.syncGlobalPlaylistRotation = function(): (boolean, string?)
 	if not globalQueueMode then return true, nil end
 	local callOk, changed, state, message = false, false, nil, nil
 	if activePlaylistId and #activePlaylistTracks > 0 then
@@ -1896,17 +1899,17 @@ local function syncGlobalPlaylistRotation(): (boolean, string?)
 		for _, track in ipairs(activePlaylistTracks) do
 			table.insert(trackIds, track.id)
 		end
-		callOk, changed, state, message = globalInvoke(
+		callOk, changed, state, message = ControllerFunctions.globalInvoke(
 			"SetGlobalPlaylistRotation", activePlaylistId, activePlaylistName, trackIds
 		)
 	else
-		callOk, changed, state, message = globalInvoke("SetGlobalPlaylistRotation", nil)
+		callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlaylistRotation", nil)
 	end
 	if not callOk or changed ~= true or typeof(state) ~= "table" then
 		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 		return false, tostring(message or "The shared playlist rotation could not be updated.")
 	end
-	if not applyGlobalQueueState(state) then
+	if not ControllerFunctions.applyGlobalQueueState(state) then
 		return false, "The shared playlist state could not be applied."
 	end
 	return true, nil
@@ -1918,8 +1921,8 @@ syncGlobalQueueSnapshot = function(): boolean
 	-- A malformed or unexpectedly-shaped bridge response must not strand the
 	-- sync lock. Keep the whole read/apply path protected and always release it.
 	local syncOk, applied = pcall(function(): boolean
-		local callOk, readOk, state = globalInvoke("GetGlobalQueueState")
-		return callOk == true and readOk == true and applyGlobalQueueState(state)
+		local callOk, readOk, state = ControllerFunctions.globalInvoke("GetGlobalQueueState")
+		return callOk == true and readOk == true and ControllerFunctions.applyGlobalQueueState(state)
 	end)
 	globalQueueSyncBusy = false
 	if not syncOk then
@@ -1931,18 +1934,18 @@ syncGlobalQueueSnapshot = function(): boolean
 end
 
 enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
-	local callOk, writeOk, state, message = globalInvoke(
+	local callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
 		"EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize, localCatalogRevision
 	)
-	if typeof(state) == "table" then applyGlobalQueueState(state) end
+	if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
 	if callOk and writeOk == true then return true, nil end
 	if tostring(message) == "Catalog changed on another server; refresh and retry."
-		and refreshCatalogWhenReady() then
+		and ControllerFunctions.refreshCatalogWhenReady() then
 		if not TRACK_BY_ID[entry.trackId] then return false, "That track is no longer in the shared catalog." end
-		callOk, writeOk, state, message = globalInvoke(
+		callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
 			"EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize, localCatalogRevision
 		)
-		if typeof(state) == "table" then applyGlobalQueueState(state) end
+		if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
 		if callOk and writeOk == true then return true, nil end
 	end
 	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
@@ -1950,13 +1953,13 @@ enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
 end
 
 enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
-	local callOk, writeOk, state, message = globalInvoke(
+	local callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
 		"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget, localCatalogRevision
 	)
-	if typeof(state) == "table" then applyGlobalQueueState(state) end
+	if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
 	if callOk and writeOk == true then return true, nil end
 	if tostring(message) == "Catalog changed on another server; refresh and retry."
-		and refreshCatalogWhenReady() then
+		and ControllerFunctions.refreshCatalogWhenReady() then
 		local allTracksPresent = true
 		for _, entry in ipairs(entries) do
 			if not TRACK_BY_ID[entry.trackId] then allTracksPresent = false; break end
@@ -1964,20 +1967,20 @@ enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
 		if not allTracksPresent then
 			-- Rebuild the Auto DJ batch from the refreshed catalog rather than
 			-- leaving a short queue after a stale server selected a deleted ID.
-			task.defer(topUpAuto)
+			task.defer(ControllerFunctions.topUpAuto)
 			return false, "An automatic track is no longer in the shared catalog; refill is being rebuilt."
 		end
-		callOk, writeOk, state, message = globalInvoke(
+		callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
 			"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget, localCatalogRevision
 		)
-		if typeof(state) == "table" then applyGlobalQueueState(state) end
+		if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
 		if callOk and writeOk == true then return true, nil end
 	end
 	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 	return false, tostring(message or "Global automatic queue refill is unavailable.")
 end
 
-local function advance(expectedGeneration: number?): (boolean, string?)
+ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, string?)
 	-- Every transition is synchronous and generation-checked. This prevents the
 	-- duration clock and playback watchdog from advancing the same track twice.
 	if transitionInProgress then return false, "A track transition is already in progress." end
@@ -1993,26 +1996,26 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 			-- data before choosing a fallback so removed IDs are never replayed.
 			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			if localCatalogRevision ~= globalCatalogRevision then
-				if not refreshCatalogWhenReady() then
+				if not ControllerFunctions.refreshCatalogWhenReady() then
 					return false, "The shared catalog is updating; track transition will retry."
 				end
 			end
 			if globalPlaylistRotationEnabled and not activePlaylistId then
-				local rotationSynced, rotationMessage = syncGlobalPlaylistRotation()
+				local rotationSynced, rotationMessage = ControllerFunctions.syncGlobalPlaylistRotation()
 				if not rotationSynced then
 					return false, "The shared playlist rotation is still recovering: " .. tostring(rotationMessage)
 				end
 			end
 			-- Build one fallback entry for this transition. Retrying a stale revision
 			-- must not consume additional playlist cursor positions or pick new tracks.
-			local playlistFallback = nextPlaylistTrack()
-			local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
+			local playlistFallback = ControllerFunctions.nextPlaylistTrack()
+			local fallback = if playlistFallback then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil) else ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
 			local function attemptGlobalAdvance(): (boolean, string?)
 				local expectedRevision = globalTrackRevision
-				local callOk, didAdvance, state, message = globalInvoke(
+				local callOk, didAdvance, state, message = ControllerFunctions.globalInvoke(
 					"AdvanceGlobalQueue", expectedRevision, fallback, localCatalogRevision
 				)
-				if typeof(state) == "table" then applyGlobalQueueState(state) end
+				if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
 				if callOk and didAdvance == true and typeof(state) == "table" then
 					return true, nil
 				end
@@ -2024,12 +2027,12 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 				-- snapshot. Reconcile the catalog, then retry once with the refreshed
 				-- playlist cursor or a new Auto DJ fallback if the old ID disappeared.
 				if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-					and refreshCatalogWhenReady() then
+					and ControllerFunctions.refreshCatalogWhenReady() then
 					if not TRACK_BY_ID[fallback.trackId] then
-						local refreshedPlaylistTrack = nextPlaylistTrack()
+						local refreshedPlaylistTrack = ControllerFunctions.nextPlaylistTrack()
 						fallback = if refreshedPlaylistTrack
-							then makeEntry(refreshedPlaylistTrack, "playlist", nil)
-							else makeEntry(pickAutoTrack(), "auto", nil)
+							then ControllerFunctions.makeEntry(refreshedPlaylistTrack, "playlist", nil)
+							else ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
 					end
 					didAdvance, failureReason = attemptGlobalAdvance()
 				end
@@ -2073,7 +2076,7 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 			return false, reason
 		end
 		local maintenanceOk, maintenanceError = pcall(function()
-			topUpAuto()
+			ControllerFunctions.topUpAuto()
 			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 		end)
 		if not maintenanceOk then
@@ -2084,9 +2087,9 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 	local ok, err = pcall(function()
 		local nextEntry = queueManager:PopNext()
 		if nextEntry then
-		else nextEntry = makeEntry(pickAutoTrack(), "auto", nil) end
-		setNowPlaying(nextEntry :: QueueEntry)
-		topUpAuto()
+		else nextEntry = ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil) end
+		ControllerFunctions.setNowPlaying(nextEntry :: QueueEntry)
+		ControllerFunctions.topUpAuto()
 	end)
 	transitionInProgress = false
 	if not ok then
@@ -2097,15 +2100,15 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 end
 
 -- Boot: start with an auto-selected track and a visible auto queue.
-setNowPlaying(makeEntry(TRACK_BY_ID["edm-0"], "auto", nil))
-topUpAuto()
+ControllerFunctions.setNowPlaying(ControllerFunctions.makeEntry(TRACK_BY_ID["edm-0"], "auto", nil))
+ControllerFunctions.topUpAuto()
 
 -- Switch to shared authority only when the separately configured global service
 -- confirms it is enabled. Studio remains local unless explicitly enabled there.
 task.spawn(function()
 	local enabledCallOk, enabled = false, false
 	for _ = 1, 30 do
-		enabledCallOk, enabled = globalInvoke("IsEnabled")
+		enabledCallOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
 		if enabledCallOk then break end
 		task.wait(2)
 	end
@@ -2115,32 +2118,32 @@ task.spawn(function()
 	if not readOk then
 		table.clear(queue)
 		nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""; nowPlaying.elapsed = 0
-		stopServerMusic()
+		ControllerFunctions.stopServerMusic()
 		warn("[ClubMusic] Global queue could not be loaded; shared playback and requests remain fail-closed.")
 		return
 	end
 	if localCatalogRevision ~= globalCatalogRevision then
-		if not refreshCatalogWhenReady() then
+		if not ControllerFunctions.refreshCatalogWhenReady() then
 			warn("[ClubMusic] Catalog revision could not be synchronized; global queue writes remain blocked on this server.")
 			return
 		end
 	end
 	if globalPlaylistRotationEnabled and not activePlaylistId then
-		local rotationSynced, rotationMessage = syncGlobalPlaylistRotation()
+		local rotationSynced, rotationMessage = ControllerFunctions.syncGlobalPlaylistRotation()
 		if not rotationSynced then
 			warn("[ClubMusic] Empty global playlist rotation could not be cleared: " .. tostring(rotationMessage))
 			return
 		end
 	end
 	if nowPlaying.trackId == "" then
-		local playlistFallback = nextPlaylistTrack()
-		local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
-		local callOk, advanced, state = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback, localCatalogRevision)
-		if callOk and advanced == true and typeof(state) == "table" then applyGlobalQueueState(state)
+		local playlistFallback = ControllerFunctions.nextPlaylistTrack()
+		local fallback = if playlistFallback then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil) else ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
+		local callOk, advanced, state = ControllerFunctions.globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback, localCatalogRevision)
+		if callOk and advanced == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state)
 		elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 	end
 	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-	topUpAuto()
+	ControllerFunctions.topUpAuto()
 end)
 
 -- MessagingService is the primary fast invalidation path. Periodic snapshots are
@@ -2157,7 +2160,7 @@ task.spawn(function()
 				-- Use the controller's generation-checked transition path. It owns
 				-- the transition lock, authoritative CAS, snapshot application, and
 				-- post-transition queue refill; do not issue a parallel raw advance.
-				advance(globalTrackRevision)
+				ControllerFunctions.advance(globalTrackRevision)
 			end
 			-- Queue refill is performed by the server that wins the atomic track transition.
 			-- Periodic repair only refreshes missed state notifications; it must not make every server race to refill.
@@ -2167,7 +2170,7 @@ end)
 
 -- Skip voting ---------------------------------------------------------------------
 
-local function skipStatus(player: Player?): (number, number, boolean)
+ControllerFunctions.skipStatus = function(player: Player?): (number, number, boolean)
 	local list = Players:GetPlayers()
 	local count = #list
 	local votes = 0
@@ -2180,10 +2183,10 @@ local function skipStatus(player: Player?): (number, number, boolean)
 	return votes, needed, voted
 end
 
-local function checkSkipVotes(): boolean
-	local votes, needed = skipStatus(nil)
+ControllerFunctions.checkSkipVotes = function(): boolean
+	local votes, needed = ControllerFunctions.skipStatus(nil)
 	if votes > 0 and votes >= needed then
-		advance()
+		ControllerFunctions.advance()
 		return true
 	end
 	return false
@@ -2191,10 +2194,10 @@ end
 
 -- State publishing ------------------------------------------------------------------
 
-local function snapshotFor(player: Player)
-	local profile = profiles[player.UserId] or defaultProfile()
-	local level = getLevel(player)
-	local vip = isVip(player)
+ControllerFunctions.snapshotFor = function(player: Player)
+	local profile = profiles[player.UserId] or ControllerFunctions.defaultProfile()
+	local level = ControllerFunctions.getLevel(player)
+	local vip = ControllerFunctions.isVip(player)
 
 	local safeQueue = {}
 	for _, item in ipairs(queue) do
@@ -2208,7 +2211,7 @@ local function snapshotFor(player: Player)
 	local favorites = {}
 	for id in pairs(profile.favorites) do favorites[id] = true end
 
-	local votes, needed, voted = skipStatus(player)
+	local votes, needed, voted = ControllerFunctions.skipStatus(player)
 
 	-- Title slots use string keys so sparse slots survive the remote.
 	local slotsOut: {[string]: any} = {}
@@ -2244,10 +2247,10 @@ local function snapshotFor(player: Player)
 	end
 
 	local snapshot = {
-		rank = getRank(player),
+		rank = ControllerFunctions.getRank(player),
 		perm = level,
 		vip = vip,
-		customTitleUnlocked = isSultan(player),
+		customTitleUnlocked = ControllerFunctions.isSultan(player),
 		queue = safeQueue,
 		nowPlaying = {
 			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
@@ -2263,7 +2266,7 @@ local function snapshotFor(player: Player)
 		reloadNonce = reloadNonce[player.UserId] or 0,
 		favorites = favorites,
 		skip = { votes = votes, needed = needed, voted = voted },
-		requests = { used = requestCounts[player.UserId] or 0, limit = requestLimitFor(player) },
+		requests = { used = requestCounts[player.UserId] or 0, limit = ControllerFunctions.requestLimitFor(player) },
 		locked = requestsLocked,
 		blocked = blockedUsers[player.UserId] == true,
 		vipPerks = {
@@ -2276,8 +2279,8 @@ local function snapshotFor(player: Player)
 		vipGamePassId = CONFIG.VipGamePassId,
 		vvipGamePassId = CONFIG.VvipGamePassId,
 		sultanGamePassId = CONFIG.TikiTideSultanPassId,
-		passTier = passTier(player),
-		passName = if isSultan(player) then "TIKI TIDE SULTAN" elseif isVvip(player) then "VVIP" elseif isVip(player) then "VIP" else "GUEST",
+		ControllerFunctions.passTier = ControllerFunctions.passTier(player),
+		passName = if ControllerFunctions.isSultan(player) then "TIKI TIDE SULTAN" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
 		passPerks = {
 			vip = { slots = CONFIG.VipMaxRequestsPerPlayer, cooldown = CONFIG.VipCooldownSeconds },
 			vvip = { slots = CONFIG.VvipMaxRequestsPerPlayer, cooldown = CONFIG.VvipCooldownSeconds },
@@ -2326,12 +2329,12 @@ local function snapshotFor(player: Player)
 				userId = other.UserId,
 				name = other.Name,
 				displayName = other.DisplayName,
-				rank = getRank(other),
-				vip = isVip(other),
+				rank = ControllerFunctions.getRank(other),
+				vip = ControllerFunctions.isVip(other),
 				tempVip = tempVip[other.UserId] == true,
 				blocked = blockedUsers[other.UserId] == true,
 				requests = requestCounts[other.UserId] or 0,
-				canMod = canModerate(player, other),
+				canMod = ControllerFunctions.canModerate(player, other),
 			})
 		end
 		snapshot.players = roster
@@ -2346,7 +2349,7 @@ local pendingStateAll = false
 local pendingStatePlayers: {[number]: boolean} = {}
 local stateFlushScheduled = false
 
-local function flushPendingState()
+ControllerFunctions.flushPendingState = function()
 	task.wait(CONFIG.GlobalStateMinIntervalSeconds)
 	local sendAll = pendingStateAll
 	local targets = pendingStatePlayers
@@ -2355,7 +2358,7 @@ local function flushPendingState()
 
 	if sendAll then
 		for _, target in ipairs(Players:GetPlayers()) do
-			local ok, snapshot = pcall(snapshotFor, target)
+			local ok, snapshot = pcall(ControllerFunctions.snapshotFor, target)
 			if ok and target.Parent == Players then
 				pcall(function() stateRemote:FireClient(target, snapshot) end)
 			end
@@ -2364,7 +2367,7 @@ local function flushPendingState()
 		for userId in pairs(targets) do
 			local target = Players:GetPlayerByUserId(userId)
 			if target then
-				local ok, snapshot = pcall(snapshotFor, target)
+				local ok, snapshot = pcall(ControllerFunctions.snapshotFor, target)
 				if ok then pcall(function() stateRemote:FireClient(target, snapshot) end) end
 			end
 		end
@@ -2374,7 +2377,7 @@ local function flushPendingState()
 	-- Work queued during the flush is handled by one further coalesced pass.
 	if pendingStateAll or next(pendingStatePlayers) ~= nil then
 		stateFlushScheduled = true
-		task.defer(flushPendingState)
+		task.defer(ControllerFunctions.flushPendingState)
 	end
 end
 
@@ -2387,7 +2390,7 @@ publishState = function(player: Player?)
 	end
 	if not stateFlushScheduled then
 		stateFlushScheduled = true
-		task.defer(flushPendingState)
+		task.defer(ControllerFunctions.flushPendingState)
 	end
 end
 
@@ -2395,7 +2398,7 @@ notify = function(player: Player, text: string, kind: string?)
 	noticeRemote:FireClient(player, { text = text, kind = kind or "info" })
 end
 
-local function broadcast(text: string, kind: string?)
+ControllerFunctions.broadcast = function(text: string, kind: string?)
 	noticeRemote:FireAllClients({ text = text, kind = kind or "info" })
 end
 
@@ -2435,7 +2438,7 @@ type ProductData = {
 
 local PRODUCT_MAP: {[number]: ProductData} = {}
 
-local function registerProduct(productId: number, data: ProductData)
+ControllerFunctions.registerProduct = function(productId: number, data: ProductData)
 	if productId <= 0 then
 		return -- Not configured yet.
 	end
@@ -2447,44 +2450,44 @@ local function registerProduct(productId: number, data: ProductData)
 end
 
 -- Donations / Tips
-registerProduct(PRODUCT_IDS.Coconut, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.Coconut, {
 	type = "Donation", perk = "Coconut", amount = 10,
 })
-registerProduct(PRODUCT_IDS.Pineapple, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.Pineapple, {
 	type = "Donation", perk = "Pineapple", amount = 50,
 })
-registerProduct(PRODUCT_IDS.TikiTorch, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.TikiTorch, {
 	type = "Donation", perk = "Tiki Torch", amount = 100,
 })
-registerProduct(PRODUCT_IDS.Volcano, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.Volcano, {
 	type = "Donation", perk = "Volcano", amount = 500,
 })
-registerProduct(PRODUCT_IDS.IslandLegend, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.IslandLegend, {
 	type = "Donation", perk = "Island Legend", amount = 1000,
 })
 
 -- Shop Items
-registerProduct(PRODUCT_IDS.Glowsticks, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.Glowsticks, {
 	type = "Item", name = "Glowsticks", costCoins = 75,
 })
-registerProduct(PRODUCT_IDS.TikiMask, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.TikiMask, {
 	type = "Item", name = "Tiki Mask", costCoins = 250,
 })
-registerProduct(PRODUCT_IDS.NeonAura, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.NeonAura, {
 	type = "Item", name = "Neon Aura", costCoins = 600,
 })
-registerProduct(PRODUCT_IDS.NeonLei, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.NeonLei, {
 	type = "Item", name = "Neon Lei", costCoins = 150,
 })
-registerProduct(PRODUCT_IDS.LEDShades, {
+ControllerFunctions.registerProduct(PRODUCT_IDS.LEDShades, {
 	type = "Item", name = "LED Shades", costCoins = 320,
 })
-registerProduct(PRODUCT_IDS.XPBoost2x, { type = "XPBoost", multiplier = 2, duration = 900, name = "2x XP Boost" })
-registerProduct(PRODUCT_IDS.XPBoost4x, { type = "XPBoost", multiplier = 4, duration = 1800, name = "4x XP Boost" })
+ControllerFunctions.registerProduct(PRODUCT_IDS.XPBoost2x, { type = "XPBoost", multiplier = 2, duration = 900, name = "2x XP Boost" })
+ControllerFunctions.registerProduct(PRODUCT_IDS.XPBoost4x, { type = "XPBoost", multiplier = 4, duration = 1800, name = "4x XP Boost" })
 
 -- Title slots (slot 1 is free; slots 2 and 3 are paid)
 for slotNumber = 2, TITLE_SLOT_COUNT do
-	registerProduct(CONFIG.TitleSlotProductIds[slotNumber] or 0, {
+	ControllerFunctions.registerProduct(CONFIG.TitleSlotProductIds[slotNumber] or 0, {
 		type = "TitleSlot", slot = slotNumber, name = "Title Slot " .. tostring(slotNumber),
 	})
 end
@@ -2493,7 +2496,7 @@ end
 -- one UpdateAsync; a separate hashed per-purchase journal is completed before
 -- ProcessReceipt acknowledges the purchase. The legacy profile receipt map is read
 -- for migration only and is not expanded by new purchases.
-local function applyReceiptToStoredData(data: {[string]: any}, productData: {[string]: any}): boolean
+ControllerFunctions.applyReceiptToStoredData = function(data: {[string]: any}, productData: {[string]: any}): boolean
 	if productData.type == "Donation" then
 		local amount = math.max(0, math.floor(tonumber(productData.amount) or 0))
 		data.tickets = math.max(0, math.floor(tonumber(data.tickets) or 0)) + math.floor(amount * 1.5)
@@ -2519,7 +2522,7 @@ local function applyReceiptToStoredData(data: {[string]: any}, productData: {[st
 	return false
 end
 
-local function applyReceiptToMemory(profile: Profile, productData: {[string]: any})
+ControllerFunctions.applyReceiptToMemory = function(profile: Profile, productData: {[string]: any})
 	if productData.type == "Donation" then
 		local amount = math.max(0, math.floor(tonumber(productData.amount) or 0))
 		profile.tickets += math.floor(amount * 1.5)
@@ -2543,20 +2546,20 @@ local processedReceipts: {[string]: boolean} = {}
 
 local productReceiptJournalStore = DataStoreService:GetDataStore("ClubMusic_ProductReceipts_v1")
 
-local function productReceiptKey(userId: number, receiptId: string): string
+ControllerFunctions.productReceiptKey = function(userId: number, receiptId: string): string
 	return "r_" .. ReceiptHash.KeySuffix(tostring(userId) .. ":" .. receiptId)
 end
 
-local function recoverPendingProductReceipt(userId: number): (boolean, string?)
+ControllerFunctions.recoverPendingProductReceipt = function(userId: number): (boolean, string?)
 	local journalStore = productReceiptJournalStore
-	if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while recovering a receipt" end
+	if not ControllerFunctions.waitForDataStoreBudget(10) then return false, "DataStore budget is busy while recovering a receipt" end
 	local readOk, profileData = pcall(function() return store:GetAsync(tostring(userId)) end)
 	if not readOk then return false, tostring(profileData) end
 	if typeof(profileData) ~= "table" or typeof(profileData.pendingReceipt) ~= "string" then return true, nil end
 
 	local pendingId = profileData.pendingReceipt
-	local journalKey = productReceiptKey(userId, pendingId)
-	if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while reading receipt journal" end
+	local journalKey = ControllerFunctions.productReceiptKey(userId, pendingId)
+	if not ControllerFunctions.waitForDataStoreBudget(10) then return false, "DataStore budget is busy while reading receipt journal" end
 	local journalOk, journal = pcall(function() return journalStore:GetAsync(journalKey) end)
 	if not journalOk then return false, tostring(journal) end
 	if typeof(journal) ~= "table" or journal.purchaseId ~= pendingId
@@ -2568,13 +2571,13 @@ local function recoverPendingProductReceipt(userId: number): (boolean, string?)
 	local pendingMemory = receiptMemoryPending[pendingId]
 	local currentProfile = profiles[userId]
 	if pendingMemory and pendingMemory.profile == currentProfile and currentProfile then
-		applyReceiptToMemory(currentProfile, pendingMemory.productData)
+		ControllerFunctions.applyReceiptToMemory(currentProfile, pendingMemory.productData)
 		receiptMemoryApplied[pendingId] = currentProfile
 		receiptMemoryPending[pendingId] = nil
 	end
 
 	if journal.status ~= "Completed" then
-		if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while completing receipt journal" end
+		if not ControllerFunctions.waitForDataStoreBudget(10) then return false, "DataStore budget is busy while completing receipt journal" end
 		local completeOk, completed = pcall(function()
 			return journalStore:UpdateAsync(journalKey, function(old)
 				if typeof(old) ~= "table" or old.purchaseId ~= pendingId or old.userId ~= userId then return nil end
@@ -2589,7 +2592,7 @@ local function recoverPendingProductReceipt(userId: number): (boolean, string?)
 		end
 	end
 
-	if not waitForDataStoreBudget(10) then return false, "DataStore budget is busy while clearing pending receipt" end
+	if not ControllerFunctions.waitForDataStoreBudget(10) then return false, "DataStore budget is busy while clearing pending receipt" end
 	local clearOk, cleared = pcall(function()
 		return store:UpdateAsync(tostring(userId), function(old)
 			if typeof(old) ~= "table" or typeof(old.sessionLock) ~= "table"
@@ -2607,49 +2610,49 @@ local function recoverPendingProductReceipt(userId: number): (boolean, string?)
 	return true, nil
 end
 
-local function persistReceipt(userId: number, receiptId: string, productData: {[string]: any}): (boolean, boolean, string?)
+ControllerFunctions.persistReceipt = function(userId: number, receiptId: string, productData: {[string]: any}): (boolean, boolean, string?)
 	if USE_STUDIO_MEMORY_PROFILES then
 		return profiles[userId] ~= nil, false, nil
 	end
-	if not acquireProfileWriteLock(userId) then
+	if not ControllerFunctions.acquireProfileWriteLock(userId) then
 		return false, false, "Profile is busy; receipt will be retried"
 	end
 
 	local journalStore = productReceiptJournalStore
-	local recovered, recoveryError = recoverPendingProductReceipt(userId)
-	if not recovered then releaseProfileWriteLock(userId); return false, false, recoveryError end
+	local recovered, recoveryError = ControllerFunctions.recoverPendingProductReceipt(userId)
+	if not recovered then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, recoveryError end
 
-	local journalKey = productReceiptKey(userId, receiptId)
-	if not waitForDataStoreBudget(10) then
-		releaseProfileWriteLock(userId)
+	local journalKey = ControllerFunctions.productReceiptKey(userId, receiptId)
+	if not ControllerFunctions.waitForDataStoreBudget(10) then
+		ControllerFunctions.releaseProfileWriteLock(userId)
 		return false, false, "DataStore budget is busy while reading receipt journal"
 	end
 	local readOk, journal = pcall(function() return journalStore:GetAsync(journalKey) end)
-	if not readOk then releaseProfileWriteLock(userId); return false, false, tostring(journal) end
+	if not readOk then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, tostring(journal) end
 	if typeof(journal) == "table" then
 		if journal.purchaseId ~= receiptId or journal.userId ~= userId or journal.productId ~= productData.productId then
-			releaseProfileWriteLock(userId)
+			ControllerFunctions.releaseProfileWriteLock(userId)
 			return false, false, "Receipt journal key collision or product mismatch"
 		end
 		if journal.status == "Completed" then
 			local currentProfile = profiles[userId]
 			local pendingMemory = receiptMemoryPending[receiptId]
 			if pendingMemory and pendingMemory.profile == currentProfile and currentProfile then
-				applyReceiptToMemory(currentProfile, pendingMemory.productData)
+				ControllerFunctions.applyReceiptToMemory(currentProfile, pendingMemory.productData)
 				receiptMemoryApplied[receiptId] = currentProfile
 				receiptMemoryPending[receiptId] = nil
 			end
 			local memoryApplied = currentProfile ~= nil and receiptMemoryApplied[receiptId] == currentProfile
 			if not memoryApplied then receiptMemoryPending[receiptId] = nil end
-			releaseProfileWriteLock(userId)
+			ControllerFunctions.releaseProfileWriteLock(userId)
 			return true, not memoryApplied, nil
 		end
 		if journal.status ~= "Prepared" then
-			releaseProfileWriteLock(userId)
+			ControllerFunctions.releaseProfileWriteLock(userId)
 			return false, false, "Receipt journal has an invalid status"
 		end
 	else
-		if not waitForDataStoreBudget(10) then releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while preparing receipt" end
+		if not ControllerFunctions.waitForDataStoreBudget(10) then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while preparing receipt" end
 		local prepareOk, prepared = pcall(function()
 			return journalStore:UpdateAsync(journalKey, function(old)
 				if typeof(old) == "table" then return old end
@@ -2660,7 +2663,7 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 		if not prepareOk or typeof(prepared) ~= "table" or prepared.purchaseId ~= receiptId
 			or prepared.userId ~= userId or prepared.productId ~= productData.productId
 			or (prepared.status ~= "Prepared" and prepared.status ~= "Completed") then
-			releaseProfileWriteLock(userId)
+			ControllerFunctions.releaseProfileWriteLock(userId)
 			return false, false, "Could not prepare durable receipt journal"
 		end
 		journal = prepared
@@ -2668,23 +2671,23 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 			local currentProfile = profiles[userId]
 			local pendingMemory = receiptMemoryPending[receiptId]
 			if pendingMemory and pendingMemory.profile == currentProfile and currentProfile then
-				applyReceiptToMemory(currentProfile, pendingMemory.productData)
+				ControllerFunctions.applyReceiptToMemory(currentProfile, pendingMemory.productData)
 				receiptMemoryApplied[receiptId] = currentProfile
 				receiptMemoryPending[receiptId] = nil
 			end
 			local memoryApplied = currentProfile ~= nil and receiptMemoryApplied[receiptId] == currentProfile
 			if not memoryApplied then receiptMemoryPending[receiptId] = nil end
-			releaseProfileWriteLock(userId)
+			ControllerFunctions.releaseProfileWriteLock(userId)
 			return true, not memoryApplied, nil
 		end
 	end
 
-	if not waitForDataStoreBudget(10) then releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while applying receipt" end
+	if not ControllerFunctions.waitForDataStoreBudget(10) then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while applying receipt" end
 	local alreadyProcessed = false
 	-- Set before yielding: UpdateAsync can commit even if the client-side call later errors.
 	-- A retry can then reconcile the same in-memory Profile exactly once.
 	local receiptProfile = profiles[userId]
-	if not receiptProfile then releaseProfileWriteLock(userId); return false, false, "Profile disappeared before receipt application" end
+	if not receiptProfile then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, "Profile disappeared before receipt application" end
 	receiptMemoryPending[receiptId] = {profile = receiptProfile, productData = productData}
 	local applyOk, applied = pcall(function()
 		return store:UpdateAsync(tostring(userId), function(oldData)
@@ -2697,26 +2700,26 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 				alreadyProcessed = true
 				return data
 			end
-			if not applyReceiptToStoredData(data, productData) then return nil end
+			if not ControllerFunctions.applyReceiptToStoredData(data, productData) then return nil end
 			data.pendingReceipt = receiptId -- reward and recovery marker are one atomic profile write.
 			data.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
 			return data
 		end)
 	end)
 	if not applyOk or typeof(applied) ~= "table" then
-		releaseProfileWriteLock(userId)
+		ControllerFunctions.releaseProfileWriteLock(userId)
 		return false, false, "Receipt reward was not confirmed in the profile"
 	end
 
 	if alreadyProcessed then
 		receiptMemoryPending[receiptId] = nil
 	else
-		applyReceiptToMemory(receiptProfile, productData)
+		ControllerFunctions.applyReceiptToMemory(receiptProfile, productData)
 		receiptMemoryApplied[receiptId] = receiptProfile
 		receiptMemoryPending[receiptId] = nil
 	end
-	if not waitForDataStoreBudget(10) then
-		releaseProfileWriteLock(userId)
+	if not ControllerFunctions.waitForDataStoreBudget(10) then
+		ControllerFunctions.releaseProfileWriteLock(userId)
 		return false, false, "DataStore budget is busy while completing receipt journal"
 	end
 	local completeOk, completed = pcall(function()
@@ -2729,12 +2732,12 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 		end)
 	end)
 	if not completeOk or typeof(completed) ~= "table" or completed.status ~= "Completed" then
-		releaseProfileWriteLock(userId)
+		ControllerFunctions.releaseProfileWriteLock(userId)
 		return false, false, "Reward is saved; receipt journal completion will recover on retry"
 	end
 
-	if not waitForDataStoreBudget(10) then
-		releaseProfileWriteLock(userId)
+	if not ControllerFunctions.waitForDataStoreBudget(10) then
+		ControllerFunctions.releaseProfileWriteLock(userId)
 		return false, false, "Receipt is durable; pending marker cleanup will recover on retry"
 	end
 	local clearOk, cleared = pcall(function()
@@ -2749,11 +2752,11 @@ local function persistReceipt(userId: number, receiptId: string, productData: {[
 		end)
 	end)
 	if not clearOk or typeof(cleared) ~= "table" or cleared.pendingReceipt == receiptId then
-		releaseProfileWriteLock(userId)
+		ControllerFunctions.releaseProfileWriteLock(userId)
 		return false, false, "Receipt is durable; pending marker cleanup will recover on retry"
 	end
 
-	releaseProfileWriteLock(userId)
+	ControllerFunctions.releaseProfileWriteLock(userId)
 	return true, alreadyProcessed, nil
 end
 
@@ -2784,9 +2787,9 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 			studioXpBoostExpiresAt = math.min(os.time() + 30 * 24 * 60 * 60,
 				math.max(os.time(), previousExpiry) + productData.duration)
 			studioXpBoostMultiplier = key
-			setGlobalXPState(key, studioXpBoostExpiresAt)
+			ControllerFunctions.setGlobalXPState(key, studioXpBoostExpiresAt)
 		else
-			local activateOk, activated, expiry, effectiveMultiplier = globalInvoke(
+			local activateOk, activated, expiry, effectiveMultiplier = ControllerFunctions.globalInvoke(
 				"ActivateGlobalXPBoost", productData.multiplier, productData.duration, receiptId
 			)
 			if not activateOk or activated ~= true then
@@ -2794,7 +2797,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
 			if typeof(expiry) == "number" and (effectiveMultiplier == 1 or effectiveMultiplier == 2 or effectiveMultiplier == 4) then
-				refreshGlobalXPBoost()
+				ControllerFunctions.refreshGlobalXPBoost()
 			end
 		end
 	end
@@ -2806,7 +2809,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		publishState(nil)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
-	local ok, alreadyProcessed, err = persistReceipt(userId, receiptId, productData)
+	local ok, alreadyProcessed, err = ControllerFunctions.persistReceipt(userId, receiptId, productData)
 	if not ok then
 		warn("[ClubMusic] Receipt persistence failed for " .. receiptId .. ": " .. tostring(err))
 		return Enum.ProductPurchaseDecision.NotProcessedYet
@@ -2818,7 +2821,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	if profiles[userId] ~= profile then return Enum.ProductPurchaseDecision.NotProcessedYet end
-	if USE_STUDIO_MEMORY_PROFILES then applyReceiptToMemory(profile, productData) end
+	if USE_STUDIO_MEMORY_PROFILES then ControllerFunctions.applyReceiptToMemory(profile, productData) end
 	receiptMemoryApplied[receiptId] = nil
 	processedReceipts[receiptId] = true
 	player:SetAttribute("Tickets", profile.tickets)
@@ -2826,16 +2829,16 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	player:SetAttribute("Glowsticks", profile.glowsticks)
 	player:SetAttribute("SkipTokens", profile.skipTokens)
 	player:SetAttribute("NeonTrailUnlocked", profile.neonTrail)
-	if productData.type == "TitleSlot" then applyTitleAttributes(player, profile) end
+	if productData.type == "TitleSlot" then ControllerFunctions.applyTitleAttributes(player, profile) end
 
 	if productData.type == "Donation" then
 		local amount = math.max(0, math.floor(tonumber(productData.amount) or 0))
 		local perk = productData.perk or "Donation"
-		if perk == "Coconut" then broadcast(string.format("🌴 %s sent a Coconut Tip! (+%d Tickets)", player.DisplayName, math.floor(amount * 1.5)), "info")
-		elseif perk == "Pineapple" then broadcast(string.format("🎆 %s launched a Pineapple Firework burst!", player.DisplayName), "ok")
-		elseif perk == "Tiki Torch" then broadcast(string.format("🎊 %s filled the dancefloor with Stage Confetti!", player.DisplayName), "ok")
-		elseif perk == "Volcano" then broadcast(string.format("🔥 %s activated the Volcano Light Show!", player.DisplayName), "warn")
-		elseif perk == "Island Legend" then broadcast(string.format("👑 LEGENDARY: %s is displayed on the Big Stage Screens!", player.DisplayName), "info") end
+		if perk == "Coconut" then ControllerFunctions.broadcast(string.format("🌴 %s sent a Coconut Tip! (+%d Tickets)", player.DisplayName, math.floor(amount * 1.5)), "info")
+		elseif perk == "Pineapple" then ControllerFunctions.broadcast(string.format("🎆 %s launched a Pineapple Firework burst!", player.DisplayName), "ok")
+		elseif perk == "Tiki Torch" then ControllerFunctions.broadcast(string.format("🎊 %s filled the dancefloor with Stage Confetti!", player.DisplayName), "ok")
+		elseif perk == "Volcano" then ControllerFunctions.broadcast(string.format("🔥 %s activated the Volcano Light Show!", player.DisplayName), "warn")
+		elseif perk == "Island Legend" then ControllerFunctions.broadcast(string.format("👑 LEGENDARY: %s is displayed on the Big Stage Screens!", player.DisplayName), "info") end
 	elseif productData.type == "Item" then
 		notify(player, string.format("Purchase Successful: %s acquired!", productData.name or "Item"), "ok")
 	elseif productData.type == "TitleSlot" then
@@ -2847,13 +2850,13 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
-local function isValidString(value: any, maxLength: number): boolean
+ControllerFunctions.isValidString = function(value: any, maxLength: number): boolean
 	return typeof(value) == "string" and #value > 0 and #value <= maxLength
 end
 
 -- Remote payloads are intentionally shallow and small. This rejects oversized
 -- tables before action-specific code can inspect or retain attacker-controlled data.
-local function isBoundedPayload(payload: any): boolean
+ControllerFunctions.isBoundedPayload = function(payload: any): boolean
 	if typeof(payload) ~= "table" then return false end
 	local topCount = 0
 	for key, value in pairs(payload) do
@@ -2862,7 +2865,7 @@ local function isBoundedPayload(payload: any): boolean
 		if typeof(value) == "string" then
 			if #value > 1024 then return false end
 		elseif typeof(value) == "number" then
-			if not isFiniteNumber(value) then return false end
+			if not ControllerFunctions.isFiniteNumber(value) then return false end
 		elseif typeof(value) == "table" then
 			local nestedCount = 0
 			for nestedKey, nestedValue in pairs(value) do
@@ -2876,7 +2879,7 @@ local function isBoundedPayload(payload: any): boolean
 				if valueType == "string" then
 					if #nestedValue > 1024 then return false end
 				elseif valueType == "number" then
-					if not isFiniteNumber(nestedValue) then return false end
+					if not ControllerFunctions.isFiniteNumber(nestedValue) then return false end
 				elseif valueType ~= "boolean" then
 					return false
 				end
@@ -2888,24 +2891,24 @@ local function isBoundedPayload(payload: any): boolean
 	return true
 end
 
-local function findTarget(actor: Player, userId: any): Player?
-	if not isFiniteNumber(userId) or userId < 1 or userId % 1 ~= 0 or userId > 9007199254740991 then return nil end
+ControllerFunctions.findTarget = function(actor: Player, userId: any): Player?
+	if not ControllerFunctions.isFiniteNumber(userId) or userId < 1 or userId % 1 ~= 0 or userId > 9007199254740991 then return nil end
 	local target = Players:GetPlayerByUserId(userId)
 	if not target then return nil end
 	if target == actor then return nil end
-	if not canModerate(actor, target) then
+	if not ControllerFunctions.canModerate(actor, target) then
 		notify(actor, "You can't moderate someone with equal or higher rank.", "warn")
 		return nil
 	end
 	return target
 end
 
-local function purgeUserEntries(userId: number): number
+ControllerFunctions.purgeUserEntries = function(userId: number): number
 	if globalQueueMode then
 		local removedCount = 0
 		for _, entry in ipairs(queue) do if entry.source == "player" and entry.userId == userId then removedCount += 1 end end
-		local callOk, purged, state = globalInvoke("PurgeGlobalUserQueueEntries", userId)
-		if callOk and purged == true and typeof(state) == "table" then applyGlobalQueueState(state); return removedCount end
+		local callOk, purged, state = ControllerFunctions.globalInvoke("PurgeGlobalUserQueueEntries", userId)
+		if callOk and purged == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state); return removedCount end
 		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 		return 0
 	end
@@ -2917,23 +2920,23 @@ local function purgeUserEntries(userId: number): number
 			removed += 1
 		end
 	end
-	if removed > 0 then topUpAuto() end
+	if removed > 0 then ControllerFunctions.topUpAuto() end
 	return removed
 end
 
 -- Returns a reason string when this player may NOT queue this track right now, otherwise nil.
 -- Used by Creator Hub audio requests, which re-check after yielding for the asset lookup.
-local function requestBlockReason(player: Player, trackId: string, now: number): string?
+ControllerFunctions.requestBlockReason = function(player: Player, trackId: string, now: number): string?
 	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
-	if requestsLocked and getLevel(player) < 1 then return "Requests are locked by staff right now." end
-	if countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
-	local cooldown = cooldownFor(player)
+	if requestsLocked and ControllerFunctions.getLevel(player) < 1 then return "Requests are locked by staff right now." end
+	if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
+	local cooldown = ControllerFunctions.cooldownFor(player)
 	local sinceLast = now - (lastRequestAt[player.UserId] or -1000)
 	if sinceLast < cooldown then
 		return string.format("Slow down - wait %ds to request again.", math.ceil(cooldown - sinceLast))
 	end
 	local count = requestCounts[player.UserId] or 0
-	local limit = requestLimitFor(player)
+	local limit = ControllerFunctions.requestLimitFor(player)
 	if count >= limit then
 		return string.format("Request limit reached (%d/%d). Wait for your track to play.", count, limit)
 	end
@@ -2945,7 +2948,7 @@ local function requestBlockReason(player: Player, trackId: string, now: number):
 end
 
 -- Yields. Confirms an asset is an audio file, loadable by this experience, and returns its real length.
-local function inspectAudioAsset(assetId: number): (boolean, string, string, number, boolean)
+ControllerFunctions.inspectAudioAsset = function(assetId: number): (boolean, string, string, number, boolean)
 	-- Cache metadata only. Every request still creates and preloads an AudioProbe
 	-- below, so a metadata cache hit never bypasses experience permission/playability checks.
 	local infoOk, infoOrError = musicValidation:GetAudioAssetInfo(assetId)
@@ -2993,14 +2996,14 @@ local function inspectAudioAsset(assetId: number): (boolean, string, string, num
 	end
 	local title = tostring(info.Name or "Untitled audio")
 	local creator = if typeof(info.Creator) == "table" then tostring(info.Creator.Name or "Unknown") else "Unknown"
-	return true, truncateUtf8(title, 60), truncateUtf8(creator, 40), math.ceil(length), false
+	return true, ControllerFunctions.truncateUtf8(title, 60), ControllerFunctions.truncateUtf8(creator, 40), math.ceil(length), false
 end
 
 -- Saves a validated title slot. Returns true on success. Yields (text filtering).
-local function saveTitleSlot(player: Player, slotNumber: number, data: any, visible: boolean): boolean
+ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number, data: any, visible: boolean): boolean
 	local profile = profiles[player.UserId]
 	if not profile then return false end
-	if not isSultan(player) then
+	if not ControllerFunctions.isSultan(player) then
 		notify(player, "Custom titles are exclusive to Tiki Tide Sultan members.", "warn")
 		return false
 	end
@@ -3010,12 +3013,12 @@ local function saveTitleSlot(player: Player, slotNumber: number, data: any, visi
 		return false
 	end
 
-	local clean = sanitizeTitleSlot(data)
+	local clean = ControllerFunctions.sanitizeTitleSlot(data)
 	if not clean then
 		notify(player, "That title isn't valid. Titles are 1-24 characters.", "warn")
 		return false
 	end
-	local filtered = filterTitleText(player, clean.text)
+	local filtered = ControllerFunctions.filterTitleText(player, clean.text)
 	if filtered == nil then
 		notify(player, "Roblox text filtering is unavailable. Please try again.", "warn")
 		return false
@@ -3033,25 +3036,25 @@ local function saveTitleSlot(player: Player, slotNumber: number, data: any, visi
 	if profile.titleSlots[profile.activeSlot] == nil or profile.activeSlot > profile.unlockedSlots then
 		profile.activeSlot = slotNumber
 	end
-	applyTitleAttributes(player, profile)
-	scheduleProfileSave(player)
+	ControllerFunctions.applyTitleAttributes(player, profile)
+	ControllerFunctions.scheduleProfileSave(player)
 	return true
 end
 
 -- Actions -----------------------------------------------------------------------------
 
-local function handleAction(player: Player, action: any, payload: any, trustedAdminCommand: boolean?): (boolean?, string?)
+ControllerFunctions.handleAction = function(player: Player, action: any, payload: any, trustedAdminCommand: boolean?): (boolean?, string?)
 	if player.Parent ~= Players then return false, "The caller is no longer in this server." end
 	-- Validate the small, fixed remote contract before spending shared-service
 	-- budget or forwarding attacker-controlled action values across the server bridge.
-	if not isValidString(action, 32) or not isBoundedPayload(payload) then return false, "Invalid action or payload." end
+	if not ControllerFunctions.isValidString(action, 32) or not ControllerFunctions.isBoundedPayload(payload) then return false, "Invalid action or payload." end
 	if ACTION_COOLDOWNS[action] == nil then return false, "That action is not supported." end
 
 	-- Global + per-action throttles apply only to recognized, bounded actions.
 	local now = os.clock()
 	local userId = player.UserId
-	if not consumeActionBudget(userId, now) then return false, "ClubMusic action rate limit reached. Try again shortly." end
-	local globalBudgetOk, globalAllowed = globalInvoke("ConsumeActionBudget", userId, action, 1)
+	if not ControllerFunctions.consumeActionBudget(userId, now) then return false, "ClubMusic action rate limit reached. Try again shortly." end
+	local globalBudgetOk, globalAllowed = ControllerFunctions.globalInvoke("ConsumeActionBudget", userId, action, 1)
 	if RunService:IsStudio() then
 		if globalBudgetOk and globalAllowed == false then return false, "ClubMusic shared action budget is exhausted." end
 	else
@@ -3106,11 +3109,11 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	actionTimes[action] = now
 
 	if string.sub(tostring(action), 1, 8) == "Playlist" then
-		if not isStaff(player) then notify(player, "Only staff can manage playlists.", "warn"); return end
+		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can manage playlists.", "warn"); return end
 		if not playlistStorageReady or not MusicPlaylistService:IsReady() then
 			notify(player, "Playlist storage is unavailable. No changes were made.", "warn"); return
 		end
-		if not waitForDataStoreBudget(5) then
+		if not ControllerFunctions.waitForDataStoreBudget(5) then
 			notify(player, "Shared DataStore budget is unavailable; playlist was not changed.", "warn"); return
 		end
 		local wasActivePlaylist = activePlaylistId == payload.playlistId
@@ -3127,7 +3130,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			end
 		elseif action == "PlaylistAddTrack" then
 			local trackId = payload.trackId
-			if not isValidString(trackId, 24) or not TRACK_BY_ID[trackId] then
+			if not ControllerFunctions.isValidString(trackId, 24) or not TRACK_BY_ID[trackId] then
 				notify(player, "Choose a track from the current server catalog.", "warn"); return
 			end
 			ok, message = MusicPlaylistService:AddTrack(payload.playlistId, trackId)
@@ -3138,18 +3141,18 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		end
 		if ok and wasActivePlaylist then
 			if action == "PlaylistAddTrack" or action == "PlaylistRemoveTrack" or action == "PlaylistMoveTrack" then
-				reloadActivePlaylist()
+				ControllerFunctions.reloadActivePlaylist()
 			end
 			if globalQueueMode then
-				local rotationSynced, syncMessage = syncGlobalPlaylistRotation()
+				local rotationSynced, syncMessage = ControllerFunctions.syncGlobalPlaylistRotation()
 				if rotationSynced then
-					topUpAuto()
+					ControllerFunctions.topUpAuto()
 				else
 					message = tostring(message) .. " Shared rotation update failed: " .. tostring(syncMessage)
 				end
 			else
-				clearAutomaticQueue()
-				topUpAuto()
+				ControllerFunctions.clearAutomaticQueue()
+				ControllerFunctions.topUpAuto()
 			end
 		end
 		notify(player, message, if ok then "ok" else "warn")
@@ -3158,7 +3161,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "CatalogAddAudio" then
-		if not isStaff(player) then notify(player, "Only staff can add catalog tracks.", "warn"); return end
+		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can add catalog tracks.", "warn"); return end
 		if not catalogStorageReady or not MusicCatalogService:IsStorageReady() then
 			notify(player, "Persistent catalog storage is unavailable. No changes were made.", "warn"); return
 		end
@@ -3195,13 +3198,13 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			notify(player, "Please wait before inspecting another audio asset.", "warn"); return
 		end
 		if audioInspectionCount >= math.max(1, CONFIG.MaxConcurrentAudioInspections)
-			or not consumeToken(globalAudioBucket, audioNow, 1) then
+			or not ControllerFunctions.consumeToken(globalAudioBucket, audioNow, 1) then
 			notify(player, "Audio inspection is busy. Try again shortly.", "warn"); return
 		end
 		pendingAudio[userId] = true
 		lastAudioInspection[userId] = audioNow
 		audioInspectionCount += 1
-		local inspectOk, valid, title, artist, duration, inspectionOwnsSlot = pcall(inspectAudioAsset, assetId)
+		local inspectOk, valid, title, artist, duration, inspectionOwnsSlot = pcall(ControllerFunctions.inspectAudioAsset, assetId)
 		if inspectionOwnsSlot ~= true then audioInspectionCount = math.max(0, audioInspectionCount - 1) end
 		pendingAudio[userId] = nil
 		if not inspectOk or not valid then
@@ -3210,26 +3213,26 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		if duration > CONFIG.AudioMaxSeconds then
 			notify(player, string.format("Audio exceeds the %d-minute catalog limit.", math.floor(CONFIG.AudioMaxSeconds / 60)), "warn"); return
 		end
-		if player.Parent ~= Players or not isStaff(player) then return end
-		local budgetReady = waitForDataStoreBudget(5)
+		if player.Parent ~= Players or not ControllerFunctions.isStaff(player) then return end
+		local budgetReady = ControllerFunctions.waitForDataStoreBudget(5)
 		if not budgetReady then notify(player, "Shared DataStore budget is unavailable; catalog was not changed.", "warn"); return end
 		local trackId = "custom-" .. tostring(assetId)
 		local additionReserved = false
 		if globalQueueMode then
 			-- Serialize additions as well as removals. This prevents a restore/add
 			-- from racing a removal reservation for the same catalog ID.
-			local reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
+			local reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
 				"ReserveCatalogAddition", trackId, localCatalogRevision
 			)
-			if typeof(reserveState) == "table" then applyGlobalQueueState(reserveState) end
+			if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
 			if reserveCallOk and reserved ~= true
 				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
 				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				refreshCatalogWhenReady()
-				reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
+				ControllerFunctions.refreshCatalogWhenReady()
+				reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
 					"ReserveCatalogAddition", trackId, localCatalogRevision
 				)
-				if typeof(reserveState) == "table" then applyGlobalQueueState(reserveState) end
+				if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
 			end
 			local alreadyReserved = reserveCallOk and reserved ~= true
 				and tostring(reserveMessage) == "Catalog addition is already reserved for this track."
@@ -3238,23 +3241,23 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 				return
 			end
 			additionReserved = true
-			if not refreshCatalogWhenReady() then
+			if not ControllerFunctions.refreshCatalogWhenReady() then
 				notify(player, "Catalog addition is reserved globally, but the catalog could not be refreshed. Retry the audio addition after storage recovers.", "warn")
 				return
 			end
 			local existingTrack = TRACK_BY_ID[trackId]
 			if existingTrack then
 				if alreadyReserved then
-					local completeCallOk, completed, completeState, completeMessage = globalInvoke("CompleteCatalogAddition", trackId)
-					if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
+					local completeCallOk, completed, completeState, completeMessage = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
+					if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
 					if completeCallOk and completed == true then
 						notify(player, "The previously saved catalog addition was recovered and synchronized.", "ok")
 					else
 						notify(player, "The track is saved, but its shared addition reservation remains pending. Retry the addition to finish recovery.", "warn")
 					end
 				else
-					local completeCallOk, completed, completeState = globalInvoke("CompleteCatalogAddition", trackId)
-					if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
+					local completeCallOk, completed, completeState = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
+					if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
 					if not completeCallOk or completed ~= true then
 						notify(player, "That track is already in the catalog; reservation cleanup is pending.", "warn")
 					else
@@ -3267,7 +3270,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId, artworkAssetId)
 		if not saved and globalQueueMode and tostring(message) == "That audio was added by another server already. Refresh the catalog." then
-			if refreshCatalogWhenReady() and TRACK_BY_ID[trackId] then
+			if ControllerFunctions.refreshCatalogWhenReady() and TRACK_BY_ID[trackId] then
 				saved = true
 				message = "Track was added by another server; shared catalog state recovered."
 			end
@@ -3277,8 +3280,8 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 				local uncertain = tostring(message) == "Catalog save failed. Try again later."
 					or tostring(message) == "The catalog update could not be confirmed; refresh and retry."
 				if not uncertain then
-					local releaseCallOk, released, releaseState = globalInvoke("CompleteCatalogAddition", trackId)
-					if typeof(releaseState) == "table" then applyGlobalQueueState(releaseState) end
+					local releaseCallOk, released, releaseState = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
+					if typeof(releaseState) == "table" then ControllerFunctions.applyGlobalQueueState(releaseState) end
 					if not releaseCallOk or released ~= true then
 						warn("[ClubMusic] Could not release rejected catalog addition reservation.")
 					end
@@ -3298,8 +3301,8 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			table.sort(ALL_TRACK_IDS)
 		end
 		if globalQueueMode and additionReserved then
-			local completeCallOk, completed, completeState, completeMessage = globalInvoke("CompleteCatalogAddition", trackId)
-			if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
+			local completeCallOk, completed, completeState, completeMessage = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
+			if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
 			if not completeCallOk or completed ~= true then
 				warn("[ClubMusic] Catalog addition saved but shared reservation finalization is pending: " .. tostring(completeMessage))
 				notify(player, "Track saved. Shared addition finalization is pending; retry the audio addition to finish safely.", "warn")
@@ -3307,7 +3310,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 				return
 			end
 		end
-		local publishOk, published = globalInvoke("PublishCatalogChange")
+		local publishOk, published = ControllerFunctions.globalInvoke("PublishCatalogChange")
 		if not publishOk or published ~= true then
 			warn("[ClubMusic] Catalog add saved locally; cross-server invalidation publish failed.")
 		end
@@ -3317,16 +3320,16 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "CatalogRemoveTrack" then
-		if not isStaff(player) then notify(player, "Only staff can remove catalog tracks.", "warn"); return end
+		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can remove catalog tracks.", "warn"); return end
 		local trackId = payload.trackId
-		if not isValidString(trackId, 32) or not string.match(trackId, "^custom%-%d+$") then
+		if not ControllerFunctions.isValidString(trackId, 32) or not string.match(trackId, "^custom%-%d+$") then
 			notify(player, "Only a valid staff-added catalog track ID can be removed.", "warn"); return
 		end
 		local initialTrack = TRACK_BY_ID[trackId]
 		if initialTrack and initialTrack.assetId == nil then
 			notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
 		end
-		if not catalogStorageReady or not waitForDataStoreBudget(5) then
+		if not catalogStorageReady or not ControllerFunctions.waitForDataStoreBudget(5) then
 			notify(player, "Catalog storage is unavailable; track was not removed.", "warn"); return
 		end
 
@@ -3337,7 +3340,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			if syncGlobalQueueSnapshot and not syncGlobalQueueSnapshot() then
 				notify(player, "The shared catalog state could not be verified; track was not removed.", "warn"); return
 			end
-			if refreshCatalogWhenReady() then track = TRACK_BY_ID[trackId] end
+			if ControllerFunctions.refreshCatalogWhenReady() then track = TRACK_BY_ID[trackId] end
 			if not track and not (globalCatalogChangeTrackId == trackId and globalCatalogChangeKind == "remove") then
 				notify(player, "Custom catalog track not found.", "warn"); return
 			end
@@ -3357,18 +3360,18 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		else
 			-- Reserve the ID atomically in the same DataStore used by every global
 			-- enqueue/advance. This closes the read-queue-then-delete race.
-			local reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
+			local reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
 				"ReserveCatalogRemoval", trackId, localCatalogRevision
 			)
-			if typeof(reserveState) == "table" then applyGlobalQueueState(reserveState) end
+			if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
 			if reserveCallOk and reserved ~= true
 				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
 				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				refreshCatalogWhenReady()
-				reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
+				ControllerFunctions.refreshCatalogWhenReady()
+				reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
 					"ReserveCatalogRemoval", trackId, localCatalogRevision
 				)
-				if typeof(reserveState) == "table" then applyGlobalQueueState(reserveState) end
+				if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
 			end
 			local alreadyReserved = reserveCallOk and reserved ~= true
 				and tostring(reserveMessage) == "Catalog removal is already reserved for this track."
@@ -3379,14 +3382,14 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			-- Refresh after the reservation's revision bump. If this server stopped
 			-- after deleting the catalog record but before finalizing, a retry sees
 			-- the missing record and safely completes the existing reservation.
-			if not refreshCatalogWhenReady() then
+			if not ControllerFunctions.refreshCatalogWhenReady() then
 				notify(player, "Removal is reserved globally, but the catalog could not be refreshed. Retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
 				return
 			end
 			track = TRACK_BY_ID[trackId]
 			if track and track.assetId == nil then
-				local releaseCallOk, released, releaseState = globalInvoke("CompleteCatalogRemoval", trackId)
-				if typeof(releaseState) == "table" then applyGlobalQueueState(releaseState) end
+				local releaseCallOk, released, releaseState = ControllerFunctions.globalInvoke("CompleteCatalogRemoval", trackId)
+				if typeof(releaseState) == "table" then ControllerFunctions.applyGlobalQueueState(releaseState) end
 				if not releaseCallOk or released ~= true then
 					warn("[ClubMusic] Could not release an invalid catalog removal reservation.")
 				end
@@ -3433,14 +3436,14 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			end
 			activePlaylistCursor = math.clamp(activePlaylistCursor, 1, math.max(1, #activePlaylistTracks))
 			if globalQueueMode then
-				local rotationSynced, syncMessage = syncGlobalPlaylistRotation()
+				local rotationSynced, syncMessage = ControllerFunctions.syncGlobalPlaylistRotation()
 				if not rotationSynced then
 					rotationReady = false
 					warn("[ClubMusic] Removed catalog track locally, but shared playlist rotation sync failed: " .. tostring(syncMessage))
 				end
 			else
-				clearAutomaticQueue()
-				topUpAuto()
+				ControllerFunctions.clearAutomaticQueue()
+				ControllerFunctions.topUpAuto()
 			end
 		end
 
@@ -3450,8 +3453,8 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 				publishState(nil)
 				return
 			end
-			local completeCallOk, completed, completeState, completeMessage = globalInvoke("CompleteCatalogRemoval", trackId)
-			if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
+			local completeCallOk, completed, completeState, completeMessage = ControllerFunctions.globalInvoke("CompleteCatalogRemoval", trackId)
+			if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
 			if not completeCallOk or completed ~= true then
 				warn("[ClubMusic] Catalog record removed but shared reservation finalization is pending: " .. tostring(completeMessage))
 				notify(player, "Catalog record removed. Shared reservation finalization is pending; retry the catalog removal from the staff catalog UI for this same track to finish safely.", "warn")
@@ -3460,7 +3463,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			end
 		end
 
-		local publishOk, published = globalInvoke("PublishCatalogChange")
+		local publishOk, published = ControllerFunctions.globalInvoke("PublishCatalogChange")
 		if not publishOk or published ~= true then
 			warn("[ClubMusic] Catalog removal saved locally; cross-server invalidation publish failed.")
 		end
@@ -3471,11 +3474,11 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 	if action == "RequestTrack" then
 		local trackId = payload.trackId
-		if not isValidString(trackId, 24) then return end
+		if not ControllerFunctions.isValidString(trackId, 24) then return end
 		local track = TRACK_BY_ID[trackId]
 		if not track then return end
 
-		local level = getLevel(player)
+		local level = ControllerFunctions.getLevel(player)
 		if blockedUsers[player.UserId] then
 			notify(player, "Your requests are disabled by staff.", "warn")
 			return
@@ -3484,12 +3487,12 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			notify(player, "Requests are locked by staff right now.", "warn")
 			return
 		end
-		if countPlayerEntries() >= CONFIG.MaxQueueSize then
+		if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then
 			notify(player, "The request queue is full.", "warn")
 			return
 		end
 
-		local cooldown = cooldownFor(player)
+		local cooldown = ControllerFunctions.cooldownFor(player)
 		local sinceLast = now - (lastRequestAt[player.UserId] or -1000)
 		if sinceLast < cooldown then
 			notify(player, string.format("Slow down - wait %ds to request again.", math.ceil(cooldown - sinceLast)), "warn")
@@ -3497,7 +3500,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		end
 
 		local count = requestCounts[player.UserId] or 0
-		local limit = requestLimitFor(player)
+		local limit = ControllerFunctions.requestLimitFor(player)
 		if count >= limit then
 			notify(player, string.format("Request limit reached (%d/%d). Wait for your track to play.", count, limit), "warn")
 			return
@@ -3514,15 +3517,15 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			end
 		end
 
-		local vip = isVip(player)
-		local entry = makeEntry(track, "player", player)
+		local vip = ControllerFunctions.isVip(player)
+		local entry = ControllerFunctions.makeEntry(track, "player", player)
 		if globalQueueMode then
 			local queued: boolean = false
 			local queueError: string? = "Global queue is not ready."
 			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
 			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
 		else
-			queueManager:Insert(insertIndex(passTier(player)), entry)
+			queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
 			requestCounts[player.UserId] = count + 1
 		end
 		lastRequestAt[player.UserId] = now
@@ -3533,11 +3536,11 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 	-- Staff only: queue a Creator Hub / Roblox audio asset by ID.
 	if action == "RequestAudioAsset" then
-		if not isStaff(player) then
+		if not ControllerFunctions.isStaff(player) then
 			notify(player, "Audio asset IDs are staff only.", "warn")
 			return
 		end
-		local audioBudgetCallOk, audioBudgetAllowed = globalInvoke("ConsumeAudioBudget", userId)
+		local audioBudgetCallOk, audioBudgetAllowed = ControllerFunctions.globalInvoke("ConsumeAudioBudget", userId)
 		if RunService:IsStudio() then
 			if audioBudgetCallOk and audioBudgetAllowed == false then
 				notify(player, "Global audio inspection capacity is busy. Please try again shortly.", "warn")
@@ -3574,13 +3577,13 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			notify(player, "Audio inspection is busy. Try again shortly.", "warn")
 			return
 		end
-		if not consumeToken(globalAudioBucket, audioNow, 1) then
+		if not ControllerFunctions.consumeToken(globalAudioBucket, audioNow, 1) then
 			notify(player, "The server is checking too many audio requests. Try again shortly.", "warn")
 			return
 		end
 
 		local trackId = "audio-" .. tostring(assetId)
-		local reason = requestBlockReason(player, trackId, now)
+		local reason = ControllerFunctions.requestBlockReason(player, trackId, now)
 		if reason then
 			notify(player, reason, "warn")
 			return
@@ -3589,7 +3592,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		pendingAudio[player.UserId] = true
 		lastAudioInspection[player.UserId] = audioNow
 		audioInspectionCount += 1
-		local okInspect, valid, titleOrError, creator, duration, inspectionOwnsSlot = pcall(inspectAudioAsset, assetId)
+		local okInspect, valid, titleOrError, creator, duration, inspectionOwnsSlot = pcall(ControllerFunctions.inspectAudioAsset, assetId)
 		if inspectionOwnsSlot ~= true then
 			audioInspectionCount = math.max(0, audioInspectionCount - 1)
 		end
@@ -3611,14 +3614,14 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 		-- State may have changed while the asset loaded, so re-check before queueing.
 		local recheckNow = os.clock()
-		local recheck = requestBlockReason(player, trackId, recheckNow)
+		local recheck = ControllerFunctions.requestBlockReason(player, trackId, recheckNow)
 		if recheck then
 			notify(player, recheck, "warn")
 			return
 		end
 
-		local vip = isVip(player)
-		local entry = makeEntry({
+		local vip = ControllerFunctions.isVip(player)
+		local entry = ControllerFunctions.makeEntry({
 			id = trackId,
 			genreId = "audio",
 			title = titleOrError,
@@ -3633,7 +3636,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
 			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
 		else
-			queueManager:Insert(insertIndex(passTier(player)), entry)
+			queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
 			requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
 		end
 		lastRequestAt[player.UserId] = recheckNow
@@ -3655,7 +3658,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 	if action == "ToggleFavorite" then
 		local trackId = payload.trackId
-		if not isValidString(trackId, 24) or not TRACK_BY_ID[trackId] then return end
+		if not ControllerFunctions.isValidString(trackId, 24) or not TRACK_BY_ID[trackId] then return end
 		local profile = profiles[player.UserId]
 		if not profile then return end
 		if profile.favorites[trackId] then
@@ -3669,7 +3672,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			end
 			profile.favorites[trackId] = true
 		end
-		scheduleProfileSave(player)
+		ControllerFunctions.scheduleProfileSave(player)
 		publishState(player)
 		return
 	end
@@ -3680,10 +3683,10 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			return
 		end
 		skipVotes[player.UserId] = true
-		if checkSkipVotes() then
-			broadcast("Track skipped by vote.", "ok")
+		if ControllerFunctions.checkSkipVotes() then
+			ControllerFunctions.broadcast("Track skipped by vote.", "ok")
 		else
-			local votes, needed = skipStatus(nil)
+			local votes, needed = ControllerFunctions.skipStatus(nil)
 			notify(player, string.format("Skip vote counted (%d/%d).", votes, needed), "ok")
 		end
 		publishState(nil)
@@ -3693,30 +3696,30 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	-- Staff ----------------------------------------------------------------------------
 
 	if action == "DJPlayPlaylist" then
-		if not isStaff(player) then notify(player, "Only staff can start playlist rotation.", "warn"); return end
+		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can start playlist rotation.", "warn"); return end
 		if not playlistStorageReady or not MusicPlaylistService:IsReady() then
 			notify(player, "Playlist storage is unavailable.", "warn"); return
 		end
-		if startPlaylistRotation(player, payload.playlistId) then publishState(nil) end
+		if ControllerFunctions.startPlaylistRotation(player, payload.playlistId) then publishState(nil) end
 		return
 	end
 
 	if action == "DJStopPlaylist" then
-		if not isStaff(player) then notify(player, "Only staff can stop playlist rotation.", "warn"); return end
-		if stopPlaylistRotation(player) then publishState(nil) end
+		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can stop playlist rotation.", "warn"); return end
+		if ControllerFunctions.stopPlaylistRotation(player) then publishState(nil) end
 		return
 	end
 
 	if action == "DJMoveUp" then
-		if not isStaff(player) then return end
+		if not ControllerFunctions.isStaff(player) then return end
 		local id = payload.queueId
-		if not isValidString(id, 64) then return end
+		if not ControllerFunctions.isValidString(id, 64) then return end
 		if globalQueueMode then
-			local callOk, moved, state = globalInvoke("MoveUpGlobalQueueEntry", id)
-			if callOk and moved == true and typeof(state) == "table" then applyGlobalQueueState(state)
+			local callOk, moved, state = ControllerFunctions.globalInvoke("MoveUpGlobalQueueEntry", id)
+			if callOk and moved == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state)
 			elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 		else
-			local index = findQueueIndex(id)
+			local index = ControllerFunctions.findQueueIndex(id)
 			if index and index > 1 then queue[index], queue[index - 1] = queue[index - 1], queue[index] end
 		end
 		publishState(nil)
@@ -3724,32 +3727,32 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "DJRemove" then
-		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		local id = payload.queueId
-		if not isValidString(id, 64) then return false, "A valid queue entry ID is required." end
+		if not ControllerFunctions.isValidString(id, 64) then return false, "A valid queue entry ID is required." end
 		if globalQueueMode then
-			local callOk, removed, state, message = globalInvoke("RemoveGlobalQueueEntry", id)
+			local callOk, removed, state, message = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntry", id)
 			if callOk and removed == true then
-				if typeof(state) == "table" and not applyGlobalQueueState(state) and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				if typeof(state) == "table" and not ControllerFunctions.applyGlobalQueueState(state) and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 				if typeof(state) ~= "table" and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				topUpAuto()
+				ControllerFunctions.topUpAuto()
 				publishState(nil)
 				return true, "Queued track removed."
 			end
 			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			return false, tostring(message or "Queue entry was not found or the shared queue is unavailable.")
 		end
-		local index = findQueueIndex(id)
+		local index = ControllerFunctions.findQueueIndex(id)
 		if not index then return false, "Queue entry was not found. Run ;cmqueue to refresh the IDs." end
 		local removedEntry = queueManager:RemoveAt(index, true)
 		if not removedEntry then return false, "Queue entry could not be removed." end
-		topUpAuto()
+		ControllerFunctions.topUpAuto()
 		publishState(nil)
 		return true, "Removed queued track: " .. tostring(removedEntry.title or "Unknown track") .. "."
 	end
 
 	if action == "DJSkip" then
-		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		-- Kohl's Admin can dispatch the same command while an automatic or
 		-- admin-triggered transition is still yielding on shared queue work.
 		-- The active transition already owns this track change; do not call
@@ -3757,32 +3760,32 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		if trustedAdminCommand == true and transitionInProgress then
 			return true, "A track transition is already being processed; no second skip was sent."
 		end
-		local advanced, transitionError = advance()
+		local advanced, transitionError = ControllerFunctions.advance()
 		if not advanced then
 			local reason = tostring(transitionError or "The shared track transition could not be confirmed.")
 			notify(player, reason, "warn")
 			return false, reason
 		end
-		if not globalQueueMode then globalInvoke("PublishDJCommand", "Skip", {}, player.UserId) end
+		if not globalQueueMode then ControllerFunctions.globalInvoke("PublishDJCommand", "Skip", {}, player.UserId) end
 		notify(player, "Track skipped.", "ok")
 		publishState(nil)
 		return true, "Track skipped."
 	end
 
 	if action == "DJPause" then
-		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
 		if globalQueueMode then
 			local position = nowPlaying.elapsed
 			pcall(function() if musicSound.IsLoaded then position = musicSound.TimePosition end end)
-			local callOk, changed, state, message = globalInvoke("SetGlobalPlayback", desiredPaused, position, globalTrackRevision, false)
+			local callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlayback", desiredPaused, position, globalTrackRevision, false)
 			if not callOk or changed ~= true or typeof(state) ~= "table" then
 				notify(player, tostring(message or "Global playback state could not be saved."), "warn")
 				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 				return false, tostring(message or "Global playback state could not be saved.")
 			end
-			applyGlobalQueueState(state)
+			ControllerFunctions.applyGlobalQueueState(state)
 			notify(player, if desiredPaused then "Music paused globally." else "Music resumed globally.", "ok")
 		else
 			local position = nowPlaying.elapsed
@@ -3793,8 +3796,8 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 				if musicSound.IsLoaded then musicSound.TimePosition = nowPlaying.elapsed end
 				if playbackPaused then musicSound:Pause() else musicSound:Resume() end
 			end)
-			local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused, position = nowPlaying.elapsed}, player.UserId)
-			if globalOk and globalPublished == true and isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
+			local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused, position = nowPlaying.elapsed}, player.UserId)
+			if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
 			if not globalOk or globalPublished ~= true then notify(player, "Playback changed on this server, but cross-server sync is unavailable.", "warn") end
 			notify(player, if playbackPaused then "Music paused." else "Music resumed.", "ok")
 		end
@@ -3803,22 +3806,22 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "DJRestart" then
-		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		if globalQueueMode then
-			local callOk, restarted, state, message = globalInvoke("SetGlobalPlayback", false, 0, globalTrackRevision, true)
+			local callOk, restarted, state, message = ControllerFunctions.globalInvoke("SetGlobalPlayback", false, 0, globalTrackRevision, true)
 			if not callOk or restarted ~= true or typeof(state) ~= "table" then
 				notify(player, tostring(message or "Global restart could not be confirmed."), "warn")
 				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 				return false, tostring(message or "Global restart could not be confirmed.")
 			end
-			applyGlobalQueueState(state)
+			ControllerFunctions.applyGlobalQueueState(state)
 			notify(player, "Current track restarted across servers.", "ok")
 		else
 			nowPlaying.elapsed = 0; playbackPaused = false
-			startServerMusic(nowPlaying.soundId)
-			local globalOk, globalPublished, globalRevision = globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
-			if globalOk and globalPublished == true and isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
+			ControllerFunctions.startServerMusic(nowPlaying.soundId)
+			local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
+			if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
 			if not globalOk or globalPublished ~= true then notify(player, "Track restarted here, but cross-server sync is unavailable.", "warn")
 			else notify(player, "Current track restarted across servers.", "ok") end
 		end
@@ -3827,20 +3830,20 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "DJClearQueue" then
-		if not isAdmin(player) then return false, "ClubMusic administrator permission is required." end
+		if not ControllerFunctions.isAdmin(player) then return false, "ClubMusic administrator permission is required." end
 		if globalQueueMode then
-			local callOk, cleared, state, message = globalInvoke("ClearGlobalQueue")
+			local callOk, cleared, state, message = ControllerFunctions.globalInvoke("ClearGlobalQueue")
 			if not callOk or cleared ~= true then
 				local reason = tostring(message or "The shared queue service did not confirm the clear.")
 				warn("[ClubMusic] Shared queue clear failed: " .. reason)
 				notify(player, reason, "warn")
 				return false, reason
 			end
-			if typeof(state) == "table" then applyGlobalQueueState(state) end
+			if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
 		else
 			queueManager:Clear(true)
 			autoQueueHold = true
-			globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
+			ControllerFunctions.globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
 		end
 		notify(player, "Queue cleared.", "ok")
 		publishState(nil)
@@ -3848,9 +3851,9 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "DJToggleLock" then
-		if not isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		local desiredLock = not requestsLocked
-		local publishCallOk, persisted = globalInvoke("PublishDJCommand", "SetRequestLock", {locked = desiredLock}, player.UserId)
+		local publishCallOk, persisted = ControllerFunctions.globalInvoke("PublishDJCommand", "SetRequestLock", {locked = desiredLock}, player.UserId)
 		if not RunService:IsStudio() and (not publishCallOk or persisted ~= true) then
 			-- Fail closed locally if the durable global lock cannot be confirmed.
 			requestsLocked = true
@@ -3859,25 +3862,25 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			return false, "Global lock could not be confirmed; requests remain locked here."
 		end
 		requestsLocked = desiredLock
-		broadcast(if requestsLocked then "Song requests are now LOCKED." else "Song requests are open again.", "info")
+		ControllerFunctions.broadcast(if requestsLocked then "Song requests are now LOCKED." else "Song requests are open again.", "info")
 		publishState(nil)
 		return true, if requestsLocked then "Song requests locked." else "Song requests opened."
 	end
 
 	if action == "ModBlockUser" then
-		if not isAdmin(player) then return end
-		local target = findTarget(player, payload.userId)
+		if not ControllerFunctions.isAdmin(player) then return end
+		local target = ControllerFunctions.findTarget(player, payload.userId)
 		if not target or typeof(payload.blocked) ~= "boolean" then return end
 
 		if payload.blocked then
 			-- Apply the local restriction before yielding to persistent storage.
 			blockedUsers[target.UserId] = true
-			purgeUserEntries(target.UserId)
+			ControllerFunctions.purgeUserEntries(target.UserId)
 		end
 
 		local globalWriteOk = true
 		if not RunService:IsStudio() then
-			local callOk, persisted = globalInvoke("SetRequestBlocked", target.UserId, payload.blocked, player.UserId)
+			local callOk, persisted = ControllerFunctions.globalInvoke("SetRequestBlocked", target.UserId, payload.blocked, player.UserId)
 			globalWriteOk = callOk and persisted == true
 		end
 
@@ -3886,7 +3889,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			-- record could not be confirmed. Failed unblocks remain blocked.
 			if payload.blocked then
 				blockedUsers[target.UserId] = true
-				purgeUserEntries(target.UserId)
+				ControllerFunctions.purgeUserEntries(target.UserId)
 				if target.Parent == Players then
 					notify(target, "Staff disabled your song requests on this server.", "warn")
 				end
@@ -3916,11 +3919,11 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "ModSetVip" then
-		if not isAdmin(player) then return end
-		local target = findTarget(player, payload.userId)
+		if not ControllerFunctions.isAdmin(player) then return end
+		local target = ControllerFunctions.findTarget(player, payload.userId)
 		if not target or typeof(payload.vip) ~= "boolean" then return end
 		tempVip[target.UserId] = if payload.vip then true else nil
-		applyVipAttribute(target)
+		ControllerFunctions.applyVipAttribute(target)
 		notify(target, if payload.vip then "You were given VIP by staff!" else "Your staff-granted VIP was removed.", "info")
 		notify(player, (if payload.vip then "VIP granted to " else "VIP removed from ") .. target.DisplayName .. ".", "ok")
 		publishState(nil)
@@ -3928,10 +3931,10 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "ModPurgeUser" then
-		if not isAdmin(player) then return end
-		local target = findTarget(player, payload.userId)
+		if not ControllerFunctions.isAdmin(player) then return end
+		local target = ControllerFunctions.findTarget(player, payload.userId)
 		if not target then return end
-		local removed = purgeUserEntries(target.UserId)
+		local removed = ControllerFunctions.purgeUserEntries(target.UserId)
 		notify(player, string.format("Removed %d request(s) from %s.", removed, target.DisplayName), "ok")
 		publishState(nil)
 		return
@@ -3962,7 +3965,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		player:SetAttribute("SkipTokens", profile.skipTokens)
 		player:SetAttribute("NeonTrailUnlocked", profile.neonTrail)
 		player:SetAttribute("ClaimedToday", true)
-		scheduleProfileSave(player)
+		ControllerFunctions.scheduleProfileSave(player)
 		publishState(player)
 		return
 	end
@@ -3984,7 +3987,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		profile.tickets -= price
 		profile.ownedTags[tagId] = true
 		player:SetAttribute("Tickets", profile.tickets)
-		scheduleProfileSave(player)
+		ControllerFunctions.scheduleProfileSave(player)
 		notify(player, tagId == "bass" and "Bass Head unlocked!" or tagId == "sunset" and "Sunset Soul unlocked!" or "Tiki Legend unlocked!", "ok")
 		publishState(player)
 		return
@@ -3992,12 +3995,12 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 
 	if action == "EquipTitleTag" then
 		local tagId = payload.tagId
-		if not isValidString(tagId, 24) or TAGS[tagId] ~= true then return end
+		if not ControllerFunctions.isValidString(tagId, 24) or TAGS[tagId] ~= true then return end
 		local profile = profiles[player.UserId]
 		if not profile or profile.ownedTags[tagId] ~= true then return end
 		profile.equippedTag = tagId
 		player:SetAttribute("EquippedTag", tagId)
-		scheduleProfileSave(player)
+		ControllerFunctions.scheduleProfileSave(player)
 		publishState(player)
 		return
 	end
@@ -4026,7 +4029,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		if typeof(visible) ~= "boolean" then return end
 
 		local existing = profile.titleSlots[1]
-		local ok = saveTitleSlot(player, 1, {
+		local ok = ControllerFunctions.saveTitleSlot(player, 1, {
 			text = trimmedText,
 			effect = "fixed",
 			set = colorKey,
@@ -4050,7 +4053,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		if typeof(payload.text) ~= "string" then return end
 		-- Colors sent by the client are ignored; the server derives them from the allowlisted set.
 		local visible = if typeof(payload.visible) == "boolean" then payload.visible else true
-		local ok = saveTitleSlot(player, slotNumber, {
+		local ok = ControllerFunctions.saveTitleSlot(player, slotNumber, {
 			text = string.match(payload.text, "^%s*(.-)%s*$") or "",
 			effect = payload.effect,
 			set = payload.set,
@@ -4067,7 +4070,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	end
 
 	if action == "SelectTitleSlot" then
-		if not isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
+		if not ControllerFunctions.isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		local profile = profiles[player.UserId]
@@ -4077,36 +4080,36 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			return
 		end
 		profile.activeSlot = slotNumber
-		applyTitleAttributes(player, profile)
-		scheduleProfileSave(player)
+		ControllerFunctions.applyTitleAttributes(player, profile)
+		ControllerFunctions.scheduleProfileSave(player)
 		publishState(player)
 		return
 	end
 
 	if action == "ClearTitleSlot" then
-		if not isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
+		if not ControllerFunctions.isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		local profile = profiles[player.UserId]
 		if not profile or slotNumber > profile.unlockedSlots then return end
 		profile.titleSlots[slotNumber] = nil
 		if profile.activeSlot == slotNumber then
-			profile.activeSlot = firstFilledSlot(profile) or 1
+			profile.activeSlot = ControllerFunctions.firstFilledSlot(profile) or 1
 		end
-		applyTitleAttributes(player, profile)
-		scheduleProfileSave(player)
+		ControllerFunctions.applyTitleAttributes(player, profile)
+		ControllerFunctions.scheduleProfileSave(player)
 		publishState(player)
 		return
 	end
 
 	if action == "SetTitleVisible" then
-		if not isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
+		if not ControllerFunctions.isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
 		if typeof(payload.visible) ~= "boolean" then return end
 		local profile = profiles[player.UserId]
 		if not profile then return end
 		profile.showCustomTitle = payload.visible
-		applyTitleAttributes(player, profile)
-		scheduleProfileSave(player)
+		ControllerFunctions.applyTitleAttributes(player, profile)
+		ControllerFunctions.scheduleProfileSave(player)
 		publishState(player)
 		return
 	end
@@ -4115,8 +4118,8 @@ end
 catalogFunction.OnServerInvoke = function(player: Player, query: any, genreId: any, offset: any, limit: any)
 	if player.Parent ~= Players then return nil end
 	local now = os.clock()
-	if not consumeToken(globalStateQueryBucket, now, 1) then return nil end
-	local sharedStateCallOk, sharedStateAllowed = globalInvoke("ConsumeStateBudget", player.UserId)
+	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
+	local sharedStateCallOk, sharedStateAllowed = ControllerFunctions.globalInvoke("ConsumeStateBudget", player.UserId)
 	if RunService:IsStudio() then
 		if sharedStateCallOk and sharedStateAllowed == false then return nil end
 	else
@@ -4145,8 +4148,8 @@ local lastPlaylistInvoke: {[number]: number} = {}
 playlistFunction.OnServerInvoke = function(player: Player)
 	if player.Parent ~= Players or not playlistStorageReady then return nil end
 	local now = os.clock()
-	if not consumeToken(globalStateQueryBucket, now, 1) then return nil end
-	local sharedOk, allowed = globalInvoke("ConsumeStateBudget", player.UserId)
+	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
+	local sharedOk, allowed = ControllerFunctions.globalInvoke("ConsumeStateBudget", player.UserId)
 	if RunService:IsStudio() then
 		if sharedOk and allowed == false then return nil end
 	else
@@ -4156,7 +4159,7 @@ playlistFunction.OnServerInvoke = function(player: Player)
 	if previous > 0 and now - previous < 1 then return nil end
 	lastPlaylistInvoke[player.UserId] = now
 	if os.clock() - playlistRefreshAt >= 5 then
-		if waitForDataStoreBudget(2) and MusicPlaylistService:Refresh() then
+		if ControllerFunctions.waitForDataStoreBudget(2) and MusicPlaylistService:Refresh() then
 			playlistRefreshAt = os.clock()
 		end
 	end
@@ -4166,8 +4169,8 @@ end
 stateFunction.OnServerInvoke = function(player: Player)
 	if player.Parent ~= Players then return nil end
 	local now = os.clock()
-	if not consumeToken(globalStateQueryBucket, now, 1) then return nil end
-	local sharedStateCallOk, sharedStateAllowed = globalInvoke("ConsumeStateBudget", player.UserId)
+	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
+	local sharedStateCallOk, sharedStateAllowed = ControllerFunctions.globalInvoke("ConsumeStateBudget", player.UserId)
 	if RunService:IsStudio() then
 		if sharedStateCallOk and sharedStateAllowed == false then return nil end
 	else
@@ -4178,7 +4181,7 @@ stateFunction.OnServerInvoke = function(player: Player)
 		return nil -- StateChanged continues to push live updates; client can retry after cooldown.
 	end
 	lastStateInvoke[player.UserId] = now
-	local ok, snapshot = pcall(snapshotFor, player)
+	local ok, snapshot = pcall(ControllerFunctions.snapshotFor, player)
 	if not ok then
 		warn("[ClubMusic] GetState failed for " .. player.Name .. ": " .. tostring(snapshot))
 		return nil
@@ -4189,7 +4192,7 @@ end
 -- Server-only integration point for trusted admin addons (for example Kohl's Admin).
 -- This is deliberately not replicated. Every request is re-authorized by ClubMusic's
 -- own rank cache and then passes through the same action budgets/cooldowns/handlers.
-local adminBridge = getOrCreate(ServerStorage, "BindableFunction", "ClubMusicAdminBridge") :: BindableFunction
+local adminBridge = ControllerFunctions.getOrCreate(ServerStorage, "BindableFunction", "ClubMusicAdminBridge") :: BindableFunction
 local ADMIN_BRIDGE_ACTIONS: {[string]: string} = {
 	Skip = "DJSkip",
 	TogglePause = "DJPause",
@@ -4204,7 +4207,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	if typeof(operation) ~= "string" or #operation > 32 then
 		return false, "Invalid ClubMusic admin operation."
 	end
-	if not isStaff(caller) then return false, "ClubMusic staff permission is required." end
+	if not ControllerFunctions.isStaff(caller) then return false, "ClubMusic staff permission is required." end
 	-- Read-only status and queue inspection do not enter the action handler or
 	-- consume mutation cooldowns. Global inspection refreshes the authoritative mirror.
 	if operation == "Status" then
@@ -4248,10 +4251,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		payload = {queueId = argument}
 	end
 	if not action then return false, "That ClubMusic admin operation is not exposed." end
-	if action == "DJClearQueue" and not isAdmin(caller) then
+	if action == "DJClearQueue" and not ControllerFunctions.isAdmin(caller) then
 		return false, "ClubMusic administrator permission is required to clear the queue."
 	end
-	local ok, accepted, message = pcall(handleAction, caller, action, payload, true)
+	local ok, accepted, message = pcall(ControllerFunctions.handleAction, caller, action, payload, true)
 	if not ok then
 		warn("[ClubMusic Admin Bridge] Action failed: " .. tostring(accepted))
 		return false, "ClubMusic could not process that action."
@@ -4264,7 +4267,7 @@ end
 
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
-	local ok, err = pcall(handleAction, player, action, payload)
+	local ok, err = pcall(ControllerFunctions.handleAction, player, action, payload)
 	if not ok then warn("[ClubMusic] Action handler error: " .. tostring(err)) end
 end)
 remotes:SetAttribute("StartupStage", "Ready")
@@ -4272,11 +4275,11 @@ remotes:SetAttribute("Ready", true)
 
 -- Releases this server's profile lease after the final save. Ownership is checked
 -- inside UpdateAsync so a stale server cannot clear a newer server's lease.
-local function releaseProfileSession(userId: number)
+ControllerFunctions.releaseProfileSession = function(userId: number)
 	if USE_STUDIO_MEMORY_PROFILES then
 		return
 	end
-	if not waitForDataStoreBudget(3) then
+	if not ControllerFunctions.waitForDataStoreBudget(3) then
 		warn("[ClubMusic] Could not release profile lease before shutdown/removal; lease will expire naturally for userId " .. tostring(userId))
 		return
 	end
@@ -4296,11 +4299,11 @@ end
 -- Player lifecycle ----------------------------------------------------------------------
 
 -- Collection tag unlocks are granted only from server-verified profile/pass state.
-local function syncTitleTagUnlocks(player: Player): boolean
+ControllerFunctions.syncTitleTagUnlocks = function(player: Player): boolean
 	local profile = profiles[player.UserId]
 	if not profile then return false end
 	local changed = false
-	if isVip(player) and profile.ownedTags.vip ~= true then
+	if ControllerFunctions.isVip(player) and profile.ownedTags.vip ~= true then
 		profile.ownedTags.vip = true
 		changed = true
 		notify(player, "VIP title tag unlocked!", "ok")
@@ -4316,27 +4319,27 @@ local function syncTitleTagUnlocks(player: Player): boolean
 		notify(player, "Party Animal title tag unlocked after 10 hours at the festival!", "ok")
 	end
 	if changed then
-		scheduleProfileSave(player)
+		ControllerFunctions.scheduleProfileSave(player)
 		publishState(player)
 	end
 	return changed
 end
 
-local function onJoin(player: Player)
-	local enabledCallOk, globalServiceEnabled = globalInvoke("IsEnabled")
+ControllerFunctions.onJoin = function(player: Player)
+	local enabledCallOk, globalServiceEnabled = ControllerFunctions.globalInvoke("IsEnabled")
 	local globalModerationRequired = not RunService:IsStudio()
 	if globalModerationRequired and (not enabledCallOk or globalServiceEnabled ~= true) then
 		player:Kick("The experience security service is temporarily unavailable. Please rejoin shortly.")
 		return
 	end
-	local lockCallOk, globalLock, lockLookupOk = globalInvoke("GetGlobalRequestLock")
+	local lockCallOk, globalLock, lockLookupOk = ControllerFunctions.globalInvoke("GetGlobalRequestLock")
 	if lockCallOk and lockLookupOk == true and typeof(globalLock) == "boolean" then
 		requestsLocked = globalLock
 	elseif globalModerationRequired then
 		-- Do not silently open requests when the authoritative global lock cannot be read.
 		requestsLocked = true
 	end
-	local banCallOk, globallyBanned, banLookupOk = globalInvoke("IsGloballyBanned", player.UserId)
+	local banCallOk, globallyBanned, banLookupOk = ControllerFunctions.globalInvoke("IsGloballyBanned", player.UserId)
 	if banCallOk and banLookupOk == true and globallyBanned == true then
 		player:Kick("You are globally banned from this experience.")
 		return
@@ -4345,23 +4348,23 @@ local function onJoin(player: Player)
 		player:Kick("Global moderation is temporarily unavailable. Please rejoin shortly.")
 		return
 	end
-	local blockCallOk, globallyBlocked, blockLookupOk = globalInvoke("IsRequestBlocked", player.UserId)
+	local blockCallOk, globallyBlocked, blockLookupOk = ControllerFunctions.globalInvoke("IsRequestBlocked", player.UserId)
 	if blockCallOk and blockLookupOk == true and globallyBlocked == true then
 		blockedUsers[player.UserId] = true
 	elseif globalModerationRequired and (not blockCallOk or blockLookupOk ~= true) then
 		-- Keep the player connected, but fail closed for the request feature.
 		blockedUsers[player.UserId] = true
 	end
-	refreshRank(player)
-	refreshVip(player)
-	local loaded = loadProfile(player)
+	ControllerFunctions.refreshRank(player)
+	ControllerFunctions.refreshVip(player)
+	local loaded = ControllerFunctions.loadProfile(player)
 	if not loaded then
 		notify(player, "Your profile could not be loaded. Please rejoin in a moment; no default profile was saved over your data.", "warn")
 		return
 	end
-	applyVipAttribute(player)
-	syncTitleTagUnlocks(player)
-	player:SetAttribute("ClubRank", getRank(player))
+	ControllerFunctions.applyVipAttribute(player)
+	ControllerFunctions.syncTitleTagUnlocks(player)
+	player:SetAttribute("ClubRank", ControllerFunctions.getRank(player))
 	xpLastAwardAt[player.UserId] = os.clock()
 	xpFractional[player.UserId] = 0
 	xpLastSaveAt[player.UserId] = os.clock()
@@ -4380,7 +4383,7 @@ refreshLocalCatalog = function(): boolean
 	catalogRefreshBusy = true
 	local refreshed = false
 	local ok, err = pcall(function()
-		if not waitForDataStoreBudget(5) then return end
+		if not ControllerFunctions.waitForDataStoreBudget(5) then return end
 		if not MusicCatalogService:Refresh() then return end
 		local nextTracks: {[string]: Track} = {}
 		local nextIds: {string} = {}
@@ -4415,13 +4418,13 @@ refreshLocalCatalog = function(): boolean
 			-- A removed track can leave a rotation with no locally playable IDs.
 			-- Disable that stale rotation so an empty queue can fall back to Auto DJ.
 			if globalPlaylistRotationEnabled and not activePlaylistId then
-				local rotationSynced, rotationMessage = syncGlobalPlaylistRotation()
+				local rotationSynced, rotationMessage = ControllerFunctions.syncGlobalPlaylistRotation()
 				if not rotationSynced then
 					warn("[ClubMusic] Could not clear a playlist rotation with no playable catalog tracks: " .. tostring(rotationMessage))
 				end
 			end
 		elseif activePlaylistId then
-			reloadActivePlaylist()
+			ControllerFunctions.reloadActivePlaylist()
 		end
 		refreshed = true
 	end)
@@ -4435,7 +4438,7 @@ refreshLocalCatalog = function(): boolean
 	return refreshed
 end
 
-local function applyGlobalPlaybackControl(command: string, payload: any): boolean
+ControllerFunctions.applyGlobalPlaybackControl = function(command: string, payload: any): boolean
 	-- When the shared queue is active, its playback snapshot is authoritative.
 	-- The legacy playbackControl store is a separate compatibility path; applying
 	-- its delayed reconciliation events here could overwrite a newer queue pause
@@ -4443,7 +4446,7 @@ local function applyGlobalPlaybackControl(command: string, payload: any): boolea
 	if globalQueueMode then return false end
 	-- Playback revisions are monotonic integer sequence numbers. Reject malformed
 	-- fractional/unsafe values instead of silently rounding them into a valid revision.
-	if typeof(payload) ~= "table" or not isFiniteNumber(payload.revision)
+	if typeof(payload) ~= "table" or not ControllerFunctions.isFiniteNumber(payload.revision)
 		or payload.revision < 1 or payload.revision % 1 ~= 0
 		or payload.revision > 9007199254740991 then return false end
 	local revision = payload.revision
@@ -4451,11 +4454,11 @@ local function applyGlobalPlaybackControl(command: string, payload: any): boolea
 	if command == "SetPlaybackPaused" then
 		if typeof(payload.paused) ~= "boolean" then return false end
 		playbackPaused = payload.paused
-		if isFiniteNumber(payload.position) then
+		if ControllerFunctions.isFiniteNumber(payload.position) then
 			nowPlaying.elapsed = math.clamp(payload.position, 0, nowPlaying.duration)
 		end
 		pcall(function()
-			if musicSound.IsLoaded and isFiniteNumber(payload.position) then
+			if musicSound.IsLoaded and ControllerFunctions.isFiniteNumber(payload.position) then
 				musicSound.TimePosition = nowPlaying.elapsed
 			end
 			if playbackPaused then musicSound:Pause() else musicSound:Resume() end
@@ -4463,7 +4466,7 @@ local function applyGlobalPlaybackControl(command: string, payload: any): boolea
 	elseif command == "Restart" then
 		nowPlaying.elapsed = 0
 		playbackPaused = false
-		startServerMusic(nowPlaying.soundId)
+		ControllerFunctions.startServerMusic(nowPlaying.soundId)
 	else
 		return false
 	end
@@ -4471,7 +4474,7 @@ local function applyGlobalPlaybackControl(command: string, payload: any): boolea
 	return true
 end
 
-local function handleGlobalMessage(message: any)
+ControllerFunctions.handleGlobalMessage = function(message: any)
 	if typeof(message) ~= "table" then return end
 	if message.kind == "QueueChanged" and globalQueueMode then
 		-- Coalesce bursts (for example, several automatic queue inserts) into one
@@ -4500,21 +4503,21 @@ local function handleGlobalMessage(message: any)
 		if os.clock() - lastCatalogRefreshAt < 3 then return end
 		task.spawn(function()
 			if globalQueueMode and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			refreshCatalogWhenReady()
+			ControllerFunctions.refreshCatalogWhenReady()
 		end)
 		return
 	end
 	if message.kind == "XPBoost" and (message.multiplier == 1 or message.multiplier == 2 or message.multiplier == 4)
-		and isFiniteNumber(message.expiresAt) and message.expiresAt >= 0 then
-		setGlobalXPState(message.multiplier, message.expiresAt, message.lowerExpiresAt)
+		and ControllerFunctions.isFiniteNumber(message.expiresAt) and message.expiresAt >= 0 then
+		ControllerFunctions.setGlobalXPState(message.multiplier, message.expiresAt, message.lowerExpiresAt)
 		publishState(nil)
 		return
 	end
-	if message.kind == "Announcement" and isValidString(message.text, 240) then
-		broadcast("[GLOBAL] " .. message.text, "info")
+	if message.kind == "Announcement" and ControllerFunctions.isValidString(message.text, 240) then
+		ControllerFunctions.broadcast("[GLOBAL] " .. message.text, "info")
 		return
 	end
-	if message.kind == "Moderation" and isFiniteNumber(message.userId)
+	if message.kind == "Moderation" and ControllerFunctions.isFiniteNumber(message.userId)
 		and message.userId > 0 and message.userId % 1 == 0 and message.userId <= 9007199254740991 then
 		local target = Players:GetPlayerByUserId(message.userId)
 		if message.field == "globalBan" and message.value == true then
@@ -4522,7 +4525,7 @@ local function handleGlobalMessage(message: any)
 		elseif message.field == "requestBlocked" and typeof(message.value) == "boolean" then
 			if message.value then
 				blockedUsers[message.userId] = true
-				purgeUserEntries(message.userId)
+				ControllerFunctions.purgeUserEntries(message.userId)
 			else
 				blockedUsers[message.userId] = nil
 			end
@@ -4537,25 +4540,25 @@ local function handleGlobalMessage(message: any)
 		-- action has already been applied there, so ignore that echo to avoid double skips.
 		if message.senderJob == game.JobId then return end
 		if message.command == "Skip" then
-			advance()
-			broadcast("A global DJ command skipped the current track.", "info")
+			ControllerFunctions.advance()
+			ControllerFunctions.broadcast("A global DJ command skipped the current track.", "info")
 		elseif message.command == "ClearQueue" then
 			queueManager:Clear(true)
-			topUpAuto()
-			broadcast("The request queue was globally cleared.", "info")
+			ControllerFunctions.topUpAuto()
+			ControllerFunctions.broadcast("The request queue was globally cleared.", "info")
 		elseif message.command == "SetRequestLock" and typeof(message.payload) == "table"
 			and typeof(message.payload.locked) == "boolean" then
 			local changed = requestsLocked ~= message.payload.locked
 			requestsLocked = message.payload.locked
 			if changed then
-				broadcast(if requestsLocked then "Song requests are globally locked." else "Song requests are globally open.", "info")
+				ControllerFunctions.broadcast(if requestsLocked then "Song requests are globally locked." else "Song requests are globally open.", "info")
 			end
 		elseif message.command == "SetPlaybackPaused" or message.command == "Restart" then
-			if applyGlobalPlaybackControl(message.command, message.payload) then
+			if ControllerFunctions.applyGlobalPlaybackControl(message.command, message.payload) then
 				if message.command == "SetPlaybackPaused" then
-					broadcast(if playbackPaused then "Music was paused globally." else "Music was resumed globally.", "info")
+					ControllerFunctions.broadcast(if playbackPaused then "Music was paused globally." else "Music was resumed globally.", "info")
 				else
-					broadcast("The current track was restarted globally.", "info")
+					ControllerFunctions.broadcast("The current track was restarted globally.", "info")
 				end
 			end
 		end
@@ -4575,7 +4578,7 @@ connectedGlobalEvents.attachGlobalEvent = function(eventObject: Instance?)
 		-- controller receives a fresh table and can reconnect to this persistent event.
 		if connectedGlobalEvents[event] then return end
 		connectedGlobalEvents[event] = true
-		event.Event:Connect(handleGlobalMessage)
+		event.Event:Connect(ControllerFunctions.handleGlobalMessage)
 	end
 end
 
@@ -4604,7 +4607,7 @@ task.spawn(function()
 	end
 end)
 
-local function settlePlayerXP(player: Player, nowClock: number): boolean
+ControllerFunctions.settlePlayerXP = function(player: Player, nowClock: number): boolean
 	local userId = player.UserId
 	local profile = profiles[userId]
 	local lastClock = xpLastAwardAt[userId]
@@ -4638,22 +4641,22 @@ local function settlePlayerXP(player: Player, nowClock: number): boolean
 	local lastSavedAt = xpLastSaveAt[userId] or nowClock
 	if nowClock - lastSavedAt >= 60 then
 		xpLastSaveAt[userId] = nowClock
-		scheduleProfileSave(player)
+		ControllerFunctions.scheduleProfileSave(player)
 	end
 	return true
 end
 
 settleAllXP = function()
 	local nowClock = os.clock()
-	for _, player in ipairs(Players:GetPlayers()) do settlePlayerXP(player, nowClock) end
+	for _, player in ipairs(Players:GetPlayers()) do ControllerFunctions.settlePlayerXP(player, nowClock) end
 end
 
 task.spawn(function()
-	refreshGlobalXPBoost()
+	ControllerFunctions.refreshGlobalXPBoost()
 	while true do
 		-- MessagingService is primary; staggered durable reads reconcile missed notifications.
 		task.wait(45 + random:NextNumber(0, 15))
-		refreshGlobalXPBoost()
+		ControllerFunctions.refreshGlobalXPBoost()
 	end
 end)
 
@@ -4664,25 +4667,25 @@ task.spawn(function()
 		local changed = xpStateDirty
 		xpStateDirty = false
 		for _, player in ipairs(Players:GetPlayers()) do
-			if settlePlayerXP(player, nowClock) then changed = true end
+			if ControllerFunctions.settlePlayerXP(player, nowClock) then changed = true end
 		end
 		if changed then publishState(nil) end
 	end
 end)
 
 Players.PlayerAdded:Connect(function(player)
-	task.spawn(onJoin, player)
+	task.spawn(ControllerFunctions.onJoin, player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
-	if settleAllXP then settlePlayerXP(player, os.clock()) end
+	if settleAllXP then ControllerFunctions.settlePlayerXP(player, os.clock()) end
 	xpLastAwardAt[userId] = nil
 	xpFractional[userId] = nil
 	xpLastSaveAt[userId] = nil
-	local finalSaveOk = saveProfile(player)
+	local finalSaveOk = ControllerFunctions.saveProfile(player)
 	if finalSaveOk then
-		releaseProfileSession(userId)
+		ControllerFunctions.releaseProfileSession(userId)
 	else
 		-- Keep the lease until it expires naturally. Clearing it after a failed
 		-- save could let another server load stale profile data immediately.
@@ -4722,13 +4725,13 @@ Players.PlayerRemoving:Connect(function(player)
 	skipVotes[userId] = nil
 	-- The leaving player may still be counted by GetPlayers(); re-check next frame.
 	task.defer(function()
-		if checkSkipVotes() then broadcast("Track skipped by vote.", "ok") end
+		if ControllerFunctions.checkSkipVotes() then ControllerFunctions.broadcast("Track skipped by vote.", "ok") end
 		publishState(nil)
 	end)
 end)
 
 for _, player in ipairs(Players:GetPlayers()) do
-	task.spawn(onJoin, player)
+	task.spawn(ControllerFunctions.onJoin, player)
 end
 
 -- Purchasing any pass mid-session refreshes server-verified tier ownership immediately.
@@ -4739,10 +4742,10 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Playe
 		or passId == CONFIG.TikiTideSultanPassId
 	if not recognized then return end
 	task.spawn(function()
-		refreshVip(player)
-		applyVipAttribute(player)
-		syncTitleTagUnlocks(player)
-		local tierName = if isSultan(player) then "Tiki Tide Sultan" elseif isVvip(player) then "VVIP" elseif isVip(player) then "VIP" else "Pass"
+		ControllerFunctions.refreshVip(player)
+		ControllerFunctions.applyVipAttribute(player)
+		ControllerFunctions.syncTitleTagUnlocks(player)
+		local tierName = if ControllerFunctions.isSultan(player) then "Tiki Tide Sultan" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
 		notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
 		publishState(nil)
 	end)
@@ -4759,12 +4762,12 @@ task.spawn(function()
 				local previousSeconds = profile.clubPlaySeconds
 				profile.clubPlaySeconds = math.min(previousSeconds + 60, 9007199254740000)
 				if math.floor(profile.clubPlaySeconds / 300) > math.floor(previousSeconds / 300) then
-					scheduleProfileSave(player)
+					ControllerFunctions.scheduleProfileSave(player)
 				end
 				if math.floor(profile.clubPlaySeconds / 3600) > math.floor(previousSeconds / 3600) then
 					publishState(player)
 				end
-				syncTitleTagUnlocks(player)
+				ControllerFunctions.syncTitleTagUnlocks(player)
 			end
 		end
 	end
@@ -4774,7 +4777,7 @@ task.spawn(function()
 	while true do
 		task.wait(CONFIG.SaveIntervalSeconds)
 		for _, player in ipairs(Players:GetPlayers()) do
-			saveProfile(player)
+			ControllerFunctions.saveProfile(player)
 		end
 	end
 end)
@@ -4785,24 +4788,24 @@ task.spawn(function()
 		task.wait(60)
 		for _, player in ipairs(Players:GetPlayers()) do
 			task.spawn(function()
-				local previousRank = getRank(player)
-				local previousTier = passTier(player)
-				refreshRank(player)
-				refreshVip(player)
+				local previousRank = ControllerFunctions.getRank(player)
+				local previousTier = ControllerFunctions.passTier(player)
+				ControllerFunctions.refreshRank(player)
+				ControllerFunctions.refreshVip(player)
 				local profile = profiles[player.UserId]
 				local slotsUpgraded = false
-				if profile and isStaff(player) and profile.unlockedSlots < TITLE_SLOT_COUNT then
+				if profile and ControllerFunctions.isStaff(player) and profile.unlockedSlots < TITLE_SLOT_COUNT then
 					profile.unlockedSlots = TITLE_SLOT_COUNT
-					applyTitleAttributes(player, profile)
-					scheduleProfileSave(player)
+					ControllerFunctions.applyTitleAttributes(player, profile)
+					ControllerFunctions.scheduleProfileSave(player)
 					slotsUpgraded = true
 				end
-				applyVipAttribute(player)
-				player:SetAttribute("ClubRank", getRank(player))
-				syncTitleTagUnlocks(player)
+				ControllerFunctions.applyVipAttribute(player)
+				player:SetAttribute("ClubRank", ControllerFunctions.getRank(player))
+				ControllerFunctions.syncTitleTagUnlocks(player)
 				-- Publish promotions/demotions even when the player already owns all
 				-- title slots, so every client receives the current rank and tier.
-				if slotsUpgraded or previousRank ~= getRank(player) or previousTier ~= passTier(player) then
+				if slotsUpgraded or previousRank ~= ControllerFunctions.getRank(player) or previousTier ~= ControllerFunctions.passTier(player) then
 					publishState(nil)
 				end
 			end)
@@ -4845,7 +4848,7 @@ task.spawn(function()
 		end
 
 		if shouldAdvance then
-			if advance(currentGeneration) then
+			if ControllerFunctions.advance(currentGeneration) then
 				ticks = 0
 				publishState(nil)
 			end
@@ -4866,9 +4869,9 @@ game:BindToClose(function()
 	end
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		local finalSaveOk = saveProfile(player)
+		local finalSaveOk = ControllerFunctions.saveProfile(player)
 		if finalSaveOk then
-			releaseProfileSession(player.UserId)
+			ControllerFunctions.releaseProfileSession(player.UserId)
 		else
 			-- Do not clear a lease when the final snapshot was not persisted.
 			warn("[ClubMusic] Shutdown save failed; retaining profile lease until expiry for userId " .. tostring(player.UserId))
