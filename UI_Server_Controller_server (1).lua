@@ -1027,6 +1027,37 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 	return true, nil
 end
 
+-- Explicit transition entry point. This does not alter queue state or run
+-- automatically; callers must provide a validated catalog asset and duration.
+ControllerFunctions.beginAudioCrossfade = function(asset: string, duration: number): (boolean, string?)
+	local managers = ControllerFunctions.ChildManagers
+	local crossfade = managers and managers.Crossfade
+	if not crossfade then return false, "Audio crossfade manager is not initialized." end
+	if playbackPaused then return false, "Cannot crossfade while playback is paused." end
+	local snapshot = ControllerFunctions.getAudioSnapshot()
+	if typeof(snapshot) ~= "table" or snapshot.playing ~= true then
+		return false, "The active music source is not playing."
+	end
+	if typeof(asset) ~= "string" or #asset > 64
+		or not string.match(asset, "^rbxassetid://%d+$") then
+		return false, "Invalid incoming audio asset."
+	end
+	if typeof(duration) ~= "number" or duration ~= duration
+		or duration < 0.25 or duration > 12 then
+		return false, "Crossfade duration must be between 0.25 and 12 seconds."
+	end
+	local ok, result, detail = pcall(function()
+		return crossfade:Begin(asset, duration)
+	end)
+	if not ok then
+		return false, "Audio crossfade could not be started safely."
+	end
+	if result ~= true then
+		return false, tostring(detail or "Audio crossfade was rejected.")
+	end
+	return true, nil
+end
+
 
 ControllerFunctions.stopServerMusic = function()
 	pcall(function() ControllerFunctions.stopAudio() end)
