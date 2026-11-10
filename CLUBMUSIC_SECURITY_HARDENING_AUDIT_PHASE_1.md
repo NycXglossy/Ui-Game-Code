@@ -96,3 +96,16 @@ A follow-up static review covered the profile session lease, serialized profile 
 - A failed or incomplete receipt operation returns NotProcessedYet rather than acknowledging an unconfirmed reward.
 
 These are static findings only. Fault-injection tests are still needed for server shutdown between each receipt transaction step, simultaneous receipt callbacks, lease expiry, and DataStore throttling.
+
+
+### 7. Profile lease and lifecycle follow-up
+
+The current controller uses a 180-second profile lease and a 90-second periodic save interval. Profile writes are serialized with a 12-second in-server lock timeout. Normal saves renew the lease only after verifying the current server token in the profile's atomic UpdateAsync. Player departure and BindToClose perform a final save before attempting to release the lease; failed final saves intentionally retain the lease until expiry rather than exposing a stale profile to another server.
+
+This is consistent with the intended single-writer model. Runtime testing should still simulate a DataStore outage lasting beyond the lease window and verify that an old server detects lost ownership and stops mutating its stale profile.
+
+### 8. Optional Studio malformed-remote smoke test
+
+Added `ClubMusic_SecuritySmokeTest.client.lua` as a temporary, Studio-only LocalScript for a separate test copy. It sends unknown/malformed action payloads and invalid catalog paging arguments, then makes ordinary state and playlist reads. It does not invoke valid queue, playback, purchase, or admin mutations.
+
+The test's PASS transport messages mean only that the remote call completed without a client-side exception. The tester must also inspect Server Output and verify that rejected inputs caused no state change. It is not a substitute for exploit testing or multi-server fault injection.
