@@ -1744,7 +1744,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		local function setFromX(x: number)
 			if not track.Parent or track.AbsoluteSize.X <= 0 then return end
-			local relative = (x - (track.AbsolutePosition.X - gui.AbsolutePosition.X)) / track.AbsoluteSize.X
+			-- InputObject.Position and GuiObject.AbsolutePosition are both screen-space coordinates.
+			local relative = (x - track.AbsolutePosition.X) / track.AbsoluteSize.X
 			applyVolume(math.clamp(relative, 0, 1))
 			refreshVolumeUI()
 		end
