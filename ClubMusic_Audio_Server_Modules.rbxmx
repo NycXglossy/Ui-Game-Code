@@ -175,6 +175,11 @@ function Backend:SetGain(value: number): (boolean, string?)
 	return true, nil
 end
 
+function Backend:GetGain(): number
+	if not self:IsAvailable() or not self.fader then return 0 end
+	return math.clamp(self.fader.Volume, 0, 1)
+end
+
 function Backend:SetPlaybackSpeed(value: number): (boolean, string?)
 	if not self:IsAvailable() or not finite(value) then return false, "Invalid playback speed." end
 	self.player.PlaybackSpeed = math.clamp(value, 0.5, 2)
