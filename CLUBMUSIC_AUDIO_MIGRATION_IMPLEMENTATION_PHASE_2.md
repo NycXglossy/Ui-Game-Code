@@ -312,3 +312,8 @@ The desktop rail now hides the Staff group heading for listeners without staff p
 ## Destroyed-manager registry recovery — phase 28
 
 The controller now unregisters the optional crossfade manager after its `Cleanup()` call even when cleanup reports a resource failure. The manager's cleanup contract marks it destroyed and releases its context regardless of the cancellation result; leaving that dead object in `ChildManagers.Crossfade` would prevent a later safe reconstruction. Failures are still warned and returned to the caller, but the registry no longer retains an unusable manager. Controller source was re-fetched and compared after the update. No Roblox runtime test was run.
+
+
+## Home-to-queue navigation — phase 29
+
+The compact Home queue preview now includes a View All action that opens the dedicated Queue destination. It uses the existing local tab-render callback and does not send a network request or mutate queue state. This connects the dashboard summary to the full queue workspace without changing playback or staff permissions. Renderer source was re-fetched and compared after the update; no Studio interaction test was run.
