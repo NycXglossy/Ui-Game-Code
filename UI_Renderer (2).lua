@@ -1994,8 +1994,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- Fast genre discovery keeps the Home dashboard useful without requiring
 		-- listeners to open the full catalog first.
 		local featuredGenres = card(94)
-		label(featuredGenres, "EXPLORE THE SOUND", UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 17), C.Gold, 10, true)
-		label(featuredGenres, "Jump straight into a music collection", UDim2.fromOffset(12, 24), UDim2.new(1, -24, 0, 14), C.Muted, 9, false)
+		label(featuredGenres, "EXPLORE THE SOUND", UDim2.fromOffset(12, 7), UDim2.new(1, -112, 0, 17), C.Gold, 10, true)
+		label(featuredGenres, "Jump straight into a music collection", UDim2.fromOffset(12, 24), UDim2.new(1, -112, 0, 14), C.Muted, 9, false)
+		actionButton(featuredGenres, "ALL TRACKS", UDim2.new(1, -94, 0, 8), UDim2.fromOffset(82, 25), function()
+			trackGenreFilter = "all"
+			trackSearch = ""
+			catalogOffset = 0
+			activeTab = "All Tracks"
+			if renderTabFn then renderTabFn() end
+		end, C.SurfaceLight)
 		local genreStrip = make("ScrollingFrame", {
 			Name = "FeaturedGenreStrip",
 			Position = UDim2.fromOffset(8, 45),
@@ -2013,7 +2020,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = UDim.new(0, 7),
 		}, genreStrip)
-		for order, genre in ipairs({GENRES[1], GENRES[2], GENRES[3], GENRES[6], GENRES[8], GENRES[9]}) do
+		for order, genre in ipairs(GENRES) do
 			local genreButton = make("TextButton", {
 				Name = "FeaturedGenre_" .. genre.id,
 				AutomaticSize = Enum.AutomaticSize.X,
