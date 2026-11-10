@@ -74,6 +74,8 @@ local CONFIG = {
 
 	-- Keep the legacy Sound as the default until the modern AudioPlayer route is validated in Studio.
 	UseModernAudioBackend = false,
+	CrossfadeDurationSeconds = 4,
+	CrossfadePrepareLeadSeconds = 14,
 
 	-- Optional audio. Map trackId -> "rbxassetid://123". Tracks without an entry play silently
 	-- (the UI still shows progress and an animated visualizer).
@@ -589,6 +591,15 @@ local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "Serve
 local activeAudioSource: any = { kind = "Sound", instance = musicSound }
 local audioSourceRevision = 0
 local modernAudioMigrationAttempted = false
+-- Forward-declared state is shared with the early-created crossfade factory.
+local queue: any = {}
+local queueManager: any = nil
+local globalQueueMode = false
+local nowPlaying: any = nil
+local publishState: (Player?) -> () = function(_player: Player?) end
+local pendingCrossfadeEntry: any = nil
+local pendingCrossfadeToken = -1
+local audioTransitionTrackToken = 0
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
 -- This preserves other SoundService audio while removing the obsolete group.
@@ -995,6 +1006,10 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 		CreateDeck = function()
 			return BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService"), InitialGain = 0 })
 		end,
+		GetRemainingTime = function()
+			if not nowPlaying then return 0 end
+			return math.max(0, (tonumber(nowPlaying.duration) or 0) - (tonumber(nowPlaying.elapsed) or 0))
+		end,
 		GetOutgoingGain = function()
 			transitionOutgoing = activeAudioSource
 			transitionRevision = audioSourceRevision
@@ -1009,8 +1024,11 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 		end,
 		OnCommit = function(incoming: any): boolean
 			local outgoing = transitionOutgoing
+			local entry = pendingCrossfadeEntry
 			if not outgoing or activeAudioSource ~= outgoing
-				or audioSourceRevision ~= transitionRevision or playbackPaused then
+				or audioSourceRevision ~= transitionRevision or playbackPaused
+				or globalQueueMode or not entry or queue[1] ~= entry
+				or pendingCrossfadeToken ~= audioTransitionTrackToken then
 				return false
 			end
 			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
@@ -1054,6 +1072,24 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			end
 
 			audioSourceRevision += 1
+			-- Commit only the exact queue entry whose asset was prepared.
+			local popped = queueManager and queueManager:PopNext()
+			if popped ~= entry then
+				activeAudioSource = outgoing
+				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
+				if outgoingWasPlaying then
+					pcall(function()
+						if outgoing.kind == "Backend" then outgoing.backend:Play(nil, outgoingPosition)
+						elseif outgoing.kind == "Sound" then outgoing.instance.TimePosition = outgoingPosition; outgoing.instance:Play() end
+					end)
+				end
+				return false
+			end
+			ControllerFunctions.setNowPlaying(entry, true)
+			task.defer(function()
+				ControllerFunctions.topUpAuto()
+				publishState(nil)
+			end)
 			if outgoing.kind == "Backend" and outgoing.backend ~= incoming then
 				pcall(function() outgoing.backend:Cleanup() end)
 			end
@@ -1261,7 +1297,7 @@ local profiles: {[number]: Profile} = {}
 type PendingReceiptMemory = { profile: Profile, productData: {[string]: any} }
 local receiptMemoryPending: {[string]: PendingReceiptMemory} = {}
 local receiptMemoryApplied: {[string]: Profile} = {}
-local queue: {QueueEntry} = {}
+queue = {}
 local ServerStorageForQueue = serverStorage
 remotes:SetAttribute("StartupStage", "LoadingMusicQueueManager")
 
@@ -1348,8 +1384,6 @@ for _, moduleName in ipairs({
 	end
 	ControllerFunctions.ChildManagerModules[moduleName] = requireResult
 end
-local queueManager: any = nil
-local globalQueueMode = false
 local globalTrackRevision = 0
 local globalRestartRevision = 0
 local autoQueueHold = false
@@ -1376,7 +1410,6 @@ end
 local globalQueueSyncBusy = false
 local globalQueueRefreshScheduled = false
 local globalPlaybackInitialized = false
-local publishState: (Player?) -> () = function(_player: Player?) end
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
 local enqueueGlobalQueueBatch: (({QueueEntry}) -> (boolean, string?))? = nil
@@ -1386,7 +1419,7 @@ local activePlaylistName = ""
 local activePlaylistTracks: {Track} = {}
 local activePlaylistCursor = 1
 local notify: (Player, string, string?) -> ()
-local nowPlaying = {
+nowPlaying = {
 	trackId = "",
 	title = "",
 	artist = "",
@@ -2357,10 +2390,18 @@ end
 
 local playbackGeneration = 0
 local transitionInProgress = false
+local crossfadeAttemptedGeneration = -1
+local crossfadeBoundaryWaitGeneration = -1
+local crossfadeBoundaryWaitStartedAt = 0
 
-ControllerFunctions.setNowPlaying = function(entry: QueueEntry)
-	ControllerFunctions.cancelAudioTransition("track-change")
+ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: boolean?)
+	if preserveAudio ~= true then ControllerFunctions.cancelAudioTransition("track-change") end
 	playbackGeneration += 1
+	audioTransitionTrackToken += 1
+	pendingCrossfadeEntry = nil
+	pendingCrossfadeToken = -1
+	crossfadeAttemptedGeneration = -1
+	crossfadeBoundaryWaitGeneration = -1
 	autoQueueHold = false
 	nowPlaying.trackId = entry.trackId
 	nowPlaying.title = entry.title
@@ -2373,8 +2414,8 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry)
 	nowPlaying.requestedBy = if entry.source == "playlist" then activePlaylistName else entry.requestedBy
 	nowPlaying.vip = entry.vip
 	nowPlaying.soundId = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
-	ControllerFunctions.startServerMusic(nowPlaying.soundId)
-	if CONFIG.UseModernAudioBackend then
+	if preserveAudio ~= true then ControllerFunctions.startServerMusic(nowPlaying.soundId) end
+	if preserveAudio ~= true and CONFIG.UseModernAudioBackend then
 		task.defer(ControllerFunctions.tryModernAudioBackendMigration)
 	end
 
@@ -6000,6 +6041,52 @@ task.spawn(function()
 				warn("[ClubMusic] Playback watchdog detected a stopped or unplayable track (" .. reason .. "); advancing safely.")
 				if ControllerFunctions.ErrorHandler then
 					ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, musicSound)
+				end
+			end
+		end
+
+		-- Prepare the next local-queue deck ahead of the boundary. Global queue
+		-- mode stays on its existing authoritative transition path until a
+		-- cross-server fade reservation/commit protocol is available.
+		if not playbackPaused and not globalQueueMode and nowPlaying.trackId ~= ""
+			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
+			local remaining = nowPlaying.duration - nowPlaying.elapsed
+			local managers = ControllerFunctions.ChildManagers
+			local crossfade = managers and managers.Crossfade
+			local nextEntry = queue[1]
+			local nextAsset = if typeof(nextEntry) == "table"
+				then (nextEntry.soundId or CONFIG.SoundIds[nextEntry.trackId] or "") else ""
+			local validNextAsset = typeof(nextAsset) == "string" and #nextAsset <= 64
+				and string.match(nextAsset, "^rbxassetid://%d+$") ~= nil
+			if crossfade and not crossfade.destroyed and not crossfade.active
+				and crossfadeAttemptedGeneration ~= currentGeneration
+				and remaining <= CONFIG.CrossfadePrepareLeadSeconds and remaining > 0
+				and typeof(nextEntry) == "table" and validNextAsset
+				and ControllerFunctions.getAudioSnapshot().playing == true then
+				crossfadeAttemptedGeneration = currentGeneration
+				pendingCrossfadeEntry = nextEntry
+				pendingCrossfadeToken = audioTransitionTrackToken
+				local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
+				if not started then
+					pendingCrossfadeEntry = nil
+					pendingCrossfadeToken = -1
+					warn("[ClubMusic][Crossfade] Automatic transition was not started; normal track advance remains available: " .. tostring(startError))
+				end
+			end
+		end
+
+		if shouldAdvance then
+			local crossfade = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
+			if crossfade and crossfade.active and pendingCrossfadeToken == audioTransitionTrackToken
+				and not globalQueueMode then
+				if crossfadeBoundaryWaitGeneration ~= currentGeneration then
+					crossfadeBoundaryWaitGeneration = currentGeneration
+					crossfadeBoundaryWaitStartedAt = os.clock()
+				end
+				if os.clock() - crossfadeBoundaryWaitStartedAt < 2 then
+					shouldAdvance = false
+				else
+					ControllerFunctions.cancelAudioTransition("crossfade-boundary-timeout")
 				end
 			end
 		end
