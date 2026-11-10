@@ -21,3 +21,18 @@ This package installs the modules as separate ModuleScripts. It does not enable 
 The server folder must stay in ServerStorage. Do not put server-only modules in ReplicatedStorage. Only `ClubMusicPlayerPreferences` is intended for client-side use.
 
 No Roblox Studio runtime or multiplayer test is represented by this package.
+
+
+## Alternative: Command Bar installer (when RBXMX import is unavailable)
+
+The repository also includes `ClubMusic_Studio_CommandBar_Installer.lua`. This avoids the RBXMX import UI:
+
+1. In Studio, open **Game Settings → Security** and enable **Allow HTTP Requests**.
+2. Open **View → Command Bar**.
+3. Open the installer Lua file from this repository, copy its entire contents, and paste it into the Command Bar.
+4. Run it once. It downloads the six source modules from pinned repository commits and creates the ModuleScripts in the required folders.
+5. Confirm the folders and all six ModuleScripts appear in Explorer, then save the place.
+
+The installer stages all six downloads before creating or replacing any ModuleScripts. It only replaces same-named ModuleScripts inside its two dedicated folders; it stops if a conflicting non-ModuleScript object is present. It does not modify the controller, renderer, live playback, `ServerMusicSound`, or `MusicGroup`.
+
+**Important:** this is installation only, not activation. The modern shared playback backend, crossfade, DJ-session handoff UI, local listener routing, and spatial venue routing still require coordinated controller/client integration and Roblox Studio multi-client testing. Keep the legacy playback objects until that work is validated.
