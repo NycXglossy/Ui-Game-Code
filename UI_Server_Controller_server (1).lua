@@ -4563,7 +4563,7 @@ local function handleGlobalMessage(message: any)
 	end
 end
 
-local connectedGlobalEvents: {[Instance]: boolean} = {}
+local connectedGlobalEvents: {[any]: any} = {}
 
 -- Store late-lifecycle callbacks on the existing connection registry instead of
 -- allocating more top-level locals. The controller chunk is close to Luau's
