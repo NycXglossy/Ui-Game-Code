@@ -5352,6 +5352,18 @@ else
 	warn("[ClubMusic][DJSession] Optional module not found at ServerStorage.ClubMusicAudioModules. DJ session commands are unavailable.")
 end
 
+-- Load the optional crossfade coordinator after controller state and all child
+-- managers exist. Construction creates no deck and does not change live output;
+-- an explicit controller call is still required to begin a transition.
+do
+	local crossfadeOk, crossfadeError = ControllerFunctions.createAudioCrossfadeManager()
+	if not crossfadeOk then
+		warn("[ClubMusic][Crossfade] Coordinator unavailable; legacy playback remains active: " .. tostring(crossfadeError))
+	else
+		print("[ClubMusic][Crossfade] Coordinator initialized (inactive until explicitly requested).")
+	end
+end
+
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
 	local ok, err = pcall(ControllerFunctions.handleAction, player, action, payload)
