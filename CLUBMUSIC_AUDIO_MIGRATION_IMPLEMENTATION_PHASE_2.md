@@ -109,3 +109,14 @@ The server package must be dragged into Studio so the module is present. If the 
 - Audio quality profiles remain gain/speed presets, not EQ or effects processing.
 
 No Roblox Studio runtime or multiplayer tests have been run for this phase. Verify the module folder, start/handoff/end flows with two authorized staff accounts, and player departure cleanup in Studio before relying on it in a live server.
+
+
+## Player-local volume preference integration — phase 4
+
+The renderer now loads `ClubMusicPlayerPreferences` from `ReplicatedStorage/ClubMusicClientAudioModules` when the optional client module is installed. The existing volume slider and mute button route their gain through that preference manager. Its injected local-gain callback adjusts the client-side instance of the canonical `SoundService.MusicGroup` and the local staff-preview fader; it does not send a volume mutation to the server or alter the controller's `ServerMusicSound.Volume` / server-owned `MusicGroup.Volume`.
+
+This preserves one shared playback source while allowing each client to apply its own local gain. If the module is absent, the renderer uses the same local SoundGroup fallback. Preference state remains session-local and resets when the UI is remounted or the player rejoins; persistence and additional sound-profile controls are not part of this integration. The profile field in the preference module does not currently add EQ/effects.
+
+The renderer cleans up the preference manager on both explicit UI destruction and GUI destruction. Staff preview gain follows the same local volume setting.
+
+**Validation boundary:** source changes and package contents can be checked in GitHub, but client-local SoundGroup behavior, device output, mute/restore behavior, and two-client volume independence still require Roblox Studio testing with two clients. Do not remove the legacy `ServerMusicSound` or `MusicGroup`.
