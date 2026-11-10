@@ -92,6 +92,34 @@ invoke("excessively nested action payload", function()
 	return true
 end)
 
+local tooManyTopLevelKeys = {}
+for index = 1, 17 do
+	tooManyTopLevelKeys["key" .. tostring(index)] = true
+end
+invoke("excessive top-level key count", function()
+	actionRemote:FireServer("RequestTrack", tooManyTopLevelKeys)
+	return true
+end)
+
+local tooManyNestedKeys = {}
+for index = 1, 17 do
+	tooManyNestedKeys["key" .. tostring(index)] = true
+end
+invoke("excessive nested key count", function()
+	actionRemote:FireServer("RequestTrack", {data = tooManyNestedKeys})
+	return true
+end)
+
+invoke("non-finite numeric payload", function()
+	actionRemote:FireServer("RequestTrack", {trackId = math.huge})
+	return true
+end)
+
+invoke("oversized payload key", function()
+	actionRemote:FireServer("RequestTrack", {[string.rep("K", 33)] = true})
+	return true
+end)
+
 task.wait(1)
 
 -- Invalid catalog argument types/ranges must return nil rather than error.
