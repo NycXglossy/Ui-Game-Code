@@ -28,6 +28,10 @@ function Spatial:CreateRoute(key: string, emitterParent: Instance, listenerParen
 	sourceWire.SourceInstance = self.context.AudioPlayer
 	sourceWire.TargetInstance = emitter
 	sourceWire.Parent = folder
+	local listenerWire = Instance.new("Wire")
+	listenerWire.SourceInstance = emitter
+	listenerWire.TargetInstance = listener
+	listenerWire.Parent = folder
 	local outputWire = Instance.new("Wire")
 	outputWire.SourceInstance = listener
 	outputWire.TargetInstance = self.context.AudioDeviceOutput
