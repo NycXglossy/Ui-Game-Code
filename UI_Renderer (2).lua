@@ -1913,9 +1913,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local queue = getQueue()
 		local queueCard = card( if widePlayer then 210 else 182, queueColumn)
 		stroke(queueCard, C.Magenta, 1).Transparency = 0.35
-		label(queueCard, "UP NEXT", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 18), C.Cyan, 10, true)
+		label(queueCard, "UP NEXT", UDim2.fromOffset(12, 8), UDim2.new(1, -104, 0, 18), C.Cyan, 10, true)
 		label(queueCard, string.format("%d TRACK%s IN QUEUE", #queue, if #queue == 1 then "" else "S"),
-			UDim2.fromOffset(12, 26), UDim2.new(1, -24, 0, 15), C.Muted, 8, true)
+			UDim2.fromOffset(12, 26), UDim2.new(1, -104, 0, 15), C.Muted, 8, true)
+		actionButton(queueCard, "VIEW ALL", UDim2.new(1, -84, 0, 7), UDim2.fromOffset(72, 22), function()
+			activeTab = "Queue"
+			if renderTabFn then renderTabFn() end
+		end, C.SurfaceLight)
 		if #queue == 0 then
 			label(queueCard, "Nothing queued. Auto DJ will select the next track.",
 				UDim2.fromOffset(12, 62), UDim2.new(1, -24, 0, 48), C.Muted, 11, false)
