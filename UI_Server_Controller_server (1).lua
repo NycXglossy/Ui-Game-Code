@@ -704,6 +704,7 @@ type TitleSlot = {
 	set: string,
 	font: string,
 	style: string,
+	textSize: number,
 	height: number,
 	distance: number,
 }
@@ -1126,8 +1127,10 @@ ControllerFunctions.sanitizeTitleSlot = function(data: any): TitleSlot?
 	if typeof(font) ~= "string" or TITLE_FONTS[font] ~= true then return nil end
 	local style = data.style
 	if typeof(style) ~= "string" or TITLE_STYLES[style] ~= true then return nil end
+	local textSize = tonumber(data.textSize or data.size)
 	local height = tonumber(data.heightOffset or data.height)
 	local distance = tonumber(data.viewDistance or data.distance)
+	if not ControllerFunctions.isFiniteNumber(textSize) then textSize = 20 end
 	if not ControllerFunctions.isFiniteNumber(height) then height = 2.5 end
 	if not ControllerFunctions.isFiniteNumber(distance) then distance = 80 end
 	return {
@@ -1136,6 +1139,7 @@ ControllerFunctions.sanitizeTitleSlot = function(data: any): TitleSlot?
 		set = set,
 		font = font,
 		style = style,
+		textSize = math.clamp(math.floor((textSize or 20) + 0.5), 14, 32),
 		height = math.clamp(height or 2.5, 0, 8),
 		distance = math.clamp(distance or 80, 20, 200),
 	}
@@ -1168,6 +1172,7 @@ ControllerFunctions.applyTitleAttributes = function(player: Player, profile: Pro
 		player:SetAttribute("TitleSpeed", 0)
 		player:SetAttribute("TitleShimmer", false)
 		player:SetAttribute("TitleFont", "gotham")
+		player:SetAttribute("TitleTextSize", 20)
 		player:SetAttribute("TitleHeight", 2.5)
 		player:SetAttribute("TitleDistance", 80)
 		return
@@ -1181,6 +1186,7 @@ ControllerFunctions.applyTitleAttributes = function(player: Player, profile: Pro
 	player:SetAttribute("TitleSpeed", if slot.effect == "rgb" then (RGB_SPEED[slot.set] or 0.25) elseif slot.effect == "shimmer" then 0.35 else 0)
 	player:SetAttribute("TitleShimmer", slot.effect == "shimmer")
 	player:SetAttribute("TitleFont", slot.font)
+	player:SetAttribute("TitleTextSize", slot.textSize)
 	player:SetAttribute("TitleHeight", slot.height)
 	player:SetAttribute("TitleDistance", slot.distance)
 end
@@ -1407,7 +1413,7 @@ ControllerFunctions.saveProfile = function(player: Player)
 		if slot then
 			slotsSnapshot[tostring(i)] = {
 				text = slot.text, effect = slot.effect, set = slot.set, font = slot.font,
-				style = slot.style, height = slot.height, distance = slot.distance,
+				style = slot.style, textSize = slot.textSize, height = slot.height, distance = slot.distance,
 			}
 		end
 	end
@@ -2220,7 +2226,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		if slot then
 			slotsOut[tostring(i)] = {
 				text = slot.text, effect = slot.effect, set = slot.set, font = slot.font,
-				style = slot.style, heightOffset = slot.height, viewDistance = slot.distance,
+				style = slot.style, textSize = slot.textSize, heightOffset = slot.height, viewDistance = slot.distance,
 			}
 		end
 	end
@@ -4035,6 +4041,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			set = colorKey,
 			font = if existing then existing.font else "gotham",
 			style = styleKey,
+			textSize = if existing then existing.textSize else 20,
 			height = if existing then existing.height else 2.5,
 			distance = if existing then existing.distance else 80,
 		}, visible)
@@ -4059,6 +4066,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			set = payload.set,
 			font = payload.font,
 			style = payload.style,
+			textSize = payload.textSize,
 			heightOffset = payload.heightOffset,
 			viewDistance = payload.viewDistance,
 		}, visible)
