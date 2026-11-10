@@ -121,6 +121,8 @@ function HealthService:Start(): boolean
                 dependencies.apiFolder:SetAttribute("HealthDetail", detail)
                 dependencies.apiFolder:SetAttribute("HealthUpdatedAt", self.status.updatedAt)
                 dependencies.apiFolder:SetAttribute("RecoveryStatus", self.status.recoveryState)
+                dependencies.apiFolder:SetAttribute("SyncStatus", self.status.syncState)
+                dependencies.apiFolder:SetAttribute("SyncPeerCount", if self.status.syncStatus then self.status.syncStatus.peerCount else 0)
             end)
 
             task.wait(math.max(10, dependencies.intervalSeconds or 30))
