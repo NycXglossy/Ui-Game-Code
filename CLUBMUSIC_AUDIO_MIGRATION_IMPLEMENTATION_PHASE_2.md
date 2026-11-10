@@ -337,3 +337,7 @@ Coordinator construction does not create an incoming deck, change volume, start 
 ## Home featured-genre discovery — phase 32
 
 The Home dashboard now includes a horizontally scrollable set of featured genre shortcuts. Selecting a genre opens the existing All Tracks catalog with that genre filter applied and the search cleared. The shortcuts reuse the current catalog query and pagination flow; no new remote, catalog store, or playback path was introduced. Renderer source was re-fetched and verified; no Roblox Studio visual or interaction test was run.
+
+## Complete Home genre navigation — phase 33
+
+Expanded the Home discovery strip to include every configured genre and added a direct All Tracks shortcut that clears the active search/filter before opening the catalog. This gives listeners both curated genre entry points and a one-step route to the complete catalog, while reusing the existing catalog state and request flow. Renderer source was re-fetched and verified; no Studio UI test was run.
