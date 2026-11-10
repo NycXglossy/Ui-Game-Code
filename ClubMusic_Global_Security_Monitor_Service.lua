@@ -20,7 +20,8 @@ function Service:Record(signal,subject)
  end
  if now-entry.windowStart>60 then entry.count=0; entry.windowStart=now end
  entry.count+=1; entry.updated=now; self.total+=1
- local threshold=if type(self.d.threshold)=="number" then math.max(1,math.floor(self.d.threshold)) else 8
+ local configured=if type(self.d.getThreshold)=="function" then self.d.getThreshold() else self.d.threshold
+ local threshold=if type(configured)=="number" then math.max(1,math.floor(configured)) else 8
  if entry.count==threshold then
   self.alerts+=1; self.lastAlertAt=os.time()
   if type(self.d.onAlert)=="function" then pcall(self.d.onAlert,signal,entry.count) end
