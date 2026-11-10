@@ -579,6 +579,7 @@ local peerHeartbeats: {[string]: {seenAt: number, reportedAt: number}} = {}
 local hasSeenSyncPeer = false
 local lastQueueNotificationAt = 0
 local queueNotificationsReceived = 0
+local lastHeartbeatPublishAt = 0
 
 local function getGlobalSyncStatus(): {[string]: any}
     local now = os.clock()
@@ -602,6 +603,13 @@ local function getGlobalSyncStatus(): {[string]: any}
     elseif subscription ~= "Active" then
         state = if subscription == "Starting" then "Starting" else "Degraded"
         detail = "Cross-server sync heartbeat subscription is " .. subscription .. "."
+    elseif lastHeartbeatPublishAt == 0 then
+        state = "Starting"
+        detail = "The first cross-server sync heartbeat has not been published yet."
+    elseif now - lastHeartbeatPublishAt > SYNC_HEARTBEAT_TIMEOUT_SECONDS then
+        state = "Degraded"
+        detail = "This server has not successfully published a sync heartbeat within "
+            .. tostring(SYNC_HEARTBEAT_TIMEOUT_SECONDS) .. " seconds."
     elseif peerCount > 0 then
         state = "Healthy"
         detail = "Cross-server messaging is receiving heartbeats from " .. tostring(peerCount) .. " peer server(s)."
@@ -617,6 +625,7 @@ local function getGlobalSyncStatus(): {[string]: any}
         subscription = subscription,
         peerCount = peerCount,
         lastPeerHeartbeatAt = newestPeerAt,
+        lastHeartbeatPublishedAt = if lastHeartbeatPublishAt > 0 then os.time() - math.floor(now - lastHeartbeatPublishAt) else 0,
         lastQueueNotificationAt = if lastQueueNotificationAt > 0 then os.time() - math.floor(now - lastQueueNotificationAt) else 0,
         queueNotificationsReceived = queueNotificationsReceived,
         heartbeatIntervalSeconds = SYNC_HEARTBEAT_INTERVAL_SECONDS,
@@ -757,6 +766,7 @@ bindFunction("GetGlobalDiagnostics", function()
 		health = if healthOk then health else nil,
 		recoveryAvailable = recoveryOk and recovery ~= nil,
 		recovery = if recoveryOk then recovery else nil,
+		syncStatus = getGlobalSyncStatus(),
 		errorHistoryAvailable = errorsAvailable,
 		recentErrors = errors,
 	}
@@ -910,7 +920,8 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.SyncHealth, onSyncHeartbeat)
 	task.spawn(function()
 		while SERVICE_ENABLED do
-			publishTopic(CONFIG.Topics.SyncHealth, {kind = "ServerHeartbeat", serverJob = JOB_ID})
+			local published = publishTopic(CONFIG.Topics.SyncHealth, {kind = "ServerHeartbeat", serverJob = JOB_ID})
+			if published then lastHeartbeatPublishAt = os.clock() end
 			task.wait(SYNC_HEARTBEAT_INTERVAL_SECONDS)
 		end
 	end)
