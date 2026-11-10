@@ -613,6 +613,84 @@ musicSound:GetPropertyChangedSignal("Playing"):Connect(ControllerFunctions.refre
 local playbackPaused = false
 local lastGlobalPlaybackRevision = 0
 
+-- One controller-owned source contract. The legacy Sound remains the active
+-- implementation until every route is migrated and a Studio cutover is validated.
+local activeAudioSource: any = { kind = "Sound", instance = musicSound }
+ControllerFunctions.getAudioSnapshot = function()
+	local source = activeAudioSource
+	if typeof(source) ~= "table" then
+		return { kind = "Unavailable", ready = false, playing = false, paused = playbackPaused, position = 0, length = 0, asset = "" }
+	end
+	if source.kind == "Backend" and source.backend then
+		local backend = source.backend
+		local function read(methodName: string, fallback: any)
+			local ok, value = pcall(function() return backend[methodName](backend) end)
+			return if ok then value else fallback
+		end
+		local player = read("GetPlayer", nil)
+		local asset = ""
+		if player then pcall(function() asset = tostring(player.Asset) end) end
+		return {
+			kind = "AudioPlayer",
+			ready = read("IsReady", false) == true,
+			playing = read("IsPlaying", false) == true,
+			paused = playbackPaused,
+			position = math.max(0, tonumber(read("GetTimePosition", 0)) or 0),
+			length = math.max(0, tonumber(read("GetTimeLength", 0)) or 0),
+			asset = asset,
+		}
+	end
+	local sound = source.instance
+	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then
+		return { kind = "Unavailable", ready = false, playing = false, paused = playbackPaused, position = 0, length = 0, asset = "" }
+	end
+	return {
+		kind = "Sound",
+		ready = sound.IsLoaded,
+		playing = sound.IsPlaying,
+		paused = playbackPaused,
+		position = math.max(0, sound.TimePosition),
+		length = math.max(0, sound.TimeLength),
+		asset = sound.SoundId,
+	}
+end
+ControllerFunctions.setAudioAsset = function(asset: string)
+	local source = activeAudioSource
+	if source.kind == "Backend" then return source.backend:SetAsset(asset) end
+	source.instance.SoundId = asset
+	return true, nil
+end
+ControllerFunctions.seekAudio = function(position: number)
+	local source = activeAudioSource
+	if source.kind == "Backend" then return source.backend:Seek(position) end
+	source.instance.TimePosition = position
+	return true, nil
+end
+ControllerFunctions.playAudio = function()
+	local source = activeAudioSource
+	if source.kind == "Backend" then return source.backend:Play() end
+	source.instance:Play()
+	return true, nil
+end
+ControllerFunctions.stopAudio = function()
+	local source = activeAudioSource
+	if source.kind == "Backend" then return source.backend:Stop() end
+	source.instance:Stop()
+	return true, nil
+end
+ControllerFunctions.pauseAudio = function()
+	local source = activeAudioSource
+	if source.kind == "Backend" then return source.backend:Pause() end
+	source.instance:Pause()
+	return true, nil
+end
+ControllerFunctions.resumeAudio = function()
+	local source = activeAudioSource
+	if source.kind == "Backend" then return source.backend:Resume() end
+	source.instance:Resume()
+	return true, nil
+end
+
 -- One controller-owned cancellation seam for a future dual-deck transition.
 -- It is deliberately a no-op until a Crossfade manager is safely constructed.
 ControllerFunctions.cancelAudioTransition = function(reason: string?)
@@ -630,9 +708,7 @@ ControllerFunctions.cancelAudioTransition = function(reason: string?)
 end
 
 ControllerFunctions.stopServerMusic = function()
-	pcall(function()
-		musicSound:Stop()
-	end)
+	pcall(function() ControllerFunctions.stopAudio() end)
 	ControllerFunctions.refreshActiveMusicSoundCount()
 end
 
@@ -640,14 +716,16 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	ControllerFunctions.stopServerMusic()
 	if typeof(soundId) ~= "string" or #soundId > 64
 		or not string.match(soundId, "^rbxassetid://%d+$") then
-		musicSound.SoundId = ""
+		ControllerFunctions.setAudioAsset("")
 		return
 	end
-	musicSound.SoundId = soundId
-	musicSound.TimePosition = 0
+	local setOk, setError = ControllerFunctions.setAudioAsset(soundId)
+	if setOk == false then warn("[ClubMusic] Server audio asset could not be assigned: " .. tostring(setError)); return end
+	local seekOk, seekError = ControllerFunctions.seekAudio(0)
+	if seekOk == false then warn("[ClubMusic] Server audio position could not be reset: " .. tostring(seekError)); return end
 	local ok, err = pcall(function()
-		musicSound:Play()
-		if playbackPaused then musicSound:Pause() end
+		ControllerFunctions.playAudio()
+		if playbackPaused then ControllerFunctions.pauseAudio() end
 	end)
 	if not ok then
 		warn("[ClubMusic] Server playback could not start: " .. tostring(err))
@@ -1998,15 +2076,15 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
 		end
 		pcall(function()
-			if musicSound.SoundId ~= nowPlaying.soundId then
+			local audio = ControllerFunctions.getAudioSnapshot()
+			if audio.asset ~= nowPlaying.soundId then
 				if nowPlaying.soundId ~= "" then ControllerFunctions.startServerMusic(nowPlaying.soundId)
-				else ControllerFunctions.stopServerMusic(); musicSound.SoundId = "" end
+				else ControllerFunctions.stopServerMusic(); ControllerFunctions.setAudioAsset("") end
 			end
-			if musicSound.IsLoaded and math.abs(musicSound.TimePosition - nowPlaying.elapsed) > 2 then
-				musicSound.TimePosition = nowPlaying.elapsed
-			end
-			if playbackPaused then musicSound:Pause()
-			elseif not musicSound.IsPlaying and nowPlaying.soundId ~= "" then musicSound:Play() end
+			audio = ControllerFunctions.getAudioSnapshot()
+			if audio.ready and math.abs(audio.position - nowPlaying.elapsed) > 2 then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
+			if playbackPaused then ControllerFunctions.pauseAudio()
+			elseif not audio.playing and nowPlaying.soundId ~= "" then ControllerFunctions.playAudio() end
 		end)
 		globalTrackRevision = revision
 		globalRestartRevision = restartRevision
@@ -2017,7 +2095,7 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 			nowPlaying.genre = ""; nowPlaying.duration = 1; nowPlaying.elapsed = 0
 			nowPlaying.dj = "Automated Selector"; nowPlaying.source = "auto"
 			nowPlaying.requestedBy = "Auto DJ"; nowPlaying.vip = false; nowPlaying.soundId = ""
-			ControllerFunctions.stopServerMusic(); musicSound.SoundId = ""
+			ControllerFunctions.stopServerMusic(); ControllerFunctions.setAudioAsset("")
 		end
 		playbackPaused = true
 		globalTrackRevision = revision
@@ -3919,7 +3997,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		ControllerFunctions.cancelAudioTransition(if desiredPaused then "pause" else "resume")
 		if globalQueueMode then
 			local position = nowPlaying.elapsed
-			pcall(function() if musicSound.IsLoaded then position = musicSound.TimePosition end end)
+			pcall(function() local audio = ControllerFunctions.getAudioSnapshot(); if audio.ready then position = audio.position end end)
 			local callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlayback", desiredPaused, position, globalTrackRevision, false)
 			if not callOk or changed ~= true or typeof(state) ~= "table" then
 				notify(player, tostring(message or "Global playback state could not be saved."), "warn")
@@ -3930,12 +4008,13 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, if desiredPaused then "Music paused globally." else "Music resumed globally.", "ok")
 		else
 			local position = nowPlaying.elapsed
-			pcall(function() if musicSound.IsLoaded then position = musicSound.TimePosition end end)
+			pcall(function() local audio = ControllerFunctions.getAudioSnapshot(); if audio.ready then position = audio.position end end)
 			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
 			playbackPaused = desiredPaused
 			pcall(function()
-				if musicSound.IsLoaded then musicSound.TimePosition = nowPlaying.elapsed end
-				if playbackPaused then musicSound:Pause() else musicSound:Resume() end
+				local audio = ControllerFunctions.getAudioSnapshot()
+				if audio.ready then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
+				if playbackPaused then ControllerFunctions.pauseAudio() else ControllerFunctions.resumeAudio() end
 			end)
 			local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused, position = nowPlaying.elapsed}, player.UserId)
 			if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
@@ -5105,10 +5184,9 @@ ControllerFunctions.applyGlobalPlaybackControl = function(command: string, paylo
 			nowPlaying.elapsed = math.clamp(payload.position, 0, nowPlaying.duration)
 		end
 		pcall(function()
-			if musicSound.IsLoaded and ControllerFunctions.isFiniteNumber(payload.position) then
-				musicSound.TimePosition = nowPlaying.elapsed
-			end
-			if playbackPaused then musicSound:Pause() else musicSound:Resume() end
+			local audio = ControllerFunctions.getAudioSnapshot()
+			if audio.ready and ControllerFunctions.isFiniteNumber(payload.position) then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
+			if playbackPaused then ControllerFunctions.pauseAudio() else ControllerFunctions.resumeAudio() end
 		end)
 	elseif command == "Restart" then
 		ControllerFunctions.cancelAudioTransition("global-restart")
@@ -5491,14 +5569,12 @@ task.spawn(function()
 		-- UI/visualizer entries. Do not treat their non-playing Sound as a failed
 		-- asset: let their catalog duration drive the normal transition instead.
 		if not shouldAdvance and not playbackPaused and nowPlaying.trackId ~= ""
-			and nowPlaying.soundId ~= "" and nowPlaying.elapsed >= 15 and not musicSound.IsPlaying then
+			and nowPlaying.soundId ~= "" and nowPlaying.elapsed >= 15 and not ControllerFunctions.getAudioSnapshot().playing then
 			-- IsLoaded/TimeLength distinguishes a confirmed stopped/ended sound from
 			-- an audio asset that is still buffering. If loading never completes,
 			-- the 45-second ceiling prevents a permanently stuck track.
-			local loadedAndKnownLength = false
-			pcall(function()
-				loadedAndKnownLength = musicSound.IsLoaded and musicSound.TimeLength > 0
-			end)
+			local audio = ControllerFunctions.getAudioSnapshot()
+			local loadedAndKnownLength = audio.ready and audio.length > 0
 			shouldAdvance = loadedAndKnownLength or nowPlaying.elapsed >= 45
 			if shouldAdvance then
 				local playbackAdapter = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playback
