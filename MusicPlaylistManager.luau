@@ -9,8 +9,8 @@ MusicPlaylistManager.__index = MusicPlaylistManager
 export type Context = {
 	Service: any,
 	GetRotationState: (() -> any)?,
-	StartRotation: ((Player?, any) -> (boolean, string?))?,
-	StopRotation: ((Player?) -> (boolean, string?))?,
+	StartRotation: ((Player, any) -> (boolean, string?))?,
+	StopRotation: ((Player) -> (boolean, string?))?,
 	SelectNextTrack: (() -> any)?,
 }
 
@@ -84,13 +84,19 @@ function MusicPlaylistManager:GetRotationState()
 	return state
 end
 
-function MusicPlaylistManager:StartRotation(player: Player?, playlistId: any)
+function MusicPlaylistManager:StartRotation(player: Player, playlistId: any)
 	if self.destroyed then return false, "Playlist adapter has been cleaned up." end
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent == nil then
+		return false, "A connected player is required."
+	end
 	return invoke(self.context.StartRotation, player, playlistId)
 end
 
-function MusicPlaylistManager:StopRotation(player: Player?)
+function MusicPlaylistManager:StopRotation(player: Player)
 	if self.destroyed then return false, "Playlist adapter has been cleaned up." end
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent == nil then
+		return false, "A connected player is required."
+	end
 	return invoke(self.context.StopRotation, player)
 end
 
