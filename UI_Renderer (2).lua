@@ -2158,10 +2158,49 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if item.vip == true then requestedBy ..= "  •  VIP PRIORITY" end
 			local actionSpace = if staffLevel >= 1 then 100 else 12
 			local row = card(62)
-			label(row, string.format("%02d", index), UDim2.fromOffset(12, 8), UDim2.fromOffset(28, 18), C.Gold, 12, true)
-			label(row, titleText, UDim2.fromOffset(44, 6), UDim2.new(1, -actionSpace - 54, 0, 22), C.White, 11, true)
+			label(row, string.format("%02d", index), UDim2.fromOffset(8, 21), UDim2.fromOffset(27, 18), C.Gold, 11, true)
+			local artworkId = TRACK_ARTWORK[trackId]
+			local artworkTint = if genre and typeof(genre.color) == "Color3" then genre.color else C.Cyan
+			if artworkId and artworkId > 0 then
+				local cover = make("ImageLabel", {
+					Name = "QueueArtwork",
+					Position = UDim2.fromOffset(39, 15),
+					Size = UDim2.fromOffset(32, 32),
+					BackgroundColor3 = C.Base,
+					BorderSizePixel = 0,
+					Image = "rbxassetid://" .. tostring(artworkId),
+					ScaleType = Enum.ScaleType.Crop,
+				}, row)
+				corner(cover, 7)
+			else
+				local cover = make("Frame", {
+					Name = "QueueArtworkPlaceholder",
+					Position = UDim2.fromOffset(39, 15),
+					Size = UDim2.fromOffset(32, 32),
+					BackgroundColor3 = artworkTint:Lerp(C.Base, 0.5),
+					BorderSizePixel = 0,
+				}, row)
+				corner(cover, 7)
+				local disc = make("Frame", {
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromScale(0.5, 0.5),
+					Size = UDim2.fromOffset(19, 19),
+					BackgroundColor3 = artworkTint,
+					BorderSizePixel = 0,
+				}, cover)
+				corner(disc, 10)
+				local center = make("Frame", {
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Position = UDim2.fromScale(0.5, 0.5),
+					Size = UDim2.fromOffset(5, 5),
+					BackgroundColor3 = C.Base,
+					BorderSizePixel = 0,
+				}, disc)
+				corner(center, 3)
+			end
+			label(row, titleText, UDim2.fromOffset(80, 6), UDim2.new(1, -actionSpace - 90, 0, 22), C.White, 11, true)
 			label(row, (if genre then genre.name .. "  •  " else "") .. requestedBy .. "  •  " .. formatTime(tonumber(item.duration) or 0),
-				UDim2.fromOffset(44, 31), UDim2.new(1, -actionSpace - 54, 0, 18),
+				UDim2.fromOffset(80, 31), UDim2.new(1, -actionSpace - 90, 0, 18),
 				if item.source == "player" then C.Magenta else C.Muted, 8, false)
 			if staffLevel >= 1 and queueId ~= "" then
 				if index > 1 then
