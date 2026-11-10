@@ -131,3 +131,14 @@ The controller must provide an atomic `OnCommit` callback: it must transfer play
 The server RBXMX package is refreshed with this exact manager source. Reinstall it by dragging the updated `ClubMusic_Audio_Server_Modules.rbxmx` into Studio and replacing the existing module folder contents as appropriate; do not import the standalone manager into a second active copy.
 
 Static checks cover cancellation invalidation, gain restoration, protected deck calls, incoming-deck ownership checks, and package/source parity. Roblox Studio playback and interruption tests have not been run.
+
+
+## Controller transition-cancellation seam — phase 6
+
+The server controller now exposes one optional `cancelAudioTransition(reason)` hook. It safely calls `ChildManagers.Crossfade:Cancel()` only when a crossfade manager is present; otherwise it is a no-op and does not change legacy playback.
+
+Cancellation is requested before controller-owned track advances, track replacement, local/global pause or resume, local/global restart, queue clear, global restart reconciliation, and server shutdown. The existing generation/transition locks and `ServerMusicSound` playback path remain authoritative. This creates the interruption boundary needed by a later dual-deck cutover without constructing or enabling a second audio output now.
+
+This phase does not instantiate the crossfade manager and does not enable crossfade. Queue-clear cancellation intentionally affects only an in-progress transition; it does not stop the currently playing track. The cancellation hook logs a warning if an installed manager reports a failure, but the legacy playback path continues.
+
+Static source checks were performed after commit. Roblox Studio playback, crossfade interruption, and multiplayer tests remain outstanding.
