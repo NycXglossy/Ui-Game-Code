@@ -581,6 +581,7 @@ local random = Random.new()
 -- canonical SoundGroup locally for their own volume preference.
 local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGroup", "MusicGroup") :: SoundGroup
 local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
+local activeAudioSource: any = { kind = "Sound", instance = musicSound }
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
 -- This preserves other SoundService audio while removing the obsolete group.
@@ -628,11 +629,9 @@ end
 
 local playbackPaused = false
 local lastGlobalPlaybackRevision = 0
-ControllerFunctions.bindActiveAudioPlayingSignal()
 
 -- One controller-owned source contract. The legacy Sound remains the active
 -- implementation until every route is migrated and a Studio cutover is validated.
-local activeAudioSource: any = { kind = "Sound", instance = musicSound }
 ControllerFunctions.getAudioSnapshot = function()
 	local source = activeAudioSource
 	if typeof(source) ~= "table" then
@@ -785,6 +784,8 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 	end
 	return true, nil
 end
+
+ControllerFunctions.bindActiveAudioPlayingSignal()
 
 -- One controller-owned cancellation seam for a future dual-deck transition.
 -- It is deliberately a no-op until a Crossfade manager is safely constructed.
