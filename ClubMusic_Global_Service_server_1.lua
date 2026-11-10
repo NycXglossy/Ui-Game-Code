@@ -39,7 +39,6 @@ local CONFIG = {
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
 		Queue = "ClubMusic_Global_Queue_v1",
-		SyncHealth = "ClubMusic_Global_SyncHealth_v1",
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -573,7 +572,7 @@ local globalHealthService: any = nil
 -- Cross-server sync is verified with peer heartbeats, not inferred from DataStore access.
 local SYNC_HEARTBEAT_INTERVAL_SECONDS = 60
 local SYNC_HEARTBEAT_TIMEOUT_SECONDS = 180
-local syncHeartbeatTopic = CONFIG.Topics.SyncHealth
+local syncHeartbeatTopic = CONFIG.Topics.Queue
 local subscriptionStatus: {[string]: string} = {[syncHeartbeatTopic] = "Starting"}
 local peerHeartbeats: {[string]: {seenAt: number, reportedAt: number}} = {}
 local hasSeenSyncPeer = false
@@ -866,7 +865,15 @@ end
 
 local function onQueueChanged(message)
 	local data = if typeof(message) == "table" then message.Data else nil
-	if not validEnvelope(data) or data.kind ~= "QueueChanged" or not finiteNumber(data.revision) then return end
+	if not validEnvelope(data) then return end
+	if data.kind == "ServerHeartbeat" then
+		if typeof(data.serverJob) ~= "string" or #data.serverJob < 1 or #data.serverJob > 64
+			or data.serverJob ~= data.senderJob or data.serverJob == JOB_ID then return end
+		peerHeartbeats[data.serverJob] = {seenAt = os.clock(), reportedAt = math.floor(data.at)}
+		hasSeenSyncPeer = true
+		return
+	end
+	if data.kind ~= "QueueChanged" or not finiteNumber(data.revision) then return end
 	if not unseen(data.id) then return end
 	-- The originating controller already applies the state returned by its
 	-- successful mutation. Ignore our own echo to avoid a redundant DataStore read.
@@ -881,17 +888,7 @@ local function onQueueChanged(message)
 	globalEventBindable:Fire({kind = "QueueChanged", revision = math.floor(data.revision), senderJob = data.senderJob})
 end
 
-local function onSyncHeartbeat(message)
-	local data = if typeof(message) == "table" then message.Data else nil
-	if not validEnvelope(data) or data.kind ~= "ServerHeartbeat"
-		or typeof(data.serverJob) ~= "string" or #data.serverJob < 1 or #data.serverJob > 64
-		or data.serverJob ~= data.senderJob then return end
-	if data.serverJob == JOB_ID then return end
-	peerHeartbeats[data.serverJob] = {seenAt = os.clock(), reportedAt = math.floor(data.at)}
-	hasSeenSyncPeer = true
-end
-
-local function subscribeWithRetry(topic: string, callback: (any) -> ())
+remove separate callbacklocal function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	task.spawn(function()
 		while SERVICE_ENABLED do
@@ -917,10 +914,9 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
 	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
-	subscribeWithRetry(CONFIG.Topics.SyncHealth, onSyncHeartbeat)
 	task.spawn(function()
 		while SERVICE_ENABLED do
-			local published = publishTopic(CONFIG.Topics.SyncHealth, {kind = "ServerHeartbeat", serverJob = JOB_ID})
+			local published = publishTopic(CONFIG.Topics.Queue, {kind = "ServerHeartbeat", serverJob = JOB_ID})
 			if published then lastHeartbeatPublishAt = os.clock() end
 			task.wait(SYNC_HEARTBEAT_INTERVAL_SECONDS)
 		end
