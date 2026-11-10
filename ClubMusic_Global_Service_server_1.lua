@@ -888,7 +888,7 @@ local function onQueueChanged(message)
 	globalEventBindable:Fire({kind = "QueueChanged", revision = math.floor(data.revision), senderJob = data.senderJob})
 end
 
-remove separate callbacklocal function subscribeWithRetry(topic: string, callback: (any) -> ())
+local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	task.spawn(function()
 		while SERVICE_ENABLED do
