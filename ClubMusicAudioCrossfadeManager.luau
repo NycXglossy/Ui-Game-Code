@@ -22,6 +22,18 @@ local function safeMethod(object: any, methodName: string, ...: any): (boolean, 
 	return pcall(object[methodName], object, ...)
 end
 
+local function readOutgoingGain(context: any): (boolean, number)
+	if typeof(context) ~= "table" or typeof(context.GetOutgoingGain) ~= "function" then
+		return false, 0
+	end
+	local ok, value = pcall(context.GetOutgoingGain)
+	if not ok or typeof(value) ~= "number" or value ~= value
+		or value < 0 or value > 1 or value == math.huge then
+		return false, 0
+	end
+	return true, value
+end
+
 local function setOutgoingGain(context: any, gain: number): boolean
 	-- Missing gain control is a hard failure, never a silent full-volume fallback.
 	if typeof(context) ~= "table" or typeof(context.SetOutgoingGain) ~= "function" then
@@ -35,6 +47,7 @@ function Manager.new(context)
 	assert(typeof(context) == "table", "Crossfade manager requires controller context.")
 	assert(typeof(context.CreateDeck) == "function", "Crossfade manager requires CreateDeck.")
 	assert(typeof(context.SetOutgoingGain) == "function", "Crossfade manager requires SetOutgoingGain; refusing an unsafe full-volume dual-deck fade.")
+	assert(typeof(context.GetOutgoingGain) == "function", "Crossfade manager requires GetOutgoingGain so it can preserve the active gain profile.")
 	assert(typeof(context.OnCommit) == "function", "Crossfade manager requires OnCommit.")
 	return setmetatable({
 		context = context,
@@ -51,12 +64,16 @@ function Manager:Cancel()
 	self.active = false
 	local incoming = self.incoming
 	self.incoming = nil
+	local restoreGain = self.outgoingBaseGain
+	self.outgoingBaseGain = nil
 	if incoming then
 		safeMethod(incoming, "Stop")
 		safeMethod(incoming, "Cleanup")
 	end
 	-- Restore the still-controller-owned outgoing deck after an interrupted fade.
-	setOutgoingGain(self.context, 1)
+	if typeof(restoreGain) == "number" then
+		setOutgoingGain(self.context, restoreGain)
+	end
 	return true
 end
 
@@ -83,8 +100,15 @@ function Manager:Begin(asset: string, duration: number)
 		end
 	end
 
+	local gainOk, outgoingBaseGain = readOutgoingGain(self.context)
+	if not gainOk then
+		safeMethod(incoming, "Cleanup")
+		return false, "Could not read the outgoing audio gain."
+	end
+
 	local generation = self.generation + 1
 	self.generation = generation
+	self.outgoingBaseGain = outgoingBaseGain
 	self.incoming = incoming
 	self.active = true
 
@@ -119,15 +143,15 @@ function Manager:Begin(asset: string, duration: number)
 		local step = 0.05
 		while elapsed < duration and self.generation == generation and not self.destroyed do
 			local alpha = math.clamp(elapsed / duration, 0, 1)
-			local incomingOk, incomingResult = safeMethod(incoming, "SetGain", alpha)
+			local incomingOk, incomingResult = safeMethod(incoming, "SetGain", outgoingBaseGain * alpha)
 			if not incomingOk or incomingResult == false then self:Cancel(); return end
-			if not setOutgoingGain(self.context, 1 - alpha) then self:Cancel(); return end
+			if not setOutgoingGain(self.context, outgoingBaseGain * (1 - alpha)) then self:Cancel(); return end
 			task.wait(step)
 			elapsed += step
 		end
 		if self.generation ~= generation or self.destroyed or self.incoming ~= incoming then return end
 
-		local fullGainOk, fullGainResult = safeMethod(incoming, "SetGain", 1)
+		local fullGainOk, fullGainResult = safeMethod(incoming, "SetGain", outgoingBaseGain)
 		if not fullGainOk or fullGainResult == false or not setOutgoingGain(self.context, 0) then
 			self:Cancel()
 			return
@@ -138,6 +162,7 @@ function Manager:Begin(asset: string, duration: number)
 		if not commitOk or commitResult == false then self:Cancel(); return end
 		if self.generation ~= generation or self.incoming ~= incoming then return end
 		self.incoming = nil
+		self.outgoingBaseGain = nil
 		self.active = false
 	end)
 	return true, nil
