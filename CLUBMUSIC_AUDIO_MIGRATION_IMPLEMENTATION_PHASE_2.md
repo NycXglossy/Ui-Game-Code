@@ -297,3 +297,8 @@ Added a narrow gold active-destination marker to the desktop side rail. It appea
 ## Dedicated staff playlist destination — phase 25
 
 Added a dedicated Playlists destination to the client navigation for authorized staff. It reuses the existing server-backed playlist manager UI and existing `GetMusicPlaylists`, create/play/delete/reorder/remove actions; it does not create another playlist store or remote. The All Tracks destination now focuses on the paginated catalog and retains the selected-playlist add-destination affordance, so staff can choose a playlist in Playlists and then add catalog tracks from All Tracks. The Playlists tab is hidden and guarded by the existing staff permission level. A native playlist-list icon was added to the navigation. Renderer source was re-fetched and compared after the update; no Studio permission/UI test was run.
+
+
+## Dedicated live queue destination — phase 26
+
+Added a Queue destination that displays the authoritative current-track snapshot and the complete upcoming queue, including requester/Auto DJ source, VIP priority, genre where known, and duration. Staff retain the existing move-up and remove actions on each queued item; listeners receive a read-only view. The Home page remains a compact now-playing/queue summary, while Queue provides the full queue workspace. The page reads the existing sanitized UI state and uses existing `DJMoveUp`/`DJRemove` actions; no new remote or queue implementation was added. Navigation grouping now places Queue with the listening destinations. Renderer source was re-fetched and compared after the update; no Studio or multiplayer UI test was run.
