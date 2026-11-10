@@ -13,6 +13,7 @@ export type Dependencies = {
     invalidateSnapshot: () -> (),
     initialRetrySeconds: number?,
     maxRetrySeconds: number?,
+    reportError: ((string, string, any, Instance?) -> any)?,
 }
 
 function RecoveryService.new(dependencies: Dependencies)
@@ -51,6 +52,9 @@ function RecoveryService:_setStatus(state: string, detail: string)
     local signature = state .. "|" .. detail
     if signature ~= self.lastSignature then
         self.lastSignature = signature
+        if state == "Degraded" and type(self.dependencies.reportError) == "function" then
+            pcall(self.dependencies.reportError, "GlobalRecovery", "SharedQueueProbe", detail, nil)
+        end
         if state == "Healthy" then
             print("[ClubMusic Global Recovery] " .. detail)
         elseif state ~= "Disabled" then
