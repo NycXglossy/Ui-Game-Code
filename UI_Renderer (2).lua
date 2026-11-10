@@ -1181,7 +1181,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		BorderSizePixel = 0,
 		Visible = false,
 	}, panel) :: Frame
-	local tabs = {"Home","Music","All Tracks","Audio ID","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Moderation"}
+	local tabs = {"Home","Music","All Tracks","Playlists","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Audio ID","Moderation"}
 	local function addNavGroup(text: string, order: number)
 		local heading = make("TextLabel", {
 			Name = "NavGroup" .. text:gsub("%s", ""),
@@ -1257,6 +1257,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			for i = 0, 2 do
 				line("TrackLine"..i, .22, .27 + i * .23, .56, .065)
 				if i < 2 then navIconPart(icon, "TrackDot"..i, .13, .265 + i * .23, .09, .09, ink, 1) end
+			end
+		elseif tabName == "Playlists" then
+			for i = 0, 2 do
+				ring("PlaylistDot"..i, .13, .24 + i * .25, .12, .12)
+				line("PlaylistLine"..i, .36, .27 + i * .25, .50, .065)
 			end
 		elseif tabName == "DJ Booth" then
 			ring("VinylOuter", .15, .15, .70, .70); ring("VinylInner", .29, .29, .42, .42)
@@ -2236,10 +2241,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 	end
 
-	local function renderAllTracks()
-		sectionLabel("ALL TRACKS")
+	local function renderAllTracks(showPlaylists: boolean?)
+		sectionLabel(if showPlaylists == true then "PLAYLIST LIBRARY" else "ALL TRACKS")
 
-		if perm() >= 1 then
+		if showPlaylists == true and perm() >= 1 then
 			sectionLabel("STAFF PLAYLISTS")
 
 			-- A read-only snapshot keeps playlist editing grounded in the same
@@ -2448,6 +2453,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				end
 			end)
 		end
+
+		if showPlaylists == true then return end
 
 		if perm() >= 1 and selectedPlaylistId ~= nil then
 			local targetCard = card(42)
@@ -3978,7 +3985,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local renderers: {[string]: () -> ()} = {
 		["Home"] = renderHome,
 		["Music"] = renderMusic,
-		["All Tracks"] = renderAllTracks,
+		["All Tracks"] = function() renderAllTracks(false) end,
+		["Playlists"] = function() renderAllTracks(true) end,
 		["Audio ID"] = renderAudioId,
 		["DJ Booth"] = renderDJ,
 		["XP & Boosts"] = renderXPBoosts,
@@ -3993,9 +4001,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function refreshNav()
 		local moderationButton = navButtons["Moderation"]
 		if moderationButton then moderationButton.Visible = perm() >= 1 end
+		local playlistsButton = navButtons["Playlists"]
+		if playlistsButton then playlistsButton.Visible = perm() >= 1 end
 		local audioButton = navButtons["Audio ID"]
 		if audioButton then audioButton.Visible = perm() >= 1 end
-		if (activeTab == "Moderation" or activeTab == "Audio ID") and perm() < 1 then activeTab = "Home" end
+		if (activeTab == "Moderation" or activeTab == "Audio ID" or activeTab == "Playlists") and perm() < 1 then activeTab = "Home" end
 	end
 
 	local function applyMenuTypography()
