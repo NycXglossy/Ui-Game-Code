@@ -207,6 +207,8 @@ Manager.__index = Manager
 
 export type Deck = {
 	SetGain: (self: any, gain: number) -> (boolean, string?),
+	SetAsset: (self: any, asset: string) -> (boolean, string?),
+	IsReady: (self: any) -> boolean,
 	Play: (self: any, asset: string?, position: number?) -> (boolean, string?),
 	Stop: (self: any) -> (boolean, string?),
 	GetTimePosition: (self: any) -> number,
@@ -274,7 +276,7 @@ function Manager:Begin(asset: string, duration: number)
 	if not createOk or typeof(incoming) ~= "table" then
 		return false, "Could not create the incoming audio deck."
 	end
-	for _, methodName in ipairs({ "Play", "SetGain", "Stop", "Cleanup" }) do
+	for _, methodName in ipairs({ "Play", "SetGain", "SetAsset", "IsReady", "Stop", "Cleanup" }) do
 		if typeof(incoming[methodName]) ~= "function" then
 			pcall(function() incoming:Cleanup() end)
 			return false, "Incoming audio deck is missing " .. methodName .. "."
@@ -291,13 +293,28 @@ function Manager:Begin(asset: string, duration: number)
 		self:Cancel()
 		return false, tostring(gainError or "Could not initialize incoming deck gain.")
 	end
-	local playOk, playResult, playError = safeMethod(incoming, "Play", asset, 0)
-	if not playOk or playResult == false then
+	local assetOk, assetResult, assetError = safeMethod(incoming, "SetAsset", asset)
+	if not assetOk or assetResult == false then
 		self:Cancel()
-		return false, tostring(playError or "Could not start incoming audio deck.")
+		return false, tostring(assetError or "Could not assign the incoming asset.")
 	end
 
+	-- Wait for the incoming asset before fading; otherwise the outgoing deck
+	-- could be attenuated while the AudioPlayer is still buffering.
 	task.spawn(function()
+		local readyDeadline = os.clock() + 8
+		local ready = false
+		while os.clock() < readyDeadline and self.generation == generation
+			and self.active and self.incoming == incoming and not self.destroyed do
+			local readyOk, readyValue = safeMethod(incoming, "IsReady")
+			if readyOk and readyValue == true then ready = true; break end
+			task.wait(0.1)
+		end
+		if self.generation ~= generation or not self.active or self.incoming ~= incoming or self.destroyed then return end
+		if not ready then self:Cancel(); return end
+
+		local playOk, playResult = safeMethod(incoming, "Play", nil, 0)
+		if not playOk or playResult == false then self:Cancel(); return end
 		local elapsed = 0
 		local step = 0.05
 		while elapsed < duration and self.generation == generation and not self.destroyed do
