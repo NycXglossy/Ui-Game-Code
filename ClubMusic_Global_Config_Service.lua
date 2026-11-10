@@ -2,11 +2,28 @@
 -- Validated, revisioned shared configuration with safe local defaults.
 local Service={}; Service.__index=Service
 local DEFAULTS={maintenanceEnabled=false,maintenanceMessage="",allowPlayerRequests=true,metricsEnabled=true,auditEnabled=true,messageMaxBytes=4096,messageMaxAgeSeconds=120,suspiciousSignalThreshold=8,idempotencyTtlSeconds=120,monitoringEnabled=true}
+local POLICY_RANGES={
+ messageMaxBytes={512,4096},
+ messageMaxAgeSeconds={30,300},
+ suspiciousSignalThreshold={3,100},
+ idempotencyTtlSeconds={30,600},
+}
+local function validValue(key,value)
+ local default=DEFAULTS[key]
+ if default==nil or typeof(value)~=typeof(default) then return false end
+ local range=POLICY_RANGES[key]
+ if range then
+  return typeof(value)=="number" and value==value and value>-math.huge and value<math.huge
+   and value%1==0 and value>=range[1] and value<=range[2]
+ end
+ if key=="maintenanceMessage" then return #value<=240 end
+ return true
+end
 local function validate(raw)
  local out={}
  for k,v in pairs(DEFAULTS) do
   local candidate=if typeof(raw)=="table" then raw[k] else nil
-  if typeof(candidate)==typeof(v) then
+  if validValue(k,candidate) then
    if k=="maintenanceMessage" then out[k]=string.sub(candidate,1,240) else out[k]=candidate end
   else out[k]=v end
  end
@@ -26,8 +43,7 @@ function Service:Refresh()
  self.state="Healthy"; self.lastError=nil; return true
 end
 function Service:Set(key,value,actor)
- if not self.d.isEnabled() or type(key)~="string" or DEFAULTS[key]==nil or typeof(value)~=typeof(DEFAULTS[key]) then return false,"Invalid or disabled config update." end
- if key=="maintenanceMessage" and #value>240 then return false,"Message too long." end
+ if not self.d.isEnabled() or type(key)~="string" or not validValue(key,value) then return false,"Invalid or disabled config update." end
  if not self.d.allowStoreOperation() then return false,"Shared configuration budget unavailable." end
  local ok,result=pcall(function()
   return self.store:UpdateAsync("config",function(old)
