@@ -118,6 +118,14 @@ These validated keys are stored in the existing shared `ClubMusic_GlobalConfig_v
 
 Incident kinds are allowlisted: `SecurityAlert`, `ServiceDegraded`, `AbuseReport`, and `ManualReview`. Security monitoring currently records invalid message envelopes and explicit `ReportSignal` calls; it does not infer malicious intent from a single event.
 
+### Final security hardening
+
+- The shared Config Service validates security-policy numeric ranges itself, so the generic `SetGlobalConfig` API cannot bypass the stricter Security Policy Service checks. Invalid persisted policy values are replaced with safe defaults when loaded.
+- Cross-server envelope validation is fail-closed. If `ClubMusic_Global_Message_Validation_Service` is missing or fails during initialization, incoming cross-server messages are rejected rather than accepted by a weaker fallback validator.
+- Existing per-server message-ID deduplication remains in place for fan-out MessagingService delivery. The shared Idempotency API is for callers that possess a stable operation ID across retries; it is not incorrectly used as a global fan-out lock that would suppress delivery to other servers.
+- Kohl's Admin remains the command interface. The controller's server-only rank resolver and the global authorization adapter independently enforce the required permission level. Clients cannot invoke the ServerStorage BindableFunctions.
+- Security monitoring and incident response are observational/manual. They do not automatically ban, kick, or stop playback.
+
 ### Phase 2 installation and validation
 
 1. Add the six security ModuleScripts as direct children of `ServerStorage`.
