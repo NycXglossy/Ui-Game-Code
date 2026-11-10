@@ -322,3 +322,8 @@ The compact Home queue preview now includes a View All action that opens the ded
 ## Playlist-to-catalog workflow shortcut — phase 30
 
 When staff select a saved playlist in the dedicated Playlists destination, the page now shows the selected destination and an Add Tracks action. That action opens All Tracks, where the existing catalog cards use the selected playlist ID and existing `PlaylistAddTrack` network action. This reduces navigation friction while keeping playlist selection local and all edits server-authoritative. Renderer source was re-fetched and compared after the update; no Studio workflow test was run.
+
+
+## Queue-to-catalog navigation — phase 31
+
+The full Queue workspace now has a Browse shortcut in its section header, taking listeners and staff to the existing All Tracks catalog. This complements the Home-to-Queue shortcut and completes a simple dashboard → queue → catalog navigation loop without changing request validation or queue state. Renderer source was re-fetched and compared after the update; no Studio interaction test was run.
