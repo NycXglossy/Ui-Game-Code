@@ -1,7 +1,7 @@
 --!strict
 -- Validated, revisioned shared configuration with safe local defaults.
 local Service={}; Service.__index=Service
-local DEFAULTS={maintenanceEnabled=false,maintenanceMessage="",allowPlayerRequests=true,metricsEnabled=true,auditEnabled=true}
+local DEFAULTS={maintenanceEnabled=false,maintenanceMessage="",allowPlayerRequests=true,metricsEnabled=true,auditEnabled=true,messageMaxBytes=4096,messageMaxAgeSeconds=120,suspiciousSignalThreshold=8,idempotencyTtlSeconds=120,monitoringEnabled=true}
 local function validate(raw)
  local out={}
  for k,v in pairs(DEFAULTS) do
