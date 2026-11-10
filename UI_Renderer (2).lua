@@ -2877,12 +2877,20 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 			if shown == 0 then
 				local empty = make("Frame", {
-					Size = UDim2.new(1, -4, 0, 52),
+					Size = UDim2.new(1, -4, 0, 64),
 					BackgroundColor3 = C.Surface,
 					BorderSizePixel = 0,
 				}, results)
 				corner(empty, 12)
-				label(empty, "No tracks match your search or filter.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+				label(empty, "No tracks match your search or filter.", UDim2.fromOffset(14, 5), UDim2.new(1, -142, 0, 48), C.Muted, 11, false)
+				actionButton(empty, "RESET FILTERS", UDim2.new(1, -124, 0.5, -15), UDim2.fromOffset(112, 30), function()
+					trackSearch = ""
+					searchBox.Text = ""
+					trackGenreFilter = "all"
+					catalogOffset = 0
+					refreshChips()
+					requestCatalogPage(0)
+				end, C.SurfaceLight)
 			end
 		end
 
