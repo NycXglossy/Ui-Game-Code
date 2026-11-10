@@ -282,3 +282,8 @@ The crossfade manager now reports failures from incoming-deck stopping/cleanup a
 ## UI redesign foundation — phase 22
 
 The client renderer now supports a responsive desktop side-rail navigation mode on sufficiently wide desktop viewports. In this mode, the existing destinations move from a horizontal tab strip into a vertically scrollable rail, while the content region shifts right and expands vertically. The selected destination is scrolled into view vertically. Mobile, tablet, console, VR, and narrower desktop layouts retain the existing horizontal navigation and content geometry. This is a layout-only migration: existing tab renderers, catalog/search, queue, playlists, staff tools, network actions, and player controls are preserved; no new remotes or duplicate services were introduced. The renderer source was re-fetched and compared after the update. No Roblox Studio viewport/device runtime tests were run.
+
+
+## Desktop navigation hierarchy — phase 23
+
+The wide-desktop rail now groups existing destinations under Listen, Festival, and Staff headings and adds a subtle divider between navigation and content. Group headings are shown only in side-rail mode; the compact horizontal navigation remains unchanged on smaller layouts. Existing permission visibility for Audio ID and Moderation is preserved, as are tab callbacks and scroll-to-selected behavior. No tab content or network contracts changed. Renderer source was re-fetched and compared after the update; no in-Studio layout validation was run.
