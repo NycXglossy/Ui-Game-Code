@@ -499,10 +499,10 @@ bindFunction("ClearGlobalQueue", function()
 	return ok, state, message
 end)
 
-bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallbackEntry: any, catalogRevision: any)
+bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallbackEntry: any, catalogRevision: any, expectedNextEntryId: any?)
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry, catalogRevision)
+	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry, catalogRevision, expectedNextEntryId)
 	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
 	return ok, state, message
 end)
