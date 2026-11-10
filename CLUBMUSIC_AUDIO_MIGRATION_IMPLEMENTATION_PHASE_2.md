@@ -248,3 +248,10 @@ Added `ControllerFunctions.createAudioCrossfadeManager()` as an explicit, dorman
 Ownership and revision guards are captured when a transition begins (when the manager requests the outgoing gain), not when the factory is created. Every outgoing gain update is rejected if the active source or source revision changes. The commit callback revalidates ownership and pause state, validates the incoming AudioPlayer, transfers the controller's active source, increments its revision, rebinds the playing signal, and cleans up a previous backend only after ownership transfers. The factory itself is never called at startup, and no crossfade is started by this change.
 
 This is controller wiring preparation, not activation. Existing `ServerMusicSound` remains the live source unless a future explicit, tested transition is invoked. GitHub source was fetched again after update and verified; no Roblox Studio runtime or multiplayer tests were run.
+
+
+## Muted-at-construction crossfade decks — phase 17
+
+Hardened the incoming-deck creation path against a brief audible startup window. `ClubMusicAudioBackend.new` now accepts an optional `InitialGain` setting, clamps it to 0–1, and applies it to the AudioFader before the graph is connected for playback. The controller's crossfade deck factory passes `InitialGain = 0`, so a newly created incoming deck is silent from construction rather than relying on a later `SetGain(0)` call to mute it.
+
+The standalone backend and the embedded ModuleScript source in `ClubMusic_Audio_Server_Modules.rbxmx` were verified byte-for-byte after the update. The controller source was re-fetched and verified. This remains dormant preparation; no crossfade activation or Studio runtime test was performed.
