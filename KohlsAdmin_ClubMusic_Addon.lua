@@ -227,4 +227,20 @@ return function(_K: any)
 	register("clubmusic-setsecuritypolicy", "Update a validated ClubMusic security policy setting.", "Administration", "SecurityPolicySet", {"cmpolicyset"}, {
 		{type = "string", name = "Setting", description = "Policy key and value, for example suspiciousSignalThreshold 10.", optional = false},
 	})
+
+	-- Read-only operational diagnostics and controlled maintenance tools.
+	register("clubmusic-health", "Show local and cross-server ClubMusic health.", "Administration", "OperationalHealth", {"cmhealth"})
+	register("clubmusic-diagnostics", "Show a safe ClubMusic diagnostic snapshot.", "Administration", "OperationalDiagnostics", {"cmdiagnostics"})
+	register("clubmusic-services", "List ClubMusic operational and security service states.", "Administration", "OperationalServices", {"cmservices"})
+	register("clubmusic-errors", "Show recent ClubMusic error IDs and subsystem metadata.", "Administration", "OperationalErrors", {"cmerrors"})
+	register("clubmusic-metrics", "Show ClubMusic queue, playback, and service metrics.", "Administration", "OperationalMetrics", {"cmmetrics"})
+	register("clubmusic-securitylog", "Show recent ClubMusic security audit events.", "Administration", "OperationalSecurityLog", {"cmsecuritylog"})
+	register("clubmusic-servers", "List registered ClubMusic servers and heartbeat status.", "Administration", "OperationalServers", {"cmserverlist"})
+	register("clubmusic-ratelimit", "Show shared ClubMusic rate-limit counters.", "Administration", "OperationalRateLimit", {"cmratelimit"})
+	register("clubmusic-config", "Show validated ClubMusic global configuration.", "Administration", "OperationalConfig", {"cmconfig"})
+	register("clubmusic-recovery", "Show ClubMusic shared-queue recovery status.", "Administration", "OperationalRecovery", {"cmrecovery"})
+	register("clubmusic-reconcile", "Run a read-only authoritative queue reconciliation check.", "Administration", "OperationalReconcile", {"cmreconcile"})
+	register("clubmusic-maintenance", "Show or change ClubMusic global maintenance mode.", "Administration", "OperationalMaintenance", {"cmmaintenance"}, {
+		{type = "string", name = "Action", description = "Use on [message], off, or status.", optional = true},
+	})
 end
