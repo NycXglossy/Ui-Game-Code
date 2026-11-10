@@ -70,3 +70,23 @@ Static source verification confirms:
 - The diagnostics callback contains no storage calls or state mutation.
 
 No Roblox Studio runtime or live multi-server test was run by the assistant. In a dedicated test server, invoke the BindableFunction from a temporary trusted server Script and confirm that it returns health/recovery data without changing queue or playback state.
+
+
+## Cross-server synchronization verification
+
+The health monitor now distinguishes shared-storage health from MessagingService synchronization health.
+
+- Each enabled server publishes a small `ServerHeartbeat` message every 60 seconds on the existing global queue topic, `ClubMusic_Global_Queue_v1`.
+- The existing queue-topic subscriber recognizes heartbeat messages separately from `QueueChanged` notifications; heartbeat messages do not invalidate queue snapshots or trigger playback changes.
+- The monitor tracks whether the queue-topic subscription is active, whether heartbeat publishing succeeds, and whether peer-server heartbeats arrive.
+- A peer is considered stale after 180 seconds without a heartbeat.
+- If a peer was previously observed and all peer heartbeats go stale, sync status becomes `Degraded`. If no peer has ever been observed, sync is `Unverified`, not falsely reported as confirmed healthy or definitively broken. This is expected when only one server is running.
+- A failed queue-topic subscription or repeated heartbeat publish failure is reported as `Degraded`.
+
+The health monitor exposes `syncState` and `syncStatus` in `GetGlobalHealth`, and the diagnostics response includes a top-level `syncStatus`. The API folder also publishes `SyncStatus` and `SyncPeerCount` attributes.
+
+The heartbeat checks the same MessagingService topic used for queue invalidation, so a peer heartbeat confirms that the queue-topic subscription is receiving messages. It does not guarantee that every individual queue event is delivered; DataStore remains authoritative and the existing snapshot reconciliation path remains the correctness mechanism.
+
+## Phase 2 verification additions
+
+Static source verification confirms the queue-topic heartbeat is separate from queue mutation handling, peer heartbeats are time-bounded, the subscription state is tracked, and sync state is surfaced through health and diagnostics. No Roblox Studio runtime or multi-server test was run by the assistant.
