@@ -3642,7 +3642,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	-- Horizontal row of selectable chips. Returns the row so callers can rebuild it.
 	local function chipRow(parent: Instance, y: number, options: {any}, getSelected: () -> string, onPick: (string) -> (), tint: ((any) -> Color3?)?)
-		local compactChips = currentDevice == "Mobile" or currentDevice == "Tablet"
+		local compactChips = currentDevice == "Mobile" or currentDevice == "Tablet" or (content.AbsoluteSize.X > 0 and content.AbsoluteSize.X < 540)
 		local chipHeight = if compactChips then 28 else 30
 		local chipTextSize = if compactChips then 9 else 10
 		local chipPadding = if compactChips then 9 else 11
