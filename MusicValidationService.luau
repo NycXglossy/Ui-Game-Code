@@ -49,6 +49,31 @@ function MusicValidationService:GetAudioAssetInfo(assetId)
 	return true, info
 end
 
+-- Return one bounded metadata shape for every validated audio asset.
+-- Duration remains supplied by the controller's actual preload, never Marketplace metadata.
+function MusicValidationService:NormalizeAudioMetadata(assetId, info, duration)
+	local numericId = tonumber(assetId)
+	if not numericId or numericId < 1 or numericId % 1 ~= 0 or typeof(info) ~= "table" then
+		return nil
+	end
+	local rawCreator = info.Creator
+	local creator = if typeof(rawCreator) == "table" then rawCreator.Name else nil
+	local title = if typeof(info.Name) == "string" then info.Name else "Untitled audio"
+	if typeof(creator) ~= "string" or creator == "" then creator = "Unknown" end
+	if typeof(duration) ~= "number" or duration ~= duration or duration % 1 ~= 0 or duration < 1 or duration > 3600 then
+		return nil
+	end
+	return {
+		assetId = numericId,
+		soundId = "rbxassetid://" .. tostring(numericId),
+		title = string.sub(title, 1, 60),
+		artist = string.sub(creator, 1, 40),
+		genre = "Creator Hub Audio",
+		duration = duration,
+		metadataSource = "MarketplaceService",
+	}
+end
+
 -- ====================================
 -- MUSIC ID VALIDATION
 -- ====================================
