@@ -61,6 +61,14 @@ function MusicPlaybackManager:GetSound(): Sound?
 end
 
 function MusicPlaybackManager:IsPlaying(): boolean
+	-- Prefer the controller's canonical backend-neutral snapshot. The Sound
+	-- accessor remains a compatibility fallback for older injected contexts.
+	if not self.destroyed and typeof(self.context.GetAudioSnapshot) == "function" then
+		local ok, snapshot = pcall(self.context.GetAudioSnapshot)
+		if ok and typeof(snapshot) == "table" and typeof(snapshot.playing) == "boolean" then
+			return snapshot.playing
+		end
+	end
 	local sound = self:GetSound()
 	return sound ~= nil and sound.IsPlaying
 end
@@ -84,6 +92,15 @@ function MusicPlaybackManager:GetElapsedTime(): number
 	end
 	local song = self:GetCurrentSong()
 	if typeof(song) == "table" and typeof(song.elapsed) == "number" then return math.max(0, song.elapsed) end
+	if not self.destroyed and typeof(self.context.GetAudioSnapshot) == "function" then
+		local ok, snapshot = pcall(self.context.GetAudioSnapshot)
+		if ok and typeof(snapshot) == "table" then
+			local position = tonumber(snapshot.position)
+			if position and position == position and math.abs(position) < math.huge then
+				return math.max(0, position)
+			end
+		end
+	end
 	local sound = self:GetSound()
 	return if sound then math.max(0, sound.TimePosition) else 0
 end
