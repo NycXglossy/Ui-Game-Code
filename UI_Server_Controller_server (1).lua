@@ -599,6 +599,8 @@ local nowPlaying: any = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
+local pendingCrossfadeGlobalRevision = -1
+local pendingCrossfadeGlobalCommitted = false
 local audioTransitionTrackToken = 0
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
@@ -1027,8 +1029,39 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			local entry = pendingCrossfadeEntry
 			if not outgoing or activeAudioSource ~= outgoing
 				or audioSourceRevision ~= transitionRevision or playbackPaused
-				or globalQueueMode or not entry or queue[1] ~= entry
-				or pendingCrossfadeToken ~= audioTransitionTrackToken then
+				or not entry or pendingCrossfadeToken ~= audioTransitionTrackToken then
+				return false
+			end
+			local isGlobalTransition = globalQueueMode
+			if isGlobalTransition then
+				if pendingCrossfadeGlobalRevision < 0 then return false end
+				local queueHeadMatches = queue[1] ~= nil and queue[1].id == entry.id
+					and globalTrackRevision == pendingCrossfadeGlobalRevision
+				if not queueHeadMatches and not pendingCrossfadeGlobalCommitted then return false end
+				if not pendingCrossfadeGlobalCommitted then
+					local callOk, didAdvance, state, message = ControllerFunctions.globalInvoke(
+						"AdvanceGlobalQueue", pendingCrossfadeGlobalRevision, nil,
+						localCatalogRevision, entry.id
+					)
+					if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
+					local committedEntry = if typeof(state) == "table" then state.current else nil
+					local committed = typeof(committedEntry) == "table"
+						and committedEntry.id == entry.id
+						and typeof(state.playback) == "table"
+						and tonumber(state.playback.trackRevision) > pendingCrossfadeGlobalRevision
+					if not committed and syncGlobalQueueSnapshot then
+						local syncOk = syncGlobalQueueSnapshot()
+						committed = syncOk == true and pendingCrossfadeGlobalCommitted == true
+					end
+					if not committed then
+						if not callOk then warn("[ClubMusic][Crossfade] Global queue commit unavailable: " .. tostring(didAdvance)) end
+						if didAdvance ~= true and message then
+							warn("[ClubMusic][Crossfade] Global queue did not commit the prepared entry: " .. tostring(message))
+						end
+						return false
+					end
+				end
+			elseif queue[1] ~= entry then
 				return false
 			end
 			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
@@ -1071,11 +1104,15 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return false
 			end
 
-			-- Commit only the exact queue entry whose asset was prepared.
-			local popOk, popped = pcall(function()
-				if not queueManager then return nil end
-				return queueManager:PopNext()
-			end)
+			-- Local mode owns a mutable queue table. Global mode has already
+			-- committed the exact entry through the shared DataStore CAS above.
+			local popOk, popped = true, entry
+			if not isGlobalTransition then
+				popOk, popped = pcall(function()
+					if not queueManager then return nil end
+					return queueManager:PopNext()
+				end)
+			end
 			if not popOk or popped ~= entry then
 				activeAudioSource = outgoing
 				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
@@ -1089,6 +1126,8 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			end
 			audioSourceRevision += 1
 			ControllerFunctions.setNowPlaying(entry, true)
+			pendingCrossfadeGlobalRevision = -1
+			pendingCrossfadeGlobalCommitted = false
 			task.defer(function()
 				ControllerFunctions.topUpAuto()
 				publishState(nil)
@@ -2403,6 +2442,8 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	audioTransitionTrackToken += 1
 	pendingCrossfadeEntry = nil
 	pendingCrossfadeToken = -1
+	pendingCrossfadeGlobalRevision = -1
+	pendingCrossfadeGlobalCommitted = false
 	crossfadeAttemptedGeneration = -1
 	crossfadeBoundaryWaitGeneration = -1
 	autoQueueHold = false
@@ -2490,7 +2531,16 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 	if not ControllerFunctions.isFiniteNumber(restartRevision) or restartRevision < 0 or restartRevision % 1 ~= 0 then return false end
 	local current = state.current
 	if typeof(current) == "table" and typeof(current.trackId) == "string" then
-		if nowPlaying.trackId ~= current.trackId then
+		local pendingManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
+		local pendingPreparedEntry = pendingCrossfadeEntry
+		local preservePreparedCrossfade = pendingManager ~= nil and pendingManager.active == true
+			and typeof(pendingPreparedEntry) == "table"
+			and pendingCrossfadeToken == audioTransitionTrackToken
+			and pendingCrossfadeGlobalRevision >= 0
+			and revision > pendingCrossfadeGlobalRevision
+			and typeof(current) == "table" and current.id == pendingPreparedEntry.id
+		if preservePreparedCrossfade then pendingCrossfadeGlobalCommitted = true end
+		if nowPlaying.trackId ~= current.trackId and not preservePreparedCrossfade then
 			local entry: QueueEntry = {
 				id = tostring(current.id), trackId = current.trackId, title = tostring(current.title),
 				artist = tostring(current.artist), duration = tonumber(current.duration) or 1,
@@ -2505,28 +2555,33 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 		-- Apply it even if the optional position helper is temporarily unavailable.
 		playbackPaused = state.playback.paused == true
 		local restartObserved = globalPlaybackInitialized and restartRevision > previousRestartRevision
-		if restartObserved then
+		if preservePreparedCrossfade then
+			-- Keep the outgoing deck untouched until the prepared incoming deck
+			-- completes its local fade and commits controller ownership.
+		elseif restartObserved then
 			ControllerFunctions.cancelAudioTransition("global-restart-reconcile")
 			nowPlaying.elapsed = 0
 			pcall(function() ControllerFunctions.startServerMusic(nowPlaying.soundId) end)
 		elseif ControllerFunctions.isFiniteNumber(state.playback.position) then
 			nowPlaying.elapsed = math.clamp(state.playback.position, 0, nowPlaying.duration)
 		end
-		local positionCallOk, position = ControllerFunctions.globalInvoke("GetGlobalPlaybackPosition", state)
-		if positionCallOk and ControllerFunctions.isFiniteNumber(position) then
-			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
-		end
-		pcall(function()
-			local audio = ControllerFunctions.getAudioSnapshot()
-			if audio.asset ~= nowPlaying.soundId then
-				if nowPlaying.soundId ~= "" then ControllerFunctions.startServerMusic(nowPlaying.soundId)
-				else ControllerFunctions.stopServerMusic(); ControllerFunctions.setAudioAsset("") end
+		if not preservePreparedCrossfade then
+			local positionCallOk, position = ControllerFunctions.globalInvoke("GetGlobalPlaybackPosition", state)
+			if positionCallOk and ControllerFunctions.isFiniteNumber(position) then
+				nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
 			end
-			audio = ControllerFunctions.getAudioSnapshot()
-			if audio.ready and math.abs(audio.position - nowPlaying.elapsed) > 2 then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
-			if playbackPaused then ControllerFunctions.pauseAudio()
-			elseif not audio.playing and nowPlaying.soundId ~= "" then ControllerFunctions.playAudio() end
-		end)
+			pcall(function()
+				local audio = ControllerFunctions.getAudioSnapshot()
+				if audio.asset ~= nowPlaying.soundId then
+					if nowPlaying.soundId ~= "" then ControllerFunctions.startServerMusic(nowPlaying.soundId)
+					else ControllerFunctions.stopServerMusic(); ControllerFunctions.setAudioAsset("") end
+				end
+				audio = ControllerFunctions.getAudioSnapshot()
+				if audio.ready and math.abs(audio.position - nowPlaying.elapsed) > 2 then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
+				if playbackPaused then ControllerFunctions.pauseAudio()
+				elseif not audio.playing and nowPlaying.soundId ~= "" then ControllerFunctions.playAudio() end
+			end)
+		end
 		globalTrackRevision = revision
 		globalRestartRevision = restartRevision
 		globalPlaybackInitialized = true
@@ -6048,10 +6103,10 @@ task.spawn(function()
 			end
 		end
 
-		-- Prepare the next local-queue deck ahead of the boundary. Global queue
-		-- mode stays on its existing authoritative transition path until a
-		-- cross-server fade reservation/commit protocol is available.
-		if not playbackPaused and not globalQueueMode and nowPlaying.trackId ~= ""
+		-- Each server prepares the same authoritative global queue head. At fade
+		-- completion the queue service CAS commits that exact entry once; peers
+		-- accept the same committed entry rather than advancing a second time.
+		if not playbackPaused and nowPlaying.trackId ~= ""
 			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
 			local remaining = nowPlaying.duration - nowPlaying.elapsed
 			local managers = ControllerFunctions.ChildManagers
@@ -6070,10 +6125,14 @@ task.spawn(function()
 				crossfadeAttemptedGeneration = currentGeneration
 				pendingCrossfadeEntry = nextEntry
 				pendingCrossfadeToken = audioTransitionTrackToken
+				pendingCrossfadeGlobalRevision = if globalQueueMode then globalTrackRevision else -1
+				pendingCrossfadeGlobalCommitted = false
 				local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
 				if not started then
 					pendingCrossfadeEntry = nil
 					pendingCrossfadeToken = -1
+					pendingCrossfadeGlobalRevision = -1
+					pendingCrossfadeGlobalCommitted = false
 					warn("[ClubMusic][Crossfade] Automatic transition was not started; normal track advance remains available: " .. tostring(startError))
 				end
 			end
