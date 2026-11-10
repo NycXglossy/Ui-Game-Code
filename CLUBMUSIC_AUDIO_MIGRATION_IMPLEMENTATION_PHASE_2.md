@@ -302,3 +302,8 @@ Added a dedicated Playlists destination to the client navigation for authorized 
 ## Dedicated live queue destination — phase 26
 
 Added a Queue destination that displays the authoritative current-track snapshot and the complete upcoming queue, including requester/Auto DJ source, VIP priority, genre where known, and duration. Staff retain the existing move-up and remove actions on each queued item; listeners receive a read-only view. The Home page remains a compact now-playing/queue summary, while Queue provides the full queue workspace. The page reads the existing sanitized UI state and uses existing `DJMoveUp`/`DJRemove` actions; no new remote or queue implementation was added. Navigation grouping now places Queue with the listening destinations. Renderer source was re-fetched and compared after the update; no Studio or multiplayer UI test was run.
+
+
+## Permission-aware navigation grouping — phase 27
+
+The desktop rail now hides the Staff group heading for listeners without staff permissions, in addition to hiding the protected Playlists, Audio ID, and Moderation destinations. The heading reappears when the current state grants the existing staff permission level. No authorization logic moved client-side; server validation remains authoritative. Renderer source was re-fetched and compared after the update; no Studio permission transition test was run.
