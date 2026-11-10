@@ -2924,6 +2924,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				end)
 			end
 		end)
+		-- Keep the typing debounce for normal use, but let keyboard users submit
+		-- immediately with Enter instead of waiting for the debounce interval.
+		searchBox.FocusLost:Connect(function(enterPressed: boolean)
+			if not enterPressed or destroyed then return end
+			trackSearch = string.sub(searchBox.Text, 1, 48)
+			catalogOffset = 0
+			catalogRequestSerial += 1
+			requestCatalogPage(0)
+		end)
 		requestCatalogPage(catalogOffset)
 	end
 
