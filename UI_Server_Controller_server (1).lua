@@ -672,6 +672,37 @@ ControllerFunctions.getAudioSnapshot = function()
 		asset = sound.SoundId,
 	}
 end
+-- Gain is owned by the active source. Keep the crossfade/profile contract
+-- backend-neutral so a transition never assumes the outgoing deck is at 100%.
+ControllerFunctions.getAudioGain = function(sourceOverride: any?): (boolean, number)
+	local source = sourceOverride or activeAudioSource
+	if typeof(source) ~= "table" then return false, 0 end
+	if source.kind == "Backend" and source.backend then
+		local ok, value = pcall(function() return source.backend:GetGain() end)
+		if not ok or typeof(value) ~= "number" or not ControllerFunctions.isFiniteNumber(value)
+			or value < 0 or value > 1 then return false, 0 end
+		return true, value
+	end
+	local sound = source.instance
+	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false, 0 end
+	local value = sound.Volume
+	if not ControllerFunctions.isFiniteNumber(value) or value < 0 or value > 1 then return false, 0 end
+	return true, value
+end
+ControllerFunctions.setAudioGain = function(value: number, sourceOverride: any?): boolean
+	if not ControllerFunctions.isFiniteNumber(value) or value < 0 or value > 1 then return false end
+	local source = sourceOverride or activeAudioSource
+	if typeof(source) ~= "table" then return false end
+	if source.kind == "Backend" and source.backend then
+		local ok, result = pcall(function() return source.backend:SetGain(value) end)
+		return ok and result ~= false
+	end
+	local sound = source.instance
+	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
+	local ok = pcall(function() sound.Volume = value end)
+	return ok
+end
+
 ControllerFunctions.setAudioAsset = function(asset: string)
 	audioSourceRevision += 1
 	local source = activeAudioSource
@@ -775,6 +806,11 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 		return ok and result ~= false
 	end
 
+	local outgoingGainOk, outgoingGain = ControllerFunctions.getAudioGain(outgoing)
+	if not outgoingGainOk then
+		candidateCleanup()
+		return false, "Outgoing audio gain could not be read safely."
+	end
 	local gainOk, gainResult = pcall(function() return candidate:SetGain(0) end)
 	if not gainOk or gainResult == false then
 		candidateCleanup()
@@ -836,7 +872,7 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 		return false, "Outgoing audio could not be stopped; the previous source was restored."
 	end
 
-	local fullGainOk, fullGainResult = pcall(function() return candidate:SetGain(1) end)
+	local fullGainOk, fullGainResult = pcall(function() return candidate:SetGain(outgoingGain) end)
 	if not fullGainOk or fullGainResult == false then
 		restoreOutgoing()
 		candidateCleanup()
