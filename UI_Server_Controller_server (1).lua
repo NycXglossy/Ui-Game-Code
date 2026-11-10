@@ -714,11 +714,9 @@ end
 -- is still required before any production enablement.
 ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, string?)
 	if typeof(candidate) ~= "table" then return false, "A prepared audio backend is required." end
-	for _, methodName in ipairs({ "IsReady", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetGain", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
+	for _, methodName in ipairs({ "IsReady", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetAsset", "SetGain", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
 		if typeof(candidate[methodName]) ~= "function" then return false, "Audio backend is missing " .. methodName .. "." end
 	end
-	local readyOk, ready = pcall(function() return candidate:IsReady() end)
-	if not readyOk or ready ~= true then return false, "Incoming audio backend is not ready." end
 	local playerOk, player = pcall(function() return candidate:GetPlayer() end)
 	if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer") then
 		return false, "Incoming audio backend has no valid AudioPlayer."
@@ -733,10 +731,24 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 	if wasPlaying and wasPaused then wasPlaying = false end
 	ControllerFunctions.cancelAudioTransition("audio-source-adoption")
 	local gainOk, gainResult = pcall(function() return candidate:SetGain(0) end)
-	if not gainOk or gainResult == false then return false, "Incoming audio backend could not be muted for handoff." end
-	local playOk, playResult = pcall(function() return candidate:Play(asset, position) end)
+	if not gainOk or gainResult == false then pcall(function() candidate:Cleanup() end); return false, "Incoming audio backend could not be muted for handoff." end
+	local assetOk, assetResult = pcall(function() return candidate:SetAsset(asset) end)
+	if not assetOk or assetResult == false then pcall(function() candidate:Cleanup() end); return false, "Incoming audio backend could not load the current asset." end
+	local deadline = os.clock() + 8
+	local ready = false
+	while os.clock() < deadline do
+		if activeAudioSource ~= outgoing or ControllerFunctions.getAudioSnapshot().asset ~= asset then
+			pcall(function() candidate:Cleanup() end)
+			return false, "The current track changed while the incoming backend was loading."
+		end
+		local readyOk, readyValue = pcall(function() return candidate:IsReady() end)
+		if readyOk and readyValue == true then ready = true; break end
+		task.wait(0.1)
+	end
+	if not ready then pcall(function() candidate:Cleanup() end); return false, "Incoming audio backend did not become ready before the handoff timeout." end
+	local playOk, playResult = pcall(function() return candidate:Play(nil, position) end)
 	if not playOk or playResult == false then
-		pcall(function() candidate:Stop() end)
+		pcall(function() candidate:Cleanup() end)
 		return false, "Incoming audio backend could not start for handoff."
 	end
 	if wasPaused then
