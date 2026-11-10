@@ -6081,17 +6081,11 @@ task.spawn(function()
 
 		if shouldAdvance then
 			local crossfade = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
-			if crossfade and crossfade.active and pendingCrossfadeToken == audioTransitionTrackToken
-				and not globalQueueMode then
-				if crossfadeBoundaryWaitGeneration ~= currentGeneration then
-					crossfadeBoundaryWaitGeneration = currentGeneration
-					crossfadeBoundaryWaitStartedAt = os.clock()
-				end
-				if os.clock() - crossfadeBoundaryWaitStartedAt < 2 then
-					shouldAdvance = false
-				else
-					ControllerFunctions.cancelAudioTransition("crossfade-boundary-timeout")
-				end
+			if crossfade and crossfade.active and pendingCrossfadeToken == audioTransitionTrackToken then
+				-- Never race the in-flight deck commit with a second queue advance.
+				-- The manager owns completion or cancellation; normal advance resumes
+				-- on the next clock tick if preparation/fade/commit fails.
+				shouldAdvance = false
 			end
 		end
 
