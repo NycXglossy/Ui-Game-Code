@@ -18,7 +18,7 @@ end
 function Service:Flush()
  if not self.d.isEnabled() then return false end
  local snapshot={counters=table.clone(self.counters),latency=table.clone(self.latency),updatedAt=os.time()}
- local ok,err=pcall(function() self.map:UpdateAsync(self.d.jobId,function(old)
+ local ok,err=pcall(function() self.map:UpdateAsync("aggregate",function(old)
   local nextValue=if typeof(old)=="table" then old else {counters={},latency={}}
   nextValue.counters=if typeof(nextValue.counters)=="table" then nextValue.counters else {}
   nextValue.latency=if typeof(nextValue.latency)=="table" then nextValue.latency else {}
@@ -29,7 +29,17 @@ function Service:Flush()
  if not ok then self.lastError=tostring(err); return false end
  table.clear(self.counters); table.clear(self.latency); self.lastFlush=os.time(); return true
 end
-function Service:GetStatus() return {state=if not self.d.isEnabled() then "Disabled" else if self.lastError then "Degraded" else "Healthy",counters=table.clone(self.counters),lastFlush=self.lastFlush,lastError=self.lastError} end
+function Service:GetAggregate()
+ if not self.d.isEnabled() then return false,nil,"Disabled" end
+ local ok,value=pcall(function() return self.map:GetAsync("aggregate") end)
+ if not ok then self.lastError=tostring(value); return false,nil,self.lastError end
+ return true,if typeof(value)=="table" then table.clone(value) else {counters={},latency={},updatedAt=0}
+end
+function Service:GetStatus()
+ local aggregateOk,aggregate,aggregateError=self:GetAggregate()
+ return {state=if not self.d.isEnabled() then "Disabled" else if self.lastError or not aggregateOk then "Degraded" else "Healthy",
+  counters=table.clone(self.counters),aggregate=aggregate,lastFlush=self.lastFlush,lastError=self.lastError or aggregateError}
+end
 function Service:Start() if self.running then return false end; self.running=true; task.spawn(function() while self.running do self:Flush(); task.wait(60) end end); return true end
 function Service:Stop() self.running=false; self:Flush() end
 return Service
