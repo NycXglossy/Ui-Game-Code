@@ -1072,8 +1072,11 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			end
 
 			-- Commit only the exact queue entry whose asset was prepared.
-			local popped = queueManager and queueManager:PopNext()
-			if popped ~= entry then
+			local popOk, popped = pcall(function()
+				if not queueManager then return nil end
+				return queueManager:PopNext()
+			end)
+			if not popOk or popped ~= entry then
 				activeAudioSource = outgoing
 				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
 				if outgoingWasPlaying then
