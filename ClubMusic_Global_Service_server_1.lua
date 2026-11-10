@@ -79,6 +79,7 @@ local globalMessageValidationService: any = nil
 local globalIdempotencyService: any = nil
 local globalIncidentResponseService: any = nil
 local globalSecurityPolicyService: any = nil
+local authorizeGlobalActor: (any, string) -> boolean
 local budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
 local moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 local globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
@@ -883,7 +884,7 @@ globalAuthorizationService = createOperationalService("ClubMusic_Global_Authoriz
 	end,
 }, {"Start", "GetStatus", "Check"})
 if globalAuthorizationService then globalAuthorizationService:Start() end
-local function authorizeGlobalActor(actorUserId: any, permission: string): boolean
+authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
 	if not globalAuthorizationService then return false end
 	local ok, allowed = pcall(globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission)
 	return ok and allowed == true
