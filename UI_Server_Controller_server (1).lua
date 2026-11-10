@@ -4394,6 +4394,49 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local trackLabel = currentTitle .. (if currentArtist ~= "" then " — " .. currentArtist else "")
 		return true, string.sub(string.format("ClubMusic: %s | %s | Requests %s | Queue %d (%s) | %ds/%ds", trackLabel, playbackLabel, requestLabel, queueCount, queueModeLabel, elapsed, duration), 1, 450)
 	end
+	if operation == "DJSessionStatus" then
+		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
+		if not manager then return false, "DJ session module is not installed in ServerStorage.ClubMusicAudioModules." end
+		local state = manager:GetState()
+		local current = state.current
+		if not current then return true, "No DJ session is currently active." end
+		return true, string.sub(string.format("Active DJ session: %s (UserId %d).", tostring(current.name), current.userId), 1, 180)
+	end
+	if operation == "DJSessionStart" then
+		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
+		if not manager then return false, "DJ session module is not installed in ServerStorage.ClubMusicAudioModules." end
+		local started, sessionOrMessage = manager:Start(caller)
+		if not started then return false, tostring(sessionOrMessage) end
+		caller:SetAttribute("ClubMusicActiveDJSession", true)
+		return true, "DJ session started for " .. caller.Name .. "."
+	end
+	if operation == "DJSessionHandoff" then
+		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
+		if not manager then return false, "DJ session module is not installed in ServerStorage.ClubMusicAudioModules." end
+		if typeof(argument) ~= "string" or #argument < 1 or #argument > 16 or not string.match(argument, "^%d+$") then
+			return false, "Use ;cmdjhandoff with the target staff member's numeric UserId."
+		end
+		local targetUserId = tonumber(argument)
+		if not targetUserId or targetUserId < 1 or targetUserId % 1 ~= 0 or targetUserId > 9007199254740991 then
+			return false, "A valid target UserId is required."
+		end
+		local target = Players:GetPlayerByUserId(targetUserId)
+		if not target or target.Parent ~= Players then return false, "The target player must be connected to this server." end
+		if not ControllerFunctions.isStaff(target) then return false, "The target must have ClubMusic staff permissions." end
+		local handedOff, sessionOrMessage = manager:Handoff(caller, target)
+		if not handedOff then return false, tostring(sessionOrMessage) end
+		caller:SetAttribute("ClubMusicActiveDJSession", false)
+		target:SetAttribute("ClubMusicActiveDJSession", true)
+		return true, "DJ session handed off to " .. target.Name .. "."
+	end
+	if operation == "DJSessionEnd" then
+		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
+		if not manager then return false, "DJ session module is not installed in ServerStorage.ClubMusicAudioModules." end
+		local ended, message = manager:End(caller)
+		if not ended then return false, tostring(message) end
+		caller:SetAttribute("ClubMusicActiveDJSession", false)
+		return true, "DJ session ended."
+	end
 	if operation == "Queue" then
 		if globalQueueMode and (not syncGlobalQueueSnapshot or not syncGlobalQueueSnapshot()) then
 			return false, "The shared queue could not be refreshed. Try ;cmqueue again shortly."
@@ -4815,6 +4858,37 @@ local skipVoteManagerOk, skipVoteManager = pcall(childManagerModules.MusicSkipVo
 if not skipVoteManagerOk then error("[ClubMusic] MusicSkipVoteManager initialization failed: " .. tostring(skipVoteManager)) end
 ControllerFunctions.ChildManagers.SkipVote = skipVoteManager
 
+-- Optional DJ session facade. It lives in the separately installed audio module
+-- folder and never grants staff roles or changes queue/playback ownership.
+local audioModulesFolder = ServerStorage:FindFirstChild("ClubMusicAudioModules")
+local djSessionModule = audioModulesFolder and audioModulesFolder:FindFirstChild("ClubMusicDJSessionManager")
+if djSessionModule and djSessionModule:IsA("ModuleScript") then
+	local djRequireOk, djSessionClass = pcall(require, djSessionModule)
+	if djRequireOk and typeof(djSessionClass) == "table" and typeof(djSessionClass.new) == "function" then
+		local djSessionOk, djSessionManager = pcall(djSessionClass.new, {
+			Authorize = function(player: Player, _action: string): boolean
+				return player.Parent == Players and ControllerFunctions.isStaff(player)
+			end,
+			OnHandoff = function(fromPlayer: Player, toPlayer: Player): boolean
+				if fromPlayer.Parent ~= Players or toPlayer.Parent ~= Players then return false end
+				if not ControllerFunctions.isStaff(fromPlayer) or not ControllerFunctions.isStaff(toPlayer) then return false end
+				fromPlayer:SetAttribute("ClubMusicActiveDJSession", false)
+				toPlayer:SetAttribute("ClubMusicActiveDJSession", true)
+				return true
+			end,
+		})
+		if djSessionOk then
+			ControllerFunctions.ChildManagers.DJSession = djSessionManager
+		else
+			warn("[ClubMusic][DJSession] Optional manager initialization failed: " .. tostring(djSessionManager))
+		end
+	else
+		warn("[ClubMusic][DJSession] Optional module failed validation/load: " .. tostring(djSessionClass))
+	end
+else
+	warn("[ClubMusic][DJSession] Optional module not found at ServerStorage.ClubMusicAudioModules. DJ session commands are unavailable.")
+end
+
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
 	local ok, err = pcall(ControllerFunctions.handleAction, player, action, payload)
@@ -5229,6 +5303,11 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
+	local djSessionManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
+	if djSessionManager then
+		local endedSession = djSessionManager:EndForDeparture(userId)
+		if endedSession then player:SetAttribute("ClubMusicActiveDJSession", false) end
+	end
 	if settleAllXP then ControllerFunctions.settlePlayerXP(player, os.clock()) end
 	xpLastAwardAt[userId] = nil
 	xpFractional[userId] = nil
