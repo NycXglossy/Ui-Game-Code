@@ -203,3 +203,17 @@ The controller's active-output count now follows the active source and rebinds i
 **No cutover is performed in this phase.** The controller does not construct `ClubMusicAudioBackend`, does not call `adoptAudioBackend`, and does not instantiate crossfade. `ServerMusicSound` remains the live source and the existing MusicGroup route remains intact. This handoff seam is source-integrated only; it still needs static review and Studio validation of asset readiness, paused transfer, failure rollback, event counts, output routing, and multi-client behavior before being called from production flow.
 
 No Roblox Studio runtime or multiplayer tests were run.
+
+## Handoff race and rollback hardening — phase 12
+
+A focused review of the dormant handoff against the actual ClubMusicAudioBackend contract found several edge cases. The controller handoff now:
+
+- Tracks an audio-source revision and invalidates a pending handoff when the controller changes the asset, stops, starts, pauses, resumes, plays, or seeks the outgoing source while the candidate is loading.
+- Rechecks source identity, asset, revision, and paused state after the readiness wait and immediately before stopping the outgoing source. This prevents a same-asset restart or a playhead mutation from being mistaken for an unchanged playback session.
+- Allows an already-paused current track to transfer; previously, the playing == false snapshot caused paused playback to be rejected.
+- Restores the outgoing source at the captured playhead on rollback, including re-applying the paused state for both the legacy Sound and a modern backend.
+- Cleans up the incoming candidate on failed preparation/commit, and rejects an attempt to adopt the already-active backend.
+
+The backend contract confirms that Play(nil, position) is supported after SetAsset(asset), and that Pause() preserves its position in backend state before stopping the AudioPlayer. This phase therefore fixes controller-side contract and lifecycle handling without changing the backend module or its package.
+
+**Safety boundary remains unchanged:** the backend is still not constructed by the controller, the adoption seam is still not called automatically, the legacy ServerMusicSound remains the only live main output, and crossfade remains disabled. These are static source changes only; asset readiness, actual audio output, rollback behavior, and multiplayer behavior still require Roblox Studio validation before cutover.
