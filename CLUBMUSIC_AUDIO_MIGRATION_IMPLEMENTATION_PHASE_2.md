@@ -68,3 +68,20 @@ This is a compatibility seam only. It does **not** activate AudioPlayer playback
 ### Audio routing constraint confirmed against current Roblox documentation
 
 A server-created AudioDeviceOutput with no Player assigned is heard by everyone. A Player-targeted AudioDeviceOutput can target one player. Therefore a true individual-volume design must provide separate per-player output/fader routes (or a verified client-local route) and must not leave a global output active alongside those routes, or listeners can receive duplicate audio. The existing renderer's local SoundGroup fallback is retained until that routing is implemented. See the Roblox Creator Hub AudioDeviceOutput and Audio objects documentation.
+
+
+## Follow-up integration update — modern probes and staff preview
+
+The next independent legacy dependencies have now been migrated:
+
+- Controller `AudioProbe` now uses an `AudioPlayer` with `AutoLoad`, `Asset`, `IsReady`, and `TimeLength`. The existing metadata validation, `PreloadAsync`, timeout, in-flight inspection slot, late completion cleanup, and permission-failure response are retained.
+- Renderer staff preview now creates a client-local graph: `AudioPlayer -> AudioFader -> AudioDeviceOutput`, with the output targeted to the mounting player. Volume changes update the preview fader. Ended, timeout, replacement, renderer destruction, and GUI destruction clean up the graph.
+- Main shared playback still uses the legacy canonical Sound. This was intentional: migrating probes and preview does not prove that the shared server output, client-local volume, or full controller transition lifecycle is ready.
+
+Follow-up commits:
+- `e690f7e` — staff preview migrated to a local AudioPlayer graph.
+- `00dc20e` — controller asset inspection migrated to AudioPlayer readiness.
+
+The local preview output is targeted to the mounting player because Roblox documents `AudioDeviceOutput.Player` as the intended listener; an unset Player routes the stream to everyone. The probe uses AudioPlayer.Asset and IsReady, with ContentProvider.PreloadAsync retained for the existing asynchronous inspection contract.
+
+These changes are source-integrated but still require Studio validation of private/restricted assets, output routing, preview cancellation, and concurrent timeout cleanup.
