@@ -4146,7 +4146,18 @@ local function handleGlobalMessage(message: any)
 		if not globalQueueRefreshScheduled then
 			globalQueueRefreshScheduled = true
 			task.delay(0.2, function()
-				if globalQueueMode and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				-- MessagingService is only an invalidation hint. If a transient
+				-- DataStore read fails, retry the read with short backoff instead
+				-- of leaving this server's HUD mirror stale until the slow poll.
+				local retryDelays = {0, 1, 3}
+				for attempt, delaySeconds in ipairs(retryDelays) do
+					if delaySeconds > 0 then task.wait(delaySeconds) end
+					if not globalQueueMode or not syncGlobalQueueSnapshot then break end
+					if syncGlobalQueueSnapshot() then break end
+					if attempt == #retryDelays then
+						warn("[ClubMusic] Global queue refresh remained unavailable after retry attempts; periodic reconciliation will retry.")
+					end
+				end
 				globalQueueRefreshScheduled = false
 			end)
 		end
