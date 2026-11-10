@@ -86,6 +86,30 @@ function MusicPlaybackManager:GetElapsedTime(): number
 	return if sound then math.max(0, sound.TimePosition) else 0
 end
 
+-- Passive quality inspection; caller owns scheduling and recovery policy.
+-- No task loop, playback mutation, or automatic track transition is started here.
+function MusicPlaybackManager:InspectQuality()
+	if self.destroyed then return { state = "Unavailable", reason = "AdapterDestroyed" } end
+	local song = self:GetCurrentSong()
+	local sound = self:GetSound()
+	if typeof(song) ~= "table" or tostring(song.trackId or "") == "" then
+		return { state = "Idle" }
+	end
+	if tostring(song.soundId or "") == "" then
+		return { state = "SilentCatalogTrack" }
+	end
+	if not sound then return { state = "Unavailable", reason = "AudioInstanceMissing" } end
+	local elapsed = self:GetElapsedTime()
+	local isPlaying = sound.IsPlaying
+	local isLoaded = sound.IsLoaded
+	local length = if isLoaded then sound.TimeLength else 0
+	if isPlaying then return { state = "Playing", elapsed = elapsed, loaded = isLoaded, length = length } end
+	if isLoaded and length > 0 then
+		return { state = "StoppedAfterLoad", elapsed = elapsed, loaded = true, length = length }
+	end
+	return { state = "BufferingOrStopped", elapsed = elapsed, loaded = isLoaded, length = length }
+end
+
 function MusicPlaybackManager:GetRemainingTime(): number
 	local song = self:GetCurrentSong()
 	if typeof(song) ~= "table" then return 0 end
