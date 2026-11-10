@@ -488,6 +488,25 @@ bindFunction("CompleteCatalogRemoval", function(trackId: any)
 	return ok, state, message
 end)
 
+bindFunction("ReserveCatalogAddition", function(trackId: any, catalogRevision: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
+	local ok, state, message = MusicGlobalQueueService:ReserveCatalogAddition(trackId, catalogRevision)
+	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
+	return ok, state, message
+end)
+
+bindFunction("CompleteCatalogAddition", function(trackId: any)
+	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
+	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
+	local ok, state, message = MusicGlobalQueueService:CompleteCatalogAddition(trackId)
+	if ok then
+		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
+		publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
+	end
+	return ok, state, message
+end)
+
 bindFunction("AdvanceCatalogRevision", function()
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
