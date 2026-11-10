@@ -736,6 +736,7 @@ local globalPlaybackInitialized = false
 local publishState: (Player?) -> () = function(_player: Player?) end
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
+local enqueueGlobalQueueBatch: (({QueueEntry}) -> (boolean, string?))? = nil
 local activePlaylistId: string? = nil
 local activePlaylistName = ""
 local activePlaylistTracks: {Track} = {}
@@ -1558,6 +1559,29 @@ end
 
 local function topUpAuto()
 	if autoQueueHold then return end
+	if globalQueueMode then
+		-- Generate one refill and commit it atomically. The service rechecks the
+		-- queue target inside UpdateAsync so concurrent servers cannot overfill it.
+		if not enqueueGlobalQueueBatch then return end
+		local entries: {QueueEntry} = {}
+		local guard = 0
+		while #queue + #entries < CONFIG.AutoQueueTarget and guard < 10 do
+			guard += 1
+			local playlistTrack = nextPlaylistTrack()
+			if playlistTrack then
+				table.insert(entries, makeEntry(playlistTrack, "playlist", nil))
+			else
+				if activePlaylistId then
+					warn("[ClubMusic] Active playlist has no playable catalog tracks; returning to Auto DJ.")
+					activePlaylistId = nil; activePlaylistName = ""
+					table.clear(activePlaylistTracks); activePlaylistCursor = 1
+				end
+				table.insert(entries, makeEntry(pickAutoTrack(), "auto", nil))
+			end
+		end
+		if #entries > 0 then enqueueGlobalQueueBatch(entries) end
+		return
+	end
 	local guard = 0
 	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
 		guard += 1
@@ -1573,13 +1597,7 @@ local function topUpAuto()
 			end
 			entry = makeEntry(pickAutoTrack(), "auto", nil)
 		end
-		if globalQueueMode then
-			if not enqueueGlobalQueueEntry then break end
-			local queued = enqueueGlobalQueueEntry(entry)
-			if not queued then break end
-		else
-			queueManager:Insert(#queue + 1, entry)
-		end
+		queueManager:Insert(#queue + 1, entry)
 	end
 end
 
@@ -1874,6 +1892,18 @@ enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
 	if not callOk or writeOk ~= true then
 		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 		return false, tostring(message or "Global queue is unavailable.")
+	end
+	return true, nil
+end
+
+enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
+	local callOk, writeOk, state, message = globalInvoke(
+		"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget
+	)
+	if typeof(state) == "table" then applyGlobalQueueState(state) end
+	if not callOk or writeOk ~= true then
+		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		return false, tostring(message or "Global automatic queue refill is unavailable.")
 	end
 	return true, nil
 end
