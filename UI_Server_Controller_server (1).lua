@@ -135,6 +135,46 @@ local catalogFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction
 local playlistFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
 
 local serverStorage = game:GetService("ServerStorage")
+
+-- Diagnostics are optional: a missing handler must never prevent ClubMusic startup.
+local diagnosticsModule = serverStorage:FindFirstChild("ClubMusicErrorHandler")
+if diagnosticsModule and diagnosticsModule:IsA("ModuleScript") then
+	local diagnosticsOk, diagnosticsResult = pcall(require, diagnosticsModule)
+	if diagnosticsOk and typeof(diagnosticsResult) == "table"
+		and typeof(diagnosticsResult.Report) == "function"
+		and typeof(diagnosticsResult.SafeRequire) == "function"
+		and typeof(diagnosticsResult.DescribeChildren) == "function" then
+		ControllerFunctions.ErrorHandler = diagnosticsResult
+	else
+		warn("[ClubMusic][Diagnostics] ClubMusicErrorHandler failed validation/load; using built-in startup diagnostics. " .. tostring(diagnosticsResult))
+	end
+else
+	warn("[ClubMusic][Diagnostics] Optional ServerStorage.ClubMusicErrorHandler ModuleScript is not installed; using built-in startup diagnostics.")
+end
+
+ControllerFunctions.reportStartupError = function(subsystem: string, operation: string, message: string, context: Instance?): string
+	local errorId = "CM-STARTUP"
+	local handler = ControllerFunctions.ErrorHandler
+	if handler then
+		local reportOk, reportResult = pcall(handler.Report, subsystem, operation, message, context)
+		if reportOk and typeof(reportResult) == "string" then
+			errorId = reportResult
+		else
+			warn("[ClubMusic][Diagnostics] Error handler reporting failed: " .. tostring(reportResult))
+		end
+	else
+		warn("[ClubMusic][Error][" .. errorId .. "] " .. subsystem .. " / " .. operation .. ": " .. message)
+		if context then
+			warn("[ClubMusic][Diagnostics] Context=" .. context:GetFullName())
+		end
+	end
+	local startupMessage = "[" .. errorId .. "] " .. string.sub(message, 1, 850)
+	pcall(function()
+		remotes:SetAttribute("StartupError", startupMessage)
+	end)
+	return errorId
+end
+
 remotes:SetAttribute("StartupStage", "LoadingMusicCatalogService")
 local catalogModule = serverStorage:WaitForChild("MusicCatalogService", 20)
 remotes:SetAttribute("StartupStage", "LoadingMusicPlaylistService")
@@ -734,14 +774,48 @@ type PendingReceiptMemory = { profile: Profile, productData: {[string]: any} }
 local receiptMemoryPending: {[string]: PendingReceiptMemory} = {}
 local receiptMemoryApplied: {[string]: Profile} = {}
 local queue: {QueueEntry} = {}
-local ServerStorageForQueue = game:GetService("ServerStorage")
-local queueManagerModule = ServerStorageForQueue:WaitForChild("MusicQueueManager", 20)
-if not queueManagerModule or not queueManagerModule:IsA("ModuleScript") then
-	error("[ClubMusic] Missing ServerStorage.MusicQueueManager ModuleScript.")
+local ServerStorageForQueue = serverStorage
+remotes:SetAttribute("StartupStage", "LoadingMusicQueueManager")
+
+-- WaitForChild only searches direct children. Report both the direct-child inventory
+-- and any nested matches so incorrect placement is distinguishable from absence.
+local queueManagerModule = ServerStorageForQueue:FindFirstChild("MusicQueueManager")
+if not queueManagerModule then
+	queueManagerModule = ServerStorageForQueue:WaitForChild("MusicQueueManager", 20)
 end
-local queueManagerRequireOk, queueManagerRequireResult = pcall(require, queueManagerModule)
+if not queueManagerModule or not queueManagerModule:IsA("ModuleScript") then
+	local directChildren = if ControllerFunctions.ErrorHandler
+		then ControllerFunctions.ErrorHandler.DescribeChildren(ServerStorageForQueue)
+		else "<diagnostic handler unavailable>"
+	local nestedMatches = {}
+	for _, descendant in ipairs(ServerStorageForQueue:GetDescendants()) do
+		if string.lower(descendant.Name) == "musicqueuemanager" then
+			table.insert(nestedMatches, descendant:GetFullName() .. " [" .. descendant.ClassName .. "]")
+		end
+	end
+	local nestedDescription = if #nestedMatches > 0 then table.concat(nestedMatches, ", ") else "<no nested matches>"
+	local reason = if queueManagerModule then "Found direct child with wrong class: " .. queueManagerModule.ClassName else "Direct child not found"
+	local detail = reason .. ". Expected ServerStorage.MusicQueueManager (ModuleScript). ServerStorage direct children: "
+		.. directChildren .. ". Descendant matches: " .. nestedDescription
+	ControllerFunctions.reportStartupError("ModuleLoader", "Locate MusicQueueManager", detail, ServerStorageForQueue)
+	error("[ClubMusic] MusicQueueManager startup blocked. " .. detail)
+end
+
+local queueManagerRequireOk, queueManagerRequireResult
+if ControllerFunctions.ErrorHandler then
+	queueManagerRequireOk, queueManagerRequireResult = ControllerFunctions.ErrorHandler.SafeRequire(queueManagerModule, "ServerStorage.MusicQueueManager")
+else
+	queueManagerRequireOk, queueManagerRequireResult = pcall(require, queueManagerModule)
+end
 if not queueManagerRequireOk then
-	error("[ClubMusic] MusicQueueManager failed to load: " .. tostring(queueManagerRequireResult))
+	local detail = "MusicQueueManager failed to load: " .. tostring(queueManagerRequireResult)
+	ControllerFunctions.reportStartupError("ModuleLoader", "Require MusicQueueManager", detail, queueManagerModule)
+	error("[ClubMusic] " .. detail)
+end
+if typeof(queueManagerRequireResult) ~= "table" or typeof(queueManagerRequireResult.new) ~= "function" then
+	local detail = "MusicQueueManager must return a table with a .new() constructor."
+	ControllerFunctions.reportStartupError("ModuleLoader", "Validate MusicQueueManager", detail, queueManagerModule)
+	error("[ClubMusic] " .. detail)
 end
 local MusicQueueManager = queueManagerRequireResult
 ControllerFunctions.ChildManagerModules = {}
