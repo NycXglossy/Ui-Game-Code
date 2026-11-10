@@ -1940,7 +1940,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local homeHeading = sectionLabel("NOW PLAYING  /  LIVE QUEUE")
 		local homeHeadingTitle = homeHeading:FindFirstChild("SectionTitle")
 		if homeHeadingTitle and homeHeadingTitle:IsA("TextLabel") then
-			homeHeadingTitle.Size = UDim2.new(1, -100, 0, 25)
+			homeHeadingTitle.Size = UDim2.new(1, -108, 0, 25)
 		end
 		actionButton(homeHeading, "FULL PLAYER", UDim2.new(1, -92, 0, 3), UDim2.fromOffset(84, 24), function()
 			activeTab = "Music"
