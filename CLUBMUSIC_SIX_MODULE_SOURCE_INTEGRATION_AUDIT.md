@@ -59,3 +59,31 @@ Create ModuleScripts named `MusicQueueManager` and `MusicValidationService` dire
 ## Current status
 
 Source retrieval and compatibility audit are complete. Queue-manager shared-state adapter and validation metadata-cache adapter are committed. MusicSkipVoteManager has been reviewed and is intentionally excluded because the controller already owns this feature and the legacy module contains unsafe duplicate vote lifecycle logic. All six source modules have now been reviewed. Two were safely integrated as adapters (`MusicQueueManager`, `MusicValidationService`); four are intentionally not activated (`MusicPlaybackManager`, `MusicPlaylistManager`, `MusicSkipVoteManager`, `ServerMusicAudioHandler`) because they duplicate controller-owned responsibilities, require a separate feature decision, or risk conflicting ownership. No remaining Child Manager module needs to be installed for the current ClubMusic architecture. Static source checks are complete for the validation adapter; Roblox Studio runtime and multiplayer tests have not been run.
+
+## Controller-owned adapter rework (2026-11-10)
+
+The four previously inactive module source files have now been rewritten as dependency-injected, non-owning adapters. This changes their source compatibility; it does **not** make them independent playback or voting authorities, and it does not silently activate them inside the controller.
+
+| Module | New contract | Ownership retained by |
+|---|---|---|
+| `MusicPlaybackManager` | Requires injected snapshot, canonical Sound getter, and optional controller operation callbacks. Exposes read-only state plus delegated Play/Stop/Pause/Restart methods. No clocks, Heartbeat, Ended listeners, or remote broadcasts. | `UI_Server_Controller` |
+| `MusicPlaylistManager` | Requires the existing `MusicPlaylistService`; CRUD delegates to that service. Rotation state, start/stop, and next-track selection are optional injected controller callbacks. No private index, shuffle state, or MusicModule dependency. | `MusicPlaylistService` and `UI_Server_Controller` |
+| `MusicSkipVoteManager` | Requires injected controller vote snapshot and vote callback; voter departure cleanup is delegated. No RoleSystem, vote table, timer, rate-limit map, or transition callback of its own. | `UI_Server_Controller` |
+| `ServerMusicAudioHandler` | Requires the exact controller-managed `SoundService.ServerMusicSound` marked `ManagedByClubMusicController=true`. Read methods inspect that instance; mutations require injected controller callbacks. Cleanup only drops the adapter reference. | `UI_Server_Controller` |
+
+### Rework commits and verified blob SHAs
+
+- `MusicPlaybackManager.luau`: commit `596c0e562e0bbd4521f77feb6447d94df0a4a5bd`; blob `6d2586cbf2de339b2df5088cd8a6ae4fa3feba75`.
+- `MusicPlaylistManager.luau`: commit `b381ce9d057ceecd814da7bc0bf7d13e6c396972`; blob `4d213aa0c1536a34d5231305e08766dd436922f3`.
+- `MusicSkipVoteManager.luau`: commit `c62a12efcea186b56e9b969d3a6fd62c5e1bcb75`; blob `61a3a8bfab9dc2a19458d0f103db195e8cac5591`.
+- `ServerMusicAudioHandler.luau`: commit `3653ccca951b50704031bc66121328fc120071b0`; blob `52bdbf29e303ceab9b3cd8162d9cdcc5366c02cb`.
+
+### Static source checks
+
+The four updated files were fetched again from the target branch and their returned blob SHAs matched the update results. The replacements no longer contain the old MusicModule/RoleSystem dependencies, legacy MusicBroadcast/MusicUpdate remotes, independent queue/playback/vote/cursor state, or a Sound destroy call. The adapter code does not own a Heartbeat loop or Sound.Ended connection; occurrences of those terms in the playback module are explanatory comments only.
+
+### Activation and installation status
+
+These are now architecture-compatible adapter implementations, but they are not yet instantiated by `UI_Server_Controller`. Their constructors intentionally require injected callbacks so that no module guesses at controller internals or starts controlling playback by itself. Do not install them as additional active playback scripts or replace the controller. The next integration step is to wire explicit callback contexts at the controller's existing service boundaries, then run static call-site checks before any Studio test. The two already-integrated modules (`MusicQueueManager`, `MusicValidationService`) and all existing controller/admin behavior remain unchanged.
+
+No Luau compiler, Roblox Studio, or multiplayer runtime tests were run for this rework.
