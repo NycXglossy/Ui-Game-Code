@@ -1991,6 +1991,51 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 			act("VoteSkip", {})
 		end, if voted then C.SurfaceLight else C.Purple)
+		-- Fast genre discovery keeps the Home dashboard useful without requiring
+		-- listeners to open the full catalog first.
+		local featuredGenres = card(94)
+		label(featuredGenres, "EXPLORE THE SOUND", UDim2.fromOffset(12, 7), UDim2.new(1, -24, 0, 17), C.Gold, 10, true)
+		label(featuredGenres, "Jump straight into a music collection", UDim2.fromOffset(12, 24), UDim2.new(1, -24, 0, 14), C.Muted, 9, false)
+		local genreStrip = make("ScrollingFrame", {
+			Name = "FeaturedGenreStrip",
+			Position = UDim2.fromOffset(8, 45),
+			Size = UDim2.new(1, -16, 0, 38),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollBarThickness = 2,
+			ScrollingDirection = Enum.ScrollingDirection.X,
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.X,
+		}, featuredGenres) :: ScrollingFrame
+		make("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 7),
+		}, genreStrip)
+		for order, genre in ipairs({GENRES[1], GENRES[2], GENRES[3], GENRES[6], GENRES[8], GENRES[9]}) do
+			local genreButton = make("TextButton", {
+				Name = "FeaturedGenre_" .. genre.id,
+				AutomaticSize = Enum.AutomaticSize.X,
+				Size = UDim2.fromOffset(0, 30),
+				BackgroundColor3 = genre.color:Lerp(C.Base, 0.58),
+				Text = genre.name,
+				TextColor3 = C.White,
+				TextSize = 10,
+				Font = BOLD,
+				LayoutOrder = order,
+			}, genreStrip) :: TextButton
+			corner(genreButton, 10)
+			stroke(genreButton, genre.color, 1).Transparency = 0.35
+			make("UIPadding", {PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12)}, genreButton)
+			genreButton.Activated:Connect(function()
+				trackGenreFilter = genre.id
+				trackSearch = ""
+				catalogOffset = 0
+				activeTab = "All Tracks"
+				if renderTabFn then renderTabFn() end
+			end)
+		end
 	end
 
 	local function renderQueue()
