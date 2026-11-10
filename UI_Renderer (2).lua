@@ -1170,7 +1170,36 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local navIconLabels: {[string]: Frame} = {}
 	local navTextLabels: {[string]: TextLabel} = {}
 	local navIconBadges: {[string]: Frame} = {}
+	local navGroupLabels: {TextLabel} = {}
+	local navDivider = make("Frame", {
+		Name = "NavigationDivider",
+		Position = UDim2.fromOffset(150, 76),
+		Size = UDim2.new(0, 1, 1, -76),
+		BackgroundColor3 = C.Gold,
+		BackgroundTransparency = 0.84,
+		BorderSizePixel = 0,
+		Visible = false,
+	}, panel) :: Frame
 	local tabs = {"Home","Music","All Tracks","Audio ID","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Moderation"}
+	local function addNavGroup(text: string, order: number)
+		local heading = make("TextLabel", {
+			Name = "NavGroup" .. text:gsub("%s", ""),
+			Size = UDim2.fromOffset(136, 14),
+			BackgroundTransparency = 1,
+			Text = text,
+			TextColor3 = C.Cyan,
+			TextSize = 8,
+			Font = BOLD,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Center,
+			LayoutOrder = order,
+			Visible = false,
+		}, nav) :: TextLabel
+		table.insert(navGroupLabels, heading)
+	end
+	addNavGroup("LISTEN", 10)
+	addNavGroup("FESTIVAL", 60)
+	addNavGroup("STAFF", 120)
 	-- Navigation icons are assembled from native Frames, rounded corners and UIStrokes.
 	-- This avoids font-dependent Unicode glyphs and renders consistently on Roblox clients.
 	local function navIconPart(parent: Instance, name: string, x: number, y: number, w: number, h: number, color: Color3, radius: number?, rotation: number?): Frame
@@ -4117,7 +4146,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			Text = "",
 			AutoButtonColor = true,
 			Selectable = true,
-			LayoutOrder = index,
+			LayoutOrder = index * 10 + 5,
 		}, nav) :: TextButton
 		corner(button, 12)
 		local navStroke = stroke(button, C.Gold, 1)
@@ -4246,6 +4275,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		nav.ScrollingDirection = if sideRailMode then Enum.ScrollingDirection.Y else Enum.ScrollingDirection.X
 		nav.AutomaticCanvasSize = if sideRailMode then Enum.AutomaticSize.Y else Enum.AutomaticSize.X
 		nav.CanvasPosition = Vector2.zero
+		navDivider.Visible = sideRailMode
+		for index, heading in ipairs(navGroupLabels) do
+			heading.Visible = sideRailMode
+			heading.LayoutOrder = if index == 1 then 10 elseif index == 2 then 60 else 120
+		end
 		if sideRailMode then
 			nav.Position = UDim2.fromOffset(0, 76)
 			nav.Size = UDim2.new(0, 150, 1, -76)
@@ -4261,6 +4295,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local width = if sideRailMode then 136 elseif compactNav then 108 else 120
 			if not sideRailMode and (name == "Daily Rewards" or name == "XP & Boosts") then width += 12 end
 			button.Size = UDim2.fromOffset(width, navHeight)
+			button.LayoutOrder = (table.find(tabs, name) or 1) * 10 + 5
 			local badge = navIconBadges[name]
 			local glyph = navIconLabels[name]
 			local textLabel = navTextLabels[name]
