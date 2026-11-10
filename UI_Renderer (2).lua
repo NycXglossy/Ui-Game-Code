@@ -4396,7 +4396,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		toggleButton.Size = UDim2.fromOffset(profile.toggle, profile.toggle)
 		toggleButton.Position = profile.togglePos
 		toggleButton.TextSize = math.floor(profile.toggle * 0.52)
-		sideRailMode = currentDevice == "Desktop" and viewport.X >= 1180 and viewport.Y >= 650
+		local nextSideRailMode = currentDevice == "Desktop" and viewport.X >= 1180 and viewport.Y >= 650
+		local navigationModeChanged = sideRailMode ~= nextSideRailMode
+		sideRailMode = nextSideRailMode
 		local compactNav = currentDevice == "Mobile" or currentDevice == "Tablet"
 		local navHeight = if compactNav then 36 else 40
 		local iconSize = if currentDevice == "Mobile" then 23 elseif currentDevice == "Tablet" then 25 else 27
@@ -4404,7 +4406,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		navLayout.FillDirection = if sideRailMode then Enum.FillDirection.Vertical else Enum.FillDirection.Horizontal
 		nav.ScrollingDirection = if sideRailMode then Enum.ScrollingDirection.Y else Enum.ScrollingDirection.X
 		nav.AutomaticCanvasSize = if sideRailMode then Enum.AutomaticSize.Y else Enum.AutomaticSize.X
-		nav.CanvasPosition = Vector2.zero
+		-- LastInputTypeChanged also fires when the player begins scrolling with
+		-- the mouse/touch. Preserve their manually scrolled tab-strip position
+		-- during ordinary layout refreshes; reset only when its axis changes.
+		if navigationModeChanged then nav.CanvasPosition = Vector2.zero end
 		navDivider.Visible = sideRailMode
 		for index, heading in ipairs(navGroupLabels) do
 			heading.Visible = sideRailMode and (index ~= 3 or perm() >= 1)
