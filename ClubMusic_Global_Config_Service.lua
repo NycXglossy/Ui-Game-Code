@@ -26,7 +26,7 @@ function Service:Refresh()
  self.state="Healthy"; self.lastError=nil; return true
 end
 function Service:Set(key,value,actor)
- if not self.d.isEnabled() or DEFAULTS[key]==nil or typeof(value)~=typeof(DEFAULTS[key]) then return false,"Invalid or disabled config update." end
+ if not self.d.isEnabled() or type(key)~="string" or DEFAULTS[key]==nil or typeof(value)~=typeof(DEFAULTS[key]) then return false,"Invalid or disabled config update." end
  if key=="maintenanceMessage" and #value>240 then return false,"Message too long." end
  if not self.d.allowStoreOperation() then return false,"Shared configuration budget unavailable." end
  local ok,result=pcall(function()
