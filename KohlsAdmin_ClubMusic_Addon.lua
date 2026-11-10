@@ -65,9 +65,12 @@ return function(_K: any)
 		end
 	end
 
-	local function finish(context: any, operation: string, outcome: string, message: string): string
+	local function finish(context: any, operation: string, outcome: string, message: string): string?
 		logOutcome(context, operation, outcome)
-		return message
+		-- Kohl's Admin treats every non-nil string returned by run() as an
+		-- error notification. Successful ClubMusic actions already send their
+		-- own Notice toast, so only rejected/failed commands return text here.
+		return if outcome == "accepted" then nil else message
 	end
 
 	-- Read-only inspection has a separate, lightweight throttle because Status and
@@ -134,6 +137,20 @@ return function(_K: any)
 		end
 
 		local successMessage = if typeof(message) == "string" then message else "ClubMusic action submitted."
+		-- Read-only commands have no ClubMusic state-change Notice, so display
+		-- their result through Kohl's Admin's supported informational toast API.
+		if operation == "Status" or operation == "Queue" then
+			local notifyOk, notifyError = pcall(function()
+				_K.Remote.Notify:Fire(caller, {
+					From = caller.UserId,
+					Text = successMessage,
+					Duration = 8,
+				})
+			end)
+			if not notifyOk then
+				warn("[ClubMusic Kohl's Admin] Could not display read-only result: " .. tostring(notifyError))
+			end
+		end
 		return finish(context, operation, "accepted", successMessage)
 	end
 
