@@ -595,6 +595,9 @@ local modernAudioMigrationAttempted = false
 local queue: any = {}
 local queueManager: any = nil
 local globalQueueMode = false
+local globalTrackRevision = 0
+local localCatalogRevision = 0
+local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local nowPlaying: any = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
@@ -1436,8 +1439,7 @@ for _, moduleName in ipairs({
 	end
 	ControllerFunctions.ChildManagerModules[moduleName] = requireResult
 end
-local globalTrackRevision = 0
-local globalPlaybackEndTime = 0
+globalPlaybackEndTime = 0
 local globalRestartRevision = 0
 local autoQueueHold = false
 -- Queue mutations have their own revision, independent of playback transitions.
@@ -1447,8 +1449,7 @@ local globalQueueRevision = 0
 local globalCatalogRevision = 0
 local globalCatalogChangeTrackId: string? = nil
 local globalCatalogChangeKind: string? = nil
-local localCatalogRevision = 0
-local refreshLocalCatalog: (() -> boolean)? = nil
+refreshLocalCatalog: (() -> boolean)? = nil
 ControllerFunctions.refreshCatalogWhenReady = function(): boolean
 	-- The controller publishes its remote contract before the cross-server
 	-- invalidation listener is defined. A very early UI action waits briefly for
@@ -1463,8 +1464,7 @@ end
 local globalQueueSyncBusy = false
 local globalQueueRefreshScheduled = false
 local globalPlaybackInitialized = false
-local syncGlobalQueueSnapshot: (() -> boolean)? = nil
-local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
+enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
 local enqueueGlobalQueueBatch: (({QueueEntry}) -> (boolean, string?))? = nil
 local activePlaylistId: string? = nil
 local globalPlaylistRotationEnabled = false
