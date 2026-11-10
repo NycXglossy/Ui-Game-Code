@@ -1954,7 +1954,7 @@ enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
 	if typeof(state) == "table" then applyGlobalQueueState(state) end
 	if callOk and writeOk == true then return true, nil end
 	if tostring(message) == "Catalog changed on another server; refresh and retry."
-		and refreshLocalCatalog and refreshLocalCatalog() then
+		and refreshCatalogWhenReady() then
 		local allTracksPresent = true
 		for _, entry in ipairs(entries) do
 			if not TRACK_BY_ID[entry.trackId] then allTracksPresent = false; break end
@@ -2016,7 +2016,7 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 				-- snapshot. Reconcile the catalog, then retry once with the refreshed
 				-- playlist cursor or a new Auto DJ fallback if the old ID disappeared.
 				if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-					and refreshLocalCatalog and refreshLocalCatalog() then
+					and refreshCatalogWhenReady() then
 					if not TRACK_BY_ID[fallback.trackId] then
 						local refreshedPlaylistTrack = nextPlaylistTrack()
 						fallback = if refreshedPlaylistTrack
@@ -3223,7 +3223,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 				return
 			end
 			additionReserved = true
-			if not refreshLocalCatalog or not refreshLocalCatalog() then
+			if not refreshCatalogWhenReady() then
 				notify(player, "Catalog addition is reserved globally, but the catalog could not be refreshed. Retry the audio addition after storage recovers.", "warn")
 				return
 			end
@@ -3322,7 +3322,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			if syncGlobalQueueSnapshot and not syncGlobalQueueSnapshot() then
 				notify(player, "The shared catalog state could not be verified; track was not removed.", "warn"); return
 			end
-			if refreshLocalCatalog and refreshLocalCatalog() then track = TRACK_BY_ID[trackId] end
+			if refreshCatalogWhenReady() then track = TRACK_BY_ID[trackId] end
 			if not track and not (globalCatalogChangeTrackId == trackId and globalCatalogChangeKind == "remove") then
 				notify(player, "Custom catalog track not found.", "warn"); return
 			end
@@ -3349,7 +3349,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			if reserveCallOk and reserved ~= true
 				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
 				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				if refreshLocalCatalog then refreshLocalCatalog() end
+				refreshCatalogWhenReady()
 				reserveCallOk, reserved, reserveState, reserveMessage = globalInvoke(
 					"ReserveCatalogRemoval", trackId, localCatalogRevision
 				)
@@ -3364,7 +3364,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			-- Refresh after the reservation's revision bump. If this server stopped
 			-- after deleting the catalog record but before finalizing, a retry sees
 			-- the missing record and safely completes the existing reservation.
-			if not refreshLocalCatalog or not refreshLocalCatalog() then
+			if not refreshCatalogWhenReady() then
 				notify(player, "Removal is reserved globally, but the catalog could not be refreshed. Retry ;cmremove after storage recovers.", "warn")
 				return
 			end
@@ -4479,7 +4479,7 @@ local function handleGlobalMessage(message: any)
 		if os.clock() - lastCatalogRefreshAt < 3 then return end
 		task.spawn(function()
 			if globalQueueMode and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			if refreshLocalCatalog then refreshLocalCatalog() end
+			refreshCatalogWhenReady()
 		end)
 		return
 	end
