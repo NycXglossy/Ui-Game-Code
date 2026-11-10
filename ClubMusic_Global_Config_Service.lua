@@ -13,13 +13,14 @@ local function validate(raw)
  return out
 end
 function Service.new(d)
- assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Config dependencies missing")
+ assert(type(d)=="table" and d.dataStore and type(d.isEnabled)=="function" and type(d.allowStoreOperation)=="function","Config dependencies missing")
  local self=setmetatable({d=d,state="Starting",revision=0,values=table.clone(DEFAULTS),lastError=nil},Service)
- self.map=d.memoryStoreService:GetHashMap(d.mapName or "ClubMusic_GlobalConfig_v1"); return self
+ self.store=d.dataStore; return self
 end
 function Service:Refresh()
  if not self.d.isEnabled() then self.state="Disabled"; return false end
- local ok,value=pcall(function() return self.map:GetAsync("config") end)
+ if not self.d.allowStoreOperation() then self.state="Degraded"; self.lastError="Shared DataStore budget unavailable."; return false end
+ local ok,value=pcall(function() return self.store:GetAsync("config") end)
  if not ok then self.state="Degraded"; self.lastError=tostring(value); return false end
  if typeof(value)=="table" then self.values=validate(value.values); self.revision=if type(value.revision)=="number" then math.max(0,math.floor(value.revision)) else 0 end end
  self.state="Healthy"; self.lastError=nil; return true
@@ -27,12 +28,13 @@ end
 function Service:Set(key,value,actor)
  if not self.d.isEnabled() or DEFAULTS[key]==nil or typeof(value)~=typeof(DEFAULTS[key]) then return false,"Invalid or disabled config update." end
  if key=="maintenanceMessage" and #value>240 then return false,"Message too long." end
+ if not self.d.allowStoreOperation() then return false,"Shared configuration budget unavailable." end
  local ok,result=pcall(function()
-  return self.map:UpdateAsync("config",function(old)
+  return self.store:UpdateAsync("config",function(old)
    local current=if typeof(old)=="table" then validate(old.values) else table.clone(DEFAULTS)
    current[key]=value
    return {values=current,revision=(if typeof(old)=="table" and type(old.revision)=="number" then math.floor(old.revision) else 0)+1,updatedAt=os.time(),updatedBy=actor}
-  end,86400)
+  end)
  end)
  if not ok then self.lastError=tostring(result); return false,"Shared configuration unavailable." end
  self.values=validate(result.values); self.revision=result.revision; self.state="Healthy"; return true,self:GetStatus()
