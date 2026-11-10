@@ -2515,6 +2515,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end)
 		end
 
+		if showPlaylists == true and selectedPlaylistId ~= nil then
+			local browseCard = card(52)
+			label(browseCard, "PLAYLIST DESTINATION SELECTED", UDim2.fromOffset(12, 5), UDim2.new(1, -128, 0, 14), C.Muted, 8, true)
+			label(browseCard, selectedPlaylistName or "Selected playlist", UDim2.fromOffset(12, 20), UDim2.new(1, -128, 0, 20), C.Green, 11, true)
+			actionButton(browseCard, "ADD TRACKS", UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
+				activeTab = "All Tracks"
+				if renderTabFn then renderTabFn() end
+			end, C.Cyan)
+		end
+
 		if showPlaylists == true then return end
 
 		if perm() >= 1 and selectedPlaylistId ~= nil then
