@@ -72,6 +72,9 @@ local CONFIG = {
 	-- you intentionally want Studio to use the live DataStore.
 	StudioUseDataStore = false,
 
+	-- Keep the legacy Sound as the default until the modern AudioPlayer route is validated in Studio.
+	UseModernAudioBackend = false,
+
 	-- Optional audio. Map trackId -> "rbxassetid://123". Tracks without an entry play silently
 	-- (the UI still shows progress and an animated visualizer).
 	SoundIds = {} :: {[string]: string},
@@ -585,6 +588,7 @@ local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGrou
 local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
 local activeAudioSource: any = { kind = "Sound", instance = musicSound }
 local audioSourceRevision = 0
+local modernAudioMigrationAttempted = false
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
 -- This preserves other SoundService audio while removing the obsolete group.
@@ -890,6 +894,41 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 end
 
 ControllerFunctions.bindActiveAudioPlayingSignal()
+
+-- Optional one-time migration after the first valid track starts. Disabled by
+-- default; if preparation or handoff fails, adoptAudioBackend cleans the
+-- candidate and the canonical Sound continues without interruption.
+ControllerFunctions.tryModernAudioBackendMigration = function()
+	if not CONFIG.UseModernAudioBackend or modernAudioMigrationAttempted then return false end
+	modernAudioMigrationAttempted = true
+	local modules = ServerStorage:FindFirstChild("ClubMusicAudioModules")
+	local backendModule = modules and modules:FindFirstChild("ClubMusicAudioBackend")
+	if not backendModule or not backendModule:IsA("ModuleScript") then
+		warn("[ClubMusic][AudioBackend] Modern backend is enabled but its ModuleScript is missing; legacy Sound remains active.")
+		return false
+	end
+	local requireOk, BackendClass = pcall(require, backendModule)
+	if not requireOk or typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
+		warn("[ClubMusic][AudioBackend] Modern backend could not be loaded; legacy Sound remains active.")
+		return false
+	end
+	local createOk, candidate = pcall(BackendClass.new, {
+		Name = "ClubMusicMainAudioBackend",
+		Parent = SoundService,
+		InitialGain = 0,
+	})
+	if not createOk or typeof(candidate) ~= "table" then
+		warn("[ClubMusic][AudioBackend] Modern backend could not be constructed; legacy Sound remains active.")
+		return false
+	end
+	local adopted, message = ControllerFunctions.adoptAudioBackend(candidate)
+	if not adopted then
+		warn("[ClubMusic][AudioBackend] Safe handoff was rejected; legacy Sound remains active: " .. tostring(message))
+		return false
+	end
+	print("[ClubMusic][AudioBackend] Modern AudioPlayer is now the controller-owned main source.")
+	return true
+end
 
 -- One controller-owned cancellation seam for a future dual-deck transition.
 -- It is deliberately a no-op until a Crossfade manager is safely constructed.
@@ -2335,6 +2374,9 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry)
 	nowPlaying.vip = entry.vip
 	nowPlaying.soundId = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
 	ControllerFunctions.startServerMusic(nowPlaying.soundId)
+	if CONFIG.UseModernAudioBackend then
+		task.defer(ControllerFunctions.tryModernAudioBackendMigration)
+	end
 
 	table.insert(recentTracks, entry.trackId)
 	while #recentTracks > CONFIG.AutoAvoidRecent do
