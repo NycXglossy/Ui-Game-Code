@@ -1966,6 +1966,14 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 		-- Always release the transition lock, including when fallback selection,
 		-- state synchronization, or post-transition queue maintenance throws.
 		local branchOk, advanced, reason = pcall(function(): (boolean, string?)
+			-- A queue snapshot carries the catalog epoch. Refresh stale local catalog
+			-- data before choosing a fallback so removed IDs are never replayed.
+			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			if localCatalogRevision ~= globalCatalogRevision then
+				if not refreshLocalCatalog or not refreshLocalCatalog() then
+					return false, "The shared catalog is updating; track transition will retry."
+				end
+			end
 			-- Build one fallback entry for this transition. Retrying a stale revision
 			-- must not consume additional playlist cursor positions or pick new tracks.
 			local playlistFallback = nextPlaylistTrack()
@@ -3187,7 +3195,13 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 	if action == "CatalogRemoveTrack" then
 		if not isStaff(player) then notify(player, "Only staff can remove catalog tracks.", "warn"); return end
 		local trackId = payload.trackId
-		if not isValidString(trackId, 32) then return end
+		if not isValidString(trackId, 32) or not string.match(trackId, "^custom%-%d+$") then
+			notify(player, "Only a valid staff-added catalog track ID can be removed.", "warn"); return
+		end
+		local initialTrack = TRACK_BY_ID[trackId]
+		if initialTrack and initialTrack.assetId == nil then
+			notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
+		end
 		if not catalogStorageReady or not waitForDataStoreBudget(5) then
 			notify(player, "Catalog storage is unavailable; track was not removed.", "warn"); return
 		end
