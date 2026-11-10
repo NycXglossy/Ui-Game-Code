@@ -39,6 +39,7 @@ local CONFIG = {
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
 		Queue = "ClubMusic_Global_Queue_v1",
+		SyncHealth = "ClubMusic_Global_SyncHealth_v1",
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -569,6 +570,60 @@ end)
 local globalRecoveryService: any = nil
 local globalHealthService: any = nil
 
+-- Cross-server sync is verified with peer heartbeats, not inferred from DataStore access.
+local SYNC_HEARTBEAT_INTERVAL_SECONDS = 60
+local SYNC_HEARTBEAT_TIMEOUT_SECONDS = 180
+local syncHeartbeatTopic = CONFIG.Topics.SyncHealth
+local subscriptionStatus: {[string]: string} = {[syncHeartbeatTopic] = "Starting"}
+local peerHeartbeats: {[string]: {seenAt: number, reportedAt: number}} = {}
+local hasSeenSyncPeer = false
+local lastQueueNotificationAt = 0
+local queueNotificationsReceived = 0
+
+local function getGlobalSyncStatus(): {[string]: any}
+    local now = os.clock()
+    local peerCount = 0
+    local newestPeerAt = 0
+    for jobId, heartbeat in pairs(peerHeartbeats) do
+        if now - heartbeat.seenAt > SYNC_HEARTBEAT_TIMEOUT_SECONDS then
+            peerHeartbeats[jobId] = nil
+        else
+            peerCount += 1
+            newestPeerAt = math.max(newestPeerAt, heartbeat.reportedAt)
+        end
+    end
+
+    local subscription = subscriptionStatus[syncHeartbeatTopic] or "Starting"
+    local state = "Unverified"
+    local detail = "No other server heartbeat has been observed yet; cross-server sync is unverified."
+    if not SERVICE_ENABLED then
+        state = "Disabled"
+        detail = "Cross-server messaging is disabled in this server (Studio isolation or configuration)."
+    elseif subscription ~= "Active" then
+        state = if subscription == "Starting" then "Starting" else "Degraded"
+        detail = "Cross-server sync heartbeat subscription is " .. subscription .. "."
+    elseif peerCount > 0 then
+        state = "Healthy"
+        detail = "Cross-server messaging is receiving heartbeats from " .. tostring(peerCount) .. " peer server(s)."
+    elseif hasSeenSyncPeer then
+        state = "Degraded"
+        detail = "Previously observed peer servers stopped sending sync heartbeats for more than "
+            .. tostring(SYNC_HEARTBEAT_TIMEOUT_SECONDS) .. " seconds."
+    end
+
+    return {
+        state = state,
+        detail = detail,
+        subscription = subscription,
+        peerCount = peerCount,
+        lastPeerHeartbeatAt = newestPeerAt,
+        lastQueueNotificationAt = if lastQueueNotificationAt > 0 then os.time() - math.floor(now - lastQueueNotificationAt) else 0,
+        queueNotificationsReceived = queueNotificationsReceived,
+        heartbeatIntervalSeconds = SYNC_HEARTBEAT_INTERVAL_SECONDS,
+        heartbeatTimeoutSeconds = SYNC_HEARTBEAT_TIMEOUT_SECONDS,
+    }
+end
+
 -- Reuse the same per-server diagnostic handler used by the local UI controller.
 -- This is intentionally optional: diagnostics must never prevent global service startup.
 local globalErrorHandler: any = nil
@@ -651,6 +706,7 @@ if healthModule and globalRecoveryService then
 		return healthModule.new({
 			isEnabled = function() return SERVICE_ENABLED end,
 			getRecoveryStatus = function() return globalRecoveryService:GetStatus() end,
+			getSyncStatus = getGlobalSyncStatus,
 			apiFolder = apiFolder,
 			queueModule = queueModule,
 			intervalSeconds = 30,
@@ -805,6 +861,8 @@ local function onQueueChanged(message)
 	-- The originating controller already applies the state returned by its
 	-- successful mutation. Ignore our own echo to avoid a redundant DataStore read.
 	if data.senderJob == JOB_ID then return end
+	lastQueueNotificationAt = os.clock()
+	queueNotificationsReceived += 1
 	-- MessagingService is an invalidation signal: discard this server's short-lived
 	-- snapshot cache before the controller asks for the authoritative queue state.
 	if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
@@ -813,17 +871,32 @@ local function onQueueChanged(message)
 	globalEventBindable:Fire({kind = "QueueChanged", revision = math.floor(data.revision), senderJob = data.senderJob})
 end
 
+local function onSyncHeartbeat(message)
+	local data = if typeof(message) == "table" then message.Data else nil
+	if not validEnvelope(data) or data.kind ~= "ServerHeartbeat"
+		or typeof(data.serverJob) ~= "string" or #data.serverJob < 1 or #data.serverJob > 64
+		or data.serverJob ~= data.senderJob then return end
+	if data.serverJob == JOB_ID then return end
+	peerHeartbeats[data.serverJob] = {seenAt = os.clock(), reportedAt = math.floor(data.at)}
+	hasSeenSyncPeer = true
+end
+
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
+	subscriptionStatus[topic] = "Subscribing"
 	task.spawn(function()
 		while SERVICE_ENABLED do
 			local ok, err = pcall(function() MessagingService:SubscribeAsync(topic, callback) end)
 			if ok then
 				-- Subscription stays active after SubscribeAsync returns.
+				subscriptionStatus[topic] = "Active"
+				print("[ClubMusic Global] Messaging subscription active: " .. topic)
 				return
 			end
+			subscriptionStatus[topic] = "Retrying"
 			warn("[ClubMusic Global] Subscription failed for " .. topic .. "; retrying: " .. tostring(err))
 			task.wait(CONFIG.SubscriptionRetrySeconds)
 		end
+		subscriptionStatus[topic] = "Disabled"
 	end)
 end
 
@@ -834,6 +907,13 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
 	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
+	subscribeWithRetry(CONFIG.Topics.SyncHealth, onSyncHeartbeat)
+	task.spawn(function()
+		while SERVICE_ENABLED do
+			publishTopic(CONFIG.Topics.SyncHealth, {kind = "ServerHeartbeat", serverJob = JOB_ID})
+			task.wait(SYNC_HEARTBEAT_INTERVAL_SECONDS)
+		end
+	end)
 else
 	if not CONFIG.Enabled then
 		warn("[ClubMusic Global] Cross-server service is disabled by CONFIG.Enabled=false; local UI controller remains fully functional.")
