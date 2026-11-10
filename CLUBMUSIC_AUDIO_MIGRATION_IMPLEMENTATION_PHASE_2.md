@@ -287,3 +287,8 @@ The client renderer now supports a responsive desktop side-rail navigation mode 
 ## Desktop navigation hierarchy — phase 23
 
 The wide-desktop rail now groups existing destinations under Listen, Festival, and Staff headings and adds a subtle divider between navigation and content. Group headings are shown only in side-rail mode; the compact horizontal navigation remains unchanged on smaller layouts. Existing permission visibility for Audio ID and Moderation is preserved, as are tab callbacks and scroll-to-selected behavior. No tab content or network contracts changed. Renderer source was re-fetched and compared after the update; no in-Studio layout validation was run.
+
+
+## Active navigation state styling — phase 24
+
+Added a narrow gold active-destination marker to the desktop side rail. It appears only for the selected tab in side-rail mode, while the existing selected background, icon, and label styling remains shared across layouts. The marker is hidden in compact horizontal navigation to avoid changing its geometry. This is presentation-only and preserves all existing tab routing and permission checks. Renderer source was re-fetched and compared after the update; no Studio visual test was run.
