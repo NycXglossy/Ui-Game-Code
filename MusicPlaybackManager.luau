@@ -1,316 +1,126 @@
-local RunService = game:GetService("RunService")
-local ServerMusicAudioHandler = require(script.Parent.ServerMusicAudioHandler)
+--!strict
+-- ClubMusic controller-owned playback facade.
+-- This module never owns playback state, clocks, remotes, Heartbeat loops, or Sound.Ended.
+-- Inject controller callbacks; the controller remains the sole playback authority.
 
 local MusicPlaybackManager = {}
 MusicPlaybackManager.__index = MusicPlaybackManager
 
-local CONFIG = {
-	PROGRESS_BROADCAST_INTERVAL = 1
+export type Context = {
+	GetSnapshot: () -> any,
+	GetSound: () -> Sound?,
+	GetElapsedTime: (() -> number)?,
+	PlayTrack: ((any, any?) -> (boolean, string?))?,
+	StopTrack: (() -> (boolean, string?))?,
+	TogglePause: (() -> (boolean, string?))?,
+	RestartTrack: (() -> (boolean, string?))?,
 }
 
-function MusicPlaybackManager.new(config)
-	local self = setmetatable({}, MusicPlaybackManager)
+local function call(callback: any, ...)
+	if typeof(callback) ~= "function" then
+		return false, "This operation is owned by UI_Server_Controller."
+	end
+	local ok, result, message = pcall(callback, ...)
+	if not ok then
+		warn("[ClubMusic Playback Adapter] Controller callback failed: " .. tostring(result))
+		return false, "The controller operation failed."
+	end
+	return result == true, if typeof(message) == "string" then message else nil
+end
 
-	self.config = config
-	self.currentSong = nil
-	self.currentUploader = nil
-	self.isPlaying = false
-	self.isPaused = false
-	self.songStartTime = 0
-	self.songDuration = 0
-	self.isPlaylistMode = false
-
-	self.audioHandler = ServerMusicAudioHandler.new()
-
-	self.autoNextCallback = nil
-	self.endedConnection = nil
-	self.progressConnection = nil
-	self.lastProgressBroadcast = 0
-
-	return self
+function MusicPlaybackManager.new(context: Context)
+	assert(typeof(context) == "table", "Playback manager requires an injected controller context.")
+	assert(typeof(context.GetSnapshot) == "function", "Playback context requires GetSnapshot.")
+	assert(typeof(context.GetSound) == "function", "Playback context requires GetSound.")
+	return setmetatable({ context = context, destroyed = false }, MusicPlaybackManager)
 end
 
 function MusicPlaybackManager:GetState()
-	return {
-		currentSong = self.currentSong,
-		currentUploader = self.currentUploader,
-		isPlaying = self.isPlaying,
-		isPaused = self.isPaused,
-		startTime = self.songStartTime,
-		duration = self.songDuration,
-		isPlaylistMode = self.isPlaylistMode,
-		elapsedTime = self:GetElapsedTime()
-	}
-end
-
-function MusicPlaybackManager:IsPlaying()
-	return self.isPlaying and self.audioHandler:IsPlaying()
-end
-
-function MusicPlaybackManager:IsPaused()
-	return self.isPaused
+	if self.destroyed then return nil end
+	local ok, snapshot = pcall(self.context.GetSnapshot)
+	if not ok then
+		warn("[ClubMusic Playback Adapter] Snapshot callback failed: " .. tostring(snapshot))
+		return nil
+	end
+	return snapshot
 end
 
 function MusicPlaybackManager:GetCurrentSong()
-	return self.currentSong
+	local snapshot = self:GetState()
+	if typeof(snapshot) ~= "table" then return nil end
+	return snapshot.nowPlaying or snapshot.current
 end
 
-function MusicPlaybackManager:GetElapsedTime()
-	if self.isPaused then
-		return self.audioHandler:GetTimePosition()
-	elseif self.isPlaying then
-		return self.audioHandler:GetTimePosition()
-	end
-	return 0
+function MusicPlaybackManager:GetSound(): Sound?
+	if self.destroyed then return nil end
+	local ok, sound = pcall(self.context.GetSound)
+	if ok and typeof(sound) == "Instance" and sound:IsA("Sound") then return sound end
+	return nil
 end
 
-function MusicPlaybackManager:GetRemainingTime()
-	if not self.isPlaying then return 0 end
-	local elapsed = self:GetElapsedTime()
-	return math.max(0, self.songDuration - elapsed)
+function MusicPlaybackManager:IsPlaying(): boolean
+	local sound = self:GetSound()
+	return sound ~= nil and sound.IsPlaying
 end
 
-function MusicPlaybackManager:IsFromPlaylist()
-	return self.isPlaylistMode
-end
-
-function MusicPlaybackManager:ConnectEndedEvent()
-	-- Disconnect previous
-	if self.endedConnection then
-		self.endedConnection:Disconnect()
-		self.endedConnection = nil
+function MusicPlaybackManager:IsPaused(): boolean
+	local snapshot = self:GetState()
+	if typeof(snapshot) == "table" then
+		if typeof(snapshot.playbackPaused) == "boolean" then return snapshot.playbackPaused end
+		if typeof(snapshot.paused) == "boolean" then return snapshot.paused end
 	end
-
-	local sound = self.audioHandler:GetSound()
-	if not sound then 
-		warn("[PlaybackManager] No sound object to connect Ended event")
-		return 
-	end
-
-	-- Connect to Sound.Ended event
-	self.endedConnection = sound.Ended:Connect(function()
-		print(string.format("[PlaybackManager] Sound.Ended triggered for: %s", 
-			self.currentSong and self.currentSong.judul or "Unknown"))
-
-		if self.autoNextCallback and self.isPlaying then
-			task.spawn(function()
-				local success, err = pcall(self.autoNextCallback)
-				if not success then
-					warn("[PlaybackManager] AutoNext error:", err)
-				end
-			end)
-		end
-	end)
-end
-
-function MusicPlaybackManager:StartProgressBroadcast(remotes)
-	if self.progressConnection then
-		self.progressConnection:Disconnect()
-	end
-
-	self.progressConnection = RunService.Heartbeat:Connect(function()
-		if not self.isPlaying or self.isPaused then return end
-
-		local now = tick()
-		if now - self.lastProgressBroadcast < CONFIG.PROGRESS_BROADCAST_INTERVAL then
-			return
-		end
-
-		self.lastProgressBroadcast = now
-		self:UpdateProgress(remotes)
-	end)
-end
-
-function MusicPlaybackManager:StopProgressBroadcast()
-	if self.progressConnection then
-		self.progressConnection:Disconnect()
-		self.progressConnection = nil
-	end
-end
-
-function MusicPlaybackManager:Play(remotes, songData, uploaderName, isFromPlaylist)
-	-- Cleanup previous
-	if self.endedConnection then
-		self.endedConnection:Disconnect()
-		self.endedConnection = nil
-	end
-	self:StopProgressBroadcast()
-
-	local musicData = songData.musicData or songData
-	local duration = songData.Duration or musicData.Duration or self.config.DEFAULT_SONG_DURATION
-
-	if duration <= 0 then
-		warn("[PlaybackManager] Invalid duration:", duration)
-		return false
-	end
-
-	-- Set state
-	self.currentSong = musicData
-	self.currentUploader = uploaderName or "System"
-	self.isPlaying = true
-	self.isPaused = false
-	self.songStartTime = tick()
-	self.songDuration = duration
-	self.isPlaylistMode = isFromPlaylist or false
-
-	local success = self.audioHandler:Play(musicData.id, 0)
-
-	if not success then
-		warn("[PlaybackManager] Failed to play:", musicData.id)
-		self:Stop(remotes)
-		return false
-	end
-
-	print(string.format("[PlaybackManager] Playing: %s | Duration: %.0fs", 
-		musicData.judul or "Unknown", duration))
-
-	-- Connect Ended event
-	self:ConnectEndedEvent()
-
-	-- Start progress broadcast
-	self:StartProgressBroadcast(remotes)
-
-	self:BroadcastSongUpdate(remotes, musicData, uploaderName, duration)
-
-	return true
-end
-
-function MusicPlaybackManager:Stop(remotes)
-	if self.endedConnection then
-		self.endedConnection:Disconnect()
-		self.endedConnection = nil
-	end
-	self:StopProgressBroadcast()
-
-	self.audioHandler:Stop()
-
-	self.currentSong = nil
-	self.currentUploader = nil
-	self.isPlaying = false
-	self.isPaused = false
-	self.isPlaylistMode = false
-	self.autoNextCallback = nil
-
-	self:BroadcastStopMusic(remotes)
-end
-
-function MusicPlaybackManager:Pause(remotes)
-	if not self.isPlaying then return false end
-
-	self.isPaused = not self.isPaused
-
-	if self.isPaused then
-		self:StopProgressBroadcast()
-		self.audioHandler:Pause()
-	else
-		self.audioHandler:Resume()
-		self:StartProgressBroadcast(remotes)
-	end
-
-	self:BroadcastPauseState(remotes, self.isPaused)
-
-	return true
-end
-
-function MusicPlaybackManager:Restart(remotes)
-	if not self.currentSong then return false end
-
-	if self.endedConnection then
-		self.endedConnection:Disconnect()
-		self.endedConnection = nil
-	end
-	self:StopProgressBroadcast()
-
-	self.songStartTime = tick()
-	self.isPaused = false
-
-	local success = self.audioHandler:Play(self.currentSong.id, 0)
-
-	if success then
-		self:ConnectEndedEvent()
-		self:StartProgressBroadcast(remotes)
-		self:BroadcastSongUpdate(remotes, self.currentSong, self.currentUploader, self.songDuration)
-		return true
-	end
-
 	return false
 end
 
-function MusicPlaybackManager:BroadcastSongUpdate(remotes, musicData, uploaderName, duration)
-	pcall(function()
-		remotes.MusicBroadcast:FireAllClients("SongUpdate", {
-			SoundId = musicData.id,
-			Title = musicData.judul or "Unknown",
-			AddedBy = uploaderName or "Unknown",
-			Duration = duration,
-			IsPlaying = true,
-			ServerTime = tick()
-		})
-	end)
-end
-
-function MusicPlaybackManager:BroadcastStopMusic(remotes)
-	pcall(function()
-		remotes.MusicBroadcast:FireAllClients("StopMusic", {})
-	end)
-end
-
-function MusicPlaybackManager:BroadcastPauseState(remotes, isPaused)
-	pcall(function()
-		remotes.MusicBroadcast:FireAllClients("PauseState", {
-			IsPaused = isPaused,
-			TimePosition = self.audioHandler:GetTimePosition()
-		})
-	end)
-end
-
-function MusicPlaybackManager:UpdateProgress(remotes)
-	if not self.isPlaying or self.isPaused then return end
-
-	local elapsed = self.audioHandler:GetTimePosition()
-
-	pcall(function()
-		remotes.MusicBroadcast:FireAllClients("Progress", {
-			Current = elapsed,
-			Duration = self.songDuration,
-			IsPlaying = true,
-			ServerTime = tick()
-		})
-	end)
-end
-
-function MusicPlaybackManager:SyncToPlayer(remotes, player)
-	if not self.isPlaying or not self.currentSong then
-		return
+function MusicPlaybackManager:GetElapsedTime(): number
+	if self.destroyed then return 0 end
+	if typeof(self.context.GetElapsedTime) == "function" then
+		local ok, value = pcall(self.context.GetElapsedTime)
+		if ok and typeof(value) == "number" and value == value and math.abs(value) < math.huge then
+			return math.max(0, value)
+		end
 	end
-
-	local elapsed = self.audioHandler:GetTimePosition()
-
-	pcall(function()
-		remotes.MusicUpdate:FireClient(player, "SyncMusic", {
-			SoundId = self.currentSong.id,
-			Title = self.currentSong.judul,
-			AddedBy = self.currentUploader,
-			TimePosition = elapsed,
-			Duration = self.songDuration,
-			IsPlaying = self.isPlaying,
-			IsPaused = self.isPaused
-		})
-	end)
+	local song = self:GetCurrentSong()
+	if typeof(song) == "table" and typeof(song.elapsed) == "number" then return math.max(0, song.elapsed) end
+	local sound = self:GetSound()
+	return if sound then math.max(0, sound.TimePosition) else 0
 end
 
-function MusicPlaybackManager:Reset(remotes)
-	self:Stop(remotes)
+function MusicPlaybackManager:GetRemainingTime(): number
+	local song = self:GetCurrentSong()
+	if typeof(song) ~= "table" then return 0 end
+	local duration = tonumber(song.duration) or 0
+	return math.max(0, duration - self:GetElapsedTime())
+end
+
+function MusicPlaybackManager:Play(songData: any, options: any?)
+	if self.destroyed then return false, "Playback adapter has been cleaned up." end
+	return call(self.context.PlayTrack, songData, options)
+end
+
+function MusicPlaybackManager:Stop()
+	if self.destroyed then return false, "Playback adapter has been cleaned up." end
+	return call(self.context.StopTrack)
+end
+
+function MusicPlaybackManager:Pause()
+	if self.destroyed then return false, "Playback adapter has been cleaned up." end
+	return call(self.context.TogglePause)
+end
+
+function MusicPlaybackManager:Restart()
+	if self.destroyed then return false, "Playback adapter has been cleaned up." end
+	return call(self.context.RestartTrack)
+end
+
+function MusicPlaybackManager:Reset()
+	return self:Stop()
 end
 
 function MusicPlaybackManager:Cleanup()
-	if self.endedConnection then
-		self.endedConnection:Disconnect()
-		self.endedConnection = nil
-	end
-	self:StopProgressBroadcast()
-	self.audioHandler:Cleanup()
-	self.autoNextCallback = nil
+	-- Deliberately does not stop music or disconnect controller-owned events.
+	self.destroyed = true
+	self.context = nil
 end
 
 return MusicPlaybackManager
