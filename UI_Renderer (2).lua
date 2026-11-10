@@ -1181,7 +1181,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		BorderSizePixel = 0,
 		Visible = false,
 	}, panel) :: Frame
-	local tabs = {"Home","Music","All Tracks","Playlists","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Audio ID","Moderation"}
+	local tabs = {"Home","Music","All Tracks","Playlists","Queue","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Audio ID","Moderation"}
 	local function addNavGroup(text: string, order: number)
 		local heading = make("TextLabel", {
 			Name = "NavGroup" .. text:gsub("%s", ""),
@@ -1199,8 +1199,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		table.insert(navGroupLabels, heading)
 	end
 	addNavGroup("LISTEN", 10)
-	addNavGroup("FESTIVAL", 60)
-	addNavGroup("STAFF", 120)
+	addNavGroup("FESTIVAL", 70)
+	addNavGroup("STAFF", 130)
 	-- Navigation icons are assembled from native Frames, rounded corners and UIStrokes.
 	-- This avoids font-dependent Unicode glyphs and renders consistently on Roblox clients.
 	local function navIconPart(parent: Instance, name: string, x: number, y: number, w: number, h: number, color: Color3, radius: number?, rotation: number?): Frame
@@ -1263,6 +1263,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				ring("PlaylistDot"..i, .13, .24 + i * .25, .12, .12)
 				line("PlaylistLine"..i, .36, .27 + i * .25, .50, .065)
 			end
+		elseif tabName == "Queue" then
+			for i = 0, 2 do
+				line("QueueLine"..i, .24, .23 + i * .25, .62, .07)
+			end
+			ring("QueueDot", .08, .18, .12, .12)
 		elseif tabName == "DJ Booth" then
 			ring("VinylOuter", .15, .15, .70, .70); ring("VinylInner", .29, .29, .42, .42)
 			navIconPart(icon, "VinylCenter", .43, .43, .14, .14, ink, 1)
@@ -1981,6 +1986,58 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 			act("VoteSkip", {})
 		end, if voted then C.SurfaceLight else C.Purple)
+	end
+
+	local function renderQueue()
+		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
+		local queue = getQueue()
+		sectionLabel("LIVE QUEUE  /  " .. tostring(#queue) .. " TRACKS")
+		local current = card(66)
+		label(current, "NOW PLAYING", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 14), C.Cyan, 9, true)
+		label(current, if now then nz(now.title, "Unknown track") else "The stage is in standby",
+			UDim2.fromOffset(12, 22), UDim2.new(1, -132, 0, 20), C.White, 12, true)
+		label(current, if now then nz(now.artist, "Unknown artist") else "No active track",
+			UDim2.fromOffset(12, 43), UDim2.new(1, -132, 0, 14), C.Muted, 9, false)
+		badge(current, if now and now.paused == true then "PAUSED" elseif now then "ON AIR" else "STANDBY",
+			if now and now.paused == true then C.Orange elseif now then C.Green else C.SurfaceLight,
+			UDim2.new(1, -92, 0.5, -12), 80)
+
+		sectionLabel("UP NEXT  /  " .. tostring(#queue) .. " TRACKS")
+		if #queue == 0 then
+			local empty = card(70)
+			label(empty, "The queue is clear. Auto DJ will choose the next track, or listeners can request music from the catalog.",
+				UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+			return
+		end
+		local staffLevel = perm()
+		for index, item: any in ipairs(queue) do
+			local queueId = tostring(item.id or "")
+			local trackId = tostring(item.trackId or item.id or "")
+			local indexed: any = TRACK_INDEX[trackId]
+			local genre: any = TRACK_GENRE[trackId]
+			local titleText = nz(item.title, if indexed then tostring(indexed[2]) else nz(item.trackId, "Unknown track"))
+			local requestedBy = if item.source == "player" then "REQUESTED BY " .. string.upper(nz(item.requestedBy, "GUEST")) else "AUTO DJ"
+			if item.vip == true then requestedBy ..= "  •  VIP PRIORITY" end
+			local actionSpace = if staffLevel >= 1 then 100 else 12
+			local row = card(62)
+			label(row, string.format("%02d", index), UDim2.fromOffset(12, 8), UDim2.fromOffset(28, 18), C.Gold, 12, true)
+			label(row, titleText, UDim2.fromOffset(44, 6), UDim2.new(1, -actionSpace - 54, 0, 22), C.White, 11, true)
+			label(row, (if genre then genre.name .. "  •  " else "") .. requestedBy .. "  •  " .. formatTime(tonumber(item.duration) or 0),
+				UDim2.fromOffset(44, 31), UDim2.new(1, -actionSpace - 54, 0, 18),
+				if item.source == "player" then C.Magenta else C.Muted, 8, false)
+			if staffLevel >= 1 and queueId ~= "" then
+				if index > 1 then
+					local move = actionButton(row, "↑", UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
+						act("DJMoveUp", {queueId = queueId}, queueId)
+					end, C.Purple)
+					move.TextSize = 13
+				end
+				local remove = actionButton(row, "✕", UDim2.new(1, -48, 0.5, -15), UDim2.fromOffset(36, 30), function()
+					act("DJRemove", {queueId = queueId}, queueId)
+				end, C.Red)
+				remove.TextSize = 13
+			end
+		end
 	end
 
 	local function renderMusic()
@@ -3987,6 +4044,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		["Music"] = renderMusic,
 		["All Tracks"] = function() renderAllTracks(false) end,
 		["Playlists"] = function() renderAllTracks(true) end,
+		["Queue"] = renderQueue,
 		["Audio ID"] = renderAudioId,
 		["DJ Booth"] = renderDJ,
 		["XP & Boosts"] = renderXPBoosts,
@@ -4303,7 +4361,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		navDivider.Visible = sideRailMode
 		for index, heading in ipairs(navGroupLabels) do
 			heading.Visible = sideRailMode
-			heading.LayoutOrder = if index == 1 then 10 elseif index == 2 then 60 else 120
+			heading.LayoutOrder = if index == 1 then 10 elseif index == 2 then 70 else 130
 		end
 		if sideRailMode then
 			nav.Position = UDim2.fromOffset(0, 76)
