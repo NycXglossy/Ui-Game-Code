@@ -11,7 +11,7 @@ function Service:Validate(topic,data)
  if type(topic)~="string" or not KINDS[topic] or typeof(data)~="table" then return reject("Unknown topic or non-table payload.") end
  if data.version~=1 or typeof(data.senderJob)~="string" or #data.senderJob<1 or #data.senderJob>64 or data.senderJob==self.d.getJobId() then return reject("Invalid message identity.") end
  if typeof(data.id)~="string" or #data.id<1 or #data.id>64 then return reject("Invalid message ID.") end
- if typeof(data.at)~="number" or data.at~=data.at or math.abs(os.time()-data.at)>120 then return reject("Invalid or expired timestamp.") end
+ if typeof(data.at)~="number" or data.at~=data.at or data.at==math.huge or data.at==-math.huge or math.abs(os.time()-data.at)>(self.d.getMaxAge and self.d.getMaxAge() or 120) then return reject("Invalid or expired timestamp.") end
  if not KINDS[topic][data.kind] then return reject("Message kind is not allowed for topic.") end
  local ok,encoded=pcall(function() return self.d.jsonEncode(data) end)
  if not ok or type(encoded)~="string" or #encoded>(self.d.maxBytes or 4096) then return reject("Message exceeds size limit or cannot be encoded.") end
