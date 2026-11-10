@@ -239,3 +239,12 @@ The server controller now exposes backend-neutral `getAudioGain(sourceOverride?)
 The dormant backend-adoption path now captures the outgoing source gain before preparing the candidate and applies that same gain after the outgoing source is stopped, instead of forcing the incoming backend to gain 1. The server RBXMX package embeds the updated backend module and was verified byte-for-byte against its standalone source.
 
 These interfaces prepare the controller callbacks required by crossfade (`GetOutgoingGain` / `SetOutgoingGain`), but the crossfade manager is still not instantiated or connected. The legacy `ServerMusicSound` remains the sole live main output. Source and package parity were verified in GitHub; no Roblox Studio runtime or multiplayer tests were run.
+
+
+## Dormant controller-owned crossfade factory — phase 16
+
+Added `ControllerFunctions.createAudioCrossfadeManager()` as an explicit, dormant factory. It validates the installed server audio module folder, requires the backend and crossfade ModuleScripts only when explicitly called, and constructs the manager with controller-owned callbacks. The deck factory creates isolated modern AudioPlayer decks under SoundService; outgoing gain reads/writes route through the controller's backend-neutral gain helpers.
+
+Ownership and revision guards are captured when a transition begins (when the manager requests the outgoing gain), not when the factory is created. Every outgoing gain update is rejected if the active source or source revision changes. The commit callback revalidates ownership and pause state, validates the incoming AudioPlayer, transfers the controller's active source, increments its revision, rebinds the playing signal, and cleans up a previous backend only after ownership transfers. The factory itself is never called at startup, and no crossfade is started by this change.
+
+This is controller wiring preparation, not activation. Existing `ServerMusicSound` remains the live source unless a future explicit, tested transition is invoked. GitHub source was fetched again after update and verified; no Roblox Studio runtime or multiplayer tests were run.
