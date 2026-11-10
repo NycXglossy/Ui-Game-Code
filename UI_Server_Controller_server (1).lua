@@ -2033,18 +2033,23 @@ task.spawn(function()
 end)
 
 -- MessagingService is the primary fast invalidation path. Periodic snapshots are
--- only a repair fallback; jitter the slower poll to avoid synchronized server reads.
+-- a repair fallback. A server with no synchronized current track is recovering
+-- from startup/service unavailability, so retry it quickly instead of waiting
+-- through the normal low-frequency reconciliation interval.
 task.spawn(function()
 	while script.Parent do
-		task.wait(90 + math.random(0, 30))
+		local recoveringPlayback = globalQueueMode and nowPlaying.trackId == ""
+		task.wait(if recoveringPlayback then 5 + math.random(0, 5) else 90 + math.random(0, 30))
 		if globalQueueMode then
 			local synchronized = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
 			if synchronized and nowPlaying.trackId == "" then
-				local playlistFallback = nextPlaylistTrack()
-				local fallback = if playlistFallback then makeEntry(playlistFallback, "playlist", nil) else makeEntry(pickAutoTrack(), "auto", nil)
-				local callOk, advanced, state = globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback)
-				if callOk and advanced == true and typeof(state) == "table" then applyGlobalQueueState(state)
-				elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				-- Use the controller's generation-checked transition path. It owns
+				-- the transition lock, authoritative CAS, snapshot application, and
+				-- post-transition queue refill; do not issue a parallel raw advance.
+				local recovered, recoveryError = advance(globalTrackRevision)
+				if not recovered and recoveryError then
+					warn("[ClubMusic] Global playback recovery is still pending: " .. tostring(recoveryError))
+				end
 			end
 			-- Queue refill is performed by the server that wins the atomic track transition.
 			-- Periodic repair only refreshes missed state notifications; it must not make every server race to refill.
