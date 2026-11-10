@@ -322,6 +322,66 @@ function MusicGlobalQueueService:Enqueue(rawEntry: any, maxPlayerRequests: numbe
 	end)
 end
 
+
+-- Commit automatic refill entries in one transaction. Queue target and playlist
+-- cursor are checked inside UpdateAsync, preventing concurrent servers from
+-- overfilling the Auto DJ queue or consuming the same rotation positions.
+function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any, targetQueueSize: any): (boolean, State?, string?)
+	if typeof(rawEntries) ~= "table" or #rawEntries < 1 or #rawEntries > 10 then
+		return false, nil, "Invalid automatic queue batch."
+	end
+	if not finite(maxQueueSize) or not finite(targetQueueSize) then
+		return false, nil, "Invalid automatic queue limits."
+	end
+	local hardLimit = math.clamp(math.floor(maxQueueSize), 1, MAX_QUEUE)
+	local target = math.clamp(math.floor(targetQueueSize), 1, hardLimit)
+	local entries: {QueueEntry} = {}
+	for index, rawEntry in ipairs(rawEntries) do
+		if index > 10 then return false, nil, "Automatic queue batch is too large." end
+		local entry = sanitizeEntry(rawEntry)
+		if not entry or (entry.source ~= "auto" and entry.source ~= "playlist") then
+			return false, nil, "Automatic queue batch contains an invalid entry."
+		end
+		table.insert(entries, entry)
+	end
+	if #entries ~= #rawEntries then return false, nil, "Automatic queue batch must be a dense array." end
+	return transact(function(state)
+		if state.autoQueueHold then return false, "Automatic queue refill is paused until the current track changes." end
+		if #state.queue >= target then return false, "The global automatic queue target is already filled." end
+		local seenIds: {[string]: boolean} = {}
+		local seenTracks: {[string]: boolean} = {}
+		if state.current then
+			seenIds[state.current.id] = true
+			seenTracks[state.current.trackId] = true
+		end
+		for _, queued in ipairs(state.queue) do
+			seenIds[queued.id] = true
+			seenTracks[queued.trackId] = true
+		end
+		local added = 0
+		for _, entry in ipairs(entries) do
+			if #state.queue >= target or #state.queue >= hardLimit then break end
+			if seenIds[entry.id] or seenTracks[entry.trackId] then
+				return false, "Automatic queue batch contains a duplicate or already-playing track."
+			end
+			if entry.source == "playlist" then
+				if not state.rotation.enabled then return false, "Playlist rotation is not active globally." end
+				local expectedTrackId = state.rotation.trackIds[state.rotation.cursor]
+				if expectedTrackId ~= entry.trackId then
+					return false, "Playlist rotation advanced on another server; refresh and retry."
+				end
+				state.rotation.cursor += 1
+				if state.rotation.cursor > #state.rotation.trackIds then state.rotation.cursor = 1 end
+			end
+			table.insert(state.queue, cloneEntry(entry))
+			seenIds[entry.id] = true
+			seenTracks[entry.trackId] = true
+			added += 1
+		end
+		if added == 0 then return false, "No automatic queue entries were added." end
+		return true
+	end)
+end
 function MusicGlobalQueueService:Remove(entryId: any): (boolean, State?, string?)
 	if typeof(entryId) ~= "string" or #entryId < 1 or #entryId > MAX_ID then return false, nil, "Invalid queue entry." end
 	return transact(function(state)
