@@ -1,5 +1,7 @@
 # ClubMusic Automatic Crossfade — Implementation Phase 1
 
+> Historical phase 1 record. Its local-queue-only scope boundary was superseded by [Implementation Phase 2](CLUBMUSIC_AUDIO_CROSSFADE_IMPLEMENTATION_PHASE_2.md), which adds the global queue CAS handoff and shared-clock synchronization.
+
 Branch: `audit/hardened-clubmusic-2026-11-08`
 
 ## Implemented
