@@ -911,11 +911,11 @@ ControllerFunctions.destroyAudioCrossfadeManager = function(reason: string?): (b
 	local managers = ControllerFunctions.ChildManagers
 	local crossfade = managers and managers.Crossfade
 	if not crossfade then return true, nil end
-	local ok, result = pcall(function()
-		crossfade:Cleanup()
+	local ok, result, detail = pcall(function()
+		return crossfade:Cleanup()
 	end)
-	if not ok then
-		warn("[ClubMusic] Audio crossfade cleanup failed (" .. tostring(reason or "unspecified") .. "): " .. tostring(result))
+	if not ok or result == false then
+		warn("[ClubMusic] Audio crossfade cleanup failed (" .. tostring(reason or "unspecified") .. "): " .. tostring(detail or result))
 		return false, "Audio crossfade manager cleanup failed."
 	end
 	if managers.Crossfade == crossfade then
