@@ -511,9 +511,13 @@ end
 
 -- Compare-and-swap transition: only one server can consume a given current
 -- track revision. The caller supplies a server-validated fallback when empty.
-function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEntry: any, expectedCatalogRevision: any): (boolean, State?, string?)
+function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEntry: any, expectedCatalogRevision: any, expectedNextEntryId: any?): (boolean, State?, string?)
 	if not finite(expectedTrackRevision) or expectedTrackRevision < 0 then return false, nil, "Invalid track revision." end
 	if not finite(expectedCatalogRevision) or expectedCatalogRevision < 0 then return false, nil, "A valid catalog revision is required." end
+	if expectedNextEntryId ~= nil and (not cleanText(expectedNextEntryId, MAX_ID)
+		or not string.match(expectedNextEntryId, "^[%w%-_]+$")) then
+		return false, nil, "Invalid prepared queue entry identity."
+	end
 	local fallback = sanitizeEntry(fallbackEntry)
 	return transact(function(state)
 		if math.floor(expectedCatalogRevision) ~= state.catalogRevision then
@@ -524,6 +528,12 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 		end
 		if state.playback.trackRevision ~= math.floor(expectedTrackRevision) then
 			return false, "Track already advanced by another server."
+		end
+		if expectedNextEntryId ~= nil then
+			local authoritativeNextId = if state.queue[1] then state.queue[1].id else nil
+			if authoritativeNextId ~= expectedNextEntryId then
+				return false, "The prepared next queue entry is no longer first."
+			end
 		end
 		local nextEntry = table.remove(state.queue, 1)
 		if not nextEntry then
