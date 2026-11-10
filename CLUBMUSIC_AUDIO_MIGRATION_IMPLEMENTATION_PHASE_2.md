@@ -307,3 +307,8 @@ Added a Queue destination that displays the authoritative current-track snapshot
 ## Permission-aware navigation grouping — phase 27
 
 The desktop rail now hides the Staff group heading for listeners without staff permissions, in addition to hiding the protected Playlists, Audio ID, and Moderation destinations. The heading reappears when the current state grants the existing staff permission level. No authorization logic moved client-side; server validation remains authoritative. Renderer source was re-fetched and compared after the update; no Studio permission transition test was run.
+
+
+## Destroyed-manager registry recovery — phase 28
+
+The controller now unregisters the optional crossfade manager after its `Cleanup()` call even when cleanup reports a resource failure. The manager's cleanup contract marks it destroyed and releases its context regardless of the cancellation result; leaving that dead object in `ChildManagers.Crossfade` would prevent a later safe reconstruction. Failures are still warned and returned to the caller, but the registry no longer retains an unusable manager. Controller source was re-fetched and compared after the update. No Roblox runtime test was run.
