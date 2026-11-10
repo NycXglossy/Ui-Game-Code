@@ -655,7 +655,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local audioLookup: {[string]: any}? = nil
 	local catalogGenreId = "exclusive"
 	local lookupSerial = 0
-	local previewSound: Sound? = nil
+	local previewAudio: AudioPlayer? = nil
+	local previewFader: AudioFader? = nil
+	local previewGraph: Folder? = nil
 	local previewId: number? = nil
 	local renderTabFn: (() -> ())? = nil
 	local hudBottom = 54
@@ -1447,7 +1449,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		volume = math.clamp(value, 0, 1)
 		if volume > 0 then lastVolume = volume end
 		gui:SetAttribute("Volume", volume)
-		if previewSound then previewSound.Volume = volume end
+		if previewFader then previewFader.Volume = volume end
 		if typeof(Network.SetVolume) == "function" then
 			pcall(Network.SetVolume, volume)
 		else
@@ -2640,11 +2642,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function stopPreview()
-		if previewSound then
-			previewSound:Stop()
-			previewSound:Destroy()
-			previewSound = nil
-		end
+		if previewAudio then pcall(function() previewAudio:Stop() end) end
+		if previewGraph then pcall(function() previewGraph:Destroy() end) end
+		previewAudio = nil
+		previewFader = nil
+		previewGraph = nil
 		previewId = nil
 	end
 
@@ -2703,22 +2705,43 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			return
 		end
 		stopPreview()
-		local sound = Instance.new("Sound")
-		sound.Name = "AudioPreview"
-		sound.SoundId = "rbxassetid://" .. tostring(id)
-		sound.Volume = volume
-		sound.Parent = gui
-		previewSound = sound
+		local graph = Instance.new("Folder")
+		graph.Name = "ClubMusicAudioPreview"
+		local audioPlayer = Instance.new("AudioPlayer")
+		audioPlayer.Name = "AudioPreview"
+		audioPlayer.AutoLoad = true
+		audioPlayer.Asset = "rbxassetid://" .. tostring(id)
+		audioPlayer.Parent = graph
+		local fader = Instance.new("AudioFader")
+		fader.Name = "PreviewVolume"
+		fader.Volume = volume
+		fader.Parent = graph
+		local output = Instance.new("AudioDeviceOutput")
+		output.Name = "PreviewOutput"
+		output.Player = player
+		output.Parent = graph
+		local inputWire = Instance.new("Wire")
+		inputWire.SourceInstance = audioPlayer
+		inputWire.TargetInstance = fader
+		inputWire.Parent = graph
+		local outputWire = Instance.new("Wire")
+		outputWire.SourceInstance = fader
+		outputWire.TargetInstance = output
+		outputWire.Parent = graph
+		graph.Parent = SoundService
+		previewGraph = graph
+		previewAudio = audioPlayer
+		previewFader = fader
 		previewId = id
-		sound.Ended:Connect(function()
-			if previewSound == sound then
+		audioPlayer.Ended:Connect(function()
+			if previewAudio == audioPlayer then
 				stopPreview()
 				refreshAudioTab()
 			end
 		end)
-		sound:Play()
+		audioPlayer:Play()
 		task.delay(10, function()
-			if previewSound == sound and not sound.IsLoaded then
+			if previewAudio == audioPlayer and not audioPlayer.IsReady then
 				stopPreview()
 				notify("Audio could not be loaded. It may be private or restricted.", C.Red)
 				refreshAudioTab()
@@ -4348,11 +4371,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if destroyed then return end
 			destroyed = true
 			lookupSerial += 1
-			if previewSound then
-				pcall(function() previewSound:Stop(); previewSound:Destroy() end)
-				previewSound = nil
-				previewId = nil
-			end
+			stopPreview()
 			for _, connection in ipairs(connections) do
 				pcall(function()
 					if connection.Connected then connection:Disconnect() end
@@ -4367,11 +4386,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if not destroyed then
 			destroyed = true
 			lookupSerial += 1
-			if previewSound then
-				pcall(function() previewSound:Stop(); previewSound:Destroy() end)
-				previewSound = nil
-				previewId = nil
-			end
+			stopPreview()
 			for _, connection in ipairs(connections) do
 				pcall(function() if connection.Connected then connection:Disconnect() end end)
 			end
