@@ -105,7 +105,15 @@ return function(_K: any)
 			end)
 			if waitOk then bridge = waitedBridge end
 		end
-		if not bridge or not bridge:IsA("BindableFunction") then
+		-- Waiting for startup can yield long enough for the caller to leave or
+		-- for the controller to replace its bridge. Re-resolve both references
+		-- immediately before invocation so a stale command cannot use a detached
+		-- bridge or continue on behalf of a departed player.
+		if caller.Parent ~= game:GetService("Players") then
+			return finish(context, operation, "rejected", "The command caller left before ClubMusic could process the command.")
+		end
+		bridge = serverStorage:FindFirstChild("ClubMusicAdminBridge")
+		if not bridge or not bridge:IsA("BindableFunction") or bridge.Parent ~= serverStorage then
 			return finish(context, operation, "error", "ClubMusic admin bridge is unavailable. Check the server controller installation and startup Output.")
 		end
 
