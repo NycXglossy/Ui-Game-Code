@@ -2255,8 +2255,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local titleText = nz(item.title, if indexed then tostring(indexed[2]) else nz(item.trackId, "Unknown track"))
 			local requestedBy = if item.source == "player" then "REQUESTED BY " .. string.upper(nz(item.requestedBy, "GUEST")) else "AUTO DJ"
 			if item.vip == true then requestedBy ..= "  •  VIP PRIORITY" end
-			local actionSpace = if staffLevel >= 1 then 100 else 12
-			local row = card(62)
+			-- Narrow staff queue rows move moderation buttons below the track
+			-- metadata instead of squeezing the title into a tiny center column.
+			local compactStaffRow = staffLevel >= 1 and content.AbsoluteSize.X < 480
+			local actionSpace = if staffLevel >= 1 and not compactStaffRow then 100 else 12
+			local row = card(if compactStaffRow then 84 else 62)
 			label(row, string.format("%02d", index), UDim2.fromOffset(8, 21), UDim2.fromOffset(27, 18), C.Gold, 11, true)
 			-- Prefer artwork supplied by the live queue item, then fall back to the
 			-- catalog mapping so custom tracks keep their cover in every queue view.
@@ -2305,12 +2308,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				if item.source == "player" then C.Magenta else C.Muted, 8, false)
 			if staffLevel >= 1 and queueId ~= "" then
 				if index > 1 then
-					local move = actionButton(row, "↑", UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
+					local move = actionButton(row, "↑", if compactStaffRow then UDim2.new(1, -88, 0, 50) else UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
 						act("DJMoveUp", {queueId = queueId}, queueId)
 					end, C.Purple)
 					move.TextSize = 13
 				end
-				local remove = actionButton(row, "✕", UDim2.new(1, -48, 0.5, -15), UDim2.fromOffset(36, 30), function()
+				local remove = actionButton(row, "✕", if compactStaffRow then UDim2.new(1, -48, 0, 50) else UDim2.new(1, -48, 0.5, -15), UDim2.fromOffset(36, 30), function()
 					act("DJRemove", {queueId = queueId}, queueId)
 				end, C.Red)
 				remove.TextSize = 13
