@@ -9,7 +9,7 @@ end
 function Service:Open(kind,summary,actorUserId)
  if not self.d.isEnabled() or not ALLOWED[kind] or type(summary)~="string" or #summary<1 or #summary>200 then return false,"Invalid incident." end
  if type(self.d.authorize)~="function" or self.d.authorize(actorUserId,"IncidentResponse")~=true then return false,"Incident response permission denied." end
- local id=self.d.guid()
+ local count=0; local oldestId,oldestAt=nil,math.huge\n for existingId,existing in pairs(self.incidents) do count+=1; if existing.state=="Resolved" and existing.openedAt<oldestAt then oldestId,oldestAt=existingId,existing.openedAt end end\n if count>=200 then if oldestId then self.incidents[oldestId]=nil else return false,"Incident capacity reached; resolve an existing incident first." end end\n local id=self.d.guid()
  self.incidents[id]={id=id,kind=kind,summary=summary,openedAt=os.time(),actorUserId=actorUserId,state="Open"}
  self.opened+=1
  if type(self.d.onChange)=="function" then pcall(self.d.onChange,"opened",self.incidents[id]) end
