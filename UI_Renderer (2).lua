@@ -2450,7 +2450,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			return
 		end
 
-		local compactMusic = currentDevice == "Mobile"
+		local compactMusic = currentDevice == "Mobile" or (content.AbsoluteSize.X > 0 and content.AbsoluteSize.X < 540)
 		local function collectionGrid(name: string): Frame
 			local grid = make("Frame", {
 				Name = name,
@@ -2660,7 +2660,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local destination = selectedPlaylistName and ("ADD DESTINATION  •  " .. selectedPlaylistName) or "ADD DESTINATION  •  None selected"
 			label(monitor, destination, UDim2.fromOffset(12, 65), UDim2.new(1, -24, 0, 13), if selectedPlaylistName then C.Cyan else C.Muted, 9, true)
 
-			local compactPlaylist = currentDevice == "Mobile" or currentDevice == "Tablet"
+			local compactPlaylist = currentDevice == "Mobile" or currentDevice == "Tablet" or (content.AbsoluteSize.X > 0 and content.AbsoluteSize.X < 540)
 			local createCard = card(if compactPlaylist then 86 else 48)
 			local playlistNameBox = make("TextBox", {
 				Name = "NewPlaylistName", Position = UDim2.fromOffset(10, 8),
@@ -3750,7 +3750,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function stepper(parent: Instance, y: number, text: string, get: () -> number, set: (number) -> (), minValue: number, maxValue: number, step: number, unit: string)
-		local compact = currentDevice == "Mobile" or currentDevice == "Tablet"
+		local compact = currentDevice == "Mobile" or currentDevice == "Tablet" or (content.AbsoluteSize.X > 0 and content.AbsoluteSize.X < 540)
 		local titleLabel = label(parent, text, UDim2.fromOffset(12, y), UDim2.new(1, compact and -194 or -190, 0, 26), C.Cyan, compact and 9 or 10, true)
 		titleLabel.TextScaled = true
 		make("UITextSizeConstraint", { MinTextSize = 8, MaxTextSize = compact and 9 or 10 }, titleLabel)
@@ -3828,7 +3828,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			titleDraft = loaded
 		end
 		local draft: any = titleDraft
-		local compactTitleEditor = currentDevice == "Mobile" or currentDevice == "Tablet"
+		local compactTitleEditor = currentDevice == "Mobile" or currentDevice == "Tablet" or (content.AbsoluteSize.X > 0 and content.AbsoluteSize.X < 540)
 		local previewMaxTextSize = 32
 
 		sectionLabel("CUSTOM TITLE")
