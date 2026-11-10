@@ -247,11 +247,14 @@ local function transact(mutator: (State) -> (boolean, string?)): (boolean, State
 			accepted = false
 			reason = "Shared queue update was rejected."
 			local state = sanitizeState(old)
+			-- Keep a detached pre-mutation value so a rejected transaction on a
+			-- brand-new key cannot accidentally persist partial callback mutations.
+			local original = detached(state)
 			-- DataStore revisions are used as monotonic concurrency markers. Refuse
 			-- writes at the exact-integer ceiling rather than silently losing precision.
 			if state.revision >= MAX_SAFE_INTEGER then
 				reason = "Global queue revision limit reached; writes are paused for safe recovery."
-				return old or state
+				return old or original
 			end
 			local changed, message = mutator(state)
 			if changed then
@@ -262,7 +265,7 @@ local function transact(mutator: (State) -> (boolean, string?)): (boolean, State
 				return state
 			end
 			reason = message or reason
-			return old or state
+			return old or original
 		end)
 	end)
 	if not ok then
