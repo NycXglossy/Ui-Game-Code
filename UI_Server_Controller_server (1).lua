@@ -3082,21 +3082,21 @@ ControllerFunctions.inspectAudioAsset = function(assetId: number): (boolean, str
 		return false, "That asset is not an audio file.", "", 0, false
 	end
 
-	local sound = Instance.new("Sound")
-	sound.Name = "AudioProbe"
-	sound.Volume = 0
-	sound.SoundId = "rbxassetid://" .. tostring(assetId)
-	sound.Parent = SoundService
+	local audioProbe = Instance.new("AudioPlayer")
+	audioProbe.Name = "AudioProbe"
+	audioProbe.AutoLoad = true
+	audioProbe.Asset = "rbxassetid://" .. tostring(assetId)
+	audioProbe.Parent = SoundService
 	local loadedOk = false
 	local finished = false
 	local timedOut = false
 	task.spawn(function()
-		loadedOk = pcall(function() ContentProvider:PreloadAsync({ sound }) end)
+		loadedOk = pcall(function() ContentProvider:PreloadAsync({ audioProbe }) end)
 		finished = true
 		if timedOut then
 			-- A timed-out PreloadAsync cannot be cancelled. Keep the global slot
 			-- occupied until the underlying work really ends, then clean it up.
-			pcall(function() sound:Destroy() end)
+			pcall(function() audioProbe:Destroy() end)
 			audioInspectionCount = math.max(0, audioInspectionCount - 1)
 		end
 	end)
@@ -3110,10 +3110,10 @@ ControllerFunctions.inspectAudioAsset = function(assetId: number): (boolean, str
 		return false, "Audio inspection timed out. The server will release its inspection slot when loading finishes.", "", 0, true
 	end
 
-	local isLoaded = sound.IsLoaded
-	local length = sound.TimeLength
-	pcall(function() sound:Destroy() end)
-	if not loadedOk or not isLoaded or length <= 0 then
+	local isReady = audioProbe.IsReady
+	local length = audioProbe.TimeLength
+	pcall(function() audioProbe:Destroy() end)
+	if not loadedOk or not isReady or length <= 0 then
 		return false, "Audio could not be loaded (it may be private or not allowed in this experience).", "", 0, false
 	end
 	local normalized = musicValidation:NormalizeAudioMetadata(assetId, info, math.ceil(length))
