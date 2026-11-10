@@ -8,7 +8,8 @@ MusicPlaybackManager.__index = MusicPlaybackManager
 
 export type Context = {
 	GetSnapshot: () -> any,
-	GetSound: () -> Sound?,
+	GetSound: (() -> Sound?)?,
+	GetAudioSnapshot: (() -> any)?,
 	GetElapsedTime: (() -> number)?,
 	PlayTrack: ((any, any?) -> (boolean, string?))?,
 	StopTrack: (() -> (boolean, string?))?,
@@ -31,7 +32,8 @@ end
 function MusicPlaybackManager.new(context: Context)
 	assert(typeof(context) == "table", "Playback manager requires an injected controller context.")
 	assert(typeof(context.GetSnapshot) == "function", "Playback context requires GetSnapshot.")
-	assert(typeof(context.GetSound) == "function", "Playback context requires GetSound.")
+	assert(typeof(context.GetSound) == "function" or typeof(context.GetAudioSnapshot) == "function",
+		"Playback context requires GetSound or GetAudioSnapshot.")
 	return setmetatable({ context = context, destroyed = false }, MusicPlaybackManager)
 end
 
@@ -91,13 +93,36 @@ end
 function MusicPlaybackManager:InspectQuality()
 	if self.destroyed then return { state = "Unavailable", reason = "AdapterDestroyed" } end
 	local song = self:GetCurrentSong()
-	local sound = self:GetSound()
 	if typeof(song) ~= "table" or tostring(song.trackId or "") == "" then
 		return { state = "Idle" }
 	end
 	if tostring(song.soundId or "") == "" then
 		return { state = "SilentCatalogTrack" }
 	end
+
+	local snapshot = nil
+	if typeof(self.context.GetAudioSnapshot) == "function" then
+		local ok, value = pcall(self.context.GetAudioSnapshot)
+		if ok and typeof(value) == "table" then snapshot = value end
+	end
+	if snapshot then
+		local elapsed = self:GetElapsedTime()
+		local isReady = snapshot.ready == true
+		local isPlaying = snapshot.playing == true
+		local length = if isReady then math.max(0, tonumber(snapshot.length) or 0) else 0
+		if isPlaying then
+			return { state = "Playing", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length }
+		end
+		if snapshot.paused == true then
+			return { state = "Paused", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length }
+		end
+		if isReady and length > 0 then
+			return { state = "StoppedAfterLoad", backend = snapshot.kind, elapsed = elapsed, loaded = true, length = length }
+		end
+		return { state = "BufferingOrStopped", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length }
+	end
+
+	local sound = self:GetSound()
 	if not sound then return { state = "Unavailable", reason = "AudioInstanceMissing" } end
 	local elapsed = self:GetElapsedTime()
 	local isPlaying = sound.IsPlaying
