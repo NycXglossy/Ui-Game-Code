@@ -212,4 +212,19 @@ return function(_K: any)
 	register("clubmusic-remove", "Remove one queued ClubMusic track by its ID.", "General", "RemoveQueueEntry", {"cmremove"}, {
 		{type = "string", name = "QueueId", description = "Queue entry ID copied from ;cmqueue.", optional = false},
 	})
+
+	-- Security tools are registered in Kohl's Admin's Administration group.
+	-- The ClubMusic server bridge independently checks ClubMusic rank levels.
+	register("clubmusic-security", "Show ClubMusic global security service status.", "Administration", "SecurityStatus", {"cmsecurity"})
+	register("clubmusic-incidents", "List recent ClubMusic security incidents.", "Administration", "SecurityIncidents", {"cmincidents"})
+	register("clubmusic-incident", "Open a ClubMusic security incident.", "Administration", "SecurityIncidentOpen", {"cmincident"}, {
+		{type = "string", name = "Incident", description = "Incident type and summary.", optional = false},
+	})
+	register("clubmusic-resolveincident", "Resolve a ClubMusic security incident by ID.", "Administration", "SecurityIncidentResolve", {"cmresolve"}, {
+		{type = "string", name = "IncidentId", description = "Incident ID from ;cmincidents.", optional = false},
+	})
+	register("clubmusic-securitypolicy", "Show the ClubMusic global security policy.", "Administration", "SecurityPolicy", {"cmpolicy"})
+	register("clubmusic-setsecuritypolicy", "Update a validated ClubMusic security policy setting.", "Administration", "SecurityPolicySet", {"cmpolicyset"}, {
+		{type = "string", name = "Setting", description = "Policy key and value, for example suspiciousSignalThreshold 10.", optional = false},
+	})
 end
