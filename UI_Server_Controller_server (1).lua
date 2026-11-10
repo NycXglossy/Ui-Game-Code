@@ -582,6 +582,7 @@ local random = Random.new()
 local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGroup", "MusicGroup") :: SoundGroup
 local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
 local activeAudioSource: any = { kind = "Sound", instance = musicSound }
+local audioSourceRevision = 0
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
 -- This preserves other SoundService audio while removing the obsolete group.
@@ -672,6 +673,7 @@ ControllerFunctions.getAudioSnapshot = function()
 	}
 end
 ControllerFunctions.setAudioAsset = function(asset: string)
+	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:SetAsset(asset) end
 	source.instance.SoundId = asset
@@ -690,6 +692,7 @@ ControllerFunctions.playAudio = function()
 	return true, nil
 end
 ControllerFunctions.stopAudio = function()
+	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Stop() end
 	source.instance:Stop()
@@ -721,77 +724,122 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 	if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer") then
 		return false, "Incoming audio backend has no valid AudioPlayer."
 	end
+	if activeAudioSource.kind == "Backend" and activeAudioSource.backend == candidate then
+		return false, "The candidate is already the active audio backend."
+	end
+
 	local outgoing = activeAudioSource
 	local outgoingSnapshot = ControllerFunctions.getAudioSnapshot()
 	local asset = tostring(outgoingSnapshot.asset or "")
 	if asset == "" then return false, "There is no active track to transfer." end
 	local position = math.max(0, tonumber(outgoingSnapshot.position) or 0)
-	local wasPlaying = outgoingSnapshot.playing == true
-	local wasPaused = playbackPaused
-	if wasPlaying and wasPaused then wasPlaying = false end
+	local wasPaused = playbackPaused == true
+	local wasPlaying = outgoingSnapshot.playing == true and not wasPaused
+	if not wasPlaying and not wasPaused then
+		return false, "Outgoing audio is not playing; handoff was not committed."
+	end
+	local expectedRevision = audioSourceRevision
 	ControllerFunctions.cancelAudioTransition("audio-source-adoption")
+
+	local function candidateCleanup()
+		pcall(function() candidate:Stop() end)
+		pcall(function() candidate:Cleanup() end)
+	end
+	local function outgoingStillCurrent(): boolean
+		local current = ControllerFunctions.getAudioSnapshot()
+		return activeAudioSource == outgoing
+			and audioSourceRevision == expectedRevision
+			and current.asset == asset
+			and playbackPaused == wasPaused
+	end
+	local function restoreOutgoing(): boolean
+		local ok, result = pcall(function()
+			if outgoing.kind == "Backend" then
+				local started, message = outgoing.backend:Play(asset, position)
+				if started ~= true then error(message or "Previous backend could not restart.") end
+				if wasPaused then
+					local paused, pauseMessage = outgoing.backend:Pause()
+					if paused ~= true then error(pauseMessage or "Previous backend could not restore pause.") end
+				end
+			else
+				outgoing.instance.SoundId = asset
+				outgoing.instance.TimePosition = position
+				outgoing.instance:Play()
+				if wasPaused then outgoing.instance:Pause() end
+			end
+		end)
+		return ok and result ~= false
+	end
+
 	local gainOk, gainResult = pcall(function() return candidate:SetGain(0) end)
-	if not gainOk or gainResult == false then pcall(function() candidate:Cleanup() end); return false, "Incoming audio backend could not be muted for handoff." end
+	if not gainOk or gainResult == false then
+		candidateCleanup()
+		return false, "Incoming audio backend could not be muted for handoff."
+	end
 	local assetOk, assetResult = pcall(function() return candidate:SetAsset(asset) end)
-	if not assetOk or assetResult == false then pcall(function() candidate:Cleanup() end); return false, "Incoming audio backend could not load the current asset." end
+	if not assetOk or assetResult == false then
+		candidateCleanup()
+		return false, "Incoming audio backend could not load the current asset."
+	end
+
 	local deadline = os.clock() + 8
 	local ready = false
 	while os.clock() < deadline do
-		if activeAudioSource ~= outgoing or ControllerFunctions.getAudioSnapshot().asset ~= asset then
-			pcall(function() candidate:Cleanup() end)
-			return false, "The current track changed while the incoming backend was loading."
+		if not outgoingStillCurrent() then
+			candidateCleanup()
+			return false, "Playback changed while the incoming backend was loading."
 		end
 		local readyOk, readyValue = pcall(function() return candidate:IsReady() end)
 		if readyOk and readyValue == true then ready = true; break end
 		task.wait(0.1)
 	end
-	if not ready then pcall(function() candidate:Cleanup() end); return false, "Incoming audio backend did not become ready before the handoff timeout." end
+	if not ready then
+		candidateCleanup()
+		return false, "Incoming audio backend did not become ready before the handoff timeout."
+	end
+	if not outgoingStillCurrent() then
+		candidateCleanup()
+		return false, "Playback changed before the audio handoff could start."
+	end
+
 	local playOk, playResult = pcall(function() return candidate:Play(nil, position) end)
 	if not playOk or playResult == false then
-		pcall(function() candidate:Cleanup() end)
+		candidateCleanup()
 		return false, "Incoming audio backend could not start for handoff."
 	end
 	if wasPaused then
 		local pauseOk, pauseResult = pcall(function() return candidate:Pause() end)
 		if not pauseOk or pauseResult == false then
-			pcall(function() candidate:Stop() end)
+			candidateCleanup()
 			return false, "Incoming audio backend could not preserve the paused state."
 		end
-	elseif not wasPlaying then
-		pcall(function() candidate:Stop() end)
-		return false, "Outgoing audio was not actively playing; handoff was not committed."
 	end
-	activeAudioSource = { kind = "Backend", backend = candidate }
+
+	-- Re-check immediately before source ownership changes. No yielding occurs
+	-- between this check, stopping the outgoing source, and committing the swap.
+	if not outgoingStillCurrent() then
+		candidateCleanup()
+		return false, "Playback changed before the audio handoff could commit."
+	end
 	local outgoingStopOk, outgoingStopResult = pcall(function()
 		if outgoing.kind == "Backend" then return outgoing.backend:Stop() end
 		outgoing.instance:Stop()
 		return true
 	end)
 	if not outgoingStopOk or outgoingStopResult == false then
-		activeAudioSource = outgoing
-		pcall(function() candidate:Stop() end)
-		if wasPlaying and not wasPaused then
-			pcall(function()
-				if outgoing.kind == "Backend" then outgoing.backend:Play(asset, position)
-				else outgoing.instance.TimePosition = position; outgoing.instance:Play() end
-			end)
-		end
-		ControllerFunctions.bindActiveAudioPlayingSignal()
-		return false, "Outgoing audio could not be stopped; previous source was restored."
+		candidateCleanup()
+		restoreOutgoing()
+		return false, "Outgoing audio could not be stopped; the previous source was restored."
 	end
+
 	local fullGainOk, fullGainResult = pcall(function() return candidate:SetGain(1) end)
 	if not fullGainOk or fullGainResult == false then
-		activeAudioSource = outgoing
-		pcall(function() candidate:Stop() end)
-		if wasPlaying and not wasPaused then
-			pcall(function()
-				if outgoing.kind == "Backend" then outgoing.backend:Play(asset, position)
-				else outgoing.instance.TimePosition = position; outgoing.instance:Play() end
-			end)
-		end
-		ControllerFunctions.bindActiveAudioPlayingSignal()
-		return false, "Incoming gain could not be restored; previous source was rolled back."
+		restoreOutgoing()
+		candidateCleanup()
+		return false, "Incoming gain could not be restored; the previous source was restored."
 	end
+
+	activeAudioSource = { kind = "Backend", backend = candidate }
 	ControllerFunctions.bindActiveAudioPlayingSignal()
 	if outgoing.kind == "Backend" and outgoing.backend ~= candidate then
 		pcall(function() outgoing.backend:Cleanup() end)
