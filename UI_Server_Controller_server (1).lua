@@ -4742,6 +4742,7 @@ local playbackManagerOk, playbackManager = pcall(childManagerModules.MusicPlayba
 		}
 	end,
 	GetSound = function() return musicSound end,
+	GetAudioSnapshot = function() return audioManager:GetPlaybackSnapshot() end,
 	GetElapsedTime = function() return nowPlaying.elapsed end,
 	TogglePause = function(player: Player)
 		return ControllerFunctions.handleAction(player, "DJPause", {}, false)
