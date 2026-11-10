@@ -4565,7 +4565,10 @@ end
 
 local connectedGlobalEvents: {[Instance]: boolean} = {}
 
-local function attachGlobalEvent(eventObject: Instance?)
+-- Store late-lifecycle callbacks on the existing connection registry instead of
+-- allocating more top-level locals. The controller chunk is close to Luau's
+-- 200-local register ceiling, and these callbacks only need script-lifetime state.
+connectedGlobalEvents.attachGlobalEvent = function(eventObject: Instance?)
 	if eventObject and eventObject:IsA("BindableEvent") then
 		local event = eventObject :: BindableEvent
 		-- Connection ownership belongs to this Script's lifetime. A restarted
@@ -4576,18 +4579,18 @@ local function attachGlobalEvent(eventObject: Instance?)
 	end
 end
 
-local function watchGlobalApi(folder: Instance)
+connectedGlobalEvents.watchGlobalApi = function(folder: Instance)
 	if not folder:IsA("Folder") then return end
-	attachGlobalEvent(folder:FindFirstChild("GlobalEvent"))
+	connectedGlobalEvents.attachGlobalEvent(folder:FindFirstChild("GlobalEvent"))
 	folder.ChildAdded:Connect(function(child)
-		if child.Name == "GlobalEvent" then attachGlobalEvent(child) end
+		if child.Name == "GlobalEvent" then connectedGlobalEvents.attachGlobalEvent(child) end
 	end)
 end
 
-attachGlobalEvent(globalEventObject)
-if globalApi and globalApi:IsA("Folder") then watchGlobalApi(globalApi) end
+connectedGlobalEvents.attachGlobalEvent(globalEventObject)
+if globalApi and globalApi:IsA("Folder") then connectedGlobalEvents.watchGlobalApi(globalApi) end
 ServerStorage.ChildAdded:Connect(function(child)
-	if child.Name == "ClubMusicGlobalAPI" and child:IsA("Folder") then watchGlobalApi(child) end
+	if child.Name == "ClubMusicGlobalAPI" and child:IsA("Folder") then connectedGlobalEvents.watchGlobalApi(child) end
 end)
 
 -- MessagingService invalidations are best-effort. A low-frequency, jittered
