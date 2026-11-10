@@ -619,7 +619,8 @@ ControllerFunctions.bindActiveAudioPlayingSignal = function()
 	local signalInstance = if source.kind == "Backend" and source.backend
 		then source.backend:GetPlayer() else source.instance
 	if typeof(signalInstance) == "Instance" then
-		local ok, signal = pcall(function() return signalInstance:GetPropertyChangedSignal("IsPlaying") end)
+		local propertyName = if source.kind == "Backend" then "IsPlaying" else "Playing"
+		local ok, signal = pcall(function() return signalInstance:GetPropertyChangedSignal(propertyName) end)
 		if ok and signal then
 			activeAudioPlayingConnection = signal:Connect(ControllerFunctions.refreshActiveMusicSoundCount)
 		end
@@ -749,11 +750,12 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 		return false, "Outgoing audio was not actively playing; handoff was not committed."
 	end
 	activeAudioSource = { kind = "Backend", backend = candidate }
-	local outgoingStopOk = pcall(function()
-		if outgoing.kind == "Backend" then outgoing.backend:Stop()
-		else outgoing.instance:Stop() end
+	local outgoingStopOk, outgoingStopResult = pcall(function()
+		if outgoing.kind == "Backend" then return outgoing.backend:Stop() end
+		outgoing.instance:Stop()
+		return true
 	end)
-	if not outgoingStopOk then
+	if not outgoingStopOk or outgoingStopResult == false then
 		activeAudioSource = outgoing
 		pcall(function() candidate:Stop() end)
 		if wasPlaying and not wasPaused then
@@ -4986,7 +4988,10 @@ local playbackManagerOk, playbackManager = pcall(childManagerModules.MusicPlayba
 			playbackPaused = playbackPaused,
 		}
 	end,
-	GetSound = function() return musicSound end,
+	GetSound = function()
+		local source = activeAudioSource
+		return if source.kind == "Sound" then source.instance else nil
+	end,
 	GetAudioSnapshot = function() return audioManager:GetPlaybackSnapshot() end,
 	GetElapsedTime = function() return nowPlaying.elapsed end,
 	TogglePause = function(player: Player)
