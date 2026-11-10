@@ -1045,6 +1045,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				or not entry or pendingCrossfadeToken ~= audioTransitionTrackToken then
 				return false
 			end
+			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
+			if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer")
+				or not player.IsPlaying then return false end
 			local isGlobalTransition = globalQueueMode
 			if isGlobalTransition then
 				if ControllerFunctions.pendingCrossfadeGlobalRevision < 0 then return false end
@@ -1077,9 +1080,6 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			elseif queue[1] ~= entry then
 				return false
 			end
-			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
-			if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer")
-				or not player.IsPlaying then return false end
 
 			-- Stop the outgoing source before changing ownership. If it cannot be
 			-- stopped, leave the old source authoritative so Cancel can restore gain.
