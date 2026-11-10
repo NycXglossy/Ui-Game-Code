@@ -3286,6 +3286,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		for index, id in ipairs(ALL_TRACK_IDS) do
 			if id == trackId then table.remove(ALL_TRACK_IDS, index); break end
 		end
+		local rotationReady = true
 		if activePlaylistId then
 			for index = #activePlaylistTracks, 1, -1 do
 				if activePlaylistTracks[index].id == trackId then table.remove(activePlaylistTracks, index) end
@@ -3294,6 +3295,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			if globalQueueMode then
 				local rotationSynced, syncMessage = syncGlobalPlaylistRotation()
 				if not rotationSynced then
+					rotationReady = false
 					warn("[ClubMusic] Removed catalog track locally, but shared playlist rotation sync failed: " .. tostring(syncMessage))
 				end
 			else
@@ -3303,6 +3305,11 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 		end
 
 		if globalQueueMode then
+			if not rotationReady then
+				notify(player, "Catalog record is removed, but the shared playlist rotation is not synchronized. The safety reservation remains active; retry ;cmremove after storage recovers.", "warn")
+				publishState(nil)
+				return
+			end
 			local completeCallOk, completed, completeState, completeMessage = globalInvoke("CompleteCatalogRemoval", trackId)
 			if typeof(completeState) == "table" then applyGlobalQueueState(completeState) end
 			if not completeCallOk or completed ~= true then
