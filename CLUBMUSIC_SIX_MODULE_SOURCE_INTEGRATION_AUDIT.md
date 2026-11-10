@@ -82,8 +82,21 @@ The four previously inactive module source files have now been rewritten as depe
 
 The four updated files were fetched again from the target branch and their returned blob SHAs matched the update results. The replacements no longer contain the old MusicModule/RoleSystem dependencies, legacy MusicBroadcast/MusicUpdate remotes, independent queue/playback/vote/cursor state, or a Sound destroy call. The adapter code does not own a Heartbeat loop or Sound.Ended connection; occurrences of those terms in the playback module are explanatory comments only.
 
-### Activation and installation status
+### Controller callback integration (2026-11-10)
 
-These are now architecture-compatible adapter implementations, but they are not yet instantiated by `UI_Server_Controller`. Their constructors intentionally require injected callbacks so that no module guesses at controller internals or starts controlling playback by itself. Do not install them as additional active playback scripts or replace the controller. The next integration step is to wire explicit callback contexts at the controller's existing service boundaries, then run static call-site checks before any Studio test. The two already-integrated modules (`MusicQueueManager`, `MusicValidationService`) and all existing controller/admin behavior remain unchanged.
+The four adapters are now loaded and instantiated by the existing `UI_Server_Controller` from direct-child ModuleScripts in `ServerStorage`. The controller stores instances in its `ControllerFunctions.ChildManagers` registry and only publishes the client remote Ready flag after all four constructors succeed.
 
-No Luau compiler, Roblox Studio, or multiplayer runtime tests were run for this rework.
+Callback contexts:
+
+- Audio: receives the exact canonical `musicSound` instance and a read-only paused-state getter. No standalone audio mutation callbacks are injected, so the adapter cannot bypass controller track selection, global synchronization, or transition logic.
+- Playback: receives a shallow `nowPlaying` snapshot, the canonical Sound getter, elapsed-time getter, and player-bound pause/restart callbacks. Those callbacks re-enter `ControllerFunctions.handleAction` with the real requesting Player and existing `DJPause` / `DJRestart` actions; staff checks, budgets, cooldowns, duplicate protection, and global/local behavior remain in the existing handlers. Play/Stop remain fail-closed because no equivalent standalone controller action exists.
+- Playlist: receives the existing initialized `MusicPlaylistService`, a rotation-state snapshot, and delegates start/stop/next-track selection to the existing controller rotation functions.
+- Skip vote: receives a controller-derived vote snapshot; vote submission is invoked by the already-budgeted `VoteSkip` action path. Voter departure cleanup is delegated through the existing PlayerRemoving lifecycle, retaining the deferred threshold re-check.
+
+Existing controller call sites for VoteSkip, DJPlayPlaylist, DJStopPlaylist, and PlayerRemoving now route through their adapters. No separate remotes, Heartbeat loops, Sound.Ended listeners, queue copies, vote timers, or second playback owners were introduced.
+
+### Current installation status
+
+All six Child Manager ModuleScripts are intended as direct children of `ServerStorage`. The four reworked modules must be installed together with the updated existing `UI_Server_Controller`; do not add another controller Script. The existing `MusicQueueManager` and `MusicValidationService` integrations are unchanged. Kohl's Admin bridge/addon and global queue service were not modified by this integration.
+
+Static source verification fetched the updated controller and four adapters from the branch after commit and confirmed the controller loads and constructs all four modules, routes playlist and skip-vote call sites through the adapters, and the adapter revisions match the expected commits. No Luau compiler, Roblox Studio, or multiplayer runtime tests were run. Treat the integration as source-committed but awaiting the user's Studio startup and behavior test.
