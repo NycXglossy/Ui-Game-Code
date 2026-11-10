@@ -4340,6 +4340,24 @@ authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): bo
 	return ControllerFunctions.getLevel(player) >= requiredLevel
 end
 
+-- Kohl's Admin security bridge helpers. Global security operations are checked by
+-- the same server-only authorization service used by the cross-server API.
+ControllerFunctions.adminBridgeGlobalCall = function(name: string, ...: any): (boolean, any, any)
+	local invoked, accepted, value, detail = ControllerFunctions.globalInvoke(name, ...)
+	if not invoked then return false, "Global security service is unavailable." end
+	if accepted ~= true then
+		return false, if typeof(value) == "string" then value else "Global security operation was rejected."
+	end
+	return true, value, detail
+end
+ControllerFunctions.adminBridgeAuthorize = function(caller: Player, permission: string): boolean
+	local invoked, allowed = ControllerFunctions.globalInvoke("AuthorizeGlobalAction", caller.UserId, permission)
+	return invoked and allowed == true
+end
+ControllerFunctions.adminBridgeReportSignal = function(caller: Player, signal: string, detail: string)
+	pcall(ControllerFunctions.globalInvoke, "ReportSignal", caller.UserId, signal, detail)
+end
+
 local adminBridge = ControllerFunctions.getOrCreate(ServerStorage, "BindableFunction", "ClubMusicAdminBridge") :: BindableFunction
 local ADMIN_BRIDGE_ACTIONS: {[string]: string} = {
 	Skip = "DJSkip",
@@ -4387,6 +4405,102 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		end
 		if total > shown then table.insert(lines, string.format("...and %d more. Run ;cmqueue again after removals.", total - shown)) end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1800)
+	end
+	-- Security administration is exposed through this server-only bridge, not client remotes.
+	if operation == "SecurityStatus" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic administrator permission is required."
+		end
+		local ok, status = ControllerFunctions.adminBridgeGlobalCall("GetGlobalSecurityStatus")
+		if not ok or typeof(status) ~= "table" then return false, tostring(status or "Security status is unavailable.") end
+		local lines = {"ClubMusic Global Security Status:"}
+		for _, key in ipairs({"Authorization", "Monitor", "MessageValidation", "Idempotency", "IncidentResponse"}) do
+			local item = status[key]
+			local state = if typeof(item) == "table" then tostring(item.state or "Unknown") else "Unavailable"
+			table.insert(lines, key .. ": " .. state)
+		end
+		local policy = status.Policy
+		table.insert(lines, "Policy revision: " .. tostring(if typeof(policy) == "table" then policy.revision else "Unavailable"))
+		return true, table.concat(lines, "\n")
+	end
+	if operation == "SecurityIncidents" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "IncidentResponse") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic co-owner/owner permission is required."
+		end
+		local ok, incidents = ControllerFunctions.adminBridgeGlobalCall("GetGlobalSecurityIncidents", 8)
+		if not ok or typeof(incidents) ~= "table" then return false, tostring(incidents or "Incident service is unavailable.") end
+		if #incidents == 0 then return true, "No recent ClubMusic security incidents." end
+		local lines = {"Recent ClubMusic security incidents:"}
+		for index, item in ipairs(incidents) do
+			if index > 8 then break end
+			if typeof(item) == "table" then
+				table.insert(lines, string.format("%s | %s | %s | %s", tostring(item.id or "?"), tostring(item.kind or "?"), tostring(item.state or "?"), string.sub(tostring(item.summary or ""), 1, 100)))
+			end
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1700)
+	end
+	if operation == "SecurityIncidentOpen" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "IncidentResponse") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic co-owner/owner permission is required."
+		end
+		if typeof(argument) ~= "string" or #argument < 4 or #argument > 200 then
+			return false, "Usage: ;cmincident <SecurityAlert|ServiceDegraded|AbuseReport|ManualReview> <summary>"
+		end
+		local kind, summary = string.match(argument, "^(%a+)%s+(.+)$")
+		if not kind or not summary or #summary > 180 then return false, "Provide an allowed incident type followed by a summary (max 180 characters)." end
+		local ok, incidentId = ControllerFunctions.adminBridgeGlobalCall("OpenGlobalSecurityIncident", kind, summary, caller.UserId)
+		if not ok then return false, tostring(incidentId) end
+		return true, "Security incident opened: " .. tostring(incidentId)
+	end
+	if operation == "SecurityIncidentResolve" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "IncidentResponse") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic co-owner/owner permission is required."
+		end
+		if typeof(argument) ~= "string" or #argument < 8 or #argument > 64 or not string.match(argument, "^[%w%-]+$") then
+			return false, "Usage: ;cmresolve <incident ID>"
+		end
+		local ok, resolved = ControllerFunctions.adminBridgeGlobalCall("ResolveGlobalSecurityIncident", argument, caller.UserId)
+		if not ok then return false, tostring(resolved) end
+		return true, "Security incident resolved."
+	end
+	if operation == "SecurityPolicy" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "SecurityPolicy") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic co-owner/owner permission is required."
+		end
+		local ok, policy = ControllerFunctions.adminBridgeGlobalCall("GetGlobalSecurityPolicy")
+		if not ok or typeof(policy) ~= "table" then return false, tostring(policy or "Security policy is unavailable.") end
+		local values = if typeof(policy.values) == "table" then policy.values else {}
+		local keys = {}
+		for key in pairs(values) do table.insert(keys, tostring(key)) end
+		table.sort(keys)
+		local lines = {"ClubMusic Security Policy (revision " .. tostring(policy.revision or "?") .. "):"}
+		for _, key in ipairs(keys) do table.insert(lines, key .. " = " .. tostring(values[key])) end
+		return true, table.concat(lines, "\n")
+	end
+	if operation == "SecurityPolicySet" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "SecurityPolicy") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic co-owner/owner permission is required."
+		end
+		if typeof(argument) ~= "string" or #argument > 80 then return false, "Usage: ;cmpolicyset <key> <value>" end
+		local key, rawValue = string.match(argument, "^(%w+)%s+([^%s]+)$")
+		if not key or not rawValue then return false, "Usage: ;cmpolicyset <key> <value>" end
+		local value: any
+		if key == "monitoringEnabled" then
+			if rawValue ~= "true" and rawValue ~= "false" then return false, "monitoringEnabled must be true or false." end
+			value = rawValue == "true"
+		else
+			value = tonumber(rawValue)
+			if not value or value ~= value or value == math.huge or value == -math.huge then return false, "Policy value must be a finite number." end
+		end
+		local ok, policy = ControllerFunctions.adminBridgeGlobalCall("SetGlobalSecurityPolicy", key, value, caller.UserId)
+		if not ok then return false, tostring(policy) end
+		return true, "Security policy updated. " .. key .. " = " .. tostring(value)
 	end
 	local action = ADMIN_BRIDGE_ACTIONS[operation]
 	local payload = {}
