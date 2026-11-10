@@ -390,6 +390,20 @@ function Sessions:GetState()
 	return { current = if self.current then table.clone(self.current) else nil, history = table.clone(self.history) }
 end
 
+-- Server-only lifecycle cleanup; callers must not expose this through a RemoteEvent.
+function Sessions:EndForDeparture(userId: number): boolean
+	if self.destroyed or not self.current or self.current.userId ~= userId then return false end
+	table.insert(self.history, 1, {
+		userId = self.current.userId,
+		name = self.current.name,
+		endedAt = os.time(),
+		reason = "Disconnected",
+	})
+	while #self.history > 50 do table.remove(self.history) end
+	self.current = nil
+	return true
+end
+
 function Sessions:Cleanup()
 	self.destroyed = true
 	self.current = nil
