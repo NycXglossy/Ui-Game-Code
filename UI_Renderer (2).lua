@@ -1930,19 +1930,22 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- not the device label. Desktop windows can be narrow, and tablet/console
 		-- safe areas can reduce usable width after the panel is laid out.
 		local widePlayer = content.AbsoluteSize.X >= 620
+		-- The artwork player card is 210px tall. Give the stacked layout a full
+		-- player slot plus a 12px breathing gap so the queue never overlaps its
+		-- volume/visualizer controls on phones and narrow desktop windows.
 		local playerRow = make("Frame", {
 			Name = "PlayerQueueLayout",
-			Size = UDim2.new(1, -4, 0, if widePlayer then 210 else 386),
+			Size = UDim2.new(1, -4, 0, if widePlayer then 210 else 404),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 		}, content)
 		local playerColumn = make("Frame", {
 			Position = UDim2.fromScale(0, 0),
-			Size = if widePlayer then UDim2.new(0.57, -5, 1, 0) else UDim2.new(1, 0, 0, 182),
+			Size = if widePlayer then UDim2.new(0.57, -5, 1, 0) else UDim2.new(1, 0, 0, 210),
 			BackgroundTransparency = 1,
 		}, playerRow)
 		local queueColumn = make("Frame", {
-			Position = if widePlayer then UDim2.new(0.57, 5, 0, 0) else UDim2.new(0, 0, 0, 194),
+			Position = if widePlayer then UDim2.new(0.57, 5, 0, 0) else UDim2.new(0, 0, 0, 222),
 			Size = if widePlayer then UDim2.new(0.43, -1, 1, 0) else UDim2.new(1, 0, 0, 182),
 			BackgroundTransparency = 1,
 		}, playerRow)
