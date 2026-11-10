@@ -104,6 +104,14 @@ return function(_K: any)
 	-- repeated queue refreshes from becoming an avoidable server workload.
 	local INSPECTION_COOLDOWN_SECONDS = 1.5
 	local lastInspectionAt: {[number]: number} = {}
+	local READ_ONLY_OPERATIONS: {[string]: boolean} = {
+		Status = true, Queue = true,
+		SecurityStatus = true, SecurityIncidents = true, SecurityPolicy = true,
+		OperationalHealth = true, OperationalDiagnostics = true, OperationalServices = true,
+		OperationalErrors = true, OperationalMetrics = true, OperationalSecurityLog = true,
+		OperationalServers = true, OperationalRateLimit = true, OperationalConfig = true,
+		OperationalRecovery = true, OperationalReconcile = true,
+	}
 	game:GetService("Players").PlayerRemoving:Connect(function(player: Player)
 		lastInspectionAt[player.UserId] = nil
 	end)
@@ -114,7 +122,7 @@ return function(_K: any)
 			return finish(context, operation, "rejected", "This command requires an online player caller.")
 		end
 
-		if operation == "Status" or operation == "Queue" then
+		if READ_ONLY_OPERATIONS[operation] == true then
 			local now = os.clock()
 			local previous = lastInspectionAt[caller.UserId] or 0
 			if previous > 0 and now - previous < INSPECTION_COOLDOWN_SECONDS then
