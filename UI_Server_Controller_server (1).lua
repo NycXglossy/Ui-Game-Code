@@ -825,13 +825,30 @@ for _, moduleName in ipairs({
 	"MusicPlaylistManager",
 	"MusicSkipVoteManager",
 }) do
-	local moduleScript = ServerStorageForQueue:WaitForChild(moduleName, 20)
-	if not moduleScript or not moduleScript:IsA("ModuleScript") then
-		error("[ClubMusic] Missing ServerStorage." .. moduleName .. " ModuleScript.")
+	local moduleScript = ServerStorageForQueue:FindFirstChild(moduleName)
+	if not moduleScript then
+		moduleScript = ServerStorageForQueue:WaitForChild(moduleName, 20)
 	end
-	local requireOk, requireResult = pcall(require, moduleScript)
+	if not moduleScript or not moduleScript:IsA("ModuleScript") then
+		local detail = "Expected direct child ServerStorage." .. moduleName .. " (ModuleScript); found "
+			.. (if moduleScript then moduleScript.ClassName else "nothing")
+			.. ". Direct children: " .. (if ControllerFunctions.ErrorHandler
+				then ControllerFunctions.ErrorHandler.DescribeChildren(ServerStorageForQueue)
+				else "<diagnostic handler unavailable>")
+		ControllerFunctions.reportStartupError("ModuleLoader", "Locate " .. moduleName, detail, ServerStorageForQueue)
+		error("[ClubMusic] " .. detail)
+	end
+
+	local requireOk, requireResult
+	if ControllerFunctions.ErrorHandler then
+		requireOk, requireResult = ControllerFunctions.ErrorHandler.SafeRequire(moduleScript, "ServerStorage." .. moduleName)
+	else
+		requireOk, requireResult = pcall(require, moduleScript)
+	end
 	if not requireOk or typeof(requireResult) ~= "table" then
-		error("[ClubMusic] " .. moduleName .. " failed to load: " .. tostring(requireResult))
+		local detail = moduleName .. " failed to load or returned an invalid module table: " .. tostring(requireResult)
+		ControllerFunctions.reportStartupError("ModuleLoader", "Load " .. moduleName, detail, moduleScript)
+		error("[ClubMusic] " .. detail)
 	end
 	ControllerFunctions.ChildManagerModules[moduleName] = requireResult
 end
