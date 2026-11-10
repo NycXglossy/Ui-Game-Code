@@ -1997,6 +1997,12 @@ local function advance(expectedGeneration: number?): (boolean, string?)
 					return false, "The shared catalog is updating; track transition will retry."
 				end
 			end
+			if globalPlaylistRotationEnabled and not activePlaylistId then
+				local rotationSynced, rotationMessage = syncGlobalPlaylistRotation()
+				if not rotationSynced then
+					return false, "The shared playlist rotation is still recovering: " .. tostring(rotationMessage)
+				end
+			end
 			-- Build one fallback entry for this transition. Retrying a stale revision
 			-- must not consume additional playlist cursor positions or pick new tracks.
 			local playlistFallback = nextPlaylistTrack()
@@ -2116,6 +2122,13 @@ task.spawn(function()
 	if localCatalogRevision ~= globalCatalogRevision then
 		if not refreshCatalogWhenReady() then
 			warn("[ClubMusic] Catalog revision could not be synchronized; global queue writes remain blocked on this server.")
+			return
+		end
+	end
+	if globalPlaylistRotationEnabled and not activePlaylistId then
+		local rotationSynced, rotationMessage = syncGlobalPlaylistRotation()
+		if not rotationSynced then
+			warn("[ClubMusic] Empty global playlist rotation could not be cleared: " .. tostring(rotationMessage))
 			return
 		end
 	end
