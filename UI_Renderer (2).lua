@@ -312,6 +312,7 @@ local function normalizeTitle(data: any): {[string]: any}
 		set = set.id,
 		font = font,
 		style = style,
+		size = math.clamp(math.floor((tonumber(d.textSize or d.size) or 20) + 0.5), 14, 32),
 		height = math.clamp(tonumber(d.heightOffset or d.height) or 2.5, 0, 8),
 		distance = math.clamp(tonumber(d.viewDistance or d.distance) or 80, 20, 200),
 	}
@@ -3323,6 +3324,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			colors = titleColorHex(draft.effect, draft.set),
 			font = draft.font,
 			style = draft.style,
+			textSize = draft.size,
 			heightOffset = draft.height,
 			viewDistance = draft.distance,
 			visible = true,
@@ -3354,7 +3356,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		local draft: any = titleDraft
 		local compactTitleEditor = currentDevice == "Mobile" or currentDevice == "Tablet"
-		local previewMaxTextSize = if currentDevice == "Mobile" then 18 elseif currentDevice == "Tablet" then 21 else 24
+		local previewMaxTextSize = 32
 
 		sectionLabel("CUSTOM TITLE")
 		local slotCard = card(56)
@@ -3409,10 +3411,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			TextWrapped = false,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 		}, previewStage) :: TextLabel
-		make("UITextSizeConstraint", {
-			MinTextSize = 14,
-			MaxTextSize = previewMaxTextSize,
-		}, previewLabel)
+		local previewSizeConstraint = make("UITextSizeConstraint", {
+			MinTextSize = math.max(10, math.floor(draft.size * 0.65)),
+			MaxTextSize = draft.size,
+		}, previewLabel) :: UITextSizeConstraint
 		local previewHint = label(previewCard, "Changes appear here before you save", UDim2.fromOffset(12, 80), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
 		previewHint.TextXAlignment = Enum.TextXAlignment.Center
 		previewHint.TextScaled = true
@@ -3421,12 +3423,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local previewUpdate: (number) -> () = function(_) end
 		table.insert(titleAnimators, function(t) previewUpdate(t) end)
 		local function refreshPreview()
+			previewSizeConstraint.MinTextSize = math.max(10, math.floor(draft.size * 0.65))
+			previewSizeConstraint.MaxTextSize = draft.size
 			previewUpdate = styleTitleLabel(previewLabel, draft)
 			previewUpdate(os.clock())
 		end
 		refreshPreview()
 
-		local form = card(478)
+		local form = card(510)
 		label(form, "Title text", UDim2.fromOffset(12, 6), UDim2.new(1, -132, 0, 18), C.Muted, 10, true)
 		local titleCounter = label(form, "0 / 24", UDim2.new(1, -112, 0, 6), UDim2.fromOffset(100, 18), C.Muted, 9, true)
 		titleCounter.TextXAlignment = Enum.TextXAlignment.Right
@@ -3657,6 +3661,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		local heightDown, heightUp = stepper(form, 366, "Height offset (above head)", function() return draft.height end, function(v) draft.height = v end, 0, 8, 0.25, "studs")
 		local distanceDown, distanceUp = stepper(form, 398, "View distance", function() return draft.distance end, function(v) draft.distance = v end, 20, 200, 10, "studs")
+		local sizeDown, sizeUp = stepper(form, 430, "Title text size", function() return draft.size end, function(v) draft.size = v; refreshPreview() end, 14, 32, 2, "px")
 		local firstStyleChip = styleRow and styleRow:FindFirstChildWhichIsA("TextButton")
 		if firstStyleChip and heightDown then
 			firstStyleChip.NextSelectionDown = heightDown
@@ -3666,20 +3671,24 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			heightUp.NextSelectionDown = distanceDown
 			distanceDown.NextSelectionUp = heightUp
 		end
+		if distanceUp and sizeDown then
+			distanceUp.NextSelectionDown = sizeDown
+			sizeDown.NextSelectionUp = distanceUp
+		end
 
-		local saveButton = actionButton(form, "SAVE TITLE", UDim2.fromOffset(12, 434), UDim2.new(0.5, -16, 0, 36), function()
+		local saveButton = actionButton(form, "SAVE TITLE", UDim2.fromOffset(12, 466), UDim2.new(0.5, -16, 0, 36), function()
 			saveTitleDraft(draft)
 		end, C.Magenta)
-		local resetButton = actionButton(form, "RESET", UDim2.new(0.5, 4, 0, 434), UDim2.new(0.5, -16, 0, 36), function()
+		local resetButton = actionButton(form, "RESET", UDim2.new(0.5, 4, 0, 466), UDim2.new(0.5, -16, 0, 36), function()
 			titleDraft = nil
 			refreshTitleTab()
 		end, C.SurfaceLight)
 		-- Keep the primary and secondary actions paired for predictable controller navigation.
 		saveButton.NextSelectionRight = resetButton
 		resetButton.NextSelectionLeft = saveButton
-		if distanceUp then
-			distanceUp.NextSelectionDown = saveButton
-			saveButton.NextSelectionUp = distanceUp
+		if sizeUp then
+			sizeUp.NextSelectionDown = saveButton
+			saveButton.NextSelectionUp = sizeUp
 		end
 		if compactTitleEditor then
 			for _, button in ipairs({ saveButton, resetButton }) do
