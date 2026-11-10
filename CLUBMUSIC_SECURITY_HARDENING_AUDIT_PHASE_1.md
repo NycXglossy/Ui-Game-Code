@@ -83,3 +83,16 @@ The reviewed server-side boundaries show layered validation, authorization, and 
 Status: **Static review complete for the scope above; adversarial runtime and multiplayer verification pending.**
 
 Do not describe the system as exploit-proof or production-certified until the runtime test matrix has been completed.
+
+
+### 6. Profile persistence and purchase receipts
+
+A follow-up static review covered the profile session lease, serialized profile writes, and Developer Product receipt handling:
+- Profile acquisition uses an atomic DataStore update and refuses to load a profile owned by another unexpired server session.
+- Profile saves verify the session token inside UpdateAsync and refuse to overwrite a profile after ownership is lost.
+- Profile writes are serialized per user and coalesced to avoid unbounded save-task creation.
+- Developer Product rewards use a per-purchase durable journal and a pending marker committed with the profile reward; retries verify purchase/user/product identity before acknowledging.
+- Global XP boost receipts use their own purchase journal and a pending marker around the global timer update to make retries idempotent.
+- A failed or incomplete receipt operation returns NotProcessedYet rather than acknowledging an unconfirmed reward.
+
+These are static findings only. Fault-injection tests are still needed for server shutdown between each receipt transaction step, simultaneous receipt callbacks, lease expiry, and DataStore throttling.
