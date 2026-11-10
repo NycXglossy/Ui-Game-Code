@@ -146,6 +146,22 @@ function Manager:Begin(asset: string, duration: number)
 		if self.generation ~= generation or not self.active or self.incoming ~= incoming or self.destroyed then return end
 		if not ready then self:Cancel(); return end
 
+		-- Prepare early, but do not attenuate the current track until its
+		-- remaining-time window reaches the requested fade duration.
+		if typeof(self.context.GetRemainingTime) == "function" then
+			while self.generation == generation and self.active and self.incoming == incoming and not self.destroyed do
+				local remainingOk, remaining = pcall(self.context.GetRemainingTime)
+				if not remainingOk or typeof(remaining) ~= "number" or remaining ~= remaining
+					or remaining < 0 or remaining == math.huge then
+					self:Cancel()
+					return
+				end
+				if remaining <= duration then break end
+				task.wait(math.min(0.1, remaining - duration))
+			end
+		end
+		if self.generation ~= generation or not self.active or self.incoming ~= incoming or self.destroyed then return end
+
 		local playOk, playResult = safeMethod(incoming, "Play", nil, 0)
 		if not playOk or playResult == false then self:Cancel(); return end
 		local elapsed = 0
