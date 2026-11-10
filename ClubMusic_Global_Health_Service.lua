@@ -53,6 +53,24 @@ function HealthService:Start(): boolean
                 and dependencies.apiFolder:FindFirstChild("GlobalEvent") ~= nil
             local queueReady = dependencies.queueModule:IsA("ModuleScript")
 
+            -- Local health is evaluated independently from cross-server availability.
+            -- Studio isolation (or an intentional configuration disable) must not make
+            -- a healthy local server look unhealthy.
+            local localState = "Healthy"
+            local localDetails = {}
+            if not apiReady then
+                localState = "Degraded"
+                table.insert(localDetails, "Global API folder or GlobalEvent is unavailable.")
+            end
+            if not queueReady then
+                localState = "Degraded"
+                table.insert(localDetails, "Global queue module is missing or has the wrong class.")
+            end
+            local localDetail = if #localDetails > 0 then table.concat(localDetails, " ")
+                else "Local API and queue module checks are healthy."
+
+            -- Preserve the existing aggregate state for compatibility. New fields below
+            -- make the local result and cross-server service/sync state explicit.
             local state = "Healthy"
             local details = {}
 
@@ -96,8 +114,13 @@ function HealthService:Start(): boolean
                 state = state,
                 detail = detail,
                 updatedAt = os.time(),
+                localState = localState,
+                localDetail = localDetail,
+                serviceState = if not enabledOk then "Unavailable" else if enabled == true then "Enabled" else "Disabled",
                 recoveryState = if recoveryOk and type(recovery) == "table" then recovery.state else "Unavailable",
+                recoveryDetail = if recoveryOk and type(recovery) == "table" then tostring(recovery.detail or "") else "Recovery status is unavailable.",
                 syncState = if syncOk and type(sync) == "table" then sync.state else "Unavailable",
+                syncDetail = if syncOk and type(sync) == "table" then tostring(sync.detail or "") else "Cross-server synchronization status is unavailable.",
                 syncStatus = if syncOk and type(sync) == "table" then table.clone(sync) else nil,
             }
 
@@ -119,9 +142,13 @@ function HealthService:Start(): boolean
             pcall(function()
                 dependencies.apiFolder:SetAttribute("HealthStatus", state)
                 dependencies.apiFolder:SetAttribute("HealthDetail", detail)
+                dependencies.apiFolder:SetAttribute("LocalHealthStatus", localState)
+                dependencies.apiFolder:SetAttribute("LocalHealthDetail", localDetail)
+                dependencies.apiFolder:SetAttribute("GlobalServiceStatus", self.status.serviceState)
                 dependencies.apiFolder:SetAttribute("HealthUpdatedAt", self.status.updatedAt)
                 dependencies.apiFolder:SetAttribute("RecoveryStatus", self.status.recoveryState)
                 dependencies.apiFolder:SetAttribute("SyncStatus", self.status.syncState)
+                dependencies.apiFolder:SetAttribute("SyncDetail", self.status.syncDetail)
                 dependencies.apiFolder:SetAttribute("SyncPeerCount", if self.status.syncStatus then self.status.syncStatus.peerCount else 0)
             end)
 
