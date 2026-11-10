@@ -179,3 +179,18 @@ The controller-owned `MusicPlaybackManager` now prefers the injected `GetAudioSn
 The existing controller still injects its canonical `ServerMusicSound`, and the controller's own play/stop/pause/resume, seek, reconciliation, watchdog, and SoundGroup routing paths remain unchanged. This is a compatibility improvement, not a playback cutover: no AudioPlayer deck is constructed, no second output is started, and crossfade remains disabled.
 
 Static source checks confirmed the snapshot-first paths and retained Sound fallback. Roblox Studio playback and multiplayer validation have not been run.
+
+## Controller-owned active audio source facade — phase 10
+
+The server controller now defines one source contract (`activeAudioSource`) and routes its core playback operations through controller-owned functions rather than hard-coding the legacy Sound in each operation. The migrated paths include:
+
+- Start/stop and asset assignment.
+- Global playback reconciliation and position correction.
+- Local and global pause/resume and seek.
+- Watchdog playing/readiness/length inspection.
+
+The source contract currently points only to the existing marked `SoundService.ServerMusicSound`. It exposes backend-neutral snapshot fields (kind, readiness, playing, paused, position, length, asset) and operation seams for a future injected backend. The existing Sound setup, SoundGroup routing, and Playing-change counter signal remain in place; no AudioPlayer backend is instantiated, no source ownership switch is exposed, and crossfade remains inactive.
+
+`ServerMusicAudioHandler:GetCurrentSoundId()` now reads the adapter snapshot's asset field rather than requiring a concrete Sound. This makes that facade query consistent with the new source snapshot.
+
+**Safety boundary:** this is an adapter-routing phase, not the modern audio cutover. The backend branch is dormant and must not be enabled until an atomic source-adoption/rollback path is implemented and Studio multiplayer testing verifies there is never duplicate output. No Roblox Studio runtime or multiplayer tests were run.
