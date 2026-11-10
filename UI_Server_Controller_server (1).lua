@@ -773,6 +773,7 @@ local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
 local enqueueGlobalQueueBatch: (({QueueEntry}) -> (boolean, string?))? = nil
 local activePlaylistId: string? = nil
+local globalPlaylistRotationEnabled = false
 local activePlaylistName = ""
 local activePlaylistTracks: {Track} = {}
 local activePlaylistCursor = 1
@@ -1787,6 +1788,7 @@ local function applyGlobalQueueState(state: any): boolean
 	globalCatalogChangeTrackId = if typeof(state.catalogChangeTrackId) == "string" then state.catalogChangeTrackId else nil
 	globalCatalogChangeKind = if state.catalogChangeKind == "add" or state.catalogChangeKind == "remove"
 		then state.catalogChangeKind else nil
+	globalPlaylistRotationEnabled = typeof(state.rotation) == "table" and state.rotation.enabled == true
 	if typeof(state.rotation) == "table" and state.rotation.enabled == true
 		and typeof(state.rotation.trackIds) == "table" then
 		activePlaylistId = tostring(state.rotation.id)
@@ -3412,7 +3414,7 @@ local function handleAction(player: Player, action: any, payload: any, trustedAd
 			if id == trackId then table.remove(ALL_TRACK_IDS, index); break end
 		end
 		local rotationReady = true
-		if activePlaylistId then
+		if activePlaylistId or (globalQueueMode and globalPlaylistRotationEnabled) then
 			for index = #activePlaylistTracks, 1, -1 do
 				if activePlaylistTracks[index].id == trackId then table.remove(activePlaylistTracks, index) end
 			end
@@ -4392,15 +4394,21 @@ refreshLocalCatalog = function(): boolean
 		-- Catalog invalidation can remove tracks referenced by an active playlist.
 		-- Rebuild the in-memory playable view without mutating the saved playlist:
 		-- stale IDs remain available if a track is restored in a later catalog sync.
-		if activePlaylistId then
-			if globalQueueMode then
-				-- The shared rotation is authoritative in global mode; re-read it
-				-- against the refreshed local catalog instead of replacing it with
-				-- this server's possibly stale playlist copy.
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			else
-				reloadActivePlaylist()
+		if globalQueueMode then
+			-- The shared rotation is authoritative in global mode; re-read it
+			-- against the refreshed local catalog instead of replacing it with
+			-- this server's possibly stale playlist copy.
+			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+			-- A removed track can leave a rotation with no locally playable IDs.
+			-- Disable that stale rotation so an empty queue can fall back to Auto DJ.
+			if globalPlaylistRotationEnabled and not activePlaylistId then
+				local rotationSynced, rotationMessage = syncGlobalPlaylistRotation()
+				if not rotationSynced then
+					warn("[ClubMusic] Could not clear a playlist rotation with no playable catalog tracks: " .. tostring(rotationMessage))
+				end
 			end
+		elseif activePlaylistId then
+			reloadActivePlaylist()
 		end
 		refreshed = true
 	end)
