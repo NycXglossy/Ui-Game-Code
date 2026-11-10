@@ -1,13 +1,14 @@
 --!strict
--- Non-owning adapter for SoundService.ServerMusicSound.
--- This module never creates, reparents, stops, or destroys the canonical Sound
--- unless an explicitly injected controller callback authorizes that operation.
+-- Non-owning, backend-neutral adapter for the controller's canonical audio source.
+-- Legacy Sound remains supported; an injected modern AudioPlayer backend can be
+-- inspected without transferring queue, transition, or playback authority.
 
 local ServerMusicAudioHandler = {}
 ServerMusicAudioHandler.__index = ServerMusicAudioHandler
 
 export type Context = {
-	Sound: Sound,
+	Sound: Sound?,
+	Backend: any?,
 	GetPaused: (() -> boolean)?,
 	Play: ((string, number?) -> (boolean, string?))?,
 	Stop: (() -> (boolean, string?))?,
@@ -30,10 +31,14 @@ end
 
 function ServerMusicAudioHandler.new(context: Context)
 	assert(typeof(context) == "table", "Audio handler requires an injected context.")
-	assert(typeof(context.Sound) == "Instance" and context.Sound:IsA("Sound"), "Audio handler requires the canonical Sound instance.")
-	assert(context.Sound.Name == "ServerMusicSound", "Audio handler must reference SoundService.ServerMusicSound.")
-	assert(context.Sound:GetAttribute("ManagedByClubMusicController") == true,
-		"Audio handler refuses a Sound not marked as controller-owned.")
+	local hasSound = typeof(context.Sound) == "Instance" and context.Sound:IsA("Sound")
+	local hasBackend = typeof(context.Backend) == "table"
+	assert(hasSound or hasBackend, "Audio handler requires the canonical Sound or an injected modern backend.")
+	if hasSound then
+		assert(context.Sound.Name == "ServerMusicSound", "Audio handler must reference SoundService.ServerMusicSound.")
+		assert(context.Sound:GetAttribute("ManagedByClubMusicController") == true,
+			"Audio handler refuses a Sound not marked as controller-owned.")
+	end
 	return setmetatable({ context = context, destroyed = false }, ServerMusicAudioHandler)
 end
 
@@ -43,14 +48,58 @@ function ServerMusicAudioHandler:GetSound(): Sound?
 	return if sound and sound.Parent then sound else nil
 end
 
-function ServerMusicAudioHandler:GetTimePosition(): number
+function ServerMusicAudioHandler:GetAudioPlayer(): AudioPlayer?
+	if self.destroyed or typeof(self.context.Backend) ~= "table" then return nil end
+	local ok, player = pcall(function() return self.context.Backend:GetPlayer() end)
+	if ok and typeof(player) == "Instance" and player:IsA("AudioPlayer") then return player end
+	return nil
+end
+
+-- Snapshot contract used by controller diagnostics and playback quality checks.
+-- It is read-only and does not start, stop, seek, or otherwise mutate playback.
+function ServerMusicAudioHandler:GetPlaybackSnapshot()
+	if self.destroyed then
+		return { kind = "Unavailable", ready = false, playing = false, paused = false, position = 0, length = 0, asset = "" }
+	end
+	local backend = self.context.Backend
+	if typeof(backend) == "table" then
+		local player = self:GetAudioPlayer()
+		local ok, ready = pcall(function() return backend:IsReady() end)
+		local playingOk, playing = pcall(function() return backend:IsPlaying() end)
+		local positionOk, position = pcall(function() return backend:GetTimePosition() end)
+		local lengthOk, length = pcall(function() return backend:GetTimeLength() end)
+		local asset = ""
+		if player then pcall(function() asset = tostring(player.Asset) end) end
+		return {
+			kind = "AudioPlayer",
+			ready = ok and ready == true,
+			playing = playingOk and playing == true,
+			paused = self:IsPaused(),
+			position = positionOk and math.max(0, tonumber(position) or 0) or 0,
+			length = lengthOk and math.max(0, tonumber(length) or 0) or 0,
+			asset = asset,
+		}
+	end
 	local sound = self:GetSound()
-	return if sound then math.max(0, sound.TimePosition) else 0
+	return {
+		kind = "Sound",
+		ready = sound ~= nil and sound.IsLoaded,
+		playing = sound ~= nil and sound.IsPlaying,
+		paused = self:IsPaused(),
+		position = if sound then math.max(0, sound.TimePosition) else 0,
+		length = if sound then math.max(0, sound.TimeLength) else 0,
+		asset = if sound then sound.SoundId else "",
+	}
+end
+
+function ServerMusicAudioHandler:GetTimePosition(): number
+	local snapshot = self:GetPlaybackSnapshot()
+	return snapshot.position
 end
 
 function ServerMusicAudioHandler:GetTimeLength(): number
-	local sound = self:GetSound()
-	return if sound then math.max(0, sound.TimeLength) else 0
+	local snapshot = self:GetPlaybackSnapshot()
+	return snapshot.length
 end
 
 function ServerMusicAudioHandler:GetCurrentSoundId(): string?
@@ -59,8 +108,8 @@ function ServerMusicAudioHandler:GetCurrentSoundId(): string?
 end
 
 function ServerMusicAudioHandler:IsPlaying(): boolean
-	local sound = self:GetSound()
-	return sound ~= nil and sound.IsPlaying
+	local snapshot = self:GetPlaybackSnapshot()
+	return snapshot.playing == true
 end
 
 function ServerMusicAudioHandler:IsPaused(): boolean
@@ -107,7 +156,9 @@ end
 
 function ServerMusicAudioHandler:GetVolume(): number
 	local sound = self:GetSound()
-	return if sound then sound.Volume else 1
+	if sound then return sound.Volume end
+	local player = self:GetAudioPlayer()
+	return if player then player.Volume else 1
 end
 
 function ServerMusicAudioHandler:Cleanup()
