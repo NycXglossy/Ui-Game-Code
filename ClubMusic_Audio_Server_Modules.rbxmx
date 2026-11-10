@@ -1,0 +1,475 @@
+<?xml version="1.0" encoding="utf-8"?>
+<roblox version="4">
+  <Item class="Folder" referent="RBX0">
+    <Properties><string name="Name">ClubMusicAudioModules</string></Properties>
+    <Item class="ModuleScript" referent="RBX1"><Properties><string name="Name">ClubMusicAudioBackend</string><ProtectedString name="Source"><![CDATA[--!strict
+-- ClubMusic modern Roblox audio backend.
+-- This module owns only its injected AudioPlayer graph. The server controller
+-- remains the sole authority for queue state, track selection, and transitions.
+-- It is opt-in until the experience has completed Studio/multiplayer validation.
+
+local Backend = {}
+Backend.__index = Backend
+
+export type Config = {
+	Parent: Instance?,
+	Name: string?,
+	Volume: number?,
+	PlaybackSpeed: number?,
+	OutputPlayer: Player?,
+}
+
+local function finite(value: any): boolean
+	return typeof(value) == "number" and value == value and math.abs(value) < math.huge
+end
+
+local function makeWire(parent: Instance, source: Instance, target: Instance): Wire
+	local wire = Instance.new("Wire")
+	wire.SourceInstance = source
+	wire.TargetInstance = target
+	wire.Parent = parent
+	return wire
+end
+
+function Backend.new(config: Config?)
+	config = config or {}
+	local parent = config.Parent or game:GetService("SoundService")
+	local name = config.Name or "ClubMusicModernAudio"
+	local root = Instance.new("Folder")
+	root.Name = name
+	root:SetAttribute("ManagedByClubMusicAudioBackend", true)
+	root.Parent = parent
+
+	local player = Instance.new("AudioPlayer")
+	player.Name = "AudioPlayer"
+	player.AutoLoad = true
+	player.AutoPlay = false
+	player.Looping = false
+	player.Volume = math.clamp(if finite(config.Volume) then config.Volume else 1, 0, 10)
+	player.PlaybackSpeed = math.clamp(if finite(config.PlaybackSpeed) then config.PlaybackSpeed else 1, 0.05, 20)
+	player.Parent = root
+
+	local fader = Instance.new("AudioFader")
+	fader.Name = "MusicFader"
+	fader.Volume = 1
+	fader.Parent = root
+
+	local output = Instance.new("AudioDeviceOutput")
+	output.Name = "MusicOutput"
+	if config.OutputPlayer then output.Player = config.OutputPlayer end
+	output.Parent = root
+
+	local inputWire = makeWire(root, player, fader)
+	local outputWire = makeWire(root, fader, output)
+
+	return setmetatable({
+		root = root,
+		player = player,
+		fader = fader,
+		output = output,
+		wires = { inputWire, outputWire },
+		destroyed = false,
+		paused = false,
+		pausedAt = 0,
+	}, Backend)
+end
+
+function Backend:IsAvailable(): boolean
+	return not self.destroyed and self.player ~= nil and self.player.Parent ~= nil
+end
+
+function Backend:SetAsset(asset: string): (boolean, string?)
+	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
+	if typeof(asset) ~= "string" or #asset > 64 or not string.match(asset, "^rbxassetid://%d+$") then
+		return false, "Invalid audio asset ID."
+	end
+	self:Stop()
+	local ok, err = pcall(function()
+		self.player.Asset = asset
+	end)
+	if not ok then return false, tostring(err) end
+	return true, nil
+end
+
+function Backend:IsReady(): boolean
+	return self:IsAvailable() and self.player.IsReady
+end
+
+function Backend:GetTimePosition(): number
+	if not self:IsAvailable() then return 0 end
+	return math.max(0, self.player.TimePosition)
+end
+
+function Backend:GetTimeLength(): number
+	if not self:IsAvailable() or not self.player.IsReady then return 0 end
+	return math.max(0, self.player.TimeLength)
+end
+
+function Backend:IsPlaying(): boolean
+	return self:IsAvailable() and self.player.IsPlaying and not self.paused
+end
+
+function Backend:Play(asset: string?, position: number?): (boolean, string?)
+	if asset ~= nil then
+		local ok, err = self:SetAsset(asset)
+		if not ok then return false, err end
+	end
+	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
+	if position ~= nil then
+		if not finite(position) or position < 0 then return false, "Invalid playback position." end
+		self.player.TimePosition = position
+	end
+	self.paused = false
+	self.pausedAt = 0
+	local ok, err = pcall(function() self.player:Play() end)
+	if not ok then return false, tostring(err) end
+	return true, nil
+end
+
+-- AudioPlayer has no Sound-style Pause method. Preserve the playhead and stop;
+-- Resume restores the saved position and starts the same asset again.
+function Backend:Pause(): (boolean, string?)
+	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
+	if not self.player.IsPlaying then return true, nil end
+	self.pausedAt = self.player.TimePosition
+	self.paused = true
+	local ok, err = pcall(function() self.player:Stop() end)
+	if not ok then self.paused = false; return false, tostring(err) end
+	return true, nil
+end
+
+function Backend:Resume(): (boolean, string?)
+	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
+	if not self.paused then return true, nil end
+	self.player.TimePosition = math.max(0, self.pausedAt)
+	self.paused = false
+	local ok, err = pcall(function() self.player:Play() end)
+	if not ok then self.paused = true; return false, tostring(err) end
+	return true, nil
+end
+
+function Backend:Stop(): (boolean, string?)
+	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
+	self.paused = false
+	self.pausedAt = 0
+	local ok, err = pcall(function() self.player:Stop() end)
+	if not ok then return false, tostring(err) end
+	return true, nil
+end
+
+function Backend:Seek(position: number): (boolean, string?)
+	if not self:IsAvailable() or not finite(position) or position < 0 then
+		return false, "Invalid seek request."
+	end
+	local ok, err = pcall(function()
+		self.player.TimePosition = position
+		if self.paused then self.pausedAt = position end
+	end)
+	if not ok then return false, tostring(err) end
+	return true, nil
+end
+
+function Backend:SetGain(value: number): (boolean, string?)
+	if not self:IsAvailable() or not finite(value) then return false, "Invalid audio gain." end
+	self.fader.Volume = math.clamp(value, 0, 1)
+	return true, nil
+end
+
+function Backend:SetPlaybackSpeed(value: number): (boolean, string?)
+	if not self:IsAvailable() or not finite(value) then return false, "Invalid playback speed." end
+	self.player.PlaybackSpeed = math.clamp(value, 0.5, 2)
+	return true, nil
+end
+
+function Backend:GetPlayer(): AudioPlayer?
+	return if self:IsAvailable() then self.player else nil
+end
+
+function Backend:Cleanup()
+	if self.destroyed then return end
+	self.destroyed = true
+	if self.root then pcall(function() self.root:Destroy() end) end
+	self.root = nil
+	self.player = nil
+	self.fader = nil
+	self.output = nil
+	table.clear(self.wires)
+end
+
+return Backend
+]]></ProtectedString></Properties></Item>
+    <Item class="ModuleScript" referent="RBX2"><Properties><string name="Name">ClubMusicAudioCrossfadeManager</string><ProtectedString name="Source"><![CDATA[--!strict
+-- Controller-invoked crossfade coordinator. No independent queue or playback loop.
+-- The caller supplies both decks and owns when a transition is committed.
+local Manager = {}
+Manager.__index = Manager
+
+export type Deck = {
+	SetGain: (self: any, gain: number) -> (boolean, string?),
+	Play: (self: any, asset: string?, position: number?) -> (boolean, string?),
+	Stop: (self: any) -> (boolean, string?),
+	GetTimePosition: (self: any) -> number,
+	Cleanup: (self: any) -> (),
+}
+
+function Manager.new(context)
+	assert(typeof(context) == "table", "Crossfade manager requires controller context.")
+	assert(typeof(context.CreateDeck) == "function", "Crossfade manager requires CreateDeck.")
+	assert(typeof(context.OnCommit) == "function", "Crossfade manager requires OnCommit.")
+	return setmetatable({ context = context, generation = 0, active = false, destroyed = false }, Manager)
+end
+
+function Manager:Cancel()
+	self.generation += 1
+	self.active = false
+	if self.incoming then pcall(function() self.incoming:Stop() end) end
+	if self.incoming then pcall(function() self.incoming:Cleanup() end) end
+	self.incoming = nil
+	return true
+end
+
+function Manager:Begin(asset: string, duration: number)
+	if self.destroyed then return false, "Crossfade manager is unavailable." end
+	if self.active then return false, "A crossfade is already in progress." end
+	if typeof(asset) ~= "string" or not string.match(asset, "^rbxassetid://%d+$") then
+		return false, "Invalid incoming audio asset."
+	end
+	if typeof(duration) ~= "number" or duration ~= duration or duration < 0.25 or duration > 12 then
+		return false, "Crossfade duration must be between 0.25 and 12 seconds."
+	end
+	local deckOk, incoming = pcall(self.context.CreateDeck)
+	if not deckOk or not incoming then return false, "Could not create the incoming audio deck." end
+	local generation = self.generation + 1
+	self.generation = generation
+	self.incoming = incoming
+	self.active = true
+	local playOk, playError = incoming:Play(asset, 0)
+	if not playOk then self:Cancel(); return false, tostring(playError) end
+
+	task.spawn(function()
+		local elapsed = 0
+		local step = 0.05
+		while elapsed < duration and self.generation == generation and not self.destroyed do
+			local alpha = math.clamp(elapsed / duration, 0, 1)
+			local ok = incoming:SetGain(alpha)
+			if not ok then self:Cancel(); return end
+			if typeof(self.context.SetOutgoingGain) == "function" then
+				local outOk = pcall(self.context.SetOutgoingGain, 1 - alpha)
+				if not outOk then self:Cancel(); return end
+			end
+			task.wait(step)
+			elapsed += step
+		end
+		if self.generation ~= generation or self.destroyed then return end
+		incoming:SetGain(1)
+		if typeof(self.context.SetOutgoingGain) == "function" then
+			pcall(self.context.SetOutgoingGain, 0)
+		end
+		local commitOk, commitResult = pcall(self.context.OnCommit, incoming)
+		if not commitOk or commitResult == false then self:Cancel(); return end
+		self.incoming = nil
+		self.active = false
+	end)
+	return true, nil
+end
+
+function Manager:Cleanup()
+	if self.destroyed then return end
+	self:Cancel()
+	self.destroyed = true
+	self.context = nil
+end
+
+return Manager
+]]></ProtectedString></Properties></Item>
+    <Item class="ModuleScript" referent="RBX3"><Properties><string name="Name">ClubMusicAudioQualityProfiles</string><ProtectedString name="Source"><![CDATA[--!strict
+-- Validated audio quality profiles. Applies only to a supplied AudioPlayer;
+-- per-player preferences must use a client-local graph, never a shared server gain.
+local Profiles = {}
+Profiles.__index = Profiles
+
+local DEFINITIONS = {
+	Standard = { playbackSpeed = 1, gain = 1 },
+	Soft = { playbackSpeed = 1, gain = 0.75 },
+	Bass = { playbackSpeed = 1, gain = 1 },
+	Night = { playbackSpeed = 1, gain = 0.55 },
+}
+
+function Profiles.new(context)
+	assert(typeof(context) == "table", "Audio quality profiles require context.")
+	return setmetatable({ context = context, current = "Standard", destroyed = false }, Profiles)
+end
+
+function Profiles:GetProfiles()
+	local copy = {}
+	for name, values in pairs(DEFINITIONS) do copy[name] = table.clone(values) end
+	return copy
+end
+
+function Profiles:Apply(name: string)
+	if self.destroyed then return false, "Audio quality service is unavailable." end
+	local profile = DEFINITIONS[name]
+	if not profile then return false, "Unknown audio quality profile." end
+	if typeof(self.context.SetPlaybackSpeed) == "function" then
+		local ok, result = pcall(self.context.SetPlaybackSpeed, profile.playbackSpeed)
+		if not ok or result == false then return false, "Could not apply playback speed." end
+	end
+	if typeof(self.context.SetGain) == "function" then
+		local ok, result = pcall(self.context.SetGain, profile.gain)
+		if not ok or result == false then return false, "Could not apply audio gain." end
+	end
+	self.current = name
+	return true, name
+end
+
+function Profiles:GetCurrent()
+	return self.current
+end
+
+function Profiles:Cleanup()
+	self.destroyed = true
+	self.context = nil
+end
+
+return Profiles
+]]></ProtectedString></Properties></Item>
+    <Item class="ModuleScript" referent="RBX4"><Properties><string name="Name">ClubMusicDJSessionManager</string><ProtectedString name="Source"><![CDATA[--!strict
+-- DJ session state facade. Controller supplies authorization and the only
+-- callback that changes active DJ ownership; this module never mutates playback.
+local Sessions = {}
+Sessions.__index = Sessions
+
+function Sessions.new(context)
+	assert(typeof(context) == "table", "DJ session service requires context.")
+	assert(typeof(context.Authorize) == "function", "DJ session service requires authorization.")
+	assert(typeof(context.OnHandoff) == "function", "DJ session service requires OnHandoff.")
+	return setmetatable({ context = context, current = nil, history = {}, destroyed = false }, Sessions)
+end
+
+local function validPlayer(player)
+	return typeof(player) == "Instance" and player:IsA("Player") and player.Parent ~= nil
+end
+
+function Sessions:Start(player: Player)
+	if self.destroyed then return false, "DJ session service is unavailable." end
+	if not validPlayer(player) then return false, "A connected DJ is required." end
+	local ok, allowed = pcall(self.context.Authorize, player, "Start")
+	if not ok or allowed ~= true then return false, "You are not authorized to start a DJ session." end
+	if self.current then return false, "A DJ session is already active." end
+	self.current = { userId = player.UserId, name = player.Name, startedAt = os.time() }
+	return true, table.clone(self.current)
+end
+
+function Sessions:Handoff(fromPlayer: Player, toPlayer: Player)
+	if self.destroyed or not self.current then return false, "No active DJ session." end
+	if not validPlayer(fromPlayer) or not validPlayer(toPlayer) then return false, "Both DJs must be connected." end
+	if self.current.userId ~= fromPlayer.UserId then return false, "Only the active DJ can hand off the session." end
+	local ok, allowed = pcall(self.context.Authorize, fromPlayer, "Handoff")
+	if not ok or allowed ~= true then return false, "You are not authorized to hand off this session." end
+	local callbackOk, accepted = pcall(self.context.OnHandoff, fromPlayer, toPlayer)
+	if not callbackOk or accepted == false then return false, "The controller rejected the DJ handoff." end
+	local previous = table.clone(self.current)
+	table.insert(self.history, 1, { userId = previous.userId, name = previous.name, endedAt = os.time(), reason = "Handoff" })
+	while #self.history > 50 do table.remove(self.history) end
+	self.current = { userId = toPlayer.UserId, name = toPlayer.Name, startedAt = os.time() }
+	return true, table.clone(self.current)
+end
+
+function Sessions:End(player: Player)
+	if self.destroyed or not self.current then return false, "No active DJ session." end
+	if not validPlayer(player) or self.current.userId ~= player.UserId then return false, "Only the active DJ can end this session." end
+	local ok, allowed = pcall(self.context.Authorize, player, "End")
+	if not ok or allowed ~= true then return false, "You are not authorized to end this session." end
+	table.insert(self.history, 1, { userId = self.current.userId, name = self.current.name, endedAt = os.time(), reason = "Ended" })
+	while #self.history > 50 do table.remove(self.history) end
+	self.current = nil
+	return true, nil
+end
+
+function Sessions:GetState()
+	return { current = if self.current then table.clone(self.current) else nil, history = table.clone(self.history) }
+end
+
+function Sessions:Cleanup()
+	self.destroyed = true
+	self.current = nil
+	table.clear(self.history)
+	self.context = nil
+end
+
+return Sessions
+]]></ProtectedString></Properties></Item>
+    <Item class="ModuleScript" referent="RBX5"><Properties><string name="Name">ClubMusicSpatialAudioGraph</string><ProtectedString name="Source"><![CDATA[--!strict
+-- Optional spatial-audio graph builder. Caller must provide the venue emitter
+-- and listener placement policy; no spatial graph is created automatically.
+local Spatial = {}
+Spatial.__index = Spatial
+
+function Spatial.new(context)
+	assert(typeof(context) == "table", "Spatial audio requires context.")
+	return setmetatable({ context = context, graphs = {}, enabled = false, destroyed = false }, Spatial)
+end
+
+function Spatial:CreateRoute(key: string, emitterParent: Instance, listenerParent: Instance)
+	if self.destroyed then return false, "Spatial audio service is unavailable." end
+	if typeof(key) ~= "string" or #key < 1 or #key > 48 then return false, "Invalid spatial route key." end
+	if self.graphs[key] then return false, "Spatial route already exists." end
+	if typeof(emitterParent) ~= "Instance" or typeof(listenerParent) ~= "Instance" then
+		return false, "Emitter and listener parents are required."
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "ClubMusicSpatial_" .. key
+	local emitter = Instance.new("AudioEmitter")
+	emitter.Name = "MusicEmitter"
+	emitter.Parent = emitterParent
+	local listener = Instance.new("AudioListener")
+	listener.Name = "MusicListener"
+	listener.Parent = listenerParent
+	local sourceWire = Instance.new("Wire")
+	sourceWire.SourceInstance = self.context.AudioPlayer
+	sourceWire.TargetInstance = emitter
+	sourceWire.Parent = folder
+	local listenerWire = Instance.new("Wire")
+	listenerWire.SourceInstance = emitter
+	listenerWire.TargetInstance = listener
+	listenerWire.Parent = folder
+	local outputWire = Instance.new("Wire")
+	outputWire.SourceInstance = listener
+	outputWire.TargetInstance = self.context.AudioDeviceOutput
+	outputWire.Parent = folder
+	folder.Parent = self.context.Parent or workspace
+	self.graphs[key] = { folder = folder, emitter = emitter, listener = listener }
+	return true, key
+end
+
+function Spatial:RemoveRoute(key: string)
+	local graph = self.graphs[key]
+	if not graph then return false end
+	pcall(function() graph.folder:Destroy() end)
+	pcall(function() graph.emitter:Destroy() end)
+	pcall(function() graph.listener:Destroy() end)
+	self.graphs[key] = nil
+	return true
+end
+
+function Spatial:SetEnabled(value: boolean)
+	if self.destroyed or typeof(value) ~= "boolean" then return false end
+	self.enabled = value
+	if typeof(self.context.OnEnabledChanged) == "function" then
+		local ok, result = pcall(self.context.OnEnabledChanged, value)
+		if not ok or result == false then self.enabled = not value; return false end
+	end
+	return true
+end
+
+function Spatial:Cleanup()
+	if self.destroyed then return end
+	for key in pairs(self.graphs) do self:RemoveRoute(key) end
+	self.destroyed = true
+	self.context = nil
+end
+
+return Spatial
+]]></ProtectedString></Properties></Item>
+  </Item>
+</roblox>
