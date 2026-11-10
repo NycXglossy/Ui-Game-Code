@@ -811,7 +811,7 @@ if globalRegistryService then globalRegistryService:Start() end
 globalEventLogService = createOperationalService("ClubMusic_Global_Event_Log_Service", sharedDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
 if globalEventLogService then globalEventLogService:Start() end
 
-globalMetricsService = createOperationalService("ClubMusic_Global_Metrics_Service", sharedDependencies, {"Start", "GetStatus", "Record", "ObserveLatency"})
+globalMetricsService = createOperationalService("ClubMusic_Global_Metrics_Service", sharedDependencies, {"Start", "GetStatus", "GetAggregate", "Record", "ObserveLatency"})
 if globalMetricsService then globalMetricsService:Start() end
 
 globalAuditService = createOperationalService("ClubMusic_Global_Audit_Service", sharedDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
@@ -880,7 +880,10 @@ bindFunction("GetGlobalServers", function(limit: any)
 end)
 bindFunction("GetGlobalMetrics", function()
 	if not globalMetricsService then return false, nil end
-	return true, globalMetricsService:GetStatus()
+	local aggregateOk, aggregate, aggregateError = globalMetricsService:GetAggregate()
+	local status = globalMetricsService:GetStatus()
+	status.aggregate = aggregate
+	return aggregateOk, status, aggregateError
 end)
 bindFunction("GetGlobalAudit", function(limit: any)
 	if not globalAuditService then return false, {} end
