@@ -57,7 +57,8 @@ type State = {
 	rotation: Rotation,
 	autoQueueHold: boolean,
 	catalogRevision: number,
-	catalogRemovalTrackId: string?,
+	catalogChangeTrackId: string?,
+	catalogChangeKind: string?,
 	updatedAt: number,
 	updatedBy: number,
 }
@@ -154,7 +155,8 @@ local function defaultState(): State
 		rotation = {enabled = false, id = "", name = "", trackIds = {}, cursor = 1},
 		autoQueueHold = false,
 		catalogRevision = 0,
-		catalogRemovalTrackId = nil,
+		catalogChangeTrackId = nil,
+		catalogChangeKind = nil,
 		updatedAt = os.time(),
 		updatedBy = 0,
 	}
@@ -169,7 +171,10 @@ local function sanitizeState(raw: any): State
 	state.autoQueueHold = raw.autoQueueHold == true
 	state.catalogRevision = if finite(raw.catalogRevision)
 		then math.clamp(math.floor(raw.catalogRevision), 0, MAX_SAFE_INTEGER) else 0
-	state.catalogRemovalTrackId = if cleanText(raw.catalogRemovalTrackId, 32) then raw.catalogRemovalTrackId else nil
+	state.catalogChangeTrackId = if cleanText(raw.catalogChangeTrackId, 32) then raw.catalogChangeTrackId else nil
+	state.catalogChangeKind = if raw.catalogChangeKind == "remove" or raw.catalogChangeKind == "add"
+		then raw.catalogChangeKind else nil
+	if state.catalogChangeTrackId == nil then state.catalogChangeKind = nil end
 	state.current = sanitizeEntry(raw.current)
 	if typeof(raw.queue) == "table" then
 		local seenIds: {[string]: boolean} = {}
@@ -300,7 +305,7 @@ function MusicGlobalQueueService:Enqueue(rawEntry: any, maxPlayerRequests: numbe
 		if math.floor(expectedCatalogRevision) ~= state.catalogRevision then
 			return false, "Catalog changed on another server; refresh and retry."
 		end
-		if state.catalogRemovalTrackId == entry.trackId then
+		if state.catalogChangeTrackId == entry.trackId then
 			return false, "That catalog track is being removed; try again shortly."
 		end
 		if state.autoQueueHold and entry.source ~= "player" then
@@ -383,7 +388,7 @@ function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any
 		local added = 0
 		for _, entry in ipairs(entries) do
 			if #state.queue >= target or #state.queue >= hardLimit then break end
-			if state.catalogRemovalTrackId == entry.trackId then
+			if state.catalogChangeTrackId == entry.trackId then
 				return false, "An automatic track is being removed from the catalog; refresh and retry."
 			end
 			if seenIds[entry.id] or seenTracks[entry.trackId] then
@@ -503,7 +508,7 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 		if math.floor(expectedCatalogRevision) ~= state.catalogRevision then
 			return false, "Catalog changed on another server; refresh and retry."
 		end
-		if state.catalogRemovalTrackId ~= nil and fallback and fallback.trackId == state.catalogRemovalTrackId then
+		if state.catalogChangeTrackId ~= nil and fallback and fallback.trackId == state.catalogChangeTrackId then
 			return false, "The fallback track is being removed from the catalog."
 		end
 		if state.playback.trackRevision ~= math.floor(expectedTrackRevision) then
@@ -547,11 +552,13 @@ function MusicGlobalQueueService:ReserveCatalogRemoval(trackId: any, expectedCat
 		if math.floor(expectedCatalogRevision) ~= state.catalogRevision then
 			return false, "Catalog changed on another server; refresh and retry."
 		end
-		if state.catalogRemovalTrackId == trackId then
+		if state.catalogChangeTrackId == trackId and state.catalogChangeKind == "remove" then
 			return false, "Catalog removal is already reserved for this track."
 		end
-		if state.catalogRemovalTrackId ~= nil then
-			return false, "Another catalog removal is already in progress."
+		if state.catalogChangeTrackId ~= nil then
+			return false, if state.catalogChangeTrackId == trackId
+				then "A catalog addition is already reserved for this track."
+				else "Another catalog change is already in progress."
 		end
 		if state.current and state.current.trackId == trackId then
 			return false, "That track is currently playing globally."
@@ -563,7 +570,8 @@ function MusicGlobalQueueService:ReserveCatalogRemoval(trackId: any, expectedCat
 			return false, "Catalog revision limit reached; removal is paused for safe recovery."
 		end
 		state.catalogRevision += 1
-		state.catalogRemovalTrackId = trackId
+		state.catalogChangeTrackId = trackId
+		state.catalogChangeKind = "remove"
 		return true
 	end)
 end
@@ -571,18 +579,64 @@ end
 function MusicGlobalQueueService:CompleteCatalogRemoval(trackId: any): (boolean, State?, string?)
 	if not cleanText(trackId, 32) then return false, nil, "Invalid catalog track ID." end
 	return transact(function(state)
-		if state.catalogRemovalTrackId ~= trackId then
+		if state.catalogChangeTrackId ~= trackId or state.catalogChangeKind ~= "remove" then
 			return false, "No matching catalog removal reservation exists."
 		end
-		state.catalogRemovalTrackId = nil
+		state.catalogChangeTrackId = nil
+		state.catalogChangeKind = nil
+		return true
+	end)
+end
+
+function MusicGlobalQueueService:ReserveCatalogAddition(trackId: any, expectedCatalogRevision: any): (boolean, State?, string?)
+	if not cleanText(trackId, 32) or not string.match(trackId, "^custom%-%d+$")
+		or not finite(expectedCatalogRevision) or expectedCatalogRevision < 0 then
+		return false, nil, "Invalid catalog addition request."
+	end
+	return transact(function(state)
+		if math.floor(expectedCatalogRevision) ~= state.catalogRevision then
+			return false, "Catalog changed on another server; refresh and retry."
+		end
+		if state.catalogChangeTrackId == trackId and state.catalogChangeKind == "add" then
+			return false, "Catalog addition is already reserved for this track."
+		end
+		if state.catalogChangeTrackId ~= nil then
+			return false, if state.catalogChangeTrackId == trackId
+				then "A catalog removal is already reserved for this track."
+				else "Another catalog change is already in progress."
+		end
+		if state.current and state.current.trackId == trackId then
+			return false, "That track is currently playing globally."
+		end
+		for _, entry in ipairs(state.queue) do
+			if entry.trackId == trackId then return false, "That track is already in the shared queue." end
+		end
+		if state.catalogRevision >= MAX_SAFE_INTEGER then
+			return false, "Catalog revision limit reached; addition is paused for safe recovery."
+		end
+		state.catalogRevision += 1
+		state.catalogChangeTrackId = trackId
+		state.catalogChangeKind = "add"
+		return true
+	end)
+end
+
+function MusicGlobalQueueService:CompleteCatalogAddition(trackId: any): (boolean, State?, string?)
+	if not cleanText(trackId, 32) then return false, nil, "Invalid catalog track ID." end
+	return transact(function(state)
+		if state.catalogChangeTrackId ~= trackId or state.catalogChangeKind ~= "add" then
+			return false, "No matching catalog addition reservation exists."
+		end
+		state.catalogChangeTrackId = nil
+		state.catalogChangeKind = nil
 		return true
 	end)
 end
 
 function MusicGlobalQueueService:AdvanceCatalogRevision(): (boolean, State?, string?)
 	return transact(function(state)
-		if state.catalogRemovalTrackId ~= nil then
-			return false, "A catalog removal is still in progress."
+		if state.catalogChangeTrackId ~= nil then
+			return false, "A catalog change is still in progress."
 		end
 		if state.catalogRevision >= MAX_SAFE_INTEGER then
 			return false, "Catalog revision limit reached; catalog writes are paused for safe recovery."
