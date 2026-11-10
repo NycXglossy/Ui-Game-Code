@@ -1171,6 +1171,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local navTextLabels: {[string]: TextLabel} = {}
 	local navIconBadges: {[string]: Frame} = {}
 	local navGroupLabels: {TextLabel} = {}
+	local navSelectionAccents: {[string]: Frame} = {}
 	local navDivider = make("Frame", {
 		Name = "NavigationDivider",
 		Position = UDim2.fromOffset(150, 76),
@@ -4057,6 +4058,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if renderer then renderer() end
 		for name, button in pairs(navButtons) do
 			local selected = name == activeTab
+			local selectionAccent = navSelectionAccents[name]
+			if selectionAccent then
+				selectionAccent.Visible = selected and sideRailMode
+			end
 			button.BackgroundColor3 = if selected then Color3.fromRGB(57, 49, 37) else Color3.fromRGB(25, 30, 43)
 			button.BackgroundTransparency = if selected then 0 else 0.08
 			local outline = button:FindFirstChildOfClass("UIStroke")
@@ -4149,6 +4154,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			LayoutOrder = index * 10 + 5,
 		}, nav) :: TextButton
 		corner(button, 12)
+		local selectionAccent = make("Frame", {
+			Name = "SelectedAccent",
+			Position = UDim2.fromOffset(0, 8),
+			Size = UDim2.fromOffset(3, 24),
+			BackgroundColor3 = C.Gold,
+			BorderSizePixel = 0,
+			Visible = false,
+		}, button) :: Frame
+		corner(selectionAccent, 2)
+		navSelectionAccents[tabName] = selectionAccent
 		local navStroke = stroke(button, C.Gold, 1)
 		navStroke.Transparency = 0.58
 		bindFocusFeedback(button, navStroke, Color3.fromRGB(25, 30, 43))
