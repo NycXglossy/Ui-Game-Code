@@ -1994,12 +1994,29 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 						BorderSizePixel = 0,
 					}, queueCard)
 				end
+				local previewArt = make("Frame", {
+					Name = "QueuePreviewArtwork",
+					Position = UDim2.fromOffset(12, top + 1),
+					Size = UDim2.fromOffset(32, 32),
+					BackgroundColor3 = if itemGenre then itemGenre.color:Lerp(C.Base, 0.48) else C.SurfaceLight,
+					BorderSizePixel = 0,
+				}, queueCard)
+				corner(previewArt, 7)
+				local previewArtworkId = tonumber(item.artworkAssetId) or TRACK_ARTWORK[tostring(item.trackId or item.id or "")]
+				if previewArtworkId and previewArtworkId > 0 then
+					make("ImageLabel", {Name="Artwork", Size=UDim2.fromScale(1, 1), BackgroundTransparency=1, Image="rbxassetid://" .. tostring(previewArtworkId), ScaleType=Enum.ScaleType.Crop}, previewArt)
+				else
+					local disc = make("Frame", {AnchorPoint=Vector2.new(0.5, 0.5), Position=UDim2.fromScale(0.5, 0.5), Size=UDim2.fromOffset(20, 20), BackgroundColor3=C.Base, BorderSizePixel=0}, previewArt)
+					corner(disc, 10)
+					local center = make("Frame", {AnchorPoint=Vector2.new(0.5, 0.5), Position=UDim2.fromScale(0.5, 0.5), Size=UDim2.fromOffset(6, 6), BackgroundColor3=if itemGenre then itemGenre.color else C.Cyan, BorderSizePixel=0}, disc)
+					corner(center, 3)
+				end
 				label(queueCard, string.format("%02d  %s", index, trackName),
-					UDim2.fromOffset(12, top), UDim2.new(1, -24, 0, 19), C.White, 10, true)
+					UDim2.fromOffset(52, top), UDim2.new(1, -64, 0, 19), C.White, 10, true)
 				local sourceText = if isPlayer then "PLAYER REQUEST" else "AUTO DJ"
 				if item.vip == true then sourceText ..= "  •  VIP" end
 				label(queueCard, (if itemGenre then itemGenre.name .. "  •  " else "") .. sourceText .. "  •  " .. formatTime(tonumber(item.duration) or 0),
-					UDim2.fromOffset(12, top + 19), UDim2.new(1, -24, 0, 15), if isPlayer then C.Magenta else C.Muted, 8, false)
+					UDim2.fromOffset(52, top + 19), UDim2.new(1, -64, 0, 15), if isPlayer then C.Magenta else C.Muted, 8, false)
 			end
 			if #queue > shown then
 				label(queueCard, string.format("+ %d MORE TRACKS", #queue - shown),
