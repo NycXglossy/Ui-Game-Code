@@ -715,10 +715,19 @@ local function reportOperationalError(subsystem: string, operation: string, err:
 end
 
 local function loadOptionalGlobalModule(moduleName: string): any?
+	-- Prefer the documented direct child, but tolerate imported packages that keep
+	-- optional ModuleScripts inside a folder under ServerStorage.
 	local module = ServerStorage:FindFirstChild(moduleName)
 	if not module or not module:IsA("ModuleScript") then
-		warn("[ClubMusic Global] Optional service module is missing: ServerStorage." .. moduleName)
-		return nil
+		local nested = ServerStorage:FindFirstChild(moduleName, true)
+		if nested and nested:IsA("ModuleScript") then
+			module = nested
+			warn("[ClubMusic Global] Found " .. moduleName .. " nested at " .. module:GetFullName()
+				.. "; direct ServerStorage placement is recommended.")
+		else
+			warn("[ClubMusic Global] Optional service ModuleScript is missing under ServerStorage: " .. moduleName)
+			return nil
+		end
 	end
 	local ok, result = pcall(require, module)
 	if not ok then
