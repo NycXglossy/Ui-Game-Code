@@ -17,7 +17,7 @@ The server add-on creates `ReplicatedStorage/SultanSettingsRemotes` itself. It r
 
 ## Included
 
-- Sultan-only walk speed (20–100) and jump power (80–300), applied on respawn only for verified Sultan players.
+- Sultan-only walk speed (20–100) and jump power (80–300), applied on respawn only for verified Sultan players; the service waits briefly for late-loading Humanoids in custom character rigs.
 - AFK state and filtered AFK message replicated as `SultanAFK` and `SultanAFKMessage` attributes.
 - Opt-in teleport-to-me permission; teleport requests are validated on the server.
 - Gravity control (20–192.62) restricted to ClubMusic `GlobalConfig` permission.
