@@ -9,7 +9,7 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 3. Add `UtilityBarActions.server.lua` as a **Script** under `ServerScriptService`.
 4. Keep exactly one copy of each Utility Bar script.
 5. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
-6. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the `SultanSettingsOpenRequest` PlayerGui attribute.
+6. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the existing settings-open request attribute (legacy internal name retained for compatibility).
 
 ## Included buttons
 
@@ -21,7 +21,7 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 - Aura
 - Inventory
 
-The bar uses the ClubMusic dark-surface / muted-gold / teal visual language, fully rounded surfaces, viewport-aware sizing, horizontal scrolling on narrow screens, and controller focus navigation. It hides while `PlayerGui.ClubMusicMenuExpanded` or `PlayerGui.SultanSettingsOpen` is true, then returns when those surfaces close.
+The bar uses the ClubMusic dark-surface / muted-gold / teal visual language, fully rounded surfaces, viewport-aware sizing, horizontal scrolling on narrow screens, and controller focus navigation. It hides while the full ClubMusic menu or Tiki Tide Settings is open, then returns when those surfaces close. The legacy `SultanSettingsOpen` attribute name is retained internally for compatibility.
 
 ## Independent utility action contract
 
