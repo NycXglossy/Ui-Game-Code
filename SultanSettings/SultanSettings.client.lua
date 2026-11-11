@@ -135,7 +135,7 @@ local panel = make("Frame", {
 -- preventing the panel from becoming oversized on large desktop displays.
 panel.Size = UDim2.new(0.92, 0, 0.86, 0)
 panel.ClipsDescendants = true
-rounded(panel, 20)
+rounded(panel, 22)
 make("UISizeConstraint", {
 	MinSize = Vector2.new(260, 340),
 	MaxSize = Vector2.new(760, 720),
@@ -145,24 +145,19 @@ make("UIGradient", {Rotation = 90, Color = ColorSequence.new(COLORS.background, 
 
 local header = make("Frame", {
 	Name = "Header",
-	Position = UDim2.fromOffset(1, 1),
-	Size = UDim2.new(1, -2, 0, 58),
+	Size = UDim2.new(1, 0, 0, 58),
 	BackgroundColor3 = COLORS.card,
 	BorderSizePixel = 0,
 	ClipsDescendants = true,
 }, panel)
--- Inset the header slightly inside the panel stroke and use a matching radius.
--- The lower fill keeps the transition into the content area perfectly straight.
-rounded(header, 19)
-make("UIStroke", {
-	Color = COLORS.accent,
-	Transparency = 0.88,
-	Thickness = 1,
-}, header)
+-- Match the main ClubMusic panel's header construction: a fully rounded
+-- header clipped by the rounded parent, with a bottom filler for a clean seam.
+rounded(header, 24)
 make("Frame", {
 	Name = "HeaderLowerFill",
-	Position = UDim2.new(0, 0, 1, -19),
-	Size = UDim2.new(1, 0, 0, 19),
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.fromScale(0, 1),
+	Size = UDim2.new(1, 0, 0, 24),
 	BackgroundColor3 = COLORS.card,
 	BorderSizePixel = 0,
 }, header)
