@@ -12,13 +12,12 @@ local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local remotes = ReplicatedStorage:WaitForChild("SultanSettingsRemotes", 20)
-if not remotes then
-	warn("[Sultan Settings] Server remotes were not found.")
-	return
-end
-local requestObject = remotes:WaitForChild("Request", 10)
-local broadcastObject = remotes:WaitForChild("Broadcast", 10)
+-- The server service may initialize after this LocalScript on slower joins.
+-- Wait for its remotes instead of permanently aborting the client UI after a
+-- short timeout; authorization remains enforced by the server on every request.
+local remotes = ReplicatedStorage:WaitForChild("SultanSettingsRemotes")
+local requestObject = remotes:WaitForChild("Request")
+local broadcastObject = remotes:WaitForChild("Broadcast")
 if not requestObject or not requestObject:IsA("RemoteFunction") then
 	warn("[Sultan Settings] Request RemoteFunction is missing or invalid.")
 	return
