@@ -1369,8 +1369,14 @@ end
 local function onCatalog(message)
 	local data = message.Data
 	if not validEnvelope(data, "Catalog") or data.kind ~= "Catalog" or not unseen(data.id) then return end
-	-- The message carries invalidation only, never track metadata or executable commands.
-	globalEventBindable:Fire({kind = "Catalog", senderJob = data.senderJob, at = data.at})
+	-- Catalog invalidation remains metadata-free; the optional moderation fields
+	-- carry only a validated track key and boolean decision.
+	if typeof(data.trackId) == "string" and #data.trackId <= 64
+		and string.match(data.trackId, "^[%w%-_]+$") and typeof(data.blocked) == "boolean" then
+		globalEventBindable:Fire({kind = "TrackModeration", trackId = data.trackId, blocked = data.blocked, senderJob = data.senderJob})
+	else
+		globalEventBindable:Fire({kind = "Catalog", senderJob = data.senderJob, at = data.at})
+	end
 end
 
 local function onQueueChanged(message)
