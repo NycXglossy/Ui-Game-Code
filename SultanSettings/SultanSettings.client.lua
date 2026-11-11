@@ -362,6 +362,7 @@ local function refreshTabs()
 	local tabs = {"Settings", "Players", "Message"}
 	for index, name in ipairs(tabs) do
 		local b = make("TextButton", {
+			Name = name,
 			Position = UDim2.new((index - 1) / 3, 4, 0, 0),
 			Size = UDim2.new(1 / 3, -8, 1, 0),
 			BackgroundColor3 = if activeTab == name then COLORS.accent else COLORS.card,
@@ -377,6 +378,10 @@ local function refreshTabs()
 		b.Activated:Connect(function()
 			activeTab = name
 			render()
+			task.defer(function()
+				local selectedTab = tabBar:FindFirstChild(name)
+				if selectedTab and selectedTab:IsA("GuiObject") then GuiService.SelectedObject = selectedTab end
+			end)
 		end)
 	end
 end
