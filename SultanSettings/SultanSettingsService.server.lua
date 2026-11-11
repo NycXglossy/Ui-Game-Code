@@ -10,7 +10,7 @@ local TextService = game:GetService("TextService")
 
 -- A second copy would overwrite RemoteFunction.OnServerInvoke and duplicate
 -- player lifecycle listeners. Refuse to start if another copy already owns the service.
-local SERVICE_MARKER_NAME = "SultanSettingsServiceActive"
+local SERVICE_MARKER_NAME = "TikiTideSettingsServiceActive"
 if ServerStorage:FindFirstChild(SERVICE_MARKER_NAME) then
 	error("[Tiki Tide] Duplicate service detected; keep exactly one server Script.")
 end
@@ -19,7 +19,7 @@ serviceMarker.Name = SERVICE_MARKER_NAME
 serviceMarker.Value = true
 serviceMarker.Parent = ServerStorage
 
-local FOLDER_NAME = "SultanSettingsRemotes"
+local FOLDER_NAME = "TikiTideSettingsRemotes"
 local REQUEST_COOLDOWN = 0.25
 local ANNOUNCEMENT_COOLDOWN = 180
 local BUBBLE_COOLDOWN = 5
@@ -89,9 +89,9 @@ local function getSettings(player: Player): Settings
 	return created
 end
 
-local function isSultan(player: Player): boolean
+local function hasTikiTideAccess(player: Player): boolean
 	-- This attribute is set by UI_Server_Controller after server-side pass/rank checks.
-	return player:GetAttribute("IsTikiTideSultan") == true
+	return player:GetAttribute("HasTikiTideAccess") == true
 end
 
 local function hasClubPermission(player: Player, permission: string): boolean
@@ -116,7 +116,7 @@ local function filterBroadcastText(player: Player, raw: any): string?
 end
 
 local function applyMovement(player: Player)
-	if not isSultan(player) then return end
+	if not hasTikiTideAccess(player) then return end
 	local settings = getSettings(player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -141,21 +141,21 @@ local function applyMovementWhenReady(player: Player, character: Model)
 	task.spawn(function()
 		local humanoid = character:WaitForChild("Humanoid", 10)
 		if not humanoid or not humanoid:IsA("Humanoid") then return end
-		if player.Parent ~= Players or player.Character ~= character or not isSultan(player) then return end
+		if player.Parent ~= Players or player.Character ~= character or not hasTikiTideAccess(player) then return end
 		applyMovement(player)
 	end)
 end
 
-local function revokeSultanState(player: Player)
+local function revokeTikiTideState(player: Player)
 	local settings = getSettings(player)
 	settings.walkSpeed = 20
 	settings.jumpPower = 80
 	settings.afk = false
 	settings.afkMessage = ""
 	settings.allowTeleport = false
-	player:SetAttribute("SultanAFK", false)
-	player:SetAttribute("SultanAFKMessage", "")
-	player:SetAttribute("SultanAllowTeleport", false)
+	player:SetAttribute("TikiTideAFK", false)
+	player:SetAttribute("TikiTideAFKMessage", "")
+	player:SetAttribute("TikiTideAllowTeleport", false)
 
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -176,7 +176,7 @@ local function snapshot(player: Player)
 			userId = other.UserId,
 			name = other.Name,
 			displayName = other.DisplayName,
-			allowTeleport = other:GetAttribute("SultanAllowTeleport") == true,
+			allowTeleport = other:GetAttribute("TikiTideAllowTeleport") == true,
 		})
 	end
 	return {
@@ -186,7 +186,7 @@ local function snapshot(player: Player)
 		afkMessage = settings.afkMessage,
 		allowTeleport = settings.allowTeleport,
 		gravity = workspace.Gravity,
-		isSultan = isSultan(player),
+		hasTikiTideAccess = hasTikiTideAccess(player),
 		canAnnounce = hasClubPermission(player, "GlobalAnnouncement"),
 		canSetGravity = hasClubPermission(player, "GlobalConfig"),
 		players = roster,
@@ -211,11 +211,11 @@ local function handleRequest(player: Player, action: any, payload: any)
 	lastRequestAt[player.UserId] = now
 
 	if action == "GetSnapshot" then
-		if not isSultan(player) then return fail("Tiki Tide access is required.") end
+		if not hasTikiTideAccess(player) then return fail("Tiki Tide access is required.") end
 		return {ok = true, data = snapshot(player)}
 	end
 
-	if not isSultan(player) then
+	if not hasTikiTideAccess(player) then
 		return fail("Tiki Tide access is required.")
 	end
 
@@ -239,20 +239,20 @@ local function handleRequest(player: Player, action: any, payload: any)
 			local filtered = filterBroadcastText(player, payload.message or "")
 			if filtered == nil then return fail("Enter a valid AFK message (maximum 180 characters).") end
 			-- Text filtering yields; re-check entitlement before committing state.
-			if not isSultan(player) or player.Parent ~= Players then
+			if not hasTikiTideAccess(player) or player.Parent ~= Players then
 				return fail("Tiki Tide access is required.")
 			end
 			message = filtered
 		end
 		settings.afk = payload.enabled
 		settings.afkMessage = message
-		player:SetAttribute("SultanAFK", settings.afk)
-		player:SetAttribute("SultanAFKMessage", settings.afkMessage)
+		player:SetAttribute("TikiTideAFK", settings.afk)
+		player:SetAttribute("TikiTideAFKMessage", settings.afkMessage)
 		return {ok = true, message = if settings.afk then "AFK mode enabled." else "AFK mode disabled.", data = snapshot(player)}
 	elseif action == "SetTeleportAllowed" then
 		if typeof(payload.enabled) ~= "boolean" then return fail("Invalid teleport permission.") end
 		settings.allowTeleport = payload.enabled
-		player:SetAttribute("SultanAllowTeleport", settings.allowTeleport)
+		player:SetAttribute("TikiTideAllowTeleport", settings.allowTeleport)
 		return {ok = true, message = if settings.allowTeleport then "Players may teleport to you." else "Teleport permission disabled.", data = snapshot(player)}
 	elseif action == "TeleportTo" then
 		local targetUserId = payload.userId
@@ -261,14 +261,14 @@ local function handleRequest(player: Player, action: any, payload: any)
 		end
 		local target = Players:GetPlayerByUserId(targetUserId)
 		if not target or target == player or not target.Character then return fail("That player is unavailable.") end
-		if target:GetAttribute("SultanAllowTeleport") ~= true and not hasClubPermission(player, "GlobalModeration") then
+		if target:GetAttribute("TikiTideAllowTeleport") ~= true and not hasClubPermission(player, "GlobalModeration") then
 			return fail("That player has not allowed teleporting to them.")
 		end
 		-- Permission resolution may yield; verify both participants and consent again.
-		if not isSultan(player) or player.Parent ~= Players or target.Parent ~= Players then
+		if not hasTikiTideAccess(player) or player.Parent ~= Players or target.Parent ~= Players then
 			return fail("Teleport access is no longer available.")
 		end
-		if target:GetAttribute("SultanAllowTeleport") ~= true and not hasClubPermission(player, "GlobalModeration") then
+		if target:GetAttribute("TikiTideAllowTeleport") ~= true and not hasClubPermission(player, "GlobalModeration") then
 			return fail("That player has not allowed teleporting to them.")
 		end
 		local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
@@ -289,7 +289,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 		-- Keep the entitlement and administrator checks adjacent to the mutation.
 		-- This makes the intended authorization boundary explicit if the resolver
 		-- implementation later gains yielding work.
-		if not isSultan(player) or player.Parent ~= Players
+		if not hasTikiTideAccess(player) or player.Parent ~= Players
 			or not hasClubPermission(player, "GlobalConfig") then
 			return fail("Administrator configuration permission is no longer available.")
 		end
@@ -302,7 +302,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 		local filtered = filterBroadcastText(player, payload.message)
 		if not filtered then return fail("Enter a valid broadcast message.") end
 		-- Filtering yields; reauthorize immediately before broadcasting.
-		if not isSultan(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
+		if not hasTikiTideAccess(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
 			return fail("Administrator announcement permission is required.")
 		end
 		local broadcastAt = os.clock()
@@ -322,7 +322,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 		local filtered = filterBroadcastText(player, payload.message)
 		if not filtered then return fail("Enter a valid announcement.") end
 		-- Filtering yields; reauthorize immediately before broadcasting.
-		if not isSultan(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
+		if not hasTikiTideAccess(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
 			return fail("Administrator announcement permission is required.")
 		end
 		local broadcastAt = os.clock()
@@ -352,14 +352,14 @@ local function bindPlayer(player: Player)
 
 	-- Pass/rank verification can finish after CharacterAdded. Re-apply the
 	-- saved movement values when the server-owned Tiki Tide entitlement arrives.
-	player:GetAttributeChangedSignal("IsTikiTideSultan"):Connect(function()
+	player:GetAttributeChangedSignal("HasTikiTideAccess"):Connect(function()
 		if player.Parent ~= Players then return end
-		if isSultan(player) then
+		if hasTikiTideAccess(player) then
 			task.defer(function()
 				if player.Parent == Players then applyMovement(player) end
 			end)
 		else
-			revokeSultanState(player)
+			revokeTikiTideState(player)
 		end
 	end)
 
@@ -370,13 +370,13 @@ local function bindPlayer(player: Player)
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then baseMovementByHumanoid[humanoid] = nil end
 	end)
-	player:SetAttribute("SultanAFK", false)
-	player:SetAttribute("SultanAFKMessage", "")
-	player:SetAttribute("SultanAllowTeleport", false)
+	player:SetAttribute("TikiTideAFK", false)
+	player:SetAttribute("TikiTideAFKMessage", "")
+	player:SetAttribute("TikiTideAllowTeleport", false)
 
 	-- Handle players whose entitlement was already resolved before this
 	-- service bound their player lifecycle.
-	if isSultan(player) then
+	if hasTikiTideAccess(player) then
 		task.defer(function()
 			if player.Parent == Players then applyMovement(player) end
 		end)
