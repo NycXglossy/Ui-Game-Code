@@ -382,6 +382,17 @@ local function notify(message: string, success: boolean?)
 	end)
 end
 
+local function isVisibleInTree(object: GuiObject): boolean
+	local current: Instance? = object
+	while current and current ~= content do
+		if current:IsA("GuiObject") and not current.Visible then
+			return false
+		end
+		current = current.Parent
+	end
+	return current == content and content.Visible
+end
+
 local function wireControllerFocus()
 	local tabs = {}
 	for _, child in ipairs(tabBar:GetChildren()) do
@@ -396,7 +407,7 @@ local function wireControllerFocus()
 	local firstContentControl: GuiObject? = nil
 	local controls = {}
 	for _, descendant in ipairs(content:GetDescendants()) do
-		if descendant:IsA("GuiObject") and descendant.Selectable and descendant.Visible then
+		if descendant:IsA("GuiObject") and descendant.Selectable and descendant.Active and isVisibleInTree(descendant) then
 			table.insert(controls, descendant)
 		end
 	end
@@ -542,27 +553,47 @@ local function renderPlayers()
 		local username = tostring(entry.name or "")
 		label(row, display .. "  @" .. username, UDim2.fromOffset(10, 4), UDim2.new(0.62, -10, 0, 18), COLORS.text, 9)
 		label(row, if entry.allowTeleport then "TELEPORT ALLOWED" else "PERMISSION OFF", UDim2.fromOffset(10, 24), UDim2.new(0.62, -10, 0, 16), if entry.allowTeleport then COLORS.green else COLORS.muted, 8)
-		local teleportButton = button(row, "TELEPORT", UDim2.new(1, -104, 0, 9), UDim2.fromOffset(94, 30), function()
+		local teleportButton = button(row, if entry.allowTeleport then "TELEPORT" else "LOCKED", UDim2.new(1, -104, 0, 9), UDim2.fromOffset(94, 30), function()
+			if entry.allowTeleport ~= true then
+				notify("This player has not enabled teleport access.")
+				return
+			end
 			local result = invoke("TeleportTo", {userId = entry.userId})
 			notify(result.message or "Teleport failed.", result.ok)
 		end, COLORS.cyan)
 		if not entry.allowTeleport then
-			teleportButton.Text = "LOCKED"
 			teleportButton.BackgroundColor3 = COLORS.card
 			teleportButton.AutoButtonColor = false
+			teleportButton.Active = false
+			teleportButton.Selectable = false
+			teleportButton.NextSelectionUp = nil
+			teleportButton.NextSelectionDown = nil
+			teleportButton.NextSelectionLeft = nil
+			teleportButton.NextSelectionRight = nil
 		end
 		end
 	end
+	local emptyState = label(list, if #rows == 0 then "No other players are currently in this server." else "No matching players.", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 28), COLORS.muted, 9)
+	emptyState.Visible = #rows == 0
 	search:GetPropertyChangedSignal("Text"):Connect(function()
 		local query = string.lower(string.sub(search.Text, 1, 40))
+		local visibleCount = 0
 		for _, row in ipairs(rows) do
-			local text = string.lower(tostring(row:FindFirstChildWhichIsA("TextLabel") and row:FindFirstChildWhichIsA("TextLabel").Text or ""))
-			row.Visible = query == "" or string.find(text, query, 1, true) ~= nil
+			local firstLabel = row:FindFirstChildWhichIsA("TextLabel")
+			local rowText = string.lower(tostring(firstLabel and firstLabel.Text or ""))
+			row.Visible = query == "" or string.find(rowText, query, 1, true) ~= nil
+			if row.Visible then visibleCount += 1 end
 		end
+		emptyState.Visible = visibleCount == 0
+		task.defer(function()
+			if not panel.Visible or activeTab ~= "Players" then return end
+			local selected = GuiService.SelectedObject
+			if selected and selected:IsDescendantOf(list) and not isVisibleInTree(selected) then
+				GuiService.SelectedObject = search
+			end
+			wireControllerFocus()
+		end)
 	end)
-	if #rows == 0 then
-		label(list, "No other players are currently in this server.", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 28), COLORS.muted, 9)
-	end
 end
 
 local function renderMessage()
