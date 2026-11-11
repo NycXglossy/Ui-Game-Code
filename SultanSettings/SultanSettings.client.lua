@@ -659,12 +659,35 @@ local function renderMessage()
 end
 
 render = function()
+	-- Rebuilds destroy the previously selected content control. Remember
+	-- whether focus was in the page so it can be restored to a valid control.
+	local restoreContentFocus = false
+	local selectedBeforeRender = GuiService.SelectedObject
+	if selectedBeforeRender and selectedBeforeRender:IsDescendantOf(content) then
+		restoreContentFocus = true
+	end
+
 	clearContent()
 	refreshTabs()
 	if activeTab == "Players" then renderPlayers()
 	elseif activeTab == "Message" then renderMessage()
 	else renderSettings() end
-	task.defer(wireControllerFocus)
+
+	task.defer(function()
+		wireControllerFocus()
+		if restoreContentFocus and panel.Visible then
+			for _, descendant in ipairs(content:GetDescendants()) do
+				if descendant:IsA("GuiObject")
+					and descendant.Selectable
+					and descendant.Active
+					and isVisibleInTree(descendant) then
+					GuiService.SelectedObject = descendant
+					return
+				end
+			end
+			GuiService.SelectedObject = tabBar:FindFirstChild(activeTab) or close
+		end
+	end)
 end
 
 -- Keep the compact ClubMusic overhead bar out of the way while Sultan
