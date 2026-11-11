@@ -156,7 +156,7 @@ local close = make("TextButton", {
 	Position = UDim2.new(1, -12, 0, 12),
 	Size = UDim2.fromOffset(32, 32),
 	BackgroundColor3 = COLORS.card2,
-	Text = "×",
+	Text = "X",
 	TextColor3 = COLORS.text,
 	TextSize = 20,
 	Font = Enum.Font.GothamBold,
@@ -296,19 +296,19 @@ local function renderSettings()
 	label(content, "MOVEMENT", UDim2.fromOffset(4, 0), UDim2.new(1, -8, 0, 22), COLORS.accent, 12)
 	local movement = card(174)
 	label(movement, "WALK SPEED", UDim2.fromOffset(14, 10), UDim2.new(0.45, 0, 0, 20), COLORS.muted, 9)
-	local speedBox = input(movement, "20–100", UDim2.new(0, 14, 0, 34), UDim2.new(0.42, -8, 0, 34), tostring(state.walkSpeed or 20))
+	local speedBox = input(movement, "20-100", UDim2.new(0, 14, 0, 34), UDim2.new(0.42, -8, 0, 34), tostring(state.walkSpeed or 20))
 	label(movement, "JUMP POWER", UDim2.new(0.52, 0, 0, 10), UDim2.new(0.42, 0, 0, 20), COLORS.muted, 9)
-	local jumpBox = input(movement, "80–300", UDim2.new(0.52, 0, 0, 34), UDim2.new(0.42, -8, 0, 34), tostring(state.jumpPower or 80))
+	local jumpBox = input(movement, "80-300", UDim2.new(0.52, 0, 0, 34), UDim2.new(0.42, -8, 0, 34), tostring(state.jumpPower or 80))
 	button(movement, "APPLY MOVEMENT", UDim2.fromOffset(14, 82), UDim2.new(1, -28, 0, 30), function()
 		local result = invoke("SetMovement", {walkSpeed = tonumber(speedBox.Text), jumpPower = tonumber(jumpBox.Text)})
 		notify(result.message or "Movement update failed.", result.ok)
 		if result.ok and result.data then state = result.data end
 	end, COLORS.accent)
-	label(movement, "Speed 20–100  •  Jump power 80–300", UDim2.fromOffset(14, 124), UDim2.new(1, -28, 0, 18), COLORS.muted, 9)
+	label(movement, "Speed 20-100  |  Jump power 80-300", UDim2.fromOffset(14, 124), UDim2.new(1, -28, 0, 18), COLORS.muted, 9)
 
 	local gravity = card(112)
 	label(gravity, "SERVER GRAVITY", UDim2.fromOffset(14, 9), UDim2.new(0.55, 0, 0, 18), COLORS.accent, 10)
-	local gravityBox = input(gravity, "20–192.62", UDim2.fromOffset(14, 36), UDim2.new(0.48, -8, 0, 32), string.format("%.2f", math.clamp(tonumber(state.gravity) or 192.62, 20, 192.62)))
+	local gravityBox = input(gravity, "20-192.62", UDim2.fromOffset(14, 36), UDim2.new(0.48, -8, 0, 32), string.format("%.2f", math.clamp(tonumber(state.gravity) or 192.62, 20, 192.62)))
 	local gravityButton = button(gravity, "SET GRAVITY", UDim2.new(0.52, 0, 0, 36), UDim2.new(0.44, -8, 0, 32), function()
 		local result = invoke("SetGravity", {gravity = tonumber(gravityBox.Text)})
 		notify(result.message or "Gravity update failed.", result.ok)
@@ -342,13 +342,13 @@ local function renderSettings()
 
 	local note = card(58)
 	label(note, "NAME TAGS", UDim2.fromOffset(14, 7), UDim2.new(1, -28, 0, 18), COLORS.accent, 10)
-	label(note, "Custom fonts, effects, title slots and overhead display remain in ClubMusic → Title Tag.", UDim2.fromOffset(14, 26), UDim2.new(1, -28, 0, 24), COLORS.muted, 8)
+	label(note, "Custom fonts, effects, title slots and overhead display remain in ClubMusic in Title Tag.", UDim2.fromOffset(14, 26), UDim2.new(1, -28, 0, 24), COLORS.muted, 8)
 end
 
 local function renderPlayers()
 	label(content, "PLAYER TELEPORT", UDim2.fromOffset(4, 0), UDim2.new(1, -8, 0, 22), COLORS.accent, 12)
 	local info = card(54)
-	label(info, "Choose a player who has enabled “Allow teleport to me”.", UDim2.fromOffset(14, 7), UDim2.new(1, -28, 0, 38), COLORS.muted, 9)
+	label(info, "Choose a player who has enabled "Allow teleport to me".", UDim2.fromOffset(14, 7), UDim2.new(1, -28, 0, 38), COLORS.muted, 9)
 	local searchCard = card(48)
 	local search = input(searchCard, "Search player or username", UDim2.fromOffset(10, 8), UDim2.new(1, -20, 0, 32), "")
 	local list = card(math.max(90, #currentRoster * 58 + 12))
@@ -404,7 +404,7 @@ local function renderMessage()
 	if state.canAnnounce ~= true then bubbleButton.AutoButtonColor = false end
 
 	local announcement = card(124)
-	label(announcement, "SERVER ANNOUNCEMENT  •  3 MIN COOLDOWN", UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 18), COLORS.accent, 10)
+	label(announcement, "SERVER ANNOUNCEMENT  |  3 MIN COOLDOWN", UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 18), COLORS.accent, 10)
 	local announcementInput = input(announcement, "Announcement for everyone in this server", UDim2.fromOffset(14, 34), UDim2.new(1, -28, 0, 32), "")
 	local announcementButton = button(announcement, if state.canAnnounce then "SEND ANNOUNCEMENT" else "ADMIN ONLY", UDim2.fromOffset(14, 78), UDim2.new(1, -28, 0, 30), function()
 		local result = invoke("Announcement", {message = announcementInput.Text})
@@ -499,7 +499,7 @@ local function showBroadcast(kind: any, senderUserId: any, message: any)
 			Position = UDim2.new(0.5, 0, 0, 18),
 			Size = UDim2.new(0.82, 0, 0, 52),
 			BackgroundColor3 = COLORS.card,
-			Text = "ANNOUNCEMENT  •  " .. string.sub(message, 1, 180),
+			Text = "ANNOUNCEMENT  |  " .. string.sub(message, 1, 180),
 			TextColor3 = COLORS.accent,
 			TextSize = 12,
 			Font = Enum.Font.GothamBold,
