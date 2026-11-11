@@ -4833,11 +4833,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		hudScale.Scale = layoutScale
 		local mobileHud = currentDevice == "Mobile"
 		local compactHudHeight = if mobileHud then 60 else 68
-		local compactHudWidth = if mobileHud then 0.88 else 0.96
-		hudConstraint.MinSize = Vector2.new(260, if mobileHud then 56 else 64)
-		hudConstraint.MaxSize = Vector2.new(math.clamp(viewport.X - 20, 260, 760), compactHudHeight)
+		-- Match the mobile Utility Bar's 64%-viewport width (220px minimum,
+		-- 520px maximum) so both compact surfaces share the same footprint.
+		local compactHudPixelWidth = if mobileHud
+			then math.max(220, math.min(520, math.floor(viewport.X * 0.64)))
+			else math.clamp(math.floor(viewport.X * 0.96), 260, 760)
+		hudConstraint.MinSize = Vector2.new(if mobileHud then math.min(220, compactHudPixelWidth) else 260, if mobileHud then 56 else 64)
+		hudConstraint.MaxSize = Vector2.new(compactHudPixelWidth, compactHudHeight)
 		local compactHud = viewport.X < 430
-		hud.Size = UDim2.new(compactHudWidth / layoutScale, 0, 0, compactHudHeight)
+		hud.Size = UDim2.new((compactHudPixelWidth / math.max(1, viewport.X)) / layoutScale, 0, 0, compactHudHeight)
 		hudEyebrow.TextSize = if compactHud then 7 else 8
 		hudTitle.TextSize = if compactHud then 11 else 14
 		hudArtist.TextSize = if compactHud then 8 else 10
