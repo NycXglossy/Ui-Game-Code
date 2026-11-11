@@ -135,6 +135,17 @@ local function applyMovement(player: Player)
 	humanoid.JumpPower = math.clamp(settings.jumpPower, 80, 300)
 end
 
+local function applyMovementWhenReady(player: Player, character: Model)
+	-- Custom character rigs may add their Humanoid after CharacterAdded fires.
+	-- Wait briefly rather than silently skipping the Sultan movement profile.
+	task.spawn(function()
+		local humanoid = character:WaitForChild("Humanoid", 10)
+		if not humanoid or not humanoid:IsA("Humanoid") then return end
+		if player.Parent ~= Players or player.Character ~= character or not isSultan(player) then return end
+		applyMovement(player)
+	end)
+end
+
 local function revokeSultanState(player: Player)
 	local settings = getSettings(player)
 	settings.walkSpeed = 20
@@ -352,10 +363,8 @@ local function bindPlayer(player: Player)
 		end
 	end)
 
-	player.CharacterAdded:Connect(function()
-		task.defer(function()
-			if player.Parent == Players then applyMovement(player) end
-		end)
+	player.CharacterAdded:Connect(function(character)
+		applyMovementWhenReady(player, character)
 	end)
 	player.CharacterRemoving:Connect(function(character)
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
