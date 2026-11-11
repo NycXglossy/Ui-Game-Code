@@ -109,6 +109,8 @@ local shade = make("TextButton", {
 	Visible = false,
 	AutoButtonColor = false,
 }, gui) :: TextButton
+-- Keep the Sultan Settings shadow/backdrop fully transparent.
+shade.BackgroundTransparency = 1
 
 local panel = make("Frame", {
 	Name = "Panel",
