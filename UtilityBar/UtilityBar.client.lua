@@ -242,16 +242,8 @@ wireNavigation()
 
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("SultanSettingsOpen"):Connect(updateVisibility)
-player:GetAttributeChangedSignal("IsTikiTideSultan"):Connect(function()
-	local sultanButton = rail:FindFirstChild("SultanSettingsButton")
-	if sultanButton and sultanButton:IsA("GuiObject") then
-		sultanButton.Visible = player:GetAttribute("IsTikiTideSultan") == true
-	end
-end)
-local sultanButton = rail:FindFirstChild("SultanSettingsButton")
-if sultanButton and sultanButton:IsA("GuiObject") then
-	sultanButton.Visible = player:GetAttribute("IsTikiTideSultan") == true
-end
+-- The Sultan entry stays in the seven-button layout; its activation is
+-- entitlement-checked before the panel receives an open request.
 
 local viewportConnection: RBXScriptConnection? = nil
 local function bindViewport()
