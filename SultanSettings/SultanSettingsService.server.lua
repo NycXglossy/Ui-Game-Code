@@ -89,6 +89,7 @@ local function filterBroadcastText(player: Player, raw: any): string?
 end
 
 local function applyMovement(player: Player)
+	if not isSultan(player) then return end
 	local settings = getSettings(player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
