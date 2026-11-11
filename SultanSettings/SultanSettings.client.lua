@@ -6,6 +6,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local GuiService = game:GetService("GuiService")
+local ContextActionService = game:GetService("ContextActionService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -54,6 +57,18 @@ local function make(className: string, props: {[string]: any}, parent: Instance)
 end
 
 local content: ScrollingFrame
+local controllerMode = false
+
+local function isGamepadInput(inputType: Enum.UserInputType): boolean
+	return inputType == Enum.UserInputType.Gamepad1
+		or inputType == Enum.UserInputType.Gamepad2
+		or inputType == Enum.UserInputType.Gamepad3
+		or inputType == Enum.UserInputType.Gamepad4
+		or inputType == Enum.UserInputType.Gamepad5
+		or inputType == Enum.UserInputType.Gamepad6
+		or inputType == Enum.UserInputType.Gamepad7
+		or inputType == Enum.UserInputType.Gamepad8
+end
 
 local function rounded(instance: Instance, radius: number)
 	make("UICorner", {CornerRadius = UDim.new(0, radius)}, instance)
@@ -61,7 +76,7 @@ end
 
 local function makeSelectable(object: GuiObject)
 	object.Selectable = true
-	local focusStroke = make("UIStroke", {Name = "ControllerFocusStroke", Color = COLORS.accent, Thickness = 2, Transparency = 1}, object) :: UIStroke
+	local focusStroke = make("UIStroke", {Name = "ControllerFocusStroke", Color = COLORS.accent, Thickness = if controllerMode then 3 else 2, Transparency = 1}, object) :: UIStroke
 	object.SelectionGained:Connect(function()
 		focusStroke.Transparency = 0
 		if content and object:IsDescendantOf(content) then
@@ -168,6 +183,8 @@ make("UISizeConstraint", {
 make("UIStroke", {Color = COLORS.accent, Transparency = 0.28, Thickness = 1.5}, panel)
 make("UIGradient", {Rotation = 90, Color = ColorSequence.new(COLORS.background, COLORS.card)}, panel)
 
+local panelScale = make("UIScale", {Name = "ControllerComfortScale", Scale = 1}, panel) :: UIScale
+
 local header = make("Frame", {
 	Name = "Header",
 	Size = UDim2.new(1, 0, 0, 58),
@@ -194,6 +211,9 @@ local function fitPanelToViewport()
 	local widthScale = if viewport.X < 520 then 0.94 else 0.90
 	local heightScale = if viewport.Y < 520 then 0.90 else 0.84
 	panel.Size = UDim2.new(widthScale, 0, heightScale, 0)
+	-- Slightly enlarge the settings surface during active gamepad use on
+	-- TV-sized viewports. Small screens retain the original fit to avoid clipping.
+	panelScale.Scale = if controllerMode and viewport.X >= 900 and viewport.Y >= 600 then 1.04 else 1
 	-- Keep the launcher comfortably inside narrow device safe areas.
 	toggle.Position = UDim2.new(1, if viewport.X < 520 then -10 else -18, 0, if viewport.Y < 520 then 64 else 90)
 end
@@ -212,6 +232,21 @@ workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 	fitPanelToViewport()
 end)
 bindViewport()
+
+local function updateControllerPresentation(inputType: Enum.UserInputType)
+	controllerMode = isGamepadInput(inputType)
+	local camera = workspace.CurrentCamera
+	local viewport = if camera then camera.ViewportSize else Vector2.zero
+	panelScale.Scale = if controllerMode and viewport.X >= 900 and viewport.Y >= 600 then 1.04 else 1
+	for _, descendant in ipairs(gui:GetDescendants()) do
+		if descendant:IsA("UIStroke") and descendant.Name == "ControllerFocusStroke" then
+			descendant.Thickness = if controllerMode then 3 else 2
+		end
+	end
+end
+
+updateControllerPresentation(UserInputService:GetLastInputType())
+UserInputService.LastInputTypeChanged:Connect(updateControllerPresentation)
 
 local title = make("TextLabel", {
 	Position = UDim2.fromOffset(18, 8),
