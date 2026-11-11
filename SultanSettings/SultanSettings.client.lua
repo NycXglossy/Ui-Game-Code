@@ -360,6 +360,25 @@ local function input(parent: Instance, placeholder: string, pos: UDim2, size: UD
 	}, parent) :: TextBox
 	rounded(box, 8)
 	makeSelectable(box)
+
+	-- Keep the TextBox as the selected control while the console virtual
+	-- keyboard is active. When the keyboard dismisses, restore selection only
+	-- if Roblox cleared it; never steal focus from a different control.
+	box.Focused:Connect(function()
+		if controllerMode then
+			GuiService.SelectedObject = box
+		end
+	end)
+	box.FocusLost:Connect(function()
+		if not controllerMode then return end
+		task.defer(function()
+			if not panel.Visible or not box.Parent then return end
+			if GuiService.SelectedObject == nil then
+				GuiService.SelectedObject = box
+			end
+		end)
+	end)
+
 	return box
 end
 
