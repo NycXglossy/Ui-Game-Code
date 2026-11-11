@@ -126,14 +126,73 @@ local function showToast(message: string)
 	end)
 end
 
+-- Native Roblox GUI iconography: crisp layered shapes, no emoji or text glyphs.
+local function buildUtilityIcon(parent: Instance, kind: string, color: Color3): Frame
+	local root = make("Frame", {Name="PremiumIcon_"..kind, AnchorPoint=Vector2.new(0.5,0), Position=UDim2.new(0.5,0,0,5), Size=UDim2.fromOffset(27,25), BackgroundTransparency=1, BorderSizePixel=0}, parent) :: Frame
+	local function part(name: string, x: number, y: number, w: number, h: number, rotation: number?)
+		local shape = make("Frame", {Name=name, AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.fromScale(x,y), Size=UDim2.fromScale(w,h), Rotation=rotation or 0, BackgroundColor3=color, BorderSizePixel=0}, root) :: Frame
+		round(shape, 3)
+		return shape
+	end
+	local function outline(name: string, x: number, y: number, w: number, h: number)
+		local shape = make("Frame", {Name=name, AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.fromScale(x,y), Size=UDim2.fromScale(w,h), BackgroundTransparency=1, BorderSizePixel=0}, root) :: Frame
+		round(shape, 5)
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = color
+		stroke.Thickness = 2
+		stroke.LineJoinMode = Enum.LineJoinMode.Round
+		stroke.Parent = shape
+		return shape
+	end
+	if kind == "RefreshOutfit" then
+		outline("RefreshRing",.48,.52,.68,.72)
+		part("ArrowTipA",.75,.18,.12,.34,42)
+		part("ArrowTipB",.85,.31,.12,.34,-48)
+	elseif kind == "SultanSettings" then
+		part("CrownBase",.5,.77,.72,.12,0)
+		part("CrownLeft",.25,.47,.12,.48,-25)
+		part("CrownCenter",.5,.35,.12,.58,0)
+		part("CrownRight",.75,.47,.12,.48,25)
+		part("CrownBand",.5,.64,.66,.10,0)
+	elseif kind == "Mount" then
+		part("HorseNeck",.60,.42,.25,.64,28)
+		part("HorseHead",.70,.23,.34,.30,-12)
+		part("HorseMuzzle",.84,.36,.20,.14,0)
+		part("HorseBody",.38,.70,.54,.22,0)
+		part("HorseEar",.57,.08,.10,.25,-18)
+		part("HorseLegA",.25,.88,.09,.27,5)
+		part("HorseLegB",.48,.88,.09,.27,-5)
+	elseif kind == "Size" then
+		part("SizeSpine",.5,.5,.09,.70,0)
+		part("UpLeft",.31,.24,.10,.34,-45)
+		part("UpRight",.69,.24,.10,.34,45)
+		part("DownLeft",.31,.76,.10,.34,45)
+		part("DownRight",.69,.76,.10,.34,-45)
+	elseif kind == "Clone" then
+		outline("CloneBack",.40,.43,.55,.62)
+		outline("CloneFront",.61,.60,.55,.62)
+	elseif kind == "Aura" then
+		part("AuraVertical",.5,.5,.11,.92,0)
+		part("AuraHorizontal",.5,.5,.11,.92,90)
+		part("AuraDiagonalA",.5,.5,.09,.74,45)
+		part("AuraDiagonalB",.5,.5,.09,.74,-45)
+		part("AuraCore",.5,.5,.23,.23,0)
+	elseif kind == "Inventory" then
+		outline("BagBody",.5,.58,.72,.62)
+		outline("BagFlap",.5,.29,.42,.26)
+		part("BagHandle",.5,.08,.28,.10,0)
+	end
+	return root
+end
+
 local definitions = {
-	{key = "RefreshOutfit", label = "Refresh", mark = "↻", tint = COLORS.cyan},
-	{key = "SultanSettings", label = "Sultan", mark = "S", tint = COLORS.gold},
-	{key = "Mount", label = "Mount", mark = "M", tint = COLORS.cyan},
-	{key = "Size", label = "Size", mark = "↕", tint = COLORS.gold},
-	{key = "Clone", label = "Clone", mark = "◎", tint = COLORS.cyan},
-	{key = "Aura", label = "Aura", mark = "✦", tint = COLORS.gold},
-	{key = "Inventory", label = "Inventory", mark = "▣", tint = COLORS.cyan},
+	{key = "RefreshOutfit", label = "Refresh", tint = COLORS.cyan},
+	{key = "SultanSettings", label = "Sultan", tint = COLORS.gold},
+	{key = "Mount", label = "Mount", tint = COLORS.cyan},
+	{key = "Size", label = "Size", tint = COLORS.gold},
+	{key = "Clone", label = "Clone", tint = COLORS.cyan},
+	{key = "Aura", label = "Aura", tint = COLORS.gold},
+	{key = "Inventory", label = "Inventory", tint = COLORS.cyan},
 }
 
 local buttons: {TextButton} = {}
@@ -151,17 +210,15 @@ for index, definition in ipairs(definitions) do
 	}, rail) :: TextButton
 	round(button, 15)
 	make("UIStroke", {Color = definition.tint, Transparency = 0.72, Thickness = 1}, button)
-	local mark = make("TextLabel", {
-		Name = "Mark",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 5),
-		Size = UDim2.fromOffset(28, 26),
-		BackgroundTransparency = 1,
-		Text = definition.mark,
-		TextColor3 = definition.tint,
-		TextSize = 21,
-		Font = Enum.Font.GothamBold,
+	make("UIGradient", {Rotation = 90, Color = ColorSequence.new(COLORS.surfaceHover, COLORS.surface)}, button)
+	local iconTile = make("Frame", {
+		Name = "IconTile", AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 3), Size = UDim2.fromOffset(36, 31),
+		BackgroundColor3 = definition.tint, BackgroundTransparency = 0.91, BorderSizePixel = 0,
 	}, button)
+	round(iconTile, 10)
+	make("UIStroke", {Color = definition.tint, Transparency = 0.88, Thickness = 1}, iconTile)
+	buildUtilityIcon(button, definition.key, definition.tint)
 	local label = make("TextLabel", {
 		Name = "Label",
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -230,11 +287,14 @@ local function updateSizing()
 
 	for _, button in ipairs(buttons) do
 		button.Size = UDim2.fromOffset(buttonWidth, buttonHeight)
-		local mark = button:FindFirstChild("Mark")
-		if mark and mark:IsA("TextLabel") then
-			mark.Position = UDim2.new(0.5, 0, 0, if shortScreen then 2 else 4)
-			mark.Size = UDim2.fromOffset(28, if shortScreen then 22 else 25)
-			mark.TextSize = if veryNarrow then 17 else (if narrow then 19 else 21)
+		local iconTile = button:FindFirstChild("IconTile")
+		if iconTile and iconTile:IsA("Frame") then
+			iconTile.Size = UDim2.fromOffset(if veryNarrow then 31 else 36, if shortScreen then 27 else 31)
+		end
+		local icon = button:FindFirstChild("PremiumIcon_" .. button.Name:gsub("Button", ""))
+		if icon and icon:IsA("Frame") then
+			icon.Position = UDim2.new(0.5, 0, 0, if shortScreen then 3 else 5)
+			icon.Size = UDim2.fromOffset(if veryNarrow then 23 else 27, if shortScreen then 21 else 25)
 		end
 		local label = button:FindFirstChild("Label")
 		if label and label:IsA("TextLabel") then
