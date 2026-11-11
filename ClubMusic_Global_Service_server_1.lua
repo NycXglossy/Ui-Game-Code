@@ -714,20 +714,40 @@ local function reportOperationalError(subsystem: string, operation: string, err:
 	return nil
 end
 
+local OPTIONAL_GLOBAL_MODULE_ALIASES: {[string]: {string}} = {
+	ClubMusic_Global_Event_Log_Service = {
+		"ClubMusic_Global_Event_Log_Service",
+		"ClubMusic_Global_Event_Logging_Service",
+	},
+	ClubMusic_Global_RateLimit_Service = {
+		"ClubMusic_Global_RateLimit_Service",
+		"ClubMusic_Global_Ratelimit_Service",
+	},
+}
+
 local function loadOptionalGlobalModule(moduleName: string): any?
-	-- Prefer the documented direct child, but tolerate imported packages that keep
-	-- optional ModuleScripts inside a folder under ServerStorage.
-	local module = ServerStorage:FindFirstChild(moduleName)
-	if not module or not module:IsA("ModuleScript") then
-		local nested = ServerStorage:FindFirstChild(moduleName, true)
-		if nested and nested:IsA("ModuleScript") then
-			module = nested
-			warn("[ClubMusic Global] Found " .. moduleName .. " nested at " .. module:GetFullName()
-				.. "; direct ServerStorage placement is recommended.")
-		else
-			warn("[ClubMusic Global] Optional service ModuleScript is missing under ServerStorage: " .. moduleName)
-			return nil
+	-- Support both canonical names and the established ServerStorage instance names.
+	-- Search recursively so optional modules may remain grouped in folders.
+	local candidates = OPTIONAL_GLOBAL_MODULE_ALIASES[moduleName] or {moduleName}
+	local module: Instance? = nil
+	local resolvedName = moduleName
+	for _, candidateName in ipairs(candidates) do
+		local candidate = ServerStorage:FindFirstChild(candidateName)
+			or ServerStorage:FindFirstChild(candidateName, true)
+		if candidate and candidate:IsA("ModuleScript") then
+			module = candidate
+			resolvedName = candidateName
+			break
 		end
+	end
+	if not module then
+		warn("[ClubMusic Global] Optional service ModuleScript is missing under ServerStorage: "
+			.. moduleName .. " (accepted names: " .. table.concat(candidates, ", ") .. ")")
+		return nil
+	end
+	if resolvedName ~= moduleName then
+		warn("[ClubMusic Global] Resolved " .. moduleName .. " using existing instance name "
+			.. module:GetFullName() .. ".")
 	end
 	local ok, result = pcall(require, module)
 	if not ok then
