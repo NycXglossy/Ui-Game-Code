@@ -47,6 +47,7 @@ local settingsByUserId: {[number]: Settings} = {}
 local lastRequestAt: {[number]: number} = {}
 local lastBubbleAt: {[number]: number} = {}
 local lastAnnouncementAt = 0
+local baseMovementByHumanoid: {[Humanoid]: {walkSpeed: number, jumpPower: number, useJumpPower: boolean}} = {}
 
 local function getSettings(player: Player): Settings
 	local existing = settingsByUserId[player.UserId]
@@ -94,9 +95,40 @@ local function applyMovement(player: Player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
+	-- Capture this character's actual baseline once so entitlement revocation
+	-- restores the game's configured movement instead of assuming Roblox defaults.
+	if not baseMovementByHumanoid[humanoid] then
+		baseMovementByHumanoid[humanoid] = {
+			walkSpeed = humanoid.WalkSpeed,
+			jumpPower = humanoid.JumpPower,
+			useJumpPower = humanoid.UseJumpPower,
+		}
+	end
 	humanoid.WalkSpeed = math.clamp(settings.walkSpeed, 20, 100)
 	humanoid.UseJumpPower = true
 	humanoid.JumpPower = math.clamp(settings.jumpPower, 80, 300)
+end
+
+local function revokeSultanState(player: Player)
+	local settings = getSettings(player)
+	settings.walkSpeed = 20
+	settings.jumpPower = 80
+	settings.afk = false
+	settings.afkMessage = ""
+	settings.allowTeleport = false
+	player:SetAttribute("SultanAFK", false)
+	player:SetAttribute("SultanAFKMessage", "")
+	player:SetAttribute("SultanAllowTeleport", false)
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local baseline = humanoid and baseMovementByHumanoid[humanoid]
+	if humanoid and baseline then
+		humanoid.WalkSpeed = baseline.walkSpeed
+		humanoid.UseJumpPower = baseline.useJumpPower
+		humanoid.JumpPower = baseline.jumpPower
+		baseMovementByHumanoid[humanoid] = nil
+	end
 end
 
 local function snapshot(player: Player)
@@ -248,10 +280,13 @@ local function bindPlayer(player: Player)
 	-- Pass/rank verification can finish after CharacterAdded. Re-apply the
 	-- saved movement values when the server-owned Sultan entitlement arrives.
 	player:GetAttributeChangedSignal("IsTikiTideSultan"):Connect(function()
-		if player.Parent == Players and isSultan(player) then
+		if player.Parent ~= Players then return end
+		if isSultan(player) then
 			task.defer(function()
 				if player.Parent == Players then applyMovement(player) end
 			end)
+		else
+			revokeSultanState(player)
 		end
 	end)
 
@@ -279,6 +314,9 @@ Players.PlayerRemoving:Connect(function(player)
 	settingsByUserId[player.UserId] = nil
 	lastRequestAt[player.UserId] = nil
 	lastBubbleAt[player.UserId] = nil
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then baseMovementByHumanoid[humanoid] = nil end
 end)
 
 print("[Sultan Settings] Server service ready.")
