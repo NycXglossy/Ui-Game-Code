@@ -15,6 +15,9 @@ local SoundService = game:GetService("SoundService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Renderer = {}
+-- One live main-menu renderer per Player. Repeated Mount calls must reuse the
+-- existing UI instead of destroying and recreating its ScreenGui (visible flicker).
+local activeMounts: {[Player]: any} = {}
 
 local C = {
 	Base = Color3.fromRGB(13, 16, 24),
@@ -811,6 +814,15 @@ end
 function Renderer.Mount(player: Player, Network: {[string]: any})
 	assert(player and player:IsA("Player"), "Renderer.Mount expected a Player")
 	assert(typeof(Network) == "table", "Renderer.Mount expected the UI_Network table")
+
+	local existingMount = activeMounts[player]
+	if typeof(existingMount) == "table" then
+		local existingGui = existingMount.Gui
+		if typeof(existingGui) == "Instance" and existingGui.Parent then
+			return existingMount
+		end
+		activeMounts[player] = nil
+	end
 
 	local playerGui = player:WaitForChild("PlayerGui")
 	local connections: {RBXScriptConnection} = {}
@@ -5171,7 +5183,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	renderTab()
 
-	local mounted = {
+	local mounted: any = nil
+	mounted = {
 		Gui = gui,
 		Notify = notify,
 		Open = open,
@@ -5179,6 +5192,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Destroy = function()
 			if destroyed then return end
 			destroyed = true
+			if activeMounts[player] == mounted then activeMounts[player] = nil end
 			lookupSerial += 1
 			stopPreview()
 			if playerAudioPreferences then
@@ -5198,6 +5212,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	gui.Destroying:Connect(function()
 		if not destroyed then
 			destroyed = true
+			if activeMounts[player] == mounted then activeMounts[player] = nil end
 			lookupSerial += 1
 			stopPreview()
 			if playerAudioPreferences then
@@ -5211,6 +5226,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 	end)
 
+	activeMounts[player] = mounted
 	return mounted
 end
 
