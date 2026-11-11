@@ -144,17 +144,25 @@ make("UIStroke", {Color = COLORS.accent, Transparency = 0.28, Thickness = 1.5}, 
 make("UIGradient", {Rotation = 90, Color = ColorSequence.new(COLORS.background, COLORS.card)}, panel)
 
 local header = make("Frame", {
-	Size = UDim2.new(1, 0, 0, 58),
+	Name = "Header",
+	Position = UDim2.fromOffset(1, 1),
+	Size = UDim2.new(1, -2, 0, 58),
 	BackgroundColor3 = COLORS.card,
 	BorderSizePixel = 0,
+	ClipsDescendants = true,
 }, panel)
--- Round the header's upper corners to match the panel. A small lower fill
--- keeps the header-to-content seam straight rather than rounding all four sides.
-rounded(header, 20)
+-- Inset the header slightly inside the panel stroke and use a matching radius.
+-- The lower fill keeps the transition into the content area perfectly straight.
+rounded(header, 19)
+make("UIStroke", {
+	Color = COLORS.accent,
+	Transparency = 0.88,
+	Thickness = 1,
+}, header)
 make("Frame", {
 	Name = "HeaderLowerFill",
-	Position = UDim2.new(0, 0, 1, -20),
-	Size = UDim2.new(1, 0, 0, 20),
+	Position = UDim2.new(0, 0, 1, -19),
+	Size = UDim2.new(1, 0, 0, 19),
 	BackgroundColor3 = COLORS.card,
 	BorderSizePixel = 0,
 }, header)
