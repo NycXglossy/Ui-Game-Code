@@ -80,14 +80,33 @@ local globalIdempotencyService: any = nil
 local globalIncidentResponseService: any = nil
 local globalSecurityPolicyService: any = nil
 local authorizeGlobalActor: (any, string) -> boolean
-local budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
-local moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
-local globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
+-- Cross-server stores are created only when cross-server operation is enabled.
+-- In isolated Studio sessions, requiring this controller must not touch DataStore
+-- or MemoryStore APIs (the place may be unpublished and API access unavailable).
+local budgetMap: any = nil
+local moderationStore: any = nil
+local globalControlStore: any = nil
+local globalConfigStore: any = nil
 local GLOBAL_XP_BOOST_KEY = "globalXPBoost_v1" -- Preserve existing active timers.
 local XP_RECEIPT_STORE_NAME = "ClubMusic_XPBoostReceipts_v1"
 local MAX_GLOBAL_XP_BOOST_SECONDS = 30 * 24 * 60 * 60
-local xpReceiptStore = DataStoreService:GetDataStore(XP_RECEIPT_STORE_NAME)
+local xpReceiptStore: any = nil
 local MAX_PURCHASE_ID_LENGTH = 128
+
+if SERVICE_ENABLED then
+	local storesOk, storesError = pcall(function()
+		budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
+		moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
+		globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
+		globalConfigStore = DataStoreService:GetDataStore("ClubMusic_GlobalConfig_v1")
+		xpReceiptStore = DataStoreService:GetDataStore(XP_RECEIPT_STORE_NAME)
+	end)
+	if not storesOk then
+		SERVICE_ENABLED = false
+		warn("[ClubMusic Global] Cross-server storage initialization failed; global features are disabled safely: "
+			.. tostring(storesError))
+	end
+end
 
 local apiFolder = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 if apiFolder and not apiFolder:IsA("Folder") then apiFolder:Destroy(); apiFolder = nil end
@@ -812,6 +831,9 @@ end
 -- Operational services are optional modules and fail independently. They observe or
 -- coordinate shared state; none of them owns playback or the global queue controller.
 local function createOperationalService(moduleName: string, dependencies: {[string]: any}, requiredMethods: {string}): any?
+	-- These optional modules are cross-server infrastructure, not local playback
+	-- dependencies. Do not construct them in isolated Studio sessions.
+	if not SERVICE_ENABLED then return nil end
 	local module = loadOptionalGlobalModule(moduleName)
 	if not module then return nil end
 	local ok, instance = pcall(function() return module.new(dependencies) end)
@@ -831,7 +853,7 @@ end
 local sharedDependencies = {
 	isEnabled = function() return SERVICE_ENABLED end,
 	memoryStoreService = MemoryStoreService,
-	dataStore = DataStoreService:GetDataStore("ClubMusic_GlobalConfig_v1"),
+	dataStore = globalConfigStore,
 	allowStoreOperation = allowGlobalQueueStoreOperation,
 	jobId = JOB_ID,
 	guid = function() return HttpService:GenerateGUID(false) end,
