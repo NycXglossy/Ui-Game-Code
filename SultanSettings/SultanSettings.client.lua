@@ -131,10 +131,15 @@ local panel = make("Frame", {
 	BorderSizePixel = 0,
 	Visible = false,
 }, gui) :: Frame
-panel.Size = UDim2.fromOffset(560, 520)
-panel.Size = UDim2.new(0.88, 0, 0.82, 0)
+-- Scale with the available viewport while keeping a usable minimum and
+-- preventing the panel from becoming oversized on large desktop displays.
+panel.Size = UDim2.new(0.92, 0, 0.86, 0)
 panel.ClipsDescendants = true
 rounded(panel, 20)
+make("UISizeConstraint", {
+	MinSize = Vector2.new(260, 340),
+	MaxSize = Vector2.new(760, 720),
+}, panel)
 make("UIStroke", {Color = COLORS.accent, Transparency = 0.28, Thickness = 1.5}, panel)
 make("UIGradient", {Rotation = 90, Color = ColorSequence.new(COLORS.background, COLORS.card)}, panel)
 
@@ -143,6 +148,43 @@ local header = make("Frame", {
 	BackgroundColor3 = COLORS.card,
 	BorderSizePixel = 0,
 }, panel)
+-- Round the header's upper corners to match the panel. A small lower fill
+-- keeps the header-to-content seam straight rather than rounding all four sides.
+rounded(header, 20)
+make("Frame", {
+	Name = "HeaderLowerFill",
+	Position = UDim2.new(0, 0, 1, -20),
+	Size = UDim2.new(1, 0, 0, 20),
+	BackgroundColor3 = COLORS.card,
+	BorderSizePixel = 0,
+}, header)
+-- Recalculate scale when the device rotates or the viewport changes.
+local function fitPanelToViewport()
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+	local viewport = camera.ViewportSize
+	local widthScale = if viewport.X < 520 then 0.94 else 0.90
+	local heightScale = if viewport.Y < 520 then 0.90 else 0.84
+	panel.Size = UDim2.new(widthScale, 0, heightScale, 0)
+	-- Keep the launcher comfortably inside narrow device safe areas.
+	toggle.Position = UDim2.new(1, if viewport.X < 520 then -10 else -18, 0, if viewport.Y < 520 then 64 else 90)
+end
+
+fitPanelToViewport()
+local viewportConnection: RBXScriptConnection? = nil
+local function bindViewport()
+	if viewportConnection then viewportConnection:Disconnect(); viewportConnection = nil end
+	local camera = workspace.CurrentCamera
+	if camera then
+		viewportConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(fitPanelToViewport)
+	end
+end
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	bindViewport()
+	fitPanelToViewport()
+end)
+bindViewport()
+
 local title = make("TextLabel", {
 	Position = UDim2.fromOffset(18, 8),
 	Size = UDim2.new(1, -80, 0, 22),
