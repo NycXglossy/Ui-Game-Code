@@ -3720,6 +3720,11 @@ end
 -- Used by Creator Hub audio requests, which re-check after yielding for the asset lookup.
 ControllerFunctions.requestBlockReason = function(player: Player, trackId: string, now: number): string?
 	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
+	local trackCheckOk, trackBlocked = ControllerFunctions.globalInvoke("IsTrackBlocked", trackId)
+	if trackCheckOk and trackBlocked == true then return "That track has been blocked by ClubMusic staff." end
+	if not trackCheckOk and not RunService:IsStudio() and globalQueueMode then
+		return "Track moderation status is unavailable; requests are temporarily paused."
+	end
 	if requestsLocked and ControllerFunctions.getLevel(player) < 1 then return "Requests are locked by staff right now." end
 	if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
 	local cooldown = ControllerFunctions.cooldownFor(player)
@@ -5130,7 +5135,8 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, string.sub(table.concat(lines, "\n"), 1, 1800)
 	end
 	-- Security administration is exposed through this server-only bridge, not client remotes.
-	if operation == "RequestMute" or operation == "ClearUserQueue" or operation == "EmergencyLock" then
+	if operation == "RequestMute" or operation == "ClearUserQueue" or operation == "EmergencyLock"
+		or operation == "TrackBlock" or operation == "ForceStop" or operation == "ModerationHistory" then
 		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
 			ControllerFunctions.adminBridgeReportSignal(caller, "admin_moderation_access_denied", operation)
 			return false, "ClubMusic administrator permission is required."
@@ -5159,6 +5165,63 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		end
 		publishState(nil)
 		return true, string.format("ClubMusic requests %s for UserId %d%s.", if mode == "on" then "disabled" else "re-enabled", targetUserId, if target then " (" .. target.Name .. ")" else "")
+	end
+	if operation == "TrackBlock" then
+		if typeof(argument) ~= "string" or #argument < 4 or #argument > 220 then
+			return false, "Usage: ;cmblocktrack <trackId> on|off [reason]"
+		end
+		local trackId, mode, reason = string.match(argument, "^([%w%-_]+)%s+(%a+)%s*(.-)$")
+		if not trackId or #trackId > 64 then return false, "Provide a valid catalog track ID or audio-<assetId>." end
+		mode = string.lower(mode or "")
+		if mode ~= "on" and mode ~= "off" then return false, "Use on or off. Example: ;cmblocktrack audio-123456 on Copyright" end
+		local cleanReason = if reason ~= "" then string.sub(reason, 1, 120) else nil
+		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("SetTrackBlocked", trackId, mode == "on", caller.UserId, cleanReason)
+		if not ok or accepted ~= true then return false, tostring(accepted or "Track moderation update failed.") end
+		if mode == "on" then
+			for index = #queue, 1, -1 do
+				if queue[index].trackId == trackId then queueManager:RemoveAt(index, true) end
+			end
+			if nowPlaying.trackId == trackId then
+				ControllerFunctions.cancelAudioTransition("track-blocked")
+				ControllerFunctions.advance()
+			end
+		end
+		publishState(nil)
+		return true, string.format("Track %s is now %s globally.", trackId, if mode == "on" then "blocked" else "allowed")
+	end
+	if operation == "ForceStop" then
+		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("PublishDJCommand", "ForceStop", {}, caller.UserId)
+		if not ok or accepted ~= true then return false, tostring(accepted or "Global force-stop could not be published.") end
+		ControllerFunctions.cancelAudioTransition("admin-force-stop")
+		playbackPaused = true
+		nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
+		nowPlaying.genre = ""; nowPlaying.duration = 1; nowPlaying.elapsed = 0
+		nowPlaying.dj = "Staff"; nowPlaying.source = "admin"
+		nowPlaying.requestedBy = "Emergency stop"; nowPlaying.vip = false; nowPlaying.soundId = ""
+		ControllerFunctions.stopServerMusic()
+		ControllerFunctions.setAudioAsset("")
+		ControllerFunctions.broadcast("ClubMusic playback was emergency-stopped by staff.", "warn")
+		publishState(nil)
+		return true, "ClubMusic playback was emergency-stopped across servers. Use ;cmrestart to resume."
+	end
+	if operation == "ModerationHistory" then
+		if typeof(argument) ~= "string" or #argument > 24 or not string.match(argument, "^%d+$") then
+			return false, "Usage: ;cmmoderationhistory <numeric UserId>"
+		end
+		local targetUserId = tonumber(argument)
+		if not targetUserId or targetUserId < 1 or targetUserId % 1 ~= 0 or targetUserId > 9007199254740991 then return false, "Provide a valid numeric Roblox UserId." end
+		local ok, history = ControllerFunctions.adminBridgeGlobalCall("GetModerationHistory", targetUserId, caller.UserId, 10)
+		if not ok or typeof(history) ~= "table" then return false, tostring(history or "Moderation history is unavailable.") end
+		if #history == 0 then return true, "No recorded ClubMusic moderation actions for UserId " .. tostring(targetUserId) .. "." end
+		local lines = {"ClubMusic moderation history for UserId " .. tostring(targetUserId) .. ":"}
+		for index, item in ipairs(history) do
+			if index > 10 then break end
+			local stamp = if item.at > 0 then os.date("!%Y-%m-%d %H:%M UTC", item.at) else "Unknown time"
+			table.insert(lines, string.format("%s | %s=%s | by %d%s", stamp, tostring(item.field),
+				tostring(item.value), tonumber(item.actorUserId) or 0,
+				if item.reason ~= "" then " | " .. string.sub(item.reason, 1, 80) else ""))
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1600)
 	end
 	if operation == "ClearUserQueue" then
 		if typeof(argument) ~= "string" or #argument > 24 or not string.match(argument, "^%d+$") then
@@ -5873,6 +5936,17 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		end
 		return
 	end
+	if message.kind == "TrackModeration" and typeof(message.trackId) == "string" and message.blocked == true then
+		for index = #queue, 1, -1 do
+			if queue[index].trackId == message.trackId then queueManager:RemoveAt(index, true) end
+		end
+		if nowPlaying.trackId == message.trackId then
+			ControllerFunctions.cancelAudioTransition("track-blocked-global")
+			ControllerFunctions.advance()
+		end
+		publishState(nil)
+		return
+	end
 	if message.kind == "Catalog" then
 		if os.clock() - lastCatalogRefreshAt < 3 then return end
 		task.spawn(function()
@@ -5909,7 +5983,7 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 	end
 	if message.kind == "DJ" and typeof(message.command) == "string"
 		and (message.command == "Skip" or message.command == "ClearQueue" or message.command == "SetRequestLock"
-			or message.command == "SetPlaybackPaused" or message.command == "Restart") then
+			or message.command == "SetPlaybackPaused" or message.command == "Restart" or message.command == "ForceStop") then
 		-- MessagingService may echo a command to its originating server. The local
 		-- action has already been applied there, so ignore that echo to avoid double skips.
 		if message.senderJob == game.JobId then return end
@@ -5927,6 +6001,16 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 			if changed then
 				ControllerFunctions.broadcast(if requestsLocked then "Song requests are globally locked." else "Song requests are globally open.", "info")
 			end
+		elseif message.command == "ForceStop" then
+			ControllerFunctions.cancelAudioTransition("global-force-stop")
+			playbackPaused = true
+			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
+			nowPlaying.genre = ""; nowPlaying.duration = 1; nowPlaying.elapsed = 0
+			nowPlaying.dj = "Staff"; nowPlaying.source = "admin"
+			nowPlaying.requestedBy = "Emergency stop"; nowPlaying.vip = false; nowPlaying.soundId = ""
+			ControllerFunctions.stopServerMusic()
+			ControllerFunctions.setAudioAsset("")
+			ControllerFunctions.broadcast("ClubMusic playback was emergency-stopped by staff.", "warn")
 		elseif message.command == "SetPlaybackPaused" or message.command == "Restart" then
 			if ControllerFunctions.applyGlobalPlaybackControl(message.command, message.payload) then
 				if message.command == "SetPlaybackPaused" then
