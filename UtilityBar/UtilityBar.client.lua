@@ -68,8 +68,8 @@ local shell = make("Frame", {
 	BorderSizePixel = 0,
 }, gui) :: Frame
 round(shell, 22)
-make("UISizeConstraint", {MinSize = Vector2.new(220, 38), MaxSize = Vector2.new(760, 76)}, shell)
-make("UIStroke", {Color = COLORS.gold, Transparency = 0.58, Thickness = 0.8}, shell)
+make("UISizeConstraint", {MinSize = Vector2.new(220, 36), MaxSize = Vector2.new(760, 76)}, shell)
+make("UIStroke", {Color = COLORS.gold, Transparency = 0.62, Thickness = 0.65}, shell)
 make("UIGradient", {
 	Rotation = 90,
 	Color = ColorSequence.new(Color3.fromRGB(28, 34, 47), COLORS.background),
@@ -79,7 +79,7 @@ local rail = make("ScrollingFrame", {
 	Name = "ButtonRail",
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.new(1, -10, 1, -8),
+	Size = UDim2.new(1, -10, 1, -4),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	ScrollBarThickness = 0,
@@ -186,13 +186,13 @@ local function buildUtilityIcon(parent: Instance, kind: string, color: Color3): 
 end
 
 local definitions = {
-	{key = "RefreshOutfit", label = "Refresh", tint = COLORS.cyan},
-	{key = "TikiTideSettings", label = "Tiki Tide", tint = COLORS.gold},
+	{key = "RefreshOutfit", label = "Refresh", compactLabel = "Reset", tint = COLORS.cyan},
+	{key = "TikiTideSettings", label = "Tiki Tide", compactLabel = "Tiki", tint = COLORS.gold},
 	{key = "Mount", label = "Mount", tint = COLORS.cyan},
 	{key = "Size", label = "Size", tint = COLORS.gold},
 	{key = "Clone", label = "Clone", tint = COLORS.cyan},
 	{key = "Aura", label = "Aura", tint = COLORS.gold},
-	{key = "Inventory", label = "Inventory", tint = COLORS.cyan},
+	{key = "Inventory", label = "Inventory", compactLabel = "Bag", tint = COLORS.cyan},
 }
 
 local buttons: {TextButton} = {}
@@ -282,27 +282,30 @@ local function updateSizing()
 
 	-- On touch devices keep the rail compact and lift it above the default
 	-- thumb-control zone so it does not sit over the joystick or jump button.
-	local buttonWidth = if compactTouch then 30 else (if veryNarrow then 52 else (if narrow then 58 else (if tablet then 70 else 82)))
+	local buttonWidth = if compactTouch then 26 else (if veryNarrow then 52 else (if narrow then 58 else (if tablet then 70 else 82)))
 	local buttonHeight = if compactTouch then 30 else (if shortScreen then 46 else (if narrow then 52 else 58))
 	local gap = if compactTouch then 1 else (if veryNarrow then 4 else (if narrow then 5 else 7))
 	local shellHeight = if compactTouch then 36 else (if shortScreen then 58 else (if narrow then 66 else 76))
 
 	for _, button in ipairs(buttons) do
 		button.Size = UDim2.fromOffset(buttonWidth, buttonHeight)
+		local definitionIndex = table.find(buttons, button)
+		local definition = definitionIndex and definitions[definitionIndex] or nil
 		local iconTile = button:FindFirstChild("IconTile")
 		if iconTile and iconTile:IsA("Frame") then
-			iconTile.Size = UDim2.fromOffset(if compactTouch then 21 else (if veryNarrow then 31 else 36), if compactTouch then 20 else (if shortScreen then 27 else 31))
+			iconTile.Size = UDim2.fromOffset(if compactTouch then 19 else (if veryNarrow then 31 else 36), if compactTouch then 17 else (if shortScreen then 27 else 31))
 		end
 		local icon = button:FindFirstChild("PremiumIcon_" .. button.Name:gsub("Button", ""))
 		if icon and icon:IsA("Frame") then
 			icon.Position = UDim2.new(0.5, 0, 0, if compactTouch then 1 else (if shortScreen then 3 else 5))
-			icon.Size = UDim2.fromOffset(if compactTouch then 16 else (if veryNarrow then 23 else 27), if compactTouch then 16 else (if shortScreen then 21 else 25))
+			icon.Size = UDim2.fromOffset(if compactTouch then 14 else (if veryNarrow then 23 else 27), if compactTouch then 14 else (if shortScreen then 21 else 25))
 		end
 		local label = button:FindFirstChild("Label")
 		if label and label:IsA("TextLabel") then
-			label.Position = UDim2.new(0.5, 0, 1, -3)
-			label.Size = UDim2.new(1, -2, 0, if compactTouch then 9 else (if shortScreen then 14 else 16))
-			label.TextSize = if compactTouch then 5 else (if veryNarrow then 8 else (if narrow then 9 else 10))
+			label.Position = UDim2.new(0.5, 0, 1, -1)
+			label.Size = UDim2.new(1, -2, 0, if compactTouch then 8 else (if shortScreen then 14 else 16))
+			label.Text = if compactTouch and definition and definition.compactLabel then definition.compactLabel else (definition and definition.label or label.Text)
+			label.TextSize = if compactTouch then 6 else (if veryNarrow then 8 else (if narrow then 9 else 10))
 		end
 	end
 
