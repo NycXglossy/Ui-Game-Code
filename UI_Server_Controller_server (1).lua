@@ -5129,7 +5129,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		end
 		mode = if mode then string.lower(mode) else ""
 		if mode ~= "on" and mode ~= "off" then return false, "Use on or off. Example: ;cmrequestmute 123456 on Spam" end
-		local cleanReason = if reason ~= "" then string.sub(reason, 1, 160) else nil
+		local cleanReason = if reason ~= "" then string.sub(reason, 1, 120) else nil
 		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("SetRequestBlocked", targetUserId, mode == "on", caller.UserId, cleanReason)
 		if not ok or accepted ~= true then return false, tostring(accepted or "Request restriction update failed.") end
 		local target = Players:GetPlayerByUserId(targetUserId)
