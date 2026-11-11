@@ -250,10 +250,16 @@ local musicValidation = MusicValidationService.new({
 end)
 remotes:SetAttribute("StartupStage", "InitializingStorage")
 
-type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string?, artworkAssetId: number? }
+type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string?, artworkAssetId: number?, placeholder: boolean? }
 
 local TRACK_BY_ID: {[string]: Track} = {}
 local ALL_TRACK_IDS: {string} = {}
+
+local function isPlayableTrack(track: Track?): boolean
+	if not track or track.placeholder == true then return false end
+	local soundId = track.soundId or CONFIG.SoundIds[track.id]
+	return typeof(soundId) == "string" and soundId ~= ""
+end
 
 local TAGS: {[string]: boolean} = {
 	vip = true, party = true, wave = true, tiki = true, sunset = true, bass = true, island = true,
@@ -2321,7 +2327,7 @@ ControllerFunctions.isTrackBlocked = function(trackId: string): boolean
 	return blocked == true
 end
 
-ControllerFunctions.pickAutoTrack = function(): Track
+ControllerFunctions.pickAutoTrack = function(): Track?
 	local queued: {[string]: boolean} = {}
 	for _, entry in ipairs(queue) do queued[entry.trackId] = true end
 	local recentSet: {[string]: boolean} = {}
@@ -2331,7 +2337,7 @@ ControllerFunctions.pickAutoTrack = function(): Track
 	local preferred: {Track} = {}
 	for _, id in ipairs(ALL_TRACK_IDS) do
 		local track = TRACK_BY_ID[id]
-		if not queued[id] and not recentSet[id] and id ~= nowPlaying.trackId
+		if isPlayableTrack(track) and not queued[id] and not recentSet[id] and id ~= nowPlaying.trackId
 			and not ControllerFunctions.isTrackBlocked(id) then
 			table.insert(pool, track)
 			if track.genreId ~= lastAutoGenre then table.insert(preferred, track) end
@@ -2344,7 +2350,13 @@ ControllerFunctions.pickAutoTrack = function(): Track
 		lastAutoGenre = chosen.genreId
 		return chosen
 	end
-	return TRACK_BY_ID[ALL_TRACK_IDS[random:NextInteger(1, #ALL_TRACK_IDS)]]
+	-- Recent-history/queue constraints may exclude every track; fall back only
+	-- to a verified playable catalog entry, never to a placeholder or nil ID.
+	for _, id in ipairs(ALL_TRACK_IDS) do
+		local track = TRACK_BY_ID[id]
+		if isPlayableTrack(track) and not ControllerFunctions.isTrackBlocked(id) then return track end
+	end
+	return nil
 end
 
 ControllerFunctions.nextPlaylistTrack = function(): Track?
@@ -2353,7 +2365,7 @@ ControllerFunctions.nextPlaylistTrack = function(): Track?
 		if activePlaylistCursor > #activePlaylistTracks then activePlaylistCursor = 1 end
 		local track = activePlaylistTracks[activePlaylistCursor]
 		activePlaylistCursor += 1
-		if TRACK_BY_ID[track.id] and not ControllerFunctions.isTrackBlocked(track.id) then return track end
+		if isPlayableTrack(TRACK_BY_ID[track.id]) and not ControllerFunctions.isTrackBlocked(track.id) then return TRACK_BY_ID[track.id] end
 	end
 	return nil
 end
@@ -2377,7 +2389,9 @@ ControllerFunctions.topUpAuto = function()
 					activePlaylistId = nil; activePlaylistName = ""
 					table.clear(activePlaylistTracks); activePlaylistCursor = 1
 				end
-				table.insert(entries, ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil))
+				local autoTrack = ControllerFunctions.pickAutoTrack()
+				if not autoTrack then warn("[ClubMusic] No playable catalog tracks are available; automatic queue refill paused."); break end
+				table.insert(entries, ControllerFunctions.makeEntry(autoTrack, "auto", nil))
 			end
 		end
 		if #entries > 0 then enqueueGlobalQueueBatch(entries) end
@@ -2396,7 +2410,9 @@ ControllerFunctions.topUpAuto = function()
 				activePlaylistId = nil; activePlaylistName = ""
 				table.clear(activePlaylistTracks); activePlaylistCursor = 1
 			end
-			entry = ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
+			local autoTrack = ControllerFunctions.pickAutoTrack()
+			if not autoTrack then warn("[ClubMusic] No playable catalog tracks are available; automatic queue refill paused."); break end
+			entry = ControllerFunctions.makeEntry(autoTrack, "auto", nil)
 		end
 		queueManager:Insert(#queue + 1, entry)
 	end
@@ -2908,8 +2924,13 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 end
 
 -- Boot: start with an auto-selected track and a visible auto queue.
-ControllerFunctions.setNowPlaying(ControllerFunctions.makeEntry(TRACK_BY_ID["edm-0"], "auto", nil))
-ControllerFunctions.topUpAuto()
+local initialTrack = ControllerFunctions.pickAutoTrack()
+if initialTrack then
+	ControllerFunctions.setNowPlaying(ControllerFunctions.makeEntry(initialTrack, "auto", nil))
+	ControllerFunctions.topUpAuto()
+else
+	warn("[ClubMusic] Startup held: the catalog contains no playable audio tracks.")
+end
 
 -- Switch to shared authority only when the separately configured global service
 -- confirms it is enabled. Studio remains local unless explicitly enabled there.
@@ -4288,6 +4309,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isValidString(trackId, 24) then return end
 		local track = TRACK_BY_ID[trackId]
 		if not track then return end
+		if not isPlayableTrack(track) then notify(player, "That catalog entry is a temporary placeholder and is not playable yet.", "warn"); return end
 
 		local level = ControllerFunctions.getLevel(player)
 		if blockedUsers[player.UserId] then
@@ -5867,6 +5889,7 @@ refreshLocalCatalog = function(): boolean
 				genre = catalogTrack.genre,
 				assetId = catalogTrack.assetId,
 				soundId = catalogTrack.soundId,
+				placeholder = catalogTrack.placeholder,
 			}
 			nextTracks[track.id] = track
 			table.insert(nextIds, track.id)
