@@ -277,30 +277,31 @@ local function updateSizing()
 	local veryNarrow = viewport.X < 360
 	local narrow = viewport.X < 560
 	local tablet = viewport.X >= 560 and viewport.X < 900
+	local compactTouch = UserInputService.TouchEnabled and viewport.X < 900
 
-	-- Keep the bar inside the usable viewport while retaining a readable,
-	-- touch-friendly target size on phones and a larger presentation elsewhere.
-	local buttonWidth = if veryNarrow then 52 else (if narrow then 58 else (if tablet then 70 else 82))
-	local buttonHeight = if shortScreen then 46 else (if narrow then 52 else 58)
-	local gap = if veryNarrow then 4 else (if narrow then 5 else 7)
-	local shellHeight = if shortScreen then 58 else (if narrow then 66 else 76)
+	-- On touch devices keep the rail compact and lift it above the default
+	-- thumb-control zone so it does not sit over the joystick or jump button.
+	local buttonWidth = if compactTouch then (if veryNarrow then 40 else 44) else (if veryNarrow then 52 else (if narrow then 58 else (if tablet then 70 else 82)))
+	local buttonHeight = if compactTouch then (if shortScreen then 38 else 42) else (if shortScreen then 46 else (if narrow then 52 else 58))
+	local gap = if compactTouch then 3 else (if veryNarrow then 4 else (if narrow then 5 else 7))
+	local shellHeight = if compactTouch then (if shortScreen then 46 else 50) else (if shortScreen then 58 else (if narrow then 66 else 76))
 
 	for _, button in ipairs(buttons) do
 		button.Size = UDim2.fromOffset(buttonWidth, buttonHeight)
 		local iconTile = button:FindFirstChild("IconTile")
 		if iconTile and iconTile:IsA("Frame") then
-			iconTile.Size = UDim2.fromOffset(if veryNarrow then 31 else 36, if shortScreen then 27 else 31)
+			iconTile.Size = UDim2.fromOffset(if compactTouch then 27 else (if veryNarrow then 31 else 36), if compactTouch then 25 else (if shortScreen then 27 else 31))
 		end
 		local icon = button:FindFirstChild("PremiumIcon_" .. button.Name:gsub("Button", ""))
 		if icon and icon:IsA("Frame") then
-			icon.Position = UDim2.new(0.5, 0, 0, if shortScreen then 3 else 5)
-			icon.Size = UDim2.fromOffset(if veryNarrow then 23 else 27, if shortScreen then 21 else 25)
+			icon.Position = UDim2.new(0.5, 0, 0, if compactTouch then 2 else (if shortScreen then 3 else 5))
+			icon.Size = UDim2.fromOffset(if compactTouch then 21 else (if veryNarrow then 23 else 27), if compactTouch then 20 else (if shortScreen then 21 else 25))
 		end
 		local label = button:FindFirstChild("Label")
 		if label and label:IsA("TextLabel") then
-			label.Position = UDim2.new(0.5, 0, 1, -4)
-			label.Size = UDim2.new(1, -4, 0, if shortScreen then 14 else 16)
-			label.TextSize = if veryNarrow then 8 else (if narrow then 9 else 10)
+			label.Position = UDim2.new(0.5, 0, 1, -3)
+			label.Size = UDim2.new(1, -3, 0, if compactTouch then 11 else (if shortScreen then 14 else 16))
+			label.TextSize = if compactTouch then 7 else (if veryNarrow then 8 else (if narrow then 9 else 10))
 		end
 	end
 
@@ -309,7 +310,8 @@ local function updateSizing()
 
 	-- Respect the device's bottom safe area (home indicator / system inset).
 	local _, bottomInset = GuiService:GetGuiInset()
-	local bottomOffset = math.max(8, bottomInset.Y + 8)
+	local touchLift = if compactTouch then (if shortScreen then 108 else 148) else 8
+	local bottomOffset = math.max(touchLift, bottomInset.Y + 8)
 	shell.Position = UDim2.new(0.5, 0, 1, -bottomOffset)
 
 	-- Calculate from the target width, not AbsoluteSize, which may still
