@@ -885,16 +885,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function setCompactHudVisibility(visible: boolean)
-		-- Hide every known compact ClubMusic bar, including stale copies created
-		-- by an older renderer. Never toggle the active bar on while expanded.
+		-- Share menu state with Sultan Settings so neither UI can restore the HUD
+		-- while the other full-screen panel is still open.
+		playerGui:SetAttribute("ClubMusicMenuExpanded", expanded)
+		local sultanSettingsOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
 		for _, descendant in ipairs(playerGui:GetDescendants()) do
 			if descendant ~= hud and isCompactClubHud(descendant) then
 				(descendant :: GuiObject).Visible = false
 			end
 		end
-		hud.Visible = visible and not expanded
+		hud.Visible = visible and not expanded and not sultanSettingsOpen
 	end
-
 	-- Catch duplicate bars created by another renderer copy after this menu opens.
 	table.insert(connections, playerGui.DescendantAdded:Connect(function(descendant)
 		if expanded and isCompactClubHud(descendant) then
