@@ -74,9 +74,12 @@ function HealthService:Start(): boolean
             local state = "Healthy"
             local details = {}
 
-            if not enabledOk or enabled ~= true then
+            if not enabledOk then
+                state = "Degraded"
+                table.insert(details, "Cross-server enablement status could not be read.")
+            elseif enabled ~= true then
                 state = "Disabled"
-                table.insert(details, "Cross-server service is disabled or unavailable.")
+                table.insert(details, "Cross-server features are intentionally isolated or disabled; local server features remain available.")
             end
             if not apiReady then
                 state = "Degraded"
