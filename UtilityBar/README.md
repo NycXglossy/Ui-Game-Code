@@ -5,9 +5,11 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 ## Install
 
 1. Add `UtilityBar.client.lua` as a **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
-2. Keep exactly one copy of this LocalScript.
-3. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
-4. Keep the Sultan Settings client installed separately. The Sultan button requests its panel through the `SultanSettingsOpenRequest` PlayerGui attribute.
+2. Add `UtilityBarActions.client.lua` as a second **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
+3. Add `UtilityBarActions.server.lua` as a **Script** under `ServerScriptService`.
+4. Keep exactly one copy of each Utility Bar script.
+5. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
+6. Keep the Sultan Settings client installed separately. The Sultan button requests its panel through the `SultanSettingsOpenRequest` PlayerGui attribute.
 
 ## Included buttons
 
@@ -29,6 +31,16 @@ For actions other than Sultan Settings, the bar fires the local BindableEvent:
 
 Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone`, `Aura`, and `Inventory`.
 
+### Implemented: Refresh Outfit
+
+The `UtilityBarActions.client.lua` module listens for `RefreshOutfit` and invokes the server-owned `ReplicatedStorage.UtilityBarRemotes.RefreshOwnAvatar` RemoteFunction. The server fetches the requesting player's own current Roblox avatar description and applies it to that player's current Humanoid. Requests are rate-limited per player and the server does not accept a target UserId or arbitrary appearance payload from the client.
+
+This refreshes the player's current Roblox account avatar; it is not an outfit catalog or saved-outfit picker. Changing to a different outfit requires a separate approved outfit-selection flow.
+
+### Still dispatch-only
+
+`Mount`, `Size`, `Clone`, `Aura`, and `Inventory` remain dispatch-only until their independent modules and any required assets or server validation are added.
+
 A separate client utility module can subscribe with:
 
 ```lua
@@ -43,7 +55,7 @@ actionEvent.Event:Connect(function(actionName)
 end)
 ```
 
-Phase 1 provides the launcher and dispatch contract only. It does not pretend that the six non-Sultan utilities are implemented: their independent modules must subscribe to the event before those buttons perform their respective game actions. The bar itself does not create remotes, alter server permissions, or call ClubMusic playback APIs.
+The launcher remains separate from ClubMusic. Refresh Outfit is now connected to its own server-validated avatar refresh service; the five listed dispatch-only actions still need their own modules. The bar itself does not call ClubMusic playback APIs.
 
 ## Validation
 
@@ -53,3 +65,5 @@ Phase 1 provides the launcher and dispatch contract only. It does not pretend th
 - [ ] Test touch, mouse, keyboard, and D-pad / thumbstick navigation.
 - [ ] Test narrow mobile viewport and landscape rotation; verify horizontal scrolling works without clipping.
 - [ ] Confirm utility clicks fire the documented local event and do not issue music requests.
+- [ ] Install the server Script and verify Refresh Outfit updates only the requesting player's avatar.
+- [ ] Verify repeated refresh requests are throttled and failed avatar lookups show a safe message.
