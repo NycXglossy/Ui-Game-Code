@@ -68,7 +68,7 @@ refreshRemote.OnServerInvoke = function(player: Player): (boolean, string)
 		if player.Character ~= character or not character.Parent or humanoid.Parent ~= character then
 			error("Character changed while avatar was loading.")
 		end
-		humanoid:ApplyDescriptionAsync(description)
+		humanoid:ApplyDescriptionResetAsync(description)
 	end)
 	description:Destroy()
 
