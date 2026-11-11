@@ -815,7 +815,14 @@ ContextActionService:BindActionAtPriority(BACK_ACTION, function(_, inputState)
 end, false, 3000, Enum.KeyCode.ButtonB, Enum.KeyCode.Escape)
 
 gui.Destroying:Connect(function()
+	-- The GUI can be removed by a replacement script or another UI lifecycle
+	-- owner, not only by the close button. Always release the shared HUD state.
 	ContextActionService:UnbindAction(BACK_ACTION)
+	if viewportConnection then
+		viewportConnection:Disconnect()
+		viewportConnection = nil
+	end
+	restoreClubHud()
 	local selected = GuiService.SelectedObject
 	if selected and selected:IsDescendantOf(gui) then GuiService.SelectedObject = nil end
 end)
