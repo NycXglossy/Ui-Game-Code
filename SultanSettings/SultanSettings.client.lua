@@ -615,6 +615,15 @@ local function renderPlayers()
 			end
 			local result = invoke("TeleportTo", {userId = entry.userId})
 			notify(result.message or "Teleport failed.", result.ok)
+			-- A failed request leaves the player on this page; keep controller
+			-- focus on the action that produced the response.
+			if not result.ok and controllerMode and panel.Visible and teleportButton.Parent then
+				task.defer(function()
+					if teleportButton.Parent and teleportButton.Visible and teleportButton.Selectable then
+						GuiService.SelectedObject = teleportButton
+					end
+				end)
+			end
 		end, COLORS.cyan)
 		if not entry.allowTeleport then
 			teleportButton.BackgroundColor3 = COLORS.card
@@ -629,17 +638,26 @@ local function renderPlayers()
 		end
 	end
 	local emptyState = label(list, if #rows == 0 then "No other players are currently in this server." else "No matching players.", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 28), COLORS.muted, 9)
-	emptyState.Visible = #rows == 0
-	search:GetPropertyChangedSignal("Text"):Connect(function()
+	local function applyRosterFilter()
 		local query = string.lower(string.sub(search.Text, 1, 40))
 		local visibleCount = 0
 		for _, row in ipairs(rows) do
 			local firstLabel = row:FindFirstChildWhichIsA("TextLabel")
 			local rowText = string.lower(tostring(firstLabel and firstLabel.Text or ""))
-			row.Visible = query == "" or string.find(rowText, query, 1, true) ~= nil
-			if row.Visible then visibleCount += 1 end
+			local matches = query == "" or string.find(rowText, query, 1, true) ~= nil
+			row.Visible = matches
+			if matches then
+				row.Position = UDim2.fromOffset(8, 8 + visibleCount * 54)
+				visibleCount += 1
+			end
 		end
+
+		-- Collapse filtered gaps so D-pad navigation and scrolling follow the
+		-- visible rows rather than leaving empty spaces between matches.
+		list.Size = UDim2.new(1, -4, 0, math.max(90, visibleCount * 54 + 16))
 		emptyState.Visible = visibleCount == 0
+		emptyState.Position = UDim2.fromOffset(12, 12)
+
 		task.defer(function()
 			if not panel.Visible or activeTab ~= "Players" then return end
 			local selected = GuiService.SelectedObject
@@ -648,7 +666,11 @@ local function renderPlayers()
 			end
 			wireControllerFocus()
 		end)
-	end)
+	end
+
+	emptyState.Visible = #rows == 0
+	search:GetPropertyChangedSignal("Text"):Connect(applyRosterFilter)
+	applyRosterFilter()
 end
 
 local function renderMessage()
