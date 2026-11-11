@@ -382,6 +382,49 @@ local function notify(message: string, success: boolean?)
 	end)
 end
 
+local function wireControllerFocus()
+	local tabs = {}
+	for _, child in ipairs(tabBar:GetChildren()) do
+		if child:IsA("GuiButton") and child.Selectable and child.Visible then
+			table.insert(tabs, child)
+		end
+	end
+	table.sort(tabs, function(a, b) return a.AbsolutePosition.X < b.AbsolutePosition.X end)
+
+	-- Make the three tabs a predictable horizontal row, then drop from the
+	-- active tab into the first control in the current page.
+	local firstContentControl: GuiObject? = nil
+	local controls = {}
+	for _, descendant in ipairs(content:GetDescendants()) do
+		if descendant:IsA("GuiObject") and descendant.Selectable and descendant.Visible then
+			table.insert(controls, descendant)
+		end
+	end
+	table.sort(controls, function(a, b)
+		local ay, by = a.AbsolutePosition.Y, b.AbsolutePosition.Y
+		if math.abs(ay - by) > 5 then return ay < by end
+		return a.AbsolutePosition.X < b.AbsolutePosition.X
+	end)
+	firstContentControl = controls[1]
+
+	for index, tab in ipairs(tabs) do
+		tab.NextSelectionLeft = tabs[index - 1] or tabs[#tabs]
+		tab.NextSelectionRight = tabs[index + 1] or tabs[1]
+		tab.NextSelectionUp = close
+		tab.NextSelectionDown = firstContentControl or close
+	end
+
+	for index, control in ipairs(controls) do
+		control.NextSelectionUp = controls[index - 1] or tabs[1] or close
+		control.NextSelectionDown = controls[index + 1] or controls[index] 
+		control.NextSelectionLeft = nil
+		control.NextSelectionRight = nil
+	end
+	if firstContentControl then
+		firstContentControl.NextSelectionUp = tabs[1] or close
+	end
+end
+
 local function refreshState()
 	local result = invoke("GetSnapshot")
 	if not result.ok then
@@ -555,6 +598,7 @@ render = function()
 	if activeTab == "Players" then renderPlayers()
 	elseif activeTab == "Message" then renderMessage()
 	else renderSettings() end
+	task.defer(wireControllerFocus)
 end
 
 -- Keep the compact ClubMusic overhead bar out of the way while Sultan
