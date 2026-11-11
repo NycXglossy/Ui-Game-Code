@@ -252,6 +252,10 @@ local function updateModeration(userId: number, field: string, value: any, actor
 			data.updatedAt = os.time()
 			data.updatedBy = actorUserId
 			data.reason = reason
+			local history = if typeof(data.history) == "table" then table.clone(data.history) else {}
+			table.insert(history, 1, {field = field, value = value, actorUserId = math.floor(actorUserId), reason = reason, at = os.time()})
+			while #history > 20 do table.remove(history) end
+			data.history = history
 			return data
 		end)
 	end)
@@ -295,10 +299,10 @@ local function publishTopic(topic: string, payload: {[string]: any}): boolean
 	return true
 end
 
-local allowedDJCommands = {Skip = true, ClearQueue = true, SetRequestLock = true, SetPlaybackPaused = true, Restart = true}
+local allowedDJCommands = {Skip = true, ClearQueue = true, SetRequestLock = true, SetPlaybackPaused = true, Restart = true, ForceStop = true}
 local function publishDJCommand(command: any, payload: any, actorUserId: any): (boolean, number?)
 	if not SERVICE_ENABLED or not allowedDJCommands[command] or not finiteNumber(actorUserId) then return false end
-	local permission = if command == "ClearQueue" then "GlobalModeration" else "GlobalDJ"
+	local permission = if command == "ClearQueue" or command == "ForceStop" then "GlobalModeration" else "GlobalDJ"
 	if not authorizeGlobalActor(actorUserId, permission) then return false end
 	if typeof(payload) ~= "table" then payload = {} end
 	local cleanPayload = {}
@@ -331,8 +335,10 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): (
 		cleanPayload.paused = payload.paused
 	elseif command == "Restart" then
 		cleanPayload.restart = true
+	elseif command == "ForceStop" then
+		cleanPayload.forceStop = true
 	end
-	if command == "SetPlaybackPaused" or command == "Restart" then
+	if command == "SetPlaybackPaused" or command == "Restart" or command == "ForceStop" then
 		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
 		if not budgetShared or not budgetAllowed then
 			warn("[ClubMusic Global] Playback control rejected: shared DataStore budget unavailable.")
@@ -347,8 +353,10 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): (
 				state.paused = if command == "SetPlaybackPaused" then cleanPayload.paused else (state.paused == true)
 				if command == "SetPlaybackPaused" then
 					state.pauseRevision = state.revision
-				else
+				elseif command == "Restart" then
 					state.restartRevision = state.revision
+				else
+					state.stopRevision = state.revision
 				end
 				state.updatedAt = os.time()
 				state.updatedBy = math.floor(actorUserId)
@@ -367,7 +375,7 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): (
 	})
 	-- Pause/resume and restart are durable; polling repairs missed MessagingService events.
 	if command == "SetRequestLock" then return true end
-	if command == "SetPlaybackPaused" or command == "Restart" then return true, cleanPayload.revision end
+	if command == "SetPlaybackPaused" or command == "Restart" or command == "ForceStop" then return true, cleanPayload.revision end
 	return published
 end
 
@@ -445,6 +453,68 @@ bindFunction("SetRequestBlocked", function(userId: any, blocked: any, actorUserI
 	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
 	if reason ~= nil and not cleanReason then return false end
 	return updateModeration(userId, "requestBlocked", blocked, actorUserId, cleanReason)
+end)
+
+bindFunction("GetModerationHistory", function(userId: any, actorUserId: any, limit: any)
+	if not SERVICE_ENABLED or not userKey(userId) or not finiteNumber(actorUserId)
+		or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false, nil end
+	local data = getModeration(userId)
+	if data.lookupFailed then return false, nil end
+	local history = if typeof(data.history) == "table" then data.history else {}
+	local result = {}
+	local count = math.clamp(math.floor(if finiteNumber(limit) then limit else 10), 1, 20)
+	for index = 1, math.min(#history, count) do
+		local item = history[index]
+		if typeof(item) == "table" then
+			table.insert(result, {field = tostring(item.field or "unknown"), value = item.value == true,
+				actorUserId = if finiteNumber(item.actorUserId) then math.floor(item.actorUserId) else 0,
+				reason = if typeof(item.reason) == "string" then string.sub(item.reason, 1, 120) else "",
+				at = if finiteNumber(item.at) then math.floor(item.at) else 0})
+		end
+	end
+	return true, result
+end)
+
+local function validTrackKey(trackId: any): string?
+	if typeof(trackId) ~= "string" or #trackId < 1 or #trackId > 64
+		or not string.match(trackId, "^[%w%-_]+$") then return nil end
+	return "trackBlock_" .. trackId
+end
+
+bindFunction("IsTrackBlocked", function(trackId: any)
+	local key = validTrackKey(trackId)
+	if not SERVICE_ENABLED or not key then return false, false end
+	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
+	if not shared or not allowed then return false, false end
+	local ok, record = pcall(function() return globalControlStore:GetAsync(key) end)
+	if not ok then return false, false end
+	return typeof(record) == "table" and record.blocked == true, true
+end)
+
+bindFunction("SetTrackBlocked", function(trackId: any, blocked: any, actorUserId: any, reason: any)
+	local key = validTrackKey(trackId)
+	if not SERVICE_ENABLED or not key or typeof(blocked) ~= "boolean"
+		or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
+	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
+	if reason ~= nil and not cleanReason then return false end
+	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
+	if not shared or not allowed then return false end
+	local ok, record = pcall(function()
+		return globalControlStore:UpdateAsync(key, function(old)
+			local nextRecord = if typeof(old) == "table" then table.clone(old) else {}
+			nextRecord.blocked = blocked
+			nextRecord.trackId = trackId
+			nextRecord.updatedAt = os.time()
+			nextRecord.updatedBy = math.floor(actorUserId)
+			nextRecord.reason = cleanReason
+			return nextRecord
+		end)
+	end)
+	if not ok or typeof(record) ~= "table" or record.blocked ~= blocked then return false end
+	if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "Moderation", math.floor(actorUserId), trackId, "trackBlock=" .. tostring(blocked) .. (if cleanReason then " | " .. cleanReason else "")) end
+	publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog", trackId = trackId, blocked = blocked})
+	globalEventBindable:Fire({kind = "TrackModeration", trackId = trackId, blocked = blocked})
+	return true
 end)
 
 bindFunction("PublishAnnouncement", function(message: any, actorUserId: any)
@@ -1383,6 +1453,9 @@ task.spawn(function()
 					local events = {}
 					if finiteNumber(state.restartRevision) and state.restartRevision > 0 then
 						table.insert(events, {revision = math.floor(state.restartRevision), command = "Restart"})
+					end
+					if finiteNumber(state.stopRevision) and state.stopRevision > 0 then
+						table.insert(events, {revision = math.floor(state.stopRevision), command = "ForceStop"})
 					end
 					if finiteNumber(state.pauseRevision) and state.pauseRevision > 0 and typeof(state.paused) == "boolean" then
 						table.insert(events, {revision = math.floor(state.pauseRevision), command = "SetPlaybackPaused", paused = state.paused})
