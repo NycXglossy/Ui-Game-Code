@@ -14,8 +14,18 @@ if not remotes then
 	warn("[Sultan Settings] Server remotes were not found.")
 	return
 end
-local request = remotes:WaitForChild("Request", 10) :: RemoteFunction
-local broadcast = remotes:WaitForChild("Broadcast", 10) :: RemoteEvent
+local requestObject = remotes:WaitForChild("Request", 10)
+local broadcastObject = remotes:WaitForChild("Broadcast", 10)
+if not requestObject or not requestObject:IsA("RemoteFunction") then
+	warn("[Sultan Settings] Request RemoteFunction is missing or invalid.")
+	return
+end
+if not broadcastObject or not broadcastObject:IsA("RemoteEvent") then
+	warn("[Sultan Settings] Broadcast RemoteEvent is missing or invalid.")
+	return
+end
+local request = requestObject :: RemoteFunction
+local broadcast = broadcastObject :: RemoteEvent
 
 local old = playerGui:FindFirstChild("SultanSettingsGui")
 if old then old:Destroy() end
@@ -311,16 +321,18 @@ local function renderSettings()
 	local gravity = card(112)
 	label(gravity, "SERVER GRAVITY", UDim2.fromOffset(14, 9), UDim2.new(0.55, 0, 0, 18), COLORS.accent, 10)
 	local gravityBox = input(gravity, "20-192.62", UDim2.fromOffset(14, 36), UDim2.new(0.48, -8, 0, 32), string.format("%.2f", math.clamp(tonumber(state.gravity) or 192.62, 20, 192.62)))
-	local gravityButton = button(gravity, "SET GRAVITY", UDim2.new(0.52, 0, 0, 36), UDim2.new(0.44, -8, 0, 32), function()
+	local gravityButton = button(gravity, if state.canSetGravity then "SET GRAVITY" else "ADMIN ONLY", UDim2.new(0.52, 0, 0, 36), UDim2.new(0.44, -8, 0, 32), function()
+		if state.canSetGravity ~= true then
+			notify("Server gravity requires administrator configuration permission.")
+			return
+		end
 		local result = invoke("SetGravity", {gravity = tonumber(gravityBox.Text)})
 		notify(result.message or "Gravity update failed.", result.ok)
 		if result.ok and result.data then state = result.data end
 	end, COLORS.cyan)
 	if state.canSetGravity ~= true then
-		gravityButton.Text = "ADMIN ONLY"
 		gravityButton.AutoButtonColor = false
 		gravityButton.BackgroundColor3 = COLORS.card2
-		gravityButton.Activated:Connect(function() notify("Server gravity requires administrator configuration permission.") end)
 	end
 	label(gravity, "Changes affect the entire server and require administrator configuration access.", UDim2.fromOffset(14, 76), UDim2.new(1, -28, 0, 28), COLORS.muted, 8)
 
@@ -356,6 +368,7 @@ local function renderPlayers()
 	local list = card(math.max(90, #currentRoster * 58 + 12))
 	local rows = {}
 	for _, entry in ipairs(currentRoster) do
+		if entry.userId ~= player.UserId then
 		local row = make("Frame", {
 			Position = UDim2.fromOffset(8, 8 + (#rows * 54)),
 			Size = UDim2.new(1, -16, 0, 48),
@@ -376,6 +389,7 @@ local function renderPlayers()
 			teleportButton.Text = "LOCKED"
 			teleportButton.BackgroundColor3 = COLORS.card
 			teleportButton.AutoButtonColor = false
+		end
 		end
 	end
 	search:GetPropertyChangedSignal("Text"):Connect(function()
@@ -400,6 +414,7 @@ local function renderMessage()
 	label(bubble, "ADMIN OVERHEAD BROADCAST", UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 18), COLORS.accent, 10)
 	local bubbleInput = input(bubble, "Message shown above your character", UDim2.fromOffset(14, 34), UDim2.new(1, -28, 0, 32), "")
 	local bubbleButton = button(bubble, if state.canAnnounce then "SEND OVERHEAD BROADCAST" else "ADMIN ONLY", UDim2.fromOffset(14, 78), UDim2.new(1, -28, 0, 30), function()
+		if state.canAnnounce ~= true then notify("Administrator announcement permission is required."); return end
 		local result = invoke("BubbleBroadcast", {message = bubbleInput.Text})
 		notify(result.message or "Broadcast failed.", result.ok)
 	end, COLORS.cyan)
@@ -409,6 +424,7 @@ local function renderMessage()
 	label(announcement, "SERVER ANNOUNCEMENT  |  3 MIN COOLDOWN", UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 18), COLORS.accent, 10)
 	local announcementInput = input(announcement, "Announcement for everyone in this server", UDim2.fromOffset(14, 34), UDim2.new(1, -28, 0, 32), "")
 	local announcementButton = button(announcement, if state.canAnnounce then "SEND ANNOUNCEMENT" else "ADMIN ONLY", UDim2.fromOffset(14, 78), UDim2.new(1, -28, 0, 30), function()
+		if state.canAnnounce ~= true then notify("Administrator announcement permission is required."); return end
 		local result = invoke("Announcement", {message = announcementInput.Text})
 		notify(result.message or "Announcement failed.", result.ok)
 	end, COLORS.accent)
