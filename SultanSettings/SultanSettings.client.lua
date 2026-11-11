@@ -108,7 +108,7 @@ local gui = make("ScreenGui", {
 	Name = "SultanSettingsGui",
 	ResetOnSpawn = false,
 	IgnoreGuiInset = false,
-	DisplayOrder = 35,
+	DisplayOrder = 60,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, playerGui) :: ScreenGui
 
@@ -214,8 +214,11 @@ local function fitPanelToViewport()
 	-- Slightly enlarge the settings surface during active gamepad use on
 	-- TV-sized viewports. Small screens retain the original fit to avoid clipping.
 	panelScale.Scale = if controllerMode and viewport.X >= 900 and viewport.Y >= 600 then 1.04 else 1
-	-- Keep the launcher comfortably inside narrow device safe areas.
-	toggle.Position = UDim2.new(1, if viewport.X < 520 then -10 else -18, 0, if viewport.Y < 520 then 64 else 90)
+	-- Give touch users a larger, clearly separated launcher below the mobile
+	-- top bar. Keep it inside the safe viewport on narrow and short devices.
+	local compactTouchLayout = viewport.X < 520
+	toggle.Size = UDim2.fromOffset(if compactTouchLayout then 132 else 116, if compactTouchLayout then 42 else 36)
+	toggle.Position = UDim2.new(1, if compactTouchLayout then -12 else -18, 0, if compactTouchLayout then 104 else 90)
 end
 
 fitPanelToViewport()
