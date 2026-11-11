@@ -39,7 +39,19 @@ type Genre = {
 }
 
 local GENRES: {Genre} = {
+	-- Retain established genre keys so previously saved custom-track records
+	-- remain valid after the built-in catalog migration.
+	{id = "hiphop", name = "Hip Hop / Rap"},
+	{id = "rnb", name = "R&B / Soul"},
+	{id = "rock", name = "Rock"},
+	{id = "kpop", name = "K-Pop"},
+	{id = "latin", name = "Latin Music"},
+	{id = "edm", name = "EDM"},
+	{id = "country", name = "Country"},
+	{id = "pop", name = "Pop"},
+	{id = "exclusive", name = "Club Exclusives"},
 	{id = "rockstar", name = "Rockstar Music"},
+	{id = "other", name = "Other"},
 }
 
 -- Keep IDs stable: player favorites, queue entries, and the existing UI refer
