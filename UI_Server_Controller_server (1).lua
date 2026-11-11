@@ -5222,7 +5222,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		ControllerFunctions.setAudioAsset("")
 		ControllerFunctions.broadcast("ClubMusic playback was emergency-stopped by staff.", "warn")
 		publishState(nil)
-		return true, "ClubMusic playback was emergency-stopped across servers. Use ;cmrestart to resume."
+		return true, "ClubMusic playback was emergency-stopped across servers. Use ;cmskip to start the next queued track."
 	end
 	if operation == "ModerationHistory" then
 		if typeof(argument) ~= "string" or #argument > 24 or not string.match(argument, "^%d+$") then
