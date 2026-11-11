@@ -416,7 +416,7 @@ local function wireControllerFocus()
 
 	for index, control in ipairs(controls) do
 		control.NextSelectionUp = controls[index - 1] or tabs[1] or close
-		control.NextSelectionDown = controls[index + 1] or controls[index] 
+		control.NextSelectionDown = controls[index + 1] or tabs[1] or controls[index]
 		control.NextSelectionLeft = nil
 		control.NextSelectionRight = nil
 	end
