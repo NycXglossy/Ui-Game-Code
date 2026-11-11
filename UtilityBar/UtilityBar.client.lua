@@ -1,0 +1,291 @@
+--!strict
+-- UtilityBar.client.lua
+-- Separate non-music utility launcher. Place in StarterPlayer/StarterPlayerScripts.
+-- Utility actions are published through PlayerGui.UtilityBarAction for independent
+-- client modules to consume; this script does not implement those separate systems.
+
+local Players = game:GetService("Players")
+local GuiService = game:GetService("GuiService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local oldGui = playerGui:FindFirstChild("UtilityBarGui")
+if oldGui then oldGui:Destroy() end
+
+local actionEvent = playerGui:FindFirstChild("UtilityBarAction")
+if actionEvent and not actionEvent:IsA("BindableEvent") then
+	actionEvent:Destroy()
+	actionEvent = nil
+end
+if not actionEvent then
+	actionEvent = Instance.new("BindableEvent")
+	actionEvent.Name = "UtilityBarAction"
+	actionEvent.Parent = playerGui
+end
+local utilityAction = actionEvent :: BindableEvent
+
+local COLORS = {
+	background = Color3.fromRGB(13, 16, 24),
+	surface = Color3.fromRGB(24, 29, 41),
+	surfaceHover = Color3.fromRGB(37, 45, 60),
+	gold = Color3.fromRGB(226, 194, 132),
+	cyan = Color3.fromRGB(119, 196, 203),
+	text = Color3.fromRGB(242, 241, 236),
+	muted = Color3.fromRGB(157, 164, 177),
+}
+
+local function make(className: string, props: {[string]: any}, parent: Instance): Instance
+	local object = Instance.new(className)
+	for key, value in pairs(props) do
+		(object :: any)[key] = value
+	end
+	object.Parent = parent
+	return object
+end
+
+local function round(object: Instance, radius: number)
+	make("UICorner", {CornerRadius = UDim.new(0, radius)}, object)
+end
+
+local gui = make("ScreenGui", {
+	Name = "UtilityBarGui",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = false,
+	DisplayOrder = 28,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, playerGui) :: ScreenGui
+
+local shell = make("Frame", {
+	Name = "UtilityBar",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -18),
+	Size = UDim2.new(0.94, 0, 0, 76),
+	BackgroundColor3 = COLORS.background,
+	BackgroundTransparency = 0.04,
+	BorderSizePixel = 0,
+}, gui) :: Frame
+round(shell, 22)
+make("UISizeConstraint", {MinSize = Vector2.new(280, 68), MaxSize = Vector2.new(760, 76)}, shell)
+make("UIStroke", {Color = COLORS.gold, Transparency = 0.46, Thickness = 1.2}, shell)
+make("UIGradient", {
+	Rotation = 90,
+	Color = ColorSequence.new(Color3.fromRGB(28, 34, 47), COLORS.background),
+}, shell)
+
+local rail = make("ScrollingFrame", {
+	Name = "ButtonRail",
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.new(1, -16, 1, -12),
+	BackgroundTransparency = 1,
+	BorderSizePixel = 0,
+	ScrollBarThickness = 0,
+	ScrollingDirection = Enum.ScrollingDirection.X,
+	AutomaticCanvasSize = Enum.AutomaticSize.X,
+	CanvasSize = UDim2.new(0, 0, 0, 0),
+	Selectable = false,
+}, shell) :: ScrollingFrame
+
+local layout = make("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	VerticalAlignment = Enum.VerticalAlignment.Center,
+	Padding = UDim.new(0, 7),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, rail) :: UIListLayout
+make("UIPadding", {PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2)}, rail)
+
+local toast = make("TextLabel", {
+	Name = "UtilityToast",
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 0, -8),
+	Size = UDim2.new(1, -20, 0, 22),
+	BackgroundTransparency = 1,
+	Text = "",
+	TextColor3 = COLORS.muted,
+	TextSize = 10,
+	Font = Enum.Font.GothamMedium,
+	TextTransparency = 1,
+	ZIndex = 4,
+}, shell) :: TextLabel
+local toastToken = 0
+local function showToast(message: string)
+	toastToken += 1
+	local token = toastToken
+	toast.Text = message
+	TweenService:Create(toast, TweenInfo.new(0.14), {TextTransparency = 0}):Play()
+	task.delay(1.8, function()
+		if token ~= toastToken or not toast.Parent then return end
+		TweenService:Create(toast, TweenInfo.new(0.22), {TextTransparency = 1}):Play()
+	end)
+end
+
+local definitions = {
+	{key = "RefreshOutfit", label = "Refresh", mark = "↻", tint = COLORS.cyan},
+	{key = "SultanSettings", label = "Sultan", mark = "S", tint = COLORS.gold},
+	{key = "Mount", label = "Mount", mark = "M", tint = COLORS.cyan},
+	{key = "Size", label = "Size", mark = "↕", tint = COLORS.gold},
+	{key = "Clone", label = "Clone", mark = "◎", tint = COLORS.cyan},
+	{key = "Aura", label = "Aura", mark = "✦", tint = COLORS.gold},
+	{key = "Inventory", label = "Inventory", mark = "▣", tint = COLORS.cyan},
+}
+
+local buttons: {TextButton} = {}
+for index, definition in ipairs(definitions) do
+	local button = make("TextButton", {
+		Name = definition.key .. "Button",
+		LayoutOrder = index,
+		Size = UDim2.fromOffset(82, 58),
+		BackgroundColor3 = COLORS.surface,
+		BorderSizePixel = 0,
+		Text = "",
+		AutoButtonColor = false,
+		Selectable = true,
+		Active = true,
+	}, rail) :: TextButton
+	round(button, 15)
+	make("UIStroke", {Color = definition.tint, Transparency = 0.72, Thickness = 1}, button)
+	local mark = make("TextLabel", {
+		Name = "Mark",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 5),
+		Size = UDim2.fromOffset(28, 26),
+		BackgroundTransparency = 1,
+		Text = definition.mark,
+		TextColor3 = definition.tint,
+		TextSize = 21,
+		Font = Enum.Font.GothamBold,
+	}, button)
+	local label = make("TextLabel", {
+		Name = "Label",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -6),
+		Size = UDim2.new(1, -4, 0, 17),
+		BackgroundTransparency = 1,
+		Text = definition.label,
+		TextColor3 = COLORS.text,
+		TextSize = 9,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Font = Enum.Font.GothamBold,
+	}, button)
+	local focus = make("UIStroke", {Name = "ControllerFocus", Color = COLORS.gold, Thickness = 2, Transparency = 1}, button) :: UIStroke
+	button.SelectionGained:Connect(function() focus.Transparency = 0 end)
+	button.SelectionLost:Connect(function() focus.Transparency = 1 end)
+	button.MouseEnter:Connect(function()
+		if UserInputService:GetLastInputType() == Enum.UserInputType.MouseMovement then
+			TweenService:Create(button, TweenInfo.new(0.12), {BackgroundColor3 = COLORS.surfaceHover}):Play()
+		end
+	end)
+	button.MouseLeave:Connect(function()
+		TweenService:Create(button, TweenInfo.new(0.12), {BackgroundColor3 = COLORS.surface}):Play()
+	end)
+	button.Activated:Connect(function()
+		if definition.key == "SultanSettings" then
+			if player:GetAttribute("IsTikiTideSultan") ~= true then
+				showToast("Sultan access is required.")
+				return
+			end
+			local current = tonumber(playerGui:GetAttribute("SultanSettingsOpenRequest")) or 0
+			playerGui:SetAttribute("SultanSettingsOpenRequest", current + 1)
+			return
+		end
+		utilityAction:Fire(definition.key)
+		showToast(definition.label .. " utility requested")
+	end)
+	table.insert(buttons, button)
+end
+
+local function updateSizing()
+	local camera = workspace.CurrentCamera
+	local viewport = if camera then camera.ViewportSize else Vector2.new(800, 600)
+	local compact = viewport.X < 560
+	local buttonWidth = if compact then 58 else (if viewport.X < 900 then 70 else 82)
+	local gap = if compact then 5 else 7
+	for _, button in ipairs(buttons) do
+		button.Size = UDim2.fromOffset(buttonWidth, 58)
+	end
+	layout.Padding = UDim.new(0, gap)
+	shell.Size = UDim2.new(if viewport.X < 420 then 0.98 else 0.94, 0, 0, if viewport.Y < 520 then 68 else 76)
+	shell.Position = UDim2.new(0.5, 0, 1, if viewport.Y < 520 then -8 else -18)
+	local totalWidth = #buttons * buttonWidth + (#buttons - 1) * gap + 4
+	local availableWidth = math.max(0, shell.AbsoluteSize.X - 16)
+	if totalWidth <= availableWidth then
+		rail.CanvasPosition = Vector2.zero
+		rail.ScrollingEnabled = false
+	else
+		rail.ScrollingEnabled = true
+	end
+end
+
+local function updateVisibility()
+	local expanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
+	local sultanOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
+	local visible = not expanded and not sultanOpen
+	shell.Visible = visible
+	playerGui:SetAttribute("UtilityBarVisible", visible)
+	if not visible then
+		local selected = GuiService.SelectedObject
+		if selected and selected:IsDescendantOf(gui) then GuiService.SelectedObject = nil end
+	end
+end
+
+local function wireNavigation()
+	for index, button in ipairs(buttons) do
+		button.NextSelectionLeft = buttons[((index - 2) % #buttons) + 1]
+		button.NextSelectionRight = buttons[(index % #buttons) + 1]
+	end
+end
+wireNavigation()
+
+playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
+playerGui:GetAttributeChangedSignal("SultanSettingsOpen"):Connect(updateVisibility)
+player:GetAttributeChangedSignal("IsTikiTideSultan"):Connect(function()
+	local sultanButton = rail:FindFirstChild("SultanSettingsButton")
+	if sultanButton and sultanButton:IsA("GuiObject") then
+		sultanButton.Visible = player:GetAttribute("IsTikiTideSultan") == true
+	end
+end)
+local sultanButton = rail:FindFirstChild("SultanSettingsButton")
+if sultanButton and sultanButton:IsA("GuiObject") then
+	sultanButton.Visible = player:GetAttribute("IsTikiTideSultan") == true
+end
+
+local viewportConnection: RBXScriptConnection? = nil
+local function bindViewport()
+	if viewportConnection then viewportConnection:Disconnect(); viewportConnection = nil end
+	local camera = workspace.CurrentCamera
+	if camera then viewportConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateSizing) end
+end
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	bindViewport()
+	updateSizing()
+end)
+bindViewport()
+updateSizing()
+updateVisibility()
+
+UserInputService.LastInputTypeChanged:Connect(function(inputType)
+	local isGamepad = inputType == Enum.UserInputType.Gamepad1
+		or inputType == Enum.UserInputType.Gamepad2
+		or inputType == Enum.UserInputType.Gamepad3
+		or inputType == Enum.UserInputType.Gamepad4
+		or inputType == Enum.UserInputType.Gamepad5
+		or inputType == Enum.UserInputType.Gamepad6
+		or inputType == Enum.UserInputType.Gamepad7
+		or inputType == Enum.UserInputType.Gamepad8
+	if isGamepad and shell.Visible and not GuiService.SelectedObject then
+		GuiService.SelectedObject = buttons[1]
+	end
+end)
+
+gui.Destroying:Connect(function()
+	if viewportConnection then viewportConnection:Disconnect(); viewportConnection = nil end
+	if GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(gui) then
+		GuiService.SelectedObject = nil
+	end
+end)
+
+print("[Utility Bar] Separate seven-action launcher loaded.")
