@@ -261,7 +261,12 @@ local function handleRequest(player: Player, action: any, payload: any)
 		if not isSultan(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
 			return fail("Administrator announcement permission is required.")
 		end
-		lastBubbleAt[player.UserId] = now
+		local broadcastAt = os.clock()
+		local previousBubble = lastBubbleAt[player.UserId] or 0
+		if previousBubble > 0 and broadcastAt - previousBubble < BUBBLE_COOLDOWN then
+			return fail("Wait before sending another overhead broadcast.")
+		end
+		lastBubbleAt[player.UserId] = broadcastAt
 		broadcast:FireAllClients("Bubble", player.UserId, filtered)
 		return {ok = true, message = "Overhead broadcast sent."}
 	elseif action == "Announcement" then
@@ -276,7 +281,12 @@ local function handleRequest(player: Player, action: any, payload: any)
 		if not isSultan(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
 			return fail("Administrator announcement permission is required.")
 		end
-		lastAnnouncementAt = os.clock()
+		local broadcastAt = os.clock()
+		if lastAnnouncementAt > 0 and broadcastAt - lastAnnouncementAt < ANNOUNCEMENT_COOLDOWN then
+			local remaining = math.ceil(ANNOUNCEMENT_COOLDOWN - (broadcastAt - lastAnnouncementAt))
+			return fail("Announcement cooldown: " .. tostring(remaining) .. " seconds remaining.")
+		end
+		lastAnnouncementAt = broadcastAt
 		broadcast:FireAllClients("Announcement", player.UserId, filtered)
 		return {ok = true, message = "Announcement sent to this server."}
 	end
