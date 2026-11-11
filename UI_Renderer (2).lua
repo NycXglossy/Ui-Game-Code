@@ -872,6 +872,25 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Text = "",
 		AutoButtonColor = false,
 	}, gui) :: TextButton
+
+	-- Keep every stale/duplicate compact bar suppressed. Only this renderer's
+	-- active HUD is allowed to return when the full menu closes.
+	local function setCompactHudVisibility(visible: boolean)
+		for _, descendant in ipairs(playerGui:GetDescendants()) do
+			if descendant ~= hud and descendant.Name == "TopBarHUD" and descendant:IsA("GuiObject") then
+				descendant.Visible = false
+			end
+		end
+		hud.Visible = visible
+	end
+
+	-- Catch duplicate bars created by another renderer copy after this menu opens.
+	table.insert(connections, playerGui.DescendantAdded:Connect(function(descendant)
+		if expanded and descendant.Name == "TopBarHUD" and descendant:IsA("GuiObject") then
+			descendant.Visible = false
+		end
+	end))
+
 	corner(hud, 18)
 	local hudOutline = stroke(hud, C.Gold, 1.5)
 	hudOutline.Transparency = 0.22
@@ -4637,7 +4656,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function open()
 		if destroyed then return end
 		expanded = true
-		hud.Visible = false
+		setCompactHudVisibility(false)
 		shade.Visible = true
 		panel.Visible = true
 		toggleButton.Visible = false
@@ -4659,7 +4678,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if destroyed then return end
 		stopPreview()
 		expanded = false
-		hud.Visible = true
+		setCompactHudVisibility(true)
 		shade.Visible = false
 		panel.Visible = false
 		toggleButton.Visible = true
