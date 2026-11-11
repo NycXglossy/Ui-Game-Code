@@ -105,7 +105,7 @@ return function(_K: any)
 	local INSPECTION_COOLDOWN_SECONDS = 1.5
 	local lastInspectionAt: {[number]: number} = {}
 	local READ_ONLY_OPERATIONS: {[string]: boolean} = {
-		Status = true, Queue = true,
+		Status = true, Queue = true, OperationalCatalogRefresh = true,
 		SecurityStatus = true, SecurityIncidents = true, SecurityPolicy = true,
 		OperationalHealth = true, OperationalDiagnostics = true, OperationalServices = true,
 		OperationalErrors = true, OperationalMetrics = true, OperationalSecurityLog = true,
@@ -218,7 +218,7 @@ return function(_K: any)
 	register("clubmusic-lock", "Toggle ClubMusic song requests lock.", "General", "ToggleRequestLock", {"cmlock"})
 	register("clubmusic-clearqueue", "Clear the ClubMusic request queue (ClubMusic admin required).", "Administration", "ClearQueue", {"cmclear"})
 	register("clubmusic-status", "Show current ClubMusic playback and request status.", "General", "Status", {"cmstatus"})
-	register("clubmusic-queue", "List queued ClubMusic tracks and their removal IDs.", "General", "Queue", {"cmqueue"})
+	register("clubmusic-queue", "List queued ClubMusic tracks and their removal IDs.", "General", "Queue", {"cmqueue", "cmqueueinfo"})
 	register("clubmusic-remove", "Remove one queued ClubMusic track by its ID.", "General", "RemoveQueueEntry", {"cmremove"}, {
 		{type = "string", name = "QueueId", description = "Queue entry ID copied from ;cmqueue.", optional = false},
 	})
@@ -239,17 +239,18 @@ return function(_K: any)
 	})
 
 	-- Read-only operational diagnostics and controlled maintenance tools.
-	register("clubmusic-health", "Show local and cross-server ClubMusic health.", "Administration", "OperationalHealth", {"cmhealth"})
+	register("clubmusic-health", "Show local and cross-server ClubMusic health.", "Administration", "OperationalHealth", {"cmhealth", "cmaudiohealth"})
 	register("clubmusic-diagnostics", "Show a safe ClubMusic diagnostic snapshot.", "Administration", "OperationalDiagnostics", {"cmdiagnostics"})
-	register("clubmusic-services", "List ClubMusic operational and security service states.", "Administration", "OperationalServices", {"cmservices"})
+	register("clubmusic-services", "List ClubMusic operational and security service states.", "Administration", "OperationalServices", {"cmservices", "cmglobalstatus"})
 	register("clubmusic-errors", "Show recent ClubMusic error IDs and subsystem metadata.", "Administration", "OperationalErrors", {"cmerrors"})
 	register("clubmusic-metrics", "Show ClubMusic queue, playback, and service metrics.", "Administration", "OperationalMetrics", {"cmmetrics"})
-	register("clubmusic-securitylog", "Show recent ClubMusic security audit events.", "Administration", "OperationalSecurityLog", {"cmsecuritylog"})
+	register("clubmusic-securitylog", "Show recent ClubMusic security audit events.", "Administration", "OperationalSecurityLog", {"cmsecuritylog", "cmaudit"})
 	register("clubmusic-servers", "List registered ClubMusic servers and heartbeat status.", "Administration", "OperationalServers", {"cmserverlist"})
 	register("clubmusic-ratelimit", "Show shared ClubMusic rate-limit counters.", "Administration", "OperationalRateLimit", {"cmratelimit"})
 	register("clubmusic-config", "Show validated ClubMusic global configuration.", "Administration", "OperationalConfig", {"cmconfig"})
 	register("clubmusic-recovery", "Show ClubMusic shared-queue recovery status.", "Administration", "OperationalRecovery", {"cmrecovery"})
 	register("clubmusic-reconcile", "Run a read-only authoritative queue reconciliation check.", "Administration", "OperationalReconcile", {"cmreconcile"})
+	register("clubmusic-catalog-refresh", "Refresh this server's validated catalog from persistent storage.", "Administration", "OperationalCatalogRefresh", {"cmcatalogrefresh"})
 	register("clubmusic-maintenance", "Show or change ClubMusic global maintenance mode.", "Administration", "OperationalMaintenance", {"cmmaintenance"}, {
 		{type = "string", name = "Action", description = "Use on [message], off, or status.", optional = true},
 	})
