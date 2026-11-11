@@ -19,6 +19,7 @@ The server add-on creates `ReplicatedStorage/SultanSettingsRemotes` itself. It r
 - Gravity control (20–192.62) restricted to ClubMusic `GlobalConfig` permission.
 - Admin overhead broadcasts and server announcements restricted to `GlobalAnnouncement`; announcements have a 180-second server-wide cooldown.
 - Separate Settings / Players / Message panel. Existing custom overhead titles, title slots, fonts, effects and collection tags remain in ClubMusic → Title Tag.
+- Gamepad navigation for selectable tabs, actions and text fields, with gold focus feedback, automatic vertical scroll-to-selection, and B / Escape back handling. TextBox focus is allowed to handle the console virtual keyboard.
 
 ## Important scope notes
 
@@ -27,3 +28,7 @@ The server add-on creates `ReplicatedStorage/SultanSettingsRemotes` itself. It r
 - Gravity affects the whole current server, not every server in the experience.
 - Announcement cooldown is server-local, not cross-server.
 - The existing controller must be running so its verified Sultan attribute and authorization resolver are available.
+
+## Controller test checklist
+
+In Roblox Studio with a gamepad connected, verify D-pad / thumbstick selection across all tabs and controls, gold focus visibility, scrolling through long player lists, A-button activation, text entry through the console keyboard, B to dismiss the keyboard before closing the panel, and B again to close the panel. Also verify touch and mouse input remain functional. Controller support is implemented in the client UI but still requires runtime testing on the target console.
