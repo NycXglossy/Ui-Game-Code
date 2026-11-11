@@ -248,6 +248,21 @@ end
 updateControllerPresentation(UserInputService:GetLastInputType())
 UserInputService.LastInputTypeChanged:Connect(updateControllerPresentation)
 
+-- Mouse/keyboard players must retain normal character controls. GUI selection
+-- is only activated for an actual gamepad navigation session.
+local function clearDesktopGuiSelection()
+	if controllerMode then return end
+	local selected = GuiService.SelectedObject
+	if selected and selected:IsDescendantOf(gui) then
+		GuiService.SelectedObject = nil
+	end
+end
+UserInputService.LastInputTypeChanged:Connect(function(inputType)
+	if not isGamepadInput(inputType) then
+		clearDesktopGuiSelection()
+	end
+end)
+
 local title = make("TextLabel", {
 	Position = UDim2.fromOffset(18, 8),
 	Size = UDim2.new(1, -80, 0, 22),
@@ -786,10 +801,17 @@ local function open()
 	hideClubHud()
 	activeTab = "Settings"
 	render()
-	task.defer(function()
-		local firstTab = tabBar:FindFirstChildWhichIsA("TextButton")
-		GuiService.SelectedObject = firstTab or close
-	end)
+	-- Only capture GUI selection for controller navigation. On PC, focusing a
+	-- TextButton can make WASD behave like UI navigation instead of character movement.
+	if controllerMode then
+		task.defer(function()
+			if not panel.Visible or not controllerMode then return end
+			local firstTab = tabBar:FindFirstChildWhichIsA("TextButton")
+			GuiService.SelectedObject = firstTab or close
+		end)
+	else
+		GuiService.SelectedObject = nil
+	end
 end
 
 -- The separate Utility Bar requests Sultan Settings through a PlayerGui
@@ -809,7 +831,11 @@ local function closePanel()
 	toggle.Visible = player:GetAttribute("IsTikiTideSultan") == true
 		and playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
 	restoreClubHud()
-	if toggle.Visible then GuiService.SelectedObject = toggle else GuiService.SelectedObject = nil end
+	if controllerMode and toggle.Visible then
+		GuiService.SelectedObject = toggle
+	else
+		GuiService.SelectedObject = nil
+	end
 end
 
 toggle.Activated:Connect(open)
