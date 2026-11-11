@@ -113,8 +113,8 @@ local gui = make("ScreenGui", {
 
 local toggle = make("TextButton", {
 	Name = "SultanSettingsToggle",
-	AnchorPoint = Vector2.new(1, 0),
-	Position = UDim2.new(1, -18, 0, 90),
+	AnchorPoint = Vector2.new(0, 0),
+	Position = UDim2.new(0, 18, 0, 90),
 	Size = UDim2.fromOffset(116, 34),
 	BackgroundColor3 = COLORS.card,
 	Text = "SULTAN",
@@ -217,7 +217,8 @@ local function fitPanelToViewport()
 	-- top bar. Keep it inside the safe viewport on narrow and short devices.
 	local compactTouchLayout = viewport.X < 520
 	toggle.Size = UDim2.fromOffset(if compactTouchLayout then 132 else 116, if compactTouchLayout then 42 else 36)
-	toggle.Position = UDim2.new(1, if compactTouchLayout then -12 else -18, 0, if compactTouchLayout then 104 else 90)
+	toggle.AnchorPoint = Vector2.new(0, 0)
+	toggle.Position = UDim2.new(0, if compactTouchLayout then 12 else 18, 0, if compactTouchLayout then 104 else 90)
 end
 
 fitPanelToViewport()
