@@ -5595,8 +5595,8 @@ local skipVoteManagerOk, skipVoteManager = pcall(childManagerModules.MusicSkipVo
 if not skipVoteManagerOk then error("[ClubMusic] MusicSkipVoteManager initialization failed: " .. tostring(skipVoteManager)) end
 ControllerFunctions.ChildManagers.SkipVote = skipVoteManager
 
--- Optional DJ session facade. It lives in the separately installed audio module
--- folder and never grants staff roles or changes queue/playback ownership.
+-- Optional DJ session facade. It is loaded from either supported ServerStorage
+-- layout and never grants staff roles or changes queue/playback ownership.
 local djSessionModule = ControllerFunctions.findAudioModule("ClubMusicDJSessionManager")
 if djSessionModule and djSessionModule:IsA("ModuleScript") then
 	local djRequireOk, djSessionClass = pcall(require, djSessionModule)
