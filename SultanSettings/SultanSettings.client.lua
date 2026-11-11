@@ -425,11 +425,41 @@ local function wireControllerFocus()
 		tab.NextSelectionDown = firstContentControl or close
 	end
 
-	for index, control in ipairs(controls) do
-		control.NextSelectionUp = controls[index - 1] or tabs[1] or close
-		control.NextSelectionDown = controls[index + 1] or tabs[1] or controls[index]
-		control.NextSelectionLeft = nil
-		control.NextSelectionRight = nil
+	local function centerOf(object: GuiObject): Vector2
+		return object.AbsolutePosition + object.AbsoluteSize / 2
+	end
+
+	-- Use spatial navigation for the content area so paired fields (for
+	-- example Walk Speed / Jump Power) are reachable with left/right, while
+	-- stacked cards remain predictable with up/down.
+	for _, control in ipairs(controls) do
+		local origin = centerOf(control)
+		local best: {[string]: GuiObject?} = {up = nil, down = nil, left = nil, right = nil}
+		local bestScore: {[string]: number} = {up = math.huge, down = math.huge, left = math.huge, right = math.huge}
+		for _, candidate in ipairs(controls) do
+			if candidate ~= control then
+				local delta = centerOf(candidate) - origin
+				local directions = {
+					{key = "up", primary = -delta.Y, secondary = math.abs(delta.X)},
+					{key = "down", primary = delta.Y, secondary = math.abs(delta.X)},
+					{key = "left", primary = -delta.X, secondary = math.abs(delta.Y)},
+					{key = "right", primary = delta.X, secondary = math.abs(delta.Y)},
+				}
+				for _, direction in ipairs(directions) do
+					if direction.primary > 1 then
+						local score = direction.primary + direction.secondary * 1.5
+						if score < bestScore[direction.key] then
+							bestScore[direction.key] = score
+							best[direction.key] = candidate
+						end
+					end
+				end
+			end
+		end
+		control.NextSelectionUp = best.up or tabs[1] or close
+		control.NextSelectionDown = best.down or tabs[1] or control
+		control.NextSelectionLeft = best.left
+		control.NextSelectionRight = best.right
 	end
 	if firstContentControl then
 		firstContentControl.NextSelectionUp = tabs[1] or close
