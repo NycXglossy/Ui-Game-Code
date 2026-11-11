@@ -5130,7 +5130,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		mode = if mode then string.lower(mode) else ""
 		if mode ~= "on" and mode ~= "off" then return false, "Use on or off. Example: ;cmrequestmute 123456 on Spam" end
 		local cleanReason = if reason ~= "" then string.sub(reason, 1, 160) else nil
-		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("SetRequestBlocked", targetUserId, mode == "on", caller.UserId)
+		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("SetRequestBlocked", targetUserId, mode == "on", caller.UserId, cleanReason)
 		if not ok or accepted ~= true then return false, tostring(accepted or "Request restriction update failed.") end
 		local target = Players:GetPlayerByUserId(targetUserId)
 		if mode == "on" then
@@ -5139,7 +5139,6 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		else
 			blockedUsers[targetUserId] = nil
 		end
-		ControllerFunctions.adminBridgeGlobalCall("RecordGlobalModerationAction", targetUserId, "RequestMute", mode, caller.UserId, cleanReason)
 		publishState(nil)
 		return true, string.format("ClubMusic requests %s for UserId %d%s.", if mode == "on" then "disabled" else "re-enabled", targetUserId, if target then " (" .. target.Name .. ")" else "")
 	end
