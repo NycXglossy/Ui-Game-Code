@@ -532,7 +532,7 @@ bindFunction("SetTrackBlocked", function(trackId: any, blocked: any, actorUserId
 	if not ok or typeof(record) ~= "table" or record.blocked ~= blocked then return false end
 	if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "Moderation", math.floor(actorUserId), trackId, "trackBlock=" .. tostring(blocked) .. (if cleanReason then " | " .. cleanReason else "")) end
 	publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog", trackId = trackId, blocked = blocked})
-	globalEventBindable:Fire({kind = "TrackModeration", trackId = trackId, blocked = blocked})
+	globalEventBindable:Fire({kind = "TrackModeration", trackId = trackId, blocked = blocked, senderJob = JOB_ID})
 	return true
 end)
 
