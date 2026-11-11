@@ -3593,25 +3593,31 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			label(shopCard, item.desc, UDim2.fromOffset(12, 32), UDim2.new(1, -130, 0, 30), C.Muted, 10, false)
 			label(shopCard, if item.kind == "GamePass" then item.rarity .. " • Roblox Game Pass" else item.rarity .. " • " .. tostring(item.price) .. " coins",
 				UDim2.fromOffset(12, 64), UDim2.new(1, -130, 0, 16), C.Gold, 9, true)
-			actionButton(shopCard, "GET", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
-				local itemId = item.id
-				if item.kind == "GamePass" and itemId <= 0 then
-					local passKey = item.passKey or "vip"
-					if passKey == "sultan" then
-						itemId = tonumber(state.sultanGamePassId) or 0
-					elseif passKey == "vvip" then
-						itemId = tonumber(state.vvipGamePassId) or 0
-					else
-						itemId = tonumber(state.vipGamePassId) or 0
-					end
-				end
-				if itemId <= 0 then notify("This item is not configured for purchase yet.", C.Red); return end
-				if item.kind == "GamePass" then
-					MarketplaceService:PromptGamePassPurchase(player, itemId)
+			local itemId = tonumber(item.id) or 0
+			if item.kind == "GamePass" and itemId <= 0 then
+				local passKey = item.passKey or "vip"
+				if passKey == "sultan" then
+					itemId = tonumber(state.sultanGamePassId) or 0
+				elseif passKey == "vvip" then
+					itemId = tonumber(state.vvipGamePassId) or 0
 				else
-					MarketplaceService:PromptProductPurchase(player, itemId)
+					itemId = tonumber(state.vipGamePassId) or 0
 				end
-			end, C.Purple)
+			end
+			local purchaseButton = actionButton(shopCard, if itemId > 0 then "GET" else "COMING SOON",
+				UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
+					if itemId <= 0 then notify("This item is not configured for purchase yet.", C.Red); return end
+					if item.kind == "GamePass" then
+						MarketplaceService:PromptGamePassPurchase(player, itemId)
+					else
+						MarketplaceService:PromptProductPurchase(player, itemId)
+					end
+				end, C.Purple)
+			if itemId <= 0 then
+				purchaseButton.Active = false
+				purchaseButton.AutoButtonColor = false
+				purchaseButton.BackgroundTransparency = 0.25
+			end
 		end
 	end
 
