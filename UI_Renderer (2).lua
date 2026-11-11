@@ -930,8 +930,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 	end))
 
-	corner(hud, 18)
-	local hudOutline = stroke(hud, C.Gold, 1.5)
+	corner(hud, 15)
+	local hudOutline = stroke(hud, C.Gold, 1.1)
 	hudOutline.Transparency = 0.22
 	bindFocusFeedback(hud, hudOutline, C.Surface)
 	make("UIGradient", {
@@ -941,7 +941,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			ColorSequenceKeypoint.new(1, C.Surface),
 		}),
 	}, hud)
-	local hudConstraint = make("UISizeConstraint", { MinSize = Vector2.new(260, 64), MaxSize = Vector2.new(760, 68) }, hud)
+	local hudConstraint = make("UISizeConstraint", { MinSize = Vector2.new(260, 56), MaxSize = Vector2.new(760, 68) }, hud)
 	local hudScale = make("UIScale", { Scale = 1 }, hud)
 	local hudBars: {any} = {}
 	local hudBarHolder = make("Frame", {
@@ -4831,9 +4831,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 
 		hudScale.Scale = layoutScale
-		hudConstraint.MaxSize = Vector2.new(math.clamp(viewport.X - 20, 260, 760), 68)
+		local mobileHud = currentDevice == "Mobile"
+		local compactHudHeight = if mobileHud then 60 else 68
+		local compactHudWidth = if mobileHud then 0.92 else 0.96
+		hudConstraint.MinSize = Vector2.new(260, if mobileHud then 56 else 64)
+		hudConstraint.MaxSize = Vector2.new(math.clamp(viewport.X - 20, 260, 760), compactHudHeight)
 		local compactHud = viewport.X < 430
-		hud.Size = UDim2.new(0.96 / layoutScale, 0, 0, 68)
+		hud.Size = UDim2.new(compactHudWidth / layoutScale, 0, 0, compactHudHeight)
 		hudEyebrow.TextSize = if compactHud then 7 else 8
 		hudTitle.TextSize = if compactHud then 11 else 14
 		hudArtist.TextSize = if compactHud then 8 else 10
@@ -4845,7 +4849,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		hudTime.Size = UDim2.fromOffset(if compactHud then 78 else 104, 16)
 		hudStatus.Size = UDim2.fromOffset(if compactHud then 78 else 104, 15)
 		hud.Position = UDim2.new(0.5, 0, 0, profile.hudTop)
-		hudBottom = profile.hudTop + math.floor(68 * layoutScale) + 8
+		hudBottom = profile.hudTop + math.floor(compactHudHeight * layoutScale) + 8
 		if expanded then applyMenuTypography() end
 	end
 
