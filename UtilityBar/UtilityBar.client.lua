@@ -68,8 +68,8 @@ local shell = make("Frame", {
 	BorderSizePixel = 0,
 }, gui) :: Frame
 round(shell, 22)
-make("UISizeConstraint", {MinSize = Vector2.new(280, 68), MaxSize = Vector2.new(760, 76)}, shell)
-make("UIStroke", {Color = COLORS.gold, Transparency = 0.46, Thickness = 1.2}, shell)
+make("UISizeConstraint", {MinSize = Vector2.new(220, 38), MaxSize = Vector2.new(760, 76)}, shell)
+make("UIStroke", {Color = COLORS.gold, Transparency = 0.58, Thickness = 0.8}, shell)
 make("UIGradient", {
 	Rotation = 90,
 	Color = ColorSequence.new(Color3.fromRGB(28, 34, 47), COLORS.background),
@@ -79,7 +79,7 @@ local rail = make("ScrollingFrame", {
 	Name = "ButtonRail",
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
-	Size = UDim2.new(1, -16, 1, -12),
+	Size = UDim2.new(1, -10, 1, -8),
 	BackgroundTransparency = 1,
 	BorderSizePixel = 0,
 	ScrollBarThickness = 0,
@@ -273,7 +273,7 @@ local function updateSizing()
 	local camera = workspace.CurrentCamera
 	local viewport = if camera then camera.ViewportSize else Vector2.new(800, 600)
 	local compactTouch = UserInputService.TouchEnabled and viewport.X < 900
-	local widthScale = if compactTouch then 0.72 else (if viewport.X < 420 then 0.98 else 0.94)
+	local widthScale = if compactTouch then 0.64 else (if viewport.X < 420 then 0.98 else 0.94)
 	local width = math.max(if compactTouch then 220 else 280, math.min(if compactTouch then 520 else 760, math.floor(viewport.X * widthScale)))
 	local shortScreen = viewport.Y < 460
 	local veryNarrow = viewport.X < 360
@@ -282,10 +282,10 @@ local function updateSizing()
 
 	-- On touch devices keep the rail compact and lift it above the default
 	-- thumb-control zone so it does not sit over the joystick or jump button.
-	local buttonWidth = if compactTouch then 32 else (if veryNarrow then 52 else (if narrow then 58 else (if tablet then 70 else 82)))
-	local buttonHeight = if compactTouch then 34 else (if shortScreen then 46 else (if narrow then 52 else 58))
-	local gap = if compactTouch then 2 else (if veryNarrow then 4 else (if narrow then 5 else 7))
-	local shellHeight = if compactTouch then 42 else (if shortScreen then 58 else (if narrow then 66 else 76))
+	local buttonWidth = if compactTouch then 30 else (if veryNarrow then 52 else (if narrow then 58 else (if tablet then 70 else 82)))
+	local buttonHeight = if compactTouch then 30 else (if shortScreen then 46 else (if narrow then 52 else 58))
+	local gap = if compactTouch then 1 else (if veryNarrow then 4 else (if narrow then 5 else 7))
+	local shellHeight = if compactTouch then 36 else (if shortScreen then 58 else (if narrow then 66 else 76))
 
 	for _, button in ipairs(buttons) do
 		button.Size = UDim2.fromOffset(buttonWidth, buttonHeight)
@@ -311,7 +311,7 @@ local function updateSizing()
 
 	-- Respect the device's bottom safe area (home indicator / system inset).
 	local _, bottomInset = GuiService:GetGuiInset()
-	local bottomOffset = math.max(8, bottomInset.Y + 8)
+	local bottomOffset = math.max(6, bottomInset.Y + 6)
 	shell.Position = UDim2.new(0.5, 0, 1, -bottomOffset)
 
 	-- Calculate from the target width, not AbsoluteSize, which may still
