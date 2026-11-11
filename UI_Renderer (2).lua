@@ -271,6 +271,9 @@ local SHOP = {
 	{name="Neon Flower Lei",desc="Glowing hibiscus lei with petal trails.",price=150,rarity="Rare",kind="Product",id=0},
 	{name="LED Party Shades",desc="Visualizer lenses that react to the current track.",price=320,rarity="Epic",kind="Product",id=0},
 }
+-- Tip Jar tiers are intentionally empty until real Developer Product IDs are configured.
+-- Keeping this table defined prevents an unconfigured shop from breaking menu rendering.
+local DONATIONS: {any} = {}
 local REWARDS = {
 	{day=1,label="50 Coins"},{day=2,label="2x Glowsticks"},{day=3,label="100 Tickets"},
 	{day=4,label="Song Skip Token"},{day=5,label="250 Coins"},{day=6,label="Neon Trail"},{day=7,label="Exclusive Title Tag"},
@@ -3784,14 +3787,21 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local info = card(68)
 		label(info, "Tips help keep the island lights on.", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.White, 13, true)
 		label(info, "Choose a contribution below. Purchases require configured Developer Product IDs.", UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 28), C.Muted, 10, false)
-		for _, item in ipairs(DONATIONS) do
-			local donationCard = card(76)
-			label(donationCard, item.label .. "  •  " .. tostring(item.amount) .. " Robux", UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
-			label(donationCard, item.perk, UDim2.fromOffset(12, 34), UDim2.new(1, -130, 0, 20), C.Muted, 10, false)
-			actionButton(donationCard, "TIP", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
-				if item.productId <= 0 then notify("Configure this Developer Product ID first.", C.Red); return end
-				MarketplaceService:PromptProductPurchase(player, item.productId)
-			end, C.Magenta)
+		if #DONATIONS == 0 then
+			local pendingCard = card(54)
+			label(pendingCard, "Tip options are being prepared. No purchase products are configured yet.",
+				UDim2.fromOffset(12, 8), UDim2.new(1, -24, 1, -16), C.Muted, 10, false)
+		else
+			for _, item in ipairs(DONATIONS) do
+				local donationCard = card(76)
+				label(donationCard, item.label .. "  •  " .. tostring(item.amount) .. " Robux", UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
+				label(donationCard, item.perk, UDim2.fromOffset(12, 34), UDim2.new(1, -130, 0, 20), C.Muted, 10, false)
+				actionButton(donationCard, "TIP", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
+					local productId = tonumber(item.productId) or 0
+					if productId <= 0 then notify("Configure this Developer Product ID first.", C.Red); return end
+					MarketplaceService:PromptProductPurchase(player, productId)
+				end, C.Magenta)
+			end
 		end
 	end
 
