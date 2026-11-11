@@ -142,6 +142,7 @@ local shade = make("TextButton", {
 	Text = "",
 	Visible = false,
 	AutoButtonColor = false,
+	Selectable = false, -- Never let the full-screen backdrop steal controller focus.
 }, gui) :: TextButton
 -- Keep the Sultan Settings shadow/backdrop fully transparent.
 shade.BackgroundTransparency = 1
@@ -662,6 +663,9 @@ broadcast.OnClientEvent:Connect(showBroadcast)
 local function updateVisibility()
 	local allowed = player:GetAttribute("IsTikiTideSultan") == true
 	toggle.Visible = allowed and not panel.Visible and playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
+	if not toggle.Visible and GuiService.SelectedObject == toggle then
+		GuiService.SelectedObject = nil
+	end
 end
 player:GetAttributeChangedSignal("IsTikiTideSultan"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
