@@ -6254,7 +6254,7 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Playe
 		ControllerFunctions.refreshVip(player)
 		ControllerFunctions.applyVipAttribute(player)
 		ControllerFunctions.syncTitleTagUnlocks(player)
-		local tierName = if ControllerFunctions.isSultan(player) then "Tiki Tide Sultan" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
+		local tierName = if ControllerFunctions.isSultan(player) then "Tiki Tide" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
 		notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
 		publishState(nil)
 	end)
