@@ -5615,6 +5615,7 @@ if djSessionModule and djSessionModule:IsA("ModuleScript") then
 		})
 		if djSessionOk then
 			ControllerFunctions.ChildManagers.DJSession = djSessionManager
+			print("[ClubMusic][DJSession] Manager initialized successfully; DJ session commands are available.")
 		else
 			warn("[ClubMusic][DJSession] Optional manager initialization failed: " .. tostring(djSessionManager))
 		end
