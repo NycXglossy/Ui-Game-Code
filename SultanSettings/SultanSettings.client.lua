@@ -772,7 +772,16 @@ broadcast.OnClientEvent:Connect(showBroadcast)
 
 local function updateVisibility()
 	local allowed = player:GetAttribute("IsTikiTideSultan") == true
-	toggle.Visible = allowed and not panel.Visible and playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
+	local clubMenuExpanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
+
+	-- Immediately close the settings surface if server entitlement is revoked
+	-- or the main ClubMusic menu opens, preventing overlapping privileged UI.
+	if panel.Visible and (not allowed or clubMenuExpanded) then
+		closePanel()
+		return
+	end
+
+	toggle.Visible = allowed and not panel.Visible and not clubMenuExpanded
 	if not toggle.Visible and GuiService.SelectedObject == toggle then
 		GuiService.SelectedObject = nil
 	end
