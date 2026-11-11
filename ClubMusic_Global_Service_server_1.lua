@@ -351,6 +351,9 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): (
 				state.revision = revision + 1
 				state.command = command
 				state.paused = if command == "SetPlaybackPaused" then cleanPayload.paused else (state.paused == true)
+				if command == "Restart" or (command == "SetPlaybackPaused" and cleanPayload.paused == false) then
+					state.stopRevision = nil
+				end
 				if command == "SetPlaybackPaused" then
 					state.pauseRevision = state.revision
 				elseif command == "Restart" then
@@ -376,6 +379,22 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): (
 	-- Pause/resume and restart are durable; polling repairs missed MessagingService events.
 	if command == "SetRequestLock" then return true end
 	if command == "SetPlaybackPaused" or command == "Restart" or command == "ForceStop" then return true, cleanPayload.revision end
+	if command == "Skip" and published then
+		-- A confirmed skip is the explicit resume path after an emergency stop.
+		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
+		if budgetShared and budgetAllowed then
+			pcall(function()
+				globalControlStore:UpdateAsync("playbackControl", function(old)
+					if typeof(old) ~= "table" or old.stopRevision == nil then return old end
+					local state = table.clone(old)
+					state.stopRevision = nil
+					state.updatedAt = os.time()
+					state.updatedBy = math.floor(actorUserId)
+					return state
+				end)
+			end)
+		end
+	end
 	return published
 end
 
