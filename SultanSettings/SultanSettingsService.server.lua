@@ -1,5 +1,5 @@
 --!strict
--- SultanSettingsService.server.lua
+-- Tiki Tide Settings server service (legacy filename retained for install compatibility)
 -- Place in ServerScriptService. Uses the existing server-owned ClubMusic rank/pass attributes.
 -- Movement/AFK/teleport preferences are session-scoped; no profile schema is changed.
 
@@ -12,7 +12,7 @@ local TextService = game:GetService("TextService")
 -- player lifecycle listeners. Refuse to start if another copy already owns the service.
 local SERVICE_MARKER_NAME = "SultanSettingsServiceActive"
 if ServerStorage:FindFirstChild(SERVICE_MARKER_NAME) then
-	error("[Sultan Settings] Duplicate service detected; keep exactly one server Script.")
+	error("[Tiki Tide] Duplicate service detected; keep exactly one server Script.")
 end
 local serviceMarker = Instance.new("BoolValue")
 serviceMarker.Name = SERVICE_MARKER_NAME
@@ -27,7 +27,7 @@ local MAX_MESSAGE_LENGTH = 180
 
 local existingFolder = ReplicatedStorage:FindFirstChild(FOLDER_NAME)
 if existingFolder and not existingFolder:IsA("Folder") then
-	error("[Sultan Settings] ReplicatedStorage." .. FOLDER_NAME .. " exists but is not a Folder; refusing to replace an unrelated instance.")
+	error("[Tiki Tide] ReplicatedStorage." .. FOLDER_NAME .. " exists but is not a Folder; refusing to replace an unrelated instance.")
 end
 
 local folder = existingFolder :: Folder?
@@ -39,7 +39,7 @@ end
 
 local existingRequest = folder:FindFirstChild("Request")
 if existingRequest and not existingRequest:IsA("RemoteFunction") then
-	error("[Sultan Settings] Request exists with the wrong class; expected RemoteFunction.")
+	error("[Tiki Tide] Request exists with the wrong class; expected RemoteFunction.")
 end
 
 local request = existingRequest :: RemoteFunction?
@@ -51,7 +51,7 @@ end
 
 local existingBroadcast = folder:FindFirstChild("Broadcast")
 if existingBroadcast and not existingBroadcast:IsA("RemoteEvent") then
-	error("[Sultan Settings] Broadcast exists with the wrong class; expected RemoteEvent.")
+	error("[Tiki Tide] Broadcast exists with the wrong class; expected RemoteEvent.")
 end
 
 local broadcast = existingBroadcast :: RemoteEvent?
@@ -137,7 +137,7 @@ end
 
 local function applyMovementWhenReady(player: Player, character: Model)
 	-- Custom character rigs may add their Humanoid after CharacterAdded fires.
-	-- Wait briefly rather than silently skipping the Sultan movement profile.
+	-- Wait briefly rather than silently skipping the Tiki Tide movement profile.
 	task.spawn(function()
 		local humanoid = character:WaitForChild("Humanoid", 10)
 		if not humanoid or not humanoid:IsA("Humanoid") then return end
@@ -211,12 +211,12 @@ local function handleRequest(player: Player, action: any, payload: any)
 	lastRequestAt[player.UserId] = now
 
 	if action == "GetSnapshot" then
-		if not isSultan(player) then return fail("Tiki Tide Sultan access is required.") end
+		if not isSultan(player) then return fail("Tiki Tide access is required.") end
 		return {ok = true, data = snapshot(player)}
 	end
 
 	if not isSultan(player) then
-		return fail("Tiki Tide Sultan access is required.")
+		return fail("Tiki Tide access is required.")
 	end
 
 	local settings = getSettings(player)
@@ -240,7 +240,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 			if filtered == nil then return fail("Enter a valid AFK message (maximum 180 characters).") end
 			-- Text filtering yields; re-check entitlement before committing state.
 			if not isSultan(player) or player.Parent ~= Players then
-				return fail("Tiki Tide Sultan access is required.")
+				return fail("Tiki Tide access is required.")
 			end
 			message = filtered
 		end
@@ -335,13 +335,13 @@ local function handleRequest(player: Player, action: any, payload: any)
 		return {ok = true, message = "Announcement sent to this server."}
 	end
 
-	return fail("Unsupported Sultan Settings action.")
+	return fail("Unsupported Tiki Tide Settings action.")
 end
 
 request.OnServerInvoke = function(player: Player, action: any, payload: any)
 	local ok, result = pcall(handleRequest, player, action, payload)
 	if not ok then
-		warn("[Sultan Settings] Request failed: " .. tostring(result))
+		warn("[Tiki Tide] Request failed: " .. tostring(result))
 		return fail("The settings request could not be completed.")
 	end
 	return result
@@ -351,7 +351,7 @@ local function bindPlayer(player: Player)
 	getSettings(player)
 
 	-- Pass/rank verification can finish after CharacterAdded. Re-apply the
-	-- saved movement values when the server-owned Sultan entitlement arrives.
+	-- saved movement values when the server-owned Tiki Tide entitlement arrives.
 	player:GetAttributeChangedSignal("IsTikiTideSultan"):Connect(function()
 		if player.Parent ~= Players then return end
 		if isSultan(player) then
@@ -394,4 +394,4 @@ Players.PlayerRemoving:Connect(function(player)
 	if humanoid then baseMovementByHumanoid[humanoid] = nil end
 end)
 
-print("[Sultan Settings] Server service ready.")
+print("[Tiki Tide] Server service ready.")
