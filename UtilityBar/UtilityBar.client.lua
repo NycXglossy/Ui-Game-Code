@@ -187,7 +187,7 @@ end
 
 local definitions = {
 	{key = "RefreshOutfit", label = "Refresh", tint = COLORS.cyan},
-	{key = "SultanSettings", label = "Tiki", tint = COLORS.gold},
+	{key = "SultanSettings", label = "Tiki Tide", tint = COLORS.gold},
 	{key = "Mount", label = "Mount", tint = COLORS.cyan},
 	{key = "Size", label = "Size", tint = COLORS.gold},
 	{key = "Clone", label = "Clone", tint = COLORS.cyan},
@@ -302,7 +302,7 @@ local function updateSizing()
 		if label and label:IsA("TextLabel") then
 			label.Position = UDim2.new(0.5, 0, 1, -3)
 			label.Size = UDim2.new(1, -2, 0, if compactTouch then 9 else (if shortScreen then 14 else 16))
-			label.TextSize = if compactTouch then 6 else (if veryNarrow then 8 else (if narrow then 9 else 10))
+			label.TextSize = if compactTouch then 5 else (if veryNarrow then 8 else (if narrow then 9 else 10))
 		end
 	end
 
