@@ -143,6 +143,29 @@ local ServerStorage = game:GetService("ServerStorage")
 -- Keep the established lowercase alias for existing storage-module loaders.
 local serverStorage = ServerStorage
 
+
+-- Resolve optional audio modules in either supported installation layout:
+--   ServerStorage/ClubMusicAudioModules/<ModuleScript>
+--   ServerStorage/<ModuleScript>
+-- Folder layout takes precedence when both copies exist, avoiding accidental
+-- mixing of two independently installed module sets.
+ControllerFunctions.findAudioModule = function(moduleName: string): ModuleScript?
+	if typeof(moduleName) ~= "string" or #moduleName < 1 or #moduleName > 100 then
+		return nil
+	end
+	local modulesFolder = serverStorage:FindFirstChild("ClubMusicAudioModules")
+	local candidate = if modulesFolder and modulesFolder:IsA("Folder")
+		then modulesFolder:FindFirstChild(moduleName) else nil
+	if candidate and candidate:IsA("ModuleScript") then
+		return candidate
+	end
+	candidate = serverStorage:FindFirstChild(moduleName)
+	if candidate and candidate:IsA("ModuleScript") then
+		return candidate
+	end
+	return nil
+end
+
 -- Diagnostics are optional: a missing handler must never prevent ClubMusic startup.
 local diagnosticsModule = serverStorage:FindFirstChild("ClubMusicErrorHandler")
 if diagnosticsModule and diagnosticsModule:IsA("ModuleScript") then
@@ -921,8 +944,7 @@ ControllerFunctions.bindActiveAudioPlayingSignal()
 ControllerFunctions.tryModernAudioBackendMigration = function()
 	if not CONFIG.UseModernAudioBackend or modernAudioMigrationAttempted then return false end
 	modernAudioMigrationAttempted = true
-	local modules = ServerStorage:FindFirstChild("ClubMusicAudioModules")
-	local backendModule = modules and modules:FindFirstChild("ClubMusicAudioBackend")
+	local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
 	if not backendModule or not backendModule:IsA("ModuleScript") then
 		warn("[ClubMusic][AudioBackend] Modern backend is enabled but its ModuleScript is missing; legacy Sound remains active.")
 		return false
@@ -998,12 +1020,8 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 	local managers = ControllerFunctions.ChildManagers
 	if typeof(managers) ~= "table" then return false, "Audio manager registry is unavailable." end
 	if managers.Crossfade then return false, "An audio crossfade manager already exists." end
-	local modules = ServerStorage:FindFirstChild("ClubMusicAudioModules")
-	if not modules or not modules:IsA("Folder") then
-		return false, "ServerStorage.ClubMusicAudioModules is not installed."
-	end
-	local backendModule = modules:FindFirstChild("ClubMusicAudioBackend")
-	local crossfadeModule = modules:FindFirstChild("ClubMusicAudioCrossfadeManager")
+	local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
+	local crossfadeModule = ControllerFunctions.findAudioModule("ClubMusicAudioCrossfadeManager")
 	if not backendModule or not backendModule:IsA("ModuleScript")
 		or not crossfadeModule or not crossfadeModule:IsA("ModuleScript") then
 		return false, "Audio backend and crossfade ModuleScripts are both required."
@@ -5579,8 +5597,7 @@ ControllerFunctions.ChildManagers.SkipVote = skipVoteManager
 
 -- Optional DJ session facade. It lives in the separately installed audio module
 -- folder and never grants staff roles or changes queue/playback ownership.
-local audioModulesFolder = ServerStorage:FindFirstChild("ClubMusicAudioModules")
-local djSessionModule = audioModulesFolder and audioModulesFolder:FindFirstChild("ClubMusicDJSessionManager")
+local djSessionModule = ControllerFunctions.findAudioModule("ClubMusicDJSessionManager")
 if djSessionModule and djSessionModule:IsA("ModuleScript") then
 	local djRequireOk, djSessionClass = pcall(require, djSessionModule)
 	if djRequireOk and typeof(djSessionClass) == "table" and typeof(djSessionClass.new) == "function" then
@@ -5605,7 +5622,7 @@ if djSessionModule and djSessionModule:IsA("ModuleScript") then
 		warn("[ClubMusic][DJSession] Optional module failed validation/load: " .. tostring(djSessionClass))
 	end
 else
-	warn("[ClubMusic][DJSession] Optional module not found at ServerStorage.ClubMusicAudioModules. DJ session commands are unavailable.")
+	warn("[ClubMusic][DJSession] Optional ClubMusicDJSessionManager ModuleScript was not found under ServerStorage or ServerStorage.ClubMusicAudioModules. DJ session commands are unavailable.")
 end
 
 -- Load the optional crossfade coordinator after controller state and all child
