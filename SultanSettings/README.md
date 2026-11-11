@@ -1,5 +1,7 @@
 # Tiki Tide Settings Add-on
 
+**Branding compatibility note:** The player attribute, remote folder, and script filenames still contain legacy `Sultan` identifiers because the existing ClubMusic controller and installed Roblox scripts use those exact integration keys. The visible product name is now **Tiki Tide**. Do not rename those runtime keys independently; doing so would break entitlement checks and the existing UI bridge until the controller is migrated in the same release.
+
 This add-on is intentionally separate from the ClubMusic renderer and overhead title renderer.
 
 ## Install
@@ -42,7 +44,7 @@ In Roblox Studio with a gamepad connected, verify D-pad / thumbstick selection a
 
 ## Pass creation status and Studio test mode
 
-The Tiki Tide Tiki Tide Game Pass has **not been created yet**. Keep `TikiTideSultanPassId = 0` until the real pass is published and its asset ID is available. A zero ID intentionally disables Tiki Tide Game Pass ownership grants; do not use a placeholder or another pass ID.
+The Tiki Tide Game Pass has **not been created yet**. Keep `TikiTideSultanPassId = 0` until the real pass is published and its asset ID is available. A zero ID intentionally disables Tiki Tide Game Pass ownership grants; do not use a placeholder or another pass ID.
 
 The current controller configuration has `StudioStaff = true`. In Studio, that setting treats **every test player as OWNER**, which also grants Tiki Tide tier access through the server-verified staff path even while the Tiki Tide pass ID is zero. This is useful for testing the Tiki Tide interface, but it is **not** a valid guest-access or pass-ownership test. To test guest denial in Studio, temporarily set `StudioStaff = false`; with `GroupId = 0` and no matching `StaffUserIds`, Studio players will then be guests. Restore the intended production setting before publishing. Once the pass is created, configure only its actual asset ID and verify ownership in a published private test server.
 
