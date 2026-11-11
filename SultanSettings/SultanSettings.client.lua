@@ -53,8 +53,30 @@ local function make(className: string, props: {[string]: any}, parent: Instance)
 	return object
 end
 
+local content: ScrollingFrame
+
 local function rounded(instance: Instance, radius: number)
 	make("UICorner", {CornerRadius = UDim.new(0, radius)}, instance)
+end
+
+local function makeSelectable(object: GuiObject)
+	object.Selectable = true
+	local focusStroke = make("UIStroke", {Name = "ControllerFocusStroke", Color = COLORS.accent, Thickness = 2, Transparency = 1}, object) :: UIStroke
+	object.SelectionGained:Connect(function()
+		focusStroke.Transparency = 0
+		if content and object:IsDescendantOf(content) then
+			local viewTop = content.AbsolutePosition.Y
+			local viewBottom = viewTop + content.AbsoluteSize.Y
+			local itemTop = object.AbsolutePosition.Y
+			local itemBottom = itemTop + object.AbsoluteSize.Y
+			if itemTop < viewTop then
+				content.CanvasPosition = Vector2.new(content.CanvasPosition.X, math.max(0, content.CanvasPosition.Y - (viewTop - itemTop)))
+			elseif itemBottom > viewBottom then
+				content.CanvasPosition = Vector2.new(content.CanvasPosition.X, content.CanvasPosition.Y + (itemBottom - viewBottom))
+			end
+		end
+	end)
+	object.SelectionLost:Connect(function() focusStroke.Transparency = 1 end)
 end
 
 local function invoke(action: string, payload: {[string]: any}?)
@@ -86,9 +108,11 @@ local toggle = make("TextButton", {
 	TextSize = 11,
 	Font = Enum.Font.GothamBold,
 	AutoButtonColor = true,
+	Selectable = true,
 	Visible = false,
 }, gui) :: TextButton
 rounded(toggle, 12)
+makeSelectable(toggle)
 make("UIStroke", {Color = COLORS.accent, Transparency = 0.28, Thickness = 1.4}, toggle)
 make("UIGradient", {Rotation = 90, Color = ColorSequence.new(COLORS.card2, COLORS.card)}, toggle)
 -- Native equalizer mark: no emoji or special-font glyph dependency.
@@ -219,13 +243,14 @@ local close = make("TextButton", {
 	Font = Enum.Font.GothamBold,
 }, header) :: TextButton
 rounded(close, 10)
+makeSelectable(close)
 
 local tabBar = make("Frame", {
 	Position = UDim2.fromOffset(12, 68),
 	Size = UDim2.new(1, -24, 0, 38),
 	BackgroundTransparency = 1,
 }, panel)
-local content = make("ScrollingFrame", {
+content = make("ScrollingFrame", {
 	Name = "SettingsContent",
 	Position = UDim2.fromOffset(12, 114),
 	Size = UDim2.new(1, -24, 1, -126),
@@ -235,6 +260,8 @@ local content = make("ScrollingFrame", {
 	ScrollBarImageColor3 = COLORS.accent,
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	AutomaticCanvasSize = Enum.AutomaticSize.Y,
+	Active = true,
+	ScrollingEnabled = true,
 }, panel) :: ScrollingFrame
 make("UIListLayout", {Padding = UDim.new(0, 9), SortOrder = Enum.SortOrder.LayoutOrder}, content)
 make("UIPadding", {PaddingBottom = UDim.new(0, 12)}, content)
@@ -277,9 +304,10 @@ local function button(parent: Instance, text: string, pos: UDim2, size: UDim2, c
 	local b = make("TextButton", {
 		Position = pos, Size = size, BackgroundColor3 = tint or COLORS.card2,
 		Text = text, TextColor3 = COLORS.text, TextSize = 10,
-		Font = Enum.Font.GothamBold, AutoButtonColor = true,
+		Font = Enum.Font.GothamBold, AutoButtonColor = true, Selectable = true,
 	}, parent) :: TextButton
 	rounded(b, 9)
+	makeSelectable(b)
 	make("UIStroke", {Color = tint or COLORS.accent, Transparency = 0.78, Thickness = 1}, b)
 	b.Activated:Connect(callback)
 	return b
@@ -292,8 +320,10 @@ local function input(parent: Instance, placeholder: string, pos: UDim2, size: UD
 		PlaceholderColor3 = COLORS.muted, TextColor3 = COLORS.text,
 		ClearTextOnFocus = false, TextSize = 11,
 		Font = Enum.Font.Gotham, TextXAlignment = Enum.TextXAlignment.Left,
+		Selectable = true,
 	}, parent) :: TextBox
 	rounded(box, 8)
+	makeSelectable(box)
 	return box
 end
 
@@ -339,8 +369,10 @@ local function refreshTabs()
 			TextColor3 = if activeTab == name then COLORS.background else COLORS.text,
 			TextSize = 10,
 			Font = Enum.Font.GothamBold,
+			Selectable = true,
 		}, tabBar) :: TextButton
 		rounded(b, 9)
+		makeSelectable(b)
 		make("UIStroke", {Color = if activeTab == name then COLORS.accent else COLORS.card2, Transparency = if activeTab == name then 0.2 else 0.8, Thickness = 1}, b)
 		b.Activated:Connect(function()
 			activeTab = name
@@ -541,6 +573,10 @@ local function open()
 	hideClubHud()
 	activeTab = "Settings"
 	render()
+	task.defer(function()
+		local firstTab = tabBar:FindFirstChildWhichIsA("TextButton")
+		GuiService.SelectedObject = firstTab or close
+	end)
 end
 
 local function closePanel()
@@ -550,11 +586,26 @@ local function closePanel()
 	toggle.Visible = player:GetAttribute("IsTikiTideSultan") == true
 		and playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
 	restoreClubHud()
+	if toggle.Visible then GuiService.SelectedObject = toggle else GuiService.SelectedObject = nil end
 end
 
 toggle.Activated:Connect(open)
 close.Activated:Connect(closePanel)
 shade.Activated:Connect(closePanel)
+
+local BACK_ACTION = "SultanSettings_Back"
+ContextActionService:BindActionAtPriority(BACK_ACTION, function(_, inputState)
+	if inputState ~= Enum.UserInputState.Begin or not panel.Visible then return Enum.ContextActionResult.Pass end
+	if UserInputService:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
+	closePanel()
+	return Enum.ContextActionResult.Sink
+end, false, 3000, Enum.KeyCode.ButtonB, Enum.KeyCode.Escape)
+
+gui.Destroying:Connect(function()
+	ContextActionService:UnbindAction(BACK_ACTION)
+	local selected = GuiService.SelectedObject
+	if selected and selected:IsDescendantOf(gui) then GuiService.SelectedObject = nil end
+end)
 
 local function showBroadcast(kind: any, senderUserId: any, message: any)
 	if typeof(kind) ~= "string" or typeof(senderUserId) ~= "number" or typeof(message) ~= "string" then return end
@@ -619,4 +670,4 @@ player.CharacterAdded:Connect(function()
 	end
 end)
 
-print("[Sultan Settings] Client UI loaded.")
+print("[Sultan Settings] Client UI loaded with gamepad navigation support.")
