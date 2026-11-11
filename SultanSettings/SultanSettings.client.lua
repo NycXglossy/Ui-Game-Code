@@ -829,9 +829,10 @@ end)
 local function closePanel()
 	panel.Visible = false
 	shade.Visible = false
-	-- Do not expose the Sultan launcher to guests or underneath the full ClubMusic menu.
-	toggle.Visible = player:GetAttribute("IsTikiTideSultan") == true
-		and playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
+	-- Keep the launcher discoverable for all players, but the server still
+	-- rejects unauthorized access in GetSnapshot and every privileged action.
+	-- The launcher itself is hidden only while either full settings/menu surface is open.
+	toggle.Visible = playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
 	restoreClubHud()
 	if controllerMode and toggle.Visible then
 		GuiService.SelectedObject = toggle
@@ -923,7 +924,9 @@ local function updateVisibility()
 		return
 	end
 
-	toggle.Visible = allowed and not panel.Visible and not clubMenuExpanded
+	-- Do not use a client-replicated entitlement attribute as the only way
+	-- to discover the launcher. Server authorization remains the security boundary.
+	toggle.Visible = not panel.Visible and not clubMenuExpanded
 	if not toggle.Visible and GuiService.SelectedObject == toggle then
 		GuiService.SelectedObject = nil
 	end
