@@ -399,7 +399,7 @@ local function renderPlayers()
 			row.Visible = query == "" or string.find(text, query, 1, true) ~= nil
 		end
 	end)
-	if #currentRoster == 0 then
+	if #rows == 0 then
 		label(list, "No other players are currently in this server.", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 28), COLORS.muted, 9)
 	end
 end
