@@ -600,6 +600,7 @@ ControllerFunctions.globalPlaybackEndTime = 0
 local localCatalogRevision = 0
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
 local refreshLocalCatalog: (() -> boolean)? = nil
+local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
 local nowPlaying: any = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
@@ -1496,7 +1497,6 @@ end
 local globalQueueSyncBusy = false
 local globalQueueRefreshScheduled = false
 local globalPlaybackInitialized = false
-enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
 local enqueueGlobalQueueBatch: (({QueueEntry}) -> (boolean, string?))? = nil
 local activePlaylistId: string? = nil
 local globalPlaylistRotationEnabled = false
