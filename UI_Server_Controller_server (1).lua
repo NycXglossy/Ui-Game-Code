@@ -41,6 +41,7 @@ local CONFIG = {
 	-- VIP: any ONE of these grants VIP. Staff are always VIP. Staff can also grant temporary VIP in the DJ booth.
 	VipGamePassId = 0,       -- Configure your VIP Game Pass ID.
 	VvipGamePassId = 0,      -- Configure your VVIP Game Pass ID.
+	-- Legacy Sultan-named config/cache/API keys remain internal compatibility identifiers; player-facing branding is Tiki Tide.
 	TikiTideSultanPassId = 0,-- Configure the Tiki Tide Game Pass ID.
 	VipGroupRank = 0,        -- Group rank that counts as VIP (0 = disabled; needs GroupId).
 	VipPriority = true,      -- Pass holders receive tiered request priority.
