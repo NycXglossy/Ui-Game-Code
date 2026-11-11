@@ -5212,6 +5212,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	-- read-only; only explicit owner maintenance/reconcile requests reach setters.
 	local operationalPermission = ({
 		OperationalHealth = "GlobalModeration",
+		OperationalCatalogRefresh = "GlobalConfig",
 		OperationalServices = "GlobalModeration",
 		OperationalDiagnostics = "GlobalConfig",
 		OperationalErrors = "GlobalConfig",
@@ -5233,6 +5234,12 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		end
 	end
 
+	if operation == "OperationalCatalogRefresh" then
+		if not ControllerFunctions.refreshCatalogWhenReady() then
+			return false, "Catalog refresh could not complete. Check catalog storage readiness and DataStore budget."
+		end
+		return true, string.format("ClubMusic catalog refreshed successfully: %d playable tracks.", #ALL_TRACK_IDS)
+	end
 	if operation == "OperationalHealth" then
 		local ok, health = ControllerFunctions.adminBridgeGlobalCall("GetGlobalHealth")
 		if not ok or typeof(health) ~= "table" then return false, tostring(health or "Health status is unavailable.") end
