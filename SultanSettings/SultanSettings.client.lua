@@ -501,7 +501,9 @@ end
 local function closePanel()
 	panel.Visible = false
 	shade.Visible = false
-	toggle.Visible = true
+	-- Do not expose the Sultan launcher to guests or underneath the full ClubMusic menu.
+	toggle.Visible = player:GetAttribute("IsTikiTideSultan") == true
+		and playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
 	restoreClubHud()
 end
 
