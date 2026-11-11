@@ -350,7 +350,7 @@ end
 local function renderPlayers()
 	label(content, "PLAYER TELEPORT", UDim2.fromOffset(4, 0), UDim2.new(1, -8, 0, 22), COLORS.accent, 12)
 	local info = card(54)
-	label(info, "Choose a player who has enabled "Allow teleport to me".", UDim2.fromOffset(14, 7), UDim2.new(1, -28, 0, 38), COLORS.muted, 9)
+	label(info, 'Choose a player who has enabled "Allow teleport to me".', UDim2.fromOffset(14, 7), UDim2.new(1, -28, 0, 38), COLORS.muted, 9)
 	local searchCard = card(48)
 	local search = input(searchCard, "Search player or username", UDim2.fromOffset(10, 8), UDim2.new(1, -20, 0, 32), "")
 	local list = card(math.max(90, #currentRoster * 58 + 12))
