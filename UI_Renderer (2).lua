@@ -4694,13 +4694,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function open()
 		if destroyed or expanded then return end
+		-- Claim the expanded state before revealing the panel. This prevents a
+		-- one-frame launcher/HUD flash while the main menu is being opened.
 		expanded = true
 		setCompactHudVisibility(false)
-		shade.Visible = true
 		panel.Size = panelTarget
+		renderTab()
+		shade.Visible = true
 		panel.Visible = true
 		toggleButton.Visible = false
-		renderTab()
 		if UserInputService.GamepadEnabled then
 			task.defer(function()
 				if expanded and navButtons[activeTab] and navButtons[activeTab].Visible then
@@ -4713,10 +4715,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function close()
 		if destroyed or not expanded then return end
 		stopPreview()
-		expanded = false
-		setCompactHudVisibility(true)
+		-- Hide the main surface before publishing the collapsed state. The
+		-- shared state change can restore other UI, so it must be the final step
+		-- to avoid a visible overlap/flicker during the close transition.
 		shade.Visible = false
 		panel.Visible = false
+		expanded = false
+		setCompactHudVisibility(true)
 		syncLauncherVisibility()
 		if UserInputService.GamepadEnabled and toggleButton.Visible then GuiService.SelectedObject = toggleButton end
 	end
