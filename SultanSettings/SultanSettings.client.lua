@@ -792,6 +792,16 @@ local function open()
 	end)
 end
 
+-- The separate Utility Bar requests Sultan Settings through a PlayerGui
+-- attribute, keeping the launcher independent from this panel's implementation.
+local lastOpenRequest = tonumber(playerGui:GetAttribute("SultanSettingsOpenRequest")) or 0
+playerGui:GetAttributeChangedSignal("SultanSettingsOpenRequest"):Connect(function()
+	local requestId = tonumber(playerGui:GetAttribute("SultanSettingsOpenRequest")) or 0
+	if requestId <= lastOpenRequest then return end
+	lastOpenRequest = requestId
+	if not panel.Visible then open() end
+end)
+
 local function closePanel()
 	panel.Visible = false
 	shade.Visible = false
