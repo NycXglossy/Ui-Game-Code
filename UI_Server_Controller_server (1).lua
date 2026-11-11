@@ -41,19 +41,19 @@ local CONFIG = {
 	-- VIP: any ONE of these grants VIP. Staff are always VIP. Staff can also grant temporary VIP in the DJ booth.
 	VipGamePassId = 0,       -- Configure your VIP Game Pass ID.
 	VvipGamePassId = 0,      -- Configure your VVIP Game Pass ID.
-	-- Legacy Sultan-named config/cache/API keys remain internal compatibility identifiers; player-facing branding is Tiki Tide.
-	TikiTideSultanPassId = 0,-- Configure the Tiki Tide Game Pass ID.
+	-- Tiki Tide entitlement and settings identifiers use the TikiTide naming convention.
+	TikiTidePassId = 0,-- Configure the Tiki Tide Game Pass ID.
 	VipGroupRank = 0,        -- Group rank that counts as VIP (0 = disabled; needs GroupId).
 	VipPriority = true,      -- Pass holders receive tiered request priority.
 
 	MaxRequestsPerPlayer = 2,
 	VipMaxRequestsPerPlayer = 4,
 	VvipMaxRequestsPerPlayer = 6,
-	SultanMaxRequestsPerPlayer = 8,
+	TikiTideMaxRequestsPerPlayer = 8,
 	RequestCooldownSeconds = 8,
 	VipCooldownSeconds = 3,
 	VvipCooldownSeconds = 2,
-	SultanCooldownSeconds = 1,
+	TikiTideCooldownSeconds = 1,
 	MaxQueueSize = 40,         -- Max PLAYER requests waiting at once.
 
 	AutoQueueTarget = 3,       -- Auto DJ keeps at least this many tracks visible in the queue.
@@ -1700,7 +1700,7 @@ end
 local rankCache: {[number]: {rank: string, level: number}} = {}
 local vipPass: {[number]: boolean} = {}
 local vvipPass: {[number]: boolean} = {}
-local sultanPass: {[number]: boolean} = {}
+local tikiTidePass: {[number]: boolean} = {}
 local tempVip: {[number]: boolean} = {}
 local blockedUsers: {[number]: boolean} = {}
 local skipVotes: {[number]: boolean} = {}
@@ -1757,7 +1757,7 @@ ControllerFunctions.passTier = function(player: Player): number
 	-- Staff receive the complete club membership tier by default. This is
 	-- derived from the server-verified staff rank, never from client attributes.
 	if ControllerFunctions.getLevel(player) >= 1 then return 3 end
-	if sultanPass[userId] == true then return 3 end
+	if tikiTidePass[userId] == true then return 3 end
 	if vvipPass[userId] == true then return 2 end
 	if vipPass[userId] == true or tempVip[userId] == true then return 1 end
 	return 0
@@ -1771,7 +1771,7 @@ ControllerFunctions.isVvip = function(player: Player): boolean
 	return ControllerFunctions.passTier(player) >= 2
 end
 
-ControllerFunctions.isSultan = function(player: Player): boolean
+ControllerFunctions.hasTikiTideAccess = function(player: Player): boolean
 	return ControllerFunctions.passTier(player) >= 3
 end
 
@@ -1786,7 +1786,7 @@ end
 ControllerFunctions.applyVipAttribute = function(player: Player)
 	player:SetAttribute("IsVIP", ControllerFunctions.isVip(player))
 	player:SetAttribute("IsVVIP", ControllerFunctions.isVvip(player))
-	player:SetAttribute("IsTikiTideSultan", ControllerFunctions.isSultan(player))
+	player:SetAttribute("HasTikiTideAccess", ControllerFunctions.hasTikiTideAccess(player))
 	player:SetAttribute("ClubPassTier", ControllerFunctions.passTier(player))
 end
 
@@ -1804,7 +1804,7 @@ ControllerFunctions.refreshVip = function(player: Player)
 	local userId = player.UserId
 	vipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VipGamePassId)
 	vvipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VvipGamePassId)
-	sultanPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.TikiTideSultanPassId)
+	tikiTidePass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.TikiTidePassId)
 	if not vipPass[userId] and CONFIG.VipGroupRank > 0 and CONFIG.GroupId > 0 then
 		local ok, rank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
 		if ok and typeof(rank) == "number" and rank >= CONFIG.VipGroupRank then vipPass[userId] = true end
@@ -1813,7 +1813,7 @@ end
 
 ControllerFunctions.requestLimitFor = function(player: Player): number
 	local tier = ControllerFunctions.passTier(player)
-	if tier >= 3 then return CONFIG.SultanMaxRequestsPerPlayer end
+	if tier >= 3 then return CONFIG.TikiTideMaxRequestsPerPlayer end
 	if tier == 2 then return CONFIG.VvipMaxRequestsPerPlayer end
 	if tier == 1 then return CONFIG.VipMaxRequestsPerPlayer end
 	return CONFIG.MaxRequestsPerPlayer
@@ -1821,7 +1821,7 @@ end
 
 ControllerFunctions.cooldownFor = function(player: Player): number
 	local tier = ControllerFunctions.passTier(player)
-	if tier >= 3 then return CONFIG.SultanCooldownSeconds end
+	if tier >= 3 then return CONFIG.TikiTideCooldownSeconds end
 	if tier == 2 then return CONFIG.VvipCooldownSeconds end
 	if tier == 1 then return CONFIG.VipCooldownSeconds end
 	return CONFIG.RequestCooldownSeconds
@@ -3058,7 +3058,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		rank = ControllerFunctions.getRank(player),
 		perm = level,
 		vip = vip,
-		customTitleUnlocked = ControllerFunctions.isSultan(player),
+		customTitleUnlocked = ControllerFunctions.hasTikiTideAccess(player),
 		queue = safeQueue,
 		nowPlaying = {
 			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
@@ -3086,13 +3086,13 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		},
 		vipGamePassId = CONFIG.VipGamePassId,
 		vvipGamePassId = CONFIG.VvipGamePassId,
-		sultanGamePassId = CONFIG.TikiTideSultanPassId,
+		tikiTideGamePassId = CONFIG.TikiTidePassId,
 		passTier = ControllerFunctions.passTier(player),
-		passName = if ControllerFunctions.isSultan(player) then "TIKI TIDE" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
+		passName = if ControllerFunctions.hasTikiTideAccess(player) then "TIKI TIDE" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
 		passPerks = {
 			vip = { slots = CONFIG.VipMaxRequestsPerPlayer, cooldown = CONFIG.VipCooldownSeconds },
 			vvip = { slots = CONFIG.VvipMaxRequestsPerPlayer, cooldown = CONFIG.VvipCooldownSeconds },
-			sultan = { slots = CONFIG.SultanMaxRequestsPerPlayer, cooldown = CONFIG.SultanCooldownSeconds, priority = "highest" },
+			tikiTide = { slots = CONFIG.TikiTideMaxRequestsPerPlayer, cooldown = CONFIG.TikiTideCooldownSeconds, priority = "highest" },
 		},
 		equippedTag = profile.equippedTag,
 		ownedTags = profile.ownedTags,
@@ -3814,7 +3814,7 @@ end
 ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number, data: any, visible: boolean): boolean
 	local profile = profiles[player.UserId]
 	if not profile then return false end
-	if not ControllerFunctions.isSultan(player) then
+	if not ControllerFunctions.hasTikiTideAccess(player) then
 		notify(player, "Custom titles are exclusive to Tiki Tide members.", "warn")
 		return false
 	end
@@ -4884,7 +4884,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "SelectTitleSlot" then
-		if not ControllerFunctions.isSultan(player) then notify(player, "Custom titles require Tiki Tide.", "warn"); return end
+		if not ControllerFunctions.hasTikiTideAccess(player) then notify(player, "Custom titles require Tiki Tide.", "warn"); return end
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		local profile = profiles[player.UserId]
@@ -4901,7 +4901,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "ClearTitleSlot" then
-		if not ControllerFunctions.isSultan(player) then notify(player, "Custom titles require Tiki Tide.", "warn"); return end
+		if not ControllerFunctions.hasTikiTideAccess(player) then notify(player, "Custom titles require Tiki Tide.", "warn"); return end
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		local profile = profiles[player.UserId]
@@ -4917,7 +4917,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "SetTitleVisible" then
-		if not ControllerFunctions.isSultan(player) then notify(player, "Custom titles require Tiki Tide.", "warn"); return end
+		if not ControllerFunctions.hasTikiTideAccess(player) then notify(player, "Custom titles require Tiki Tide.", "warn"); return end
 		if typeof(payload.visible) ~= "boolean" then return end
 		local profile = profiles[player.UserId]
 		if not profile then return end
@@ -6224,7 +6224,7 @@ Players.PlayerRemoving:Connect(function(player)
 	rankCache[userId] = nil
 	vipPass[userId] = nil
 	vvipPass[userId] = nil
-	sultanPass[userId] = nil
+	tikiTidePass[userId] = nil
 	tempVip[userId] = nil
 	blockedUsers[userId] = nil
 	local voteManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.SkipVote
@@ -6249,13 +6249,13 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Playe
 	if not purchased then return end
 	local recognized = passId == CONFIG.VipGamePassId
 		or passId == CONFIG.VvipGamePassId
-		or passId == CONFIG.TikiTideSultanPassId
+		or passId == CONFIG.TikiTidePassId
 	if not recognized then return end
 	task.spawn(function()
 		ControllerFunctions.refreshVip(player)
 		ControllerFunctions.applyVipAttribute(player)
 		ControllerFunctions.syncTitleTagUnlocks(player)
-		local tierName = if ControllerFunctions.isSultan(player) then "Tiki Tide" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
+		local tierName = if ControllerFunctions.hasTikiTideAccess(player) then "Tiki Tide" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
 		notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
 		publishState(nil)
 	end)
