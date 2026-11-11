@@ -162,6 +162,7 @@ make("UIPadding", {PaddingBottom = UDim.new(0, 12)}, content)
 local state: {[string]: any} = {}
 local activeTab = "Settings"
 local currentRoster: {any} = {}
+local render: () -> ()
 
 local function clearContent()
 	for _, child in ipairs(content:GetChildren()) do
@@ -281,7 +282,7 @@ local function renderSettings()
 
 	local gravity = card(112)
 	label(gravity, "SERVER GRAVITY", UDim2.fromOffset(14, 9), UDim2.new(0.55, 0, 0, 18), COLORS.accent, 10)
-	local gravityBox = input(gravity, "20–192.62", UDim2.fromOffset(14, 36), UDim2.new(0.48, -8, 0, 32), string.format("%.2f", tonumber(state.gravity) or 196.2))
+	local gravityBox = input(gravity, "20–192.62", UDim2.fromOffset(14, 36), UDim2.new(0.48, -8, 0, 32), string.format("%.2f", math.clamp(tonumber(state.gravity) or 192.62, 20, 192.62)))
 	local gravityButton = button(gravity, "SET GRAVITY", UDim2.new(0.52, 0, 0, 36), UDim2.new(0.44, -8, 0, 32), function()
 		local result = invoke("SetGravity", {gravity = tonumber(gravityBox.Text)})
 		notify(result.message or "Gravity update failed.", result.ok)
@@ -386,7 +387,7 @@ local function renderMessage()
 	if state.canAnnounce ~= true then announcementButton.AutoButtonColor = false end
 end
 
-function render()
+render = function()
 	clearContent()
 	refreshTabs()
 	if activeTab == "Players" then renderPlayers()
