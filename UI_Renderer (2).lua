@@ -843,12 +843,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 	end
 
+	-- Premium floating launcher: coordinated with the dark, gold and cyan ClubMusic surfaces.
 	local toggleButton = make("TextButton", {
 		Name = "OpenButton",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -18, 0.55, 0),
 		Size = UDim2.fromOffset(54, 54),
-		BackgroundColor3 = C.Magenta,
+		BackgroundColor3 = C.Surface,
 		Text = "",
 		TextColor3 = C.White,
 		TextSize = 28,
@@ -856,10 +857,24 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		AutoButtonColor = true,
 		ZIndex = 10,
 	}, gui) :: TextButton
-	corner(toggleButton, 18)
-	buildNativeIcon(toggleButton, "music", C.White, 11)
-	local toggleOutline = stroke(toggleButton, C.Cyan, 2)
-	bindFocusFeedback(toggleButton, toggleOutline, C.Magenta)
+	corner(toggleButton, 17)
+	make("UIGradient", {
+		Rotation = 135,
+		Color = ColorSequence.new(C.SurfaceLight, C.Surface),
+	}, toggleButton)
+	local toggleOutline = stroke(toggleButton, C.Gold, 1.6)
+	toggleOutline.Transparency = 0.12
+	buildNativeIcon(toggleButton, "music", C.Gold, 11)
+	bindFocusFeedback(toggleButton, toggleOutline, C.SurfaceLight)
+	make("Frame", {
+		Name = "LauncherAccent",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -5),
+		Size = UDim2.fromOffset(15, 2),
+		BackgroundColor3 = C.Cyan,
+		BorderSizePixel = 0,
+		ZIndex = 12,
+	}, toggleButton)
 
 	-- Top bar HUD: a compact companion to the full festival panel, with matching surfaces and accents.
 	local hud = make("TextButton", {
@@ -884,6 +899,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			or normalizedName == "clubmusiccompacthud"
 	end
 
+	local function syncLauncherVisibility()
+		-- The floating full-UI launcher must stay hidden behind Sultan Settings too.
+		local sultanSettingsOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
+		toggleButton.Visible = not expanded and not sultanSettingsOpen
+	end
+
 	local function setCompactHudVisibility(visible: boolean)
 		-- Share menu state with Sultan Settings so neither UI can restore the HUD
 		-- while the other full-screen panel is still open.
@@ -895,7 +916,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end
 		end
 		hud.Visible = visible and not expanded and not sultanSettingsOpen
+		syncLauncherVisibility()
 	end
+
+	-- Sultan Settings owns this shared attribute; respond immediately when its
+	-- panel opens or closes, without forcing either menu to rebuild.
+	table.insert(connections, playerGui:GetAttributeChangedSignal("SultanSettingsOpen"):Connect(syncLauncherVisibility))
+	syncLauncherVisibility()
 	-- Catch duplicate bars created by another renderer copy after this menu opens.
 	table.insert(connections, playerGui.DescendantAdded:Connect(function(descendant)
 		if expanded and isCompactClubHud(descendant) then
@@ -4690,8 +4717,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		setCompactHudVisibility(true)
 		shade.Visible = false
 		panel.Visible = false
-		toggleButton.Visible = true
-		if UserInputService.GamepadEnabled then GuiService.SelectedObject = toggleButton end
+		syncLauncherVisibility()
+		if UserInputService.GamepadEnabled and toggleButton.Visible then GuiService.SelectedObject = toggleButton end
 	end
 
 	toggleButton.Activated:Connect(open)
