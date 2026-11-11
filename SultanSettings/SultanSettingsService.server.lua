@@ -219,7 +219,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 		return {ok = true, message = "Overhead broadcast sent."}
 	elseif action == "Announcement" then
 		if not hasClubPermission(player, "GlobalAnnouncement") then return fail("Administrator announcement permission is required.") end
-		if now - lastAnnouncementAt < ANNOUNCEMENT_COOLDOWN then
+		if lastAnnouncementAt > 0 and now - lastAnnouncementAt < ANNOUNCEMENT_COOLDOWN then
 			local remaining = math.ceil(ANNOUNCEMENT_COOLDOWN - (now - lastAnnouncementAt))
 			return fail("Announcement cooldown: " .. tostring(remaining) .. " seconds remaining.")
 		end
