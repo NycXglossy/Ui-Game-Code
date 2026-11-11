@@ -4637,6 +4637,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function open()
 		if destroyed then return end
 		expanded = true
+		hud.Visible = false
 		shade.Visible = true
 		panel.Visible = true
 		toggleButton.Visible = false
@@ -4658,6 +4659,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if destroyed then return end
 		stopPreview()
 		expanded = false
+		hud.Visible = true
 		shade.Visible = false
 		panel.Visible = false
 		toggleButton.Visible = true
