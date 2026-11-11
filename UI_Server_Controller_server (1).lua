@@ -5957,6 +5957,7 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		return
 	end
 	if message.kind == "TrackModeration" and typeof(message.trackId) == "string" and typeof(message.blocked) == "boolean" then
+		if message.senderJob == game.JobId then return end
 		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
 		ControllerFunctions.blockedTrackCache[message.trackId] = {blocked = message.blocked, checkedAt = os.clock()}
 		if message.blocked ~= true then return end
