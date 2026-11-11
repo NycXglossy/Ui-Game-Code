@@ -417,9 +417,11 @@ bindFunction("IsRequestBlocked", function(userId: any)
 	return data.requestBlocked == true, true
 end)
 
-bindFunction("SetRequestBlocked", function(userId: any, blocked: any, actorUserId: any)
+bindFunction("SetRequestBlocked", function(userId: any, blocked: any, actorUserId: any, reason: any)
 	if not SERVICE_ENABLED or typeof(blocked) ~= "boolean" or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
-	return updateModeration(userId, "requestBlocked", blocked, actorUserId, nil)
+	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
+	if reason ~= nil and not cleanReason then return false end
+	return updateModeration(userId, "requestBlocked", blocked, actorUserId, cleanReason)
 end)
 
 bindFunction("PublishAnnouncement", function(message: any, actorUserId: any)
