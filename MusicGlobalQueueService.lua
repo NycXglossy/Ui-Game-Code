@@ -491,6 +491,22 @@ function MusicGlobalQueueService:RemoveUserEntries(userId: any): (boolean, State
 	end)
 end
 
+function MusicGlobalQueueService:RemoveTrackEntries(trackId: any): (boolean, State?, string?)
+	if typeof(trackId) ~= "string" or #trackId < 1 or #trackId > 64
+		or not string.match(trackId, "^[%w%-_]+$") then return false, nil, "Invalid track ID." end
+	return transact(function(state)
+		local filtered = {}
+		local removed = 0
+		for _, entry in ipairs(state.queue) do
+			if entry.trackId == trackId then removed += 1
+			else table.insert(filtered, entry) end
+		end
+		if removed == 0 then return false, "No queued entries were found for that track." end
+		state.queue = filtered
+		return true
+	end)
+end
+
 function MusicGlobalQueueService:SetPlaylistRotation(playlistId: any, playlistName: any, trackIds: any): (boolean, State?, string?)
 	if playlistId == nil then
 		return transact(function(state)
