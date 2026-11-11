@@ -105,7 +105,7 @@ return function(_K: any)
 	local INSPECTION_COOLDOWN_SECONDS = 1.5
 	local lastInspectionAt: {[number]: number} = {}
 	local READ_ONLY_OPERATIONS: {[string]: boolean} = {
-		Status = true, Queue = true, OperationalCatalogRefresh = true,
+		Status = true, Queue = true, OperationalCatalogRefresh = true, ModerationHistory = true,
 		SecurityStatus = true, SecurityIncidents = true, SecurityPolicy = true,
 		OperationalHealth = true, OperationalDiagnostics = true, OperationalServices = true,
 		OperationalErrors = true, OperationalMetrics = true, OperationalSecurityLog = true,
@@ -183,6 +183,7 @@ return function(_K: any)
 		-- their result through Kohl's Admin's supported informational toast API.
 		if operation == "Status" or operation == "Queue" or operation == "OperationalCatalogRefresh"
 			or operation == "RequestMute" or operation == "ClearUserQueue" or operation == "EmergencyLock"
+			or operation == "TrackBlock" or operation == "ForceStop" or operation == "ModerationHistory"
 			or operation == "DJSessionStatus" or operation == "DJSessionStart"
 			or operation == "DJSessionHandoff" or operation == "DJSessionEnd" then
 			local notifyOk, notifyError = pcall(function()
@@ -230,6 +231,13 @@ return function(_K: any)
 		{type = "string", name = "UserId", description = "Numeric Roblox UserId of the requester.", optional = false},
 	})
 	register("clubmusic-emergencylock", "Emergency-lock ClubMusic requests across all servers.", "Administration", "EmergencyLock", {"cmemergencylock"})
+	register("clubmusic-blocktrack", "Persistently block or unblock a ClubMusic track across servers.", "Administration", "TrackBlock", {"cmblocktrack"}, {
+		{type = "string", name = "TrackAndMode", description = "Track ID followed by on or off, optionally followed by a reason.", optional = false},
+	})
+	register("clubmusic-forcestop", "Emergency-stop ClubMusic playback across all servers.", "Administration", "ForceStop", {"cmforcestop"})
+	register("clubmusic-moderationhistory", "Show the recent ClubMusic moderation history for a player UserId.", "Administration", "ModerationHistory", {"cmmoderationhistory"}, {
+		{type = "string", name = "UserId", description = "Numeric Roblox UserId.", optional = false},
+	})
 
 	-- Security tools are registered in Kohl's Admin's Administration group.
 	-- The ClubMusic server bridge independently checks ClubMusic rank levels.
