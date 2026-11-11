@@ -201,6 +201,10 @@ local function handleRequest(player: Player, action: any, payload: any)
 		if payload.enabled then
 			local filtered = filterBroadcastText(player, payload.message or "")
 			if filtered == nil then return fail("Enter a valid AFK message (maximum 180 characters).") end
+			-- Text filtering yields; re-check entitlement before committing state.
+			if not isSultan(player) or player.Parent ~= Players then
+				return fail("Tiki Tide Sultan access is required.")
+			end
 			message = filtered
 		end
 		settings.afk = payload.enabled
@@ -223,7 +227,14 @@ local function handleRequest(player: Player, action: any, payload: any)
 		if target:GetAttribute("SultanAllowTeleport") ~= true and not hasClubPermission(player, "GlobalModeration") then
 			return fail("That player has not allowed teleporting to them.")
 		end
-		local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+		-- Permission resolution may yield; verify both participants and consent again.
+		if not isSultan(player) or player.Parent ~= Players or target.Parent ~= Players then
+			return fail("Teleport access is no longer available.")
+		end
+		if target:GetAttribute("SultanAllowTeleport") ~= true and not hasClubPermission(player, "GlobalModeration") then
+			return fail("That player has not allowed teleporting to them.")
+		end
+		local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
 		local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 		if not targetRoot or not targetRoot:IsA("BasePart") or not ownRoot or not ownRoot:IsA("BasePart") then
 			return fail("Character position is not ready.")
@@ -246,6 +257,10 @@ local function handleRequest(player: Player, action: any, payload: any)
 		if last > 0 and now - last < BUBBLE_COOLDOWN then return fail("Wait before sending another overhead broadcast.") end
 		local filtered = filterBroadcastText(player, payload.message)
 		if not filtered then return fail("Enter a valid broadcast message.") end
+		-- Filtering yields; reauthorize immediately before broadcasting.
+		if not isSultan(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
+			return fail("Administrator announcement permission is required.")
+		end
 		lastBubbleAt[player.UserId] = now
 		broadcast:FireAllClients("Bubble", player.UserId, filtered)
 		return {ok = true, message = "Overhead broadcast sent."}
@@ -257,7 +272,11 @@ local function handleRequest(player: Player, action: any, payload: any)
 		end
 		local filtered = filterBroadcastText(player, payload.message)
 		if not filtered then return fail("Enter a valid announcement.") end
-		lastAnnouncementAt = now
+		-- Filtering yields; reauthorize immediately before broadcasting.
+		if not isSultan(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
+			return fail("Administrator announcement permission is required.")
+		end
+		lastAnnouncementAt = os.clock()
 		broadcast:FireAllClients("Announcement", player.UserId, filtered)
 		return {ok = true, message = "Announcement sent to this server."}
 	end
