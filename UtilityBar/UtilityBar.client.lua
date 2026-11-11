@@ -148,7 +148,7 @@ local function buildUtilityIcon(parent: Instance, kind: string, color: Color3): 
 		outline("RefreshRing",.48,.52,.68,.72)
 		part("ArrowTipA",.75,.18,.12,.34,42)
 		part("ArrowTipB",.85,.31,.12,.34,-48)
-	elseif kind == "SultanSettings" then
+	elseif kind == "TikiTideSettings" then
 		part("CrownBase",.5,.77,.72,.12,0)
 		part("CrownLeft",.25,.47,.12,.48,-25)
 		part("CrownCenter",.5,.35,.12,.58,0)
@@ -187,7 +187,7 @@ end
 
 local definitions = {
 	{key = "RefreshOutfit", label = "Refresh", tint = COLORS.cyan},
-	{key = "SultanSettings", label = "Tiki Tide", tint = COLORS.gold},
+	{key = "TikiTideSettings", label = "Tiki Tide", tint = COLORS.gold},
 	{key = "Mount", label = "Mount", tint = COLORS.cyan},
 	{key = "Size", label = "Size", tint = COLORS.gold},
 	{key = "Clone", label = "Clone", tint = COLORS.cyan},
@@ -254,13 +254,13 @@ for index, definition in ipairs(definitions) do
 		TweenService:Create(button, TweenInfo.new(0.12), {BackgroundColor3 = COLORS.surface}):Play()
 	end)
 	button.Activated:Connect(function()
-		if definition.key == "SultanSettings" then
-			if player:GetAttribute("IsTikiTideSultan") ~= true then
+		if definition.key == "TikiTideSettings" then
+			if player:GetAttribute("HasTikiTideAccess") ~= true then
 				showToast("Tiki Tide access is required.")
 				return
 			end
-			local current = tonumber(playerGui:GetAttribute("SultanSettingsOpenRequest")) or 0
-			playerGui:SetAttribute("SultanSettingsOpenRequest", current + 1)
+			local current = tonumber(playerGui:GetAttribute("TikiTideSettingsOpenRequest")) or 0
+			playerGui:SetAttribute("TikiTideSettingsOpenRequest", current + 1)
 			return
 		end
 		utilityAction:Fire(definition.key)
@@ -328,7 +328,7 @@ end
 
 local function updateVisibility()
 	local expanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
-	local tikiTideOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
+	local tikiTideOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
 	local visible = not expanded and not tikiTideOpen
 	shell.Visible = visible
 	playerGui:SetAttribute("UtilityBarVisible", visible)
@@ -347,7 +347,7 @@ end
 wireNavigation()
 
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
-playerGui:GetAttributeChangedSignal("SultanSettingsOpen"):Connect(updateVisibility)
+playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(updateVisibility)
 -- The Tiki Tide entry stays in the seven-button layout; its activation is
 -- entitlement-checked before the panel receives an open request.
 
