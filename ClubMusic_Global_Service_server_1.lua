@@ -624,7 +624,22 @@ bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallback
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry, catalogRevision, expectedNextEntryId)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
+	if ok then
+		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
+		-- A committed next-track transition is the resume path after ForceStop.
+		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
+		if budgetShared and budgetAllowed then
+			pcall(function()
+				globalControlStore:UpdateAsync("playbackControl", function(old)
+					if typeof(old) ~= "table" or old.stopRevision == nil then return old end
+					local nextControl = table.clone(old)
+					nextControl.stopRevision = nil
+					nextControl.updatedAt = os.time()
+					return nextControl
+				end)
+			end)
+		end
+	end
 	return ok, state, message
 end)
 
