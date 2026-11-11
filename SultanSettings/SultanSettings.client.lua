@@ -393,7 +393,7 @@ local function isVisibleInTree(object: GuiObject): boolean
 	return current == content and content.Visible
 end
 
-local function wireControllerFocus()
+local function wireControllerFocus(): GuiObject?
 	local tabs = {}
 	for _, child in ipairs(tabBar:GetChildren()) do
 		if child:IsA("GuiButton") and child.Selectable and child.Visible then
@@ -469,6 +469,7 @@ local function wireControllerFocus()
 	if firstContentControl then
 		firstContentControl.NextSelectionUp = tabReturnTarget
 	end
+	return firstContentControl
 end
 
 local function refreshState()
@@ -674,18 +675,14 @@ render = function()
 	else renderSettings() end
 
 	task.defer(function()
-		wireControllerFocus()
+		local firstControl = wireControllerFocus()
 		if restoreContentFocus and panel.Visible then
-			for _, descendant in ipairs(content:GetDescendants()) do
-				if descendant:IsA("GuiObject")
-					and descendant.Selectable
-					and descendant.Active
-					and isVisibleInTree(descendant) then
-					GuiService.SelectedObject = descendant
-					return
-				end
+			if firstControl then
+				GuiService.SelectedObject = firstControl
+			else
+				local activeButton = tabBar:FindFirstChild(activeTab)
+				GuiService.SelectedObject = if activeButton and activeButton:IsA("GuiObject") then activeButton else close
 			end
-			GuiService.SelectedObject = tabBar:FindFirstChild(activeTab) or close
 		end
 	end)
 end
