@@ -5212,6 +5212,15 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, string.format("Track %s is now %s globally.", trackId, if mode == "on" then "blocked" else "allowed")
 	end
 	if operation == "ForceStop" then
+		if globalQueueMode then
+			local pauseOk, paused, state, pauseMessage = ControllerFunctions.globalInvoke(
+				"SetGlobalPlayback", true, nowPlaying.elapsed, globalTrackRevision, false
+			)
+			if not pauseOk or paused ~= true or typeof(state) ~= "table" then
+				return false, tostring(pauseMessage or "The shared playback state could not be emergency-paused.")
+			end
+			ControllerFunctions.applyGlobalQueueState(state)
+		end
 		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("PublishDJCommand", "ForceStop", {}, caller.UserId)
 		if not ok or (accepted ~= true and not ControllerFunctions.isFiniteNumber(accepted)) then
 			return false, tostring(accepted or "Global force-stop could not be published.")
