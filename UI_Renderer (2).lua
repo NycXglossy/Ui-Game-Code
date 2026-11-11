@@ -234,6 +234,28 @@ local GENRES = {
 		{"rs-196","UNWRITE THE STARS - ROCKSTAR MUSIC","Rockstar Music",240},	}},
 	{id="other", name="Other", tagline="More sounds beyond the main genres", color=Color3.fromRGB(119,196,203), tracks={}},
 }
+
+-- Renderer-side indexes are built from the same static genre catalog used by
+-- the browser. Server catalog updates can extend these maps later, but queue
+-- rendering must never depend on an optional update arriving first.
+local TRACK_INDEX: {[string]: any} = {}
+local TRACK_GENRE: {[string]: any} = {}
+local TRACK_ARTWORK: {[string]: number} = {}
+
+for _, genre in ipairs(GENRES) do
+	for _, track in ipairs(genre.tracks) do
+		local trackId = tostring(track[1] or "")
+		if trackId ~= "" then
+			TRACK_INDEX[trackId] = track
+			TRACK_GENRE[trackId] = {
+				id = genre.id,
+				name = genre.name,
+				color = genre.color,
+			}
+		end
+	end
+end
+
 local SHOP = {
 	{name="Custom Glowsticks",desc="Dual-wield glowsticks synced to stage lights.",price=75,rarity="Common",kind="Product",id=0},
 	{name="Tiki Mask",desc="Hand-carved mask with glowing ember eyes.",price=250,rarity="Rare",kind="Product",id=0},
