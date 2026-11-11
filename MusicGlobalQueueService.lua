@@ -13,7 +13,24 @@ local Workspace = game:GetService("Workspace")
 
 local MusicGlobalQueueService = {}
 
-local STORE = DataStoreService:GetDataStore("ClubMusic_GlobalQueue_v1")
+-- Resolve the durable store on first real queue operation, not at require time.
+-- This lets isolated/unpublished Studio sessions load the module without touching DataStore.
+local STORE: GlobalDataStore? = nil
+local storeInitializationError: string? = nil
+
+local function getStore(): (GlobalDataStore?, string?)
+	if STORE then return STORE, nil end
+	local ok, result = pcall(function()
+		return DataStoreService:GetDataStore("ClubMusic_GlobalQueue_v1")
+	end)
+	if not ok then
+		storeInitializationError = tostring(result)
+		return nil, "Global queue storage is unavailable."
+	end
+	STORE = result
+	storeInitializationError = nil
+	return STORE, nil
+end
 local KEY = "globalState"
 local SCHEMA_VERSION = 1
 local MAX_QUEUE = 80
@@ -240,10 +257,15 @@ local function detached(state: State): State
 end
 
 local function transact(mutator: (State) -> (boolean, string?)): (boolean, State?, string?)
+	local store, storeError = getStore()
+	if not store then
+		warn("[ClubMusic Global Queue] " .. tostring(storeInitializationError or storeError))
+		return false, nil, storeError
+	end
 	local accepted = false
 	local reason = "Shared queue update was rejected."
 	local ok, result = withStoreOperation(Enum.DataStoreRequestType.UpdateAsync, function()
-		return STORE:UpdateAsync(KEY, function(old)
+		return store:UpdateAsync(KEY, function(old)
 			accepted = false
 			reason = "Shared queue update was rejected."
 			local state = sanitizeState(old)
@@ -293,8 +315,13 @@ function MusicGlobalQueueService:GetSnapshot(): (boolean, State?, string?)
 	if cachedSnapshot and os.clock() - cachedSnapshotAt < SNAPSHOT_CACHE_SECONDS then
 		return true, detached(cachedSnapshot), nil
 	end
+	local store, storeError = getStore()
+	if not store then
+		warn("[ClubMusic Global Queue] " .. tostring(storeInitializationError or storeError))
+		return false, nil, storeError
+	end
 	local ok, raw = withStoreOperation(Enum.DataStoreRequestType.GetAsync, function()
-		return STORE:GetAsync(KEY)
+		return store:GetAsync(KEY)
 	end)
 	if not ok then
 		warn("[ClubMusic Global Queue] Snapshot read failed: " .. tostring(raw))
