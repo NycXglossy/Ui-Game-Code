@@ -1096,6 +1096,19 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	corner(panel, 22)
 	stroke(panel, C.Gold, 1.5)
 
+	-- This renderer owns the expanded menu's visibility. If another local UI
+	-- lifecycle briefly disables the ScreenGui or hides either surface, restore
+	-- it while the menu is open instead of allowing a one-second blank/flicker.
+	local function enforceExpandedVisibility()
+		if destroyed or not expanded then return end
+		if not gui.Enabled then gui.Enabled = true end
+		if not shade.Visible then shade.Visible = true end
+		if not panel.Visible then panel.Visible = true end
+	end
+	table.insert(connections, gui:GetPropertyChangedSignal("Enabled"):Connect(enforceExpandedVisibility))
+	table.insert(connections, shade:GetPropertyChangedSignal("Visible"):Connect(enforceExpandedVisibility))
+	table.insert(connections, panel:GetPropertyChangedSignal("Visible"):Connect(enforceExpandedVisibility))
+
 	local sizeConstraint = make("UISizeConstraint", {
 		MinSize = Vector2.new(320, 360),
 		MaxSize = Vector2.new(920, 720),
@@ -4715,12 +4728,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function close()
 		if destroyed or not expanded then return end
 		stopPreview()
-		-- Hide the main surface before publishing the collapsed state. The
-		-- shared state change can restore other UI, so it must be the final step
-		-- to avoid a visible overlap/flicker during the close transition.
+		-- Release visibility ownership and hide both surfaces in the same
+		-- synchronous turn before restoring the compact HUD.
+		expanded = false
 		shade.Visible = false
 		panel.Visible = false
-		expanded = false
 		setCompactHudVisibility(true)
 		syncLauncherVisibility()
 		if UserInputService.GamepadEnabled and toggleButton.Visible then GuiService.SelectedObject = toggleButton end
