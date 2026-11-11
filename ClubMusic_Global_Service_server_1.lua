@@ -247,6 +247,10 @@ local function updateModeration(userId: number, field: string, value: any, actor
 	}
 	local publishOk, publishErr = pcall(function() MessagingService:PublishAsync(CONFIG.Topics.Moderation, message) end)
 	if not publishOk then warn("[ClubMusic Global] Moderation publish failed; periodic reconciliation remains active: " .. tostring(publishErr)) end
+	if globalAuditService then
+		pcall(globalAuditService.Record, globalAuditService, "Moderation", actorUserId,
+			tostring(userId), field .. "=" .. tostring(value) .. (if reason then " | " .. reason else ""))
+	end
 	globalEventBindable:Fire({kind = "Moderation", userId = userId, field = field, value = value, reason = reason})
 	return true
 end
