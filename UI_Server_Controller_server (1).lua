@@ -5213,7 +5213,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	end
 	if operation == "ForceStop" then
 		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("PublishDJCommand", "ForceStop", {}, caller.UserId)
-		if not ok or accepted ~= true then return false, tostring(accepted or "Global force-stop could not be published.") end
+		if not ok or (accepted ~= true and not ControllerFunctions.isFiniteNumber(accepted)) then
+			return false, tostring(accepted or "Global force-stop could not be published.")
+		end
 		ControllerFunctions.cancelAudioTransition("admin-force-stop")
 		playbackPaused = true
 		nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
