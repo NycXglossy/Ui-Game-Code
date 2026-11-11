@@ -244,6 +244,17 @@ end
 
 local function bindPlayer(player: Player)
 	getSettings(player)
+
+	-- Pass/rank verification can finish after CharacterAdded. Re-apply the
+	-- saved movement values when the server-owned Sultan entitlement arrives.
+	player:GetAttributeChangedSignal("IsTikiTideSultan"):Connect(function()
+		if player.Parent == Players and isSultan(player) then
+			task.defer(function()
+				if player.Parent == Players then applyMovement(player) end
+			end)
+		end
+	end)
+
 	player.CharacterAdded:Connect(function()
 		task.defer(function()
 			if player.Parent == Players then applyMovement(player) end
@@ -252,6 +263,14 @@ local function bindPlayer(player: Player)
 	player:SetAttribute("SultanAFK", false)
 	player:SetAttribute("SultanAFKMessage", "")
 	player:SetAttribute("SultanAllowTeleport", false)
+
+	-- Handle players whose entitlement was already resolved before this
+	-- service bound their player lifecycle.
+	if isSultan(player) then
+		task.defer(function()
+			if player.Parent == Players then applyMovement(player) end
+		end)
+	end
 end
 
 for _, player in ipairs(Players:GetPlayers()) do bindPlayer(player) end
