@@ -401,6 +401,11 @@ local function wireControllerFocus()
 		end
 	end
 	table.sort(tabs, function(a, b) return a.AbsolutePosition.X < b.AbsolutePosition.X end)
+	local activeTabButton: GuiObject? = nil
+	for _, tab in ipairs(tabs) do
+		if tab.Name == activeTab then activeTabButton = tab; break end
+	end
+	local tabReturnTarget = activeTabButton or tabs[1] or close
 
 	-- Make the three tabs a predictable horizontal row, then drop from the
 	-- active tab into the first control in the current page.
@@ -456,13 +461,13 @@ local function wireControllerFocus()
 				end
 			end
 		end
-		control.NextSelectionUp = best.up or tabs[1] or close
-		control.NextSelectionDown = best.down or tabs[1] or control
+		control.NextSelectionUp = best.up or tabReturnTarget
+		control.NextSelectionDown = best.down or tabReturnTarget
 		control.NextSelectionLeft = best.left
 		control.NextSelectionRight = best.right
 	end
 	if firstContentControl then
-		firstContentControl.NextSelectionUp = tabs[1] or close
+		firstContentControl.NextSelectionUp = tabReturnTarget
 	end
 end
 
