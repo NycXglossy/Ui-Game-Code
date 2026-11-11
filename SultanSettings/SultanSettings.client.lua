@@ -15,7 +15,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 -- The server service may initialize after this LocalScript on slower joins.
 -- Wait for its remotes instead of permanently aborting the client UI after a
 -- short timeout; authorization remains enforced by the server on every request.
-local remotes = ReplicatedStorage:WaitForChild("SultanSettingsRemotes")
+local remotes = ReplicatedStorage:WaitForChild("TikiTideSettingsRemotes")
 local requestObject = remotes:WaitForChild("Request")
 local broadcastObject = remotes:WaitForChild("Broadcast")
 if not requestObject or not requestObject:IsA("RemoteFunction") then
@@ -29,7 +29,7 @@ end
 local request = requestObject :: RemoteFunction
 local broadcast = broadcastObject :: RemoteEvent
 
-local old = playerGui:FindFirstChild("SultanSettingsGui")
+local old = playerGui:FindFirstChild("TikiTideSettingsGui")
 if old then old:Destroy() end
 
 -- Match the ClubMusic full-screen palette for a unified premium surface.
@@ -104,7 +104,7 @@ local function invoke(action: string, payload: {[string]: any}?)
 end
 
 local gui = make("ScreenGui", {
-	Name = "SultanSettingsGui",
+	Name = "TikiTideSettingsGui",
 	ResetOnSpawn = false,
 	IgnoreGuiInset = false,
 	DisplayOrder = 60,
@@ -112,7 +112,7 @@ local gui = make("ScreenGui", {
 }, playerGui) :: ScreenGui
 
 local toggle = make("TextButton", {
-	Name = "SultanSettingsToggle",
+	Name = "TikiTideSettingsToggle",
 	AnchorPoint = Vector2.new(0, 0),
 	Position = UDim2.new(0, 18, 0, 90),
 	Size = UDim2.fromOffset(116, 34),
@@ -131,7 +131,7 @@ make("UIStroke", {Color = COLORS.accent, Transparency = 0.28, Thickness = 1.4}, 
 make("UIGradient", {Rotation = 90, Color = ColorSequence.new(COLORS.card2, COLORS.card)}, toggle)
 -- Native equalizer mark: no emoji or special-font glyph dependency.
 local toggleMark = make("Frame", {
-	Name = "SultanMark", Position = UDim2.fromOffset(11, 9),
+	Name = "TikiTideMark", Position = UDim2.fromOffset(11, 9),
 	Size = UDim2.fromOffset(17, 16), BackgroundTransparency = 1,
 }, toggle)
 for index, height in ipairs({8, 14, 10}) do
@@ -762,7 +762,7 @@ local function isCompactClubHud(instance: Instance): boolean
 end
 
 local function hideClubHud()
-	playerGui:SetAttribute("SultanSettingsOpen", true)
+	playerGui:SetAttribute("TikiTideSettingsOpen", true)
 	for _, descendant in ipairs(playerGui:GetDescendants()) do
 		if isCompactClubHud(descendant) then
 			local guiObject = descendant :: GuiObject
@@ -775,7 +775,7 @@ local function hideClubHud()
 end
 
 local function restoreClubHud()
-	playerGui:SetAttribute("SultanSettingsOpen", false)
+	playerGui:SetAttribute("TikiTideSettingsOpen", false)
 	local clubMenuExpanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
 	for instance, wasVisible in pairs(hiddenClubHud) do
 		if instance.Parent and instance:IsA("GuiObject") then
@@ -819,9 +819,9 @@ end
 
 -- The separate Utility Bar requests Tiki Tide Settings through a PlayerGui
 -- attribute, keeping the launcher independent from this panel's implementation.
-local lastOpenRequest = tonumber(playerGui:GetAttribute("SultanSettingsOpenRequest")) or 0
-playerGui:GetAttributeChangedSignal("SultanSettingsOpenRequest"):Connect(function()
-	local requestId = tonumber(playerGui:GetAttribute("SultanSettingsOpenRequest")) or 0
+local lastOpenRequest = tonumber(playerGui:GetAttribute("TikiTideSettingsOpenRequest")) or 0
+playerGui:GetAttributeChangedSignal("TikiTideSettingsOpenRequest"):Connect(function()
+	local requestId = tonumber(playerGui:GetAttribute("TikiTideSettingsOpenRequest")) or 0
 	if requestId <= lastOpenRequest then return end
 	lastOpenRequest = requestId
 	if not panel.Visible then open() end
@@ -846,7 +846,7 @@ toggle.Activated:Connect(open)
 close.Activated:Connect(closePanel)
 shade.Activated:Connect(closePanel)
 
-local BACK_ACTION = "SultanSettings_Back"
+local BACK_ACTION = "TikiTideSettings_Back"
 ContextActionService:BindActionAtPriority(BACK_ACTION, function(_, inputState)
 	if inputState ~= Enum.UserInputState.Begin or not panel.Visible then return Enum.ContextActionResult.Pass end
 	if UserInputService:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
@@ -890,7 +890,7 @@ local function showBroadcast(kind: any, senderUserId: any, message: any)
 		local head = character and character:FindFirstChild("Head")
 		if not head or not head:IsA("BasePart") then return end
 		local bubbleGui = make("BillboardGui", {
-			Name = "SultanAdminBroadcast",
+			Name = "TikiTideAdminBroadcast",
 			Adornee = head,
 			Size = UDim2.fromOffset(260, 64),
 			StudsOffset = Vector3.new(0, 4.2, 0),
@@ -915,7 +915,7 @@ end
 broadcast.OnClientEvent:Connect(showBroadcast)
 
 local function updateVisibility()
-	local allowed = player:GetAttribute("IsTikiTideSultan") == true
+	local allowed = player:GetAttribute("HasTikiTideAccess") == true
 	local clubMenuExpanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
 
 	-- Immediately close the settings surface if server entitlement is revoked
@@ -932,7 +932,7 @@ local function updateVisibility()
 		GuiService.SelectedObject = nil
 	end
 end
-player:GetAttributeChangedSignal("IsTikiTideSultan"):Connect(updateVisibility)
+player:GetAttributeChangedSignal("HasTikiTideAccess"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
 updateVisibility()
 
