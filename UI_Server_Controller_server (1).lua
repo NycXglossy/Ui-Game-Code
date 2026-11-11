@@ -5040,7 +5040,9 @@ ControllerFunctions.adminBridgeGlobalCall = function(name: string, ...: any): (b
 	if accepted ~= true then
 		return false, if typeof(value) == "string" then value else "Global security operation was rejected."
 	end
-	return true, value, detail
+	-- Boolean-only mutation APIs have no data payload. Preserve a positive
+	-- confirmation for callers that check the second return value explicitly.
+	return true, if value == nil then true else value, detail
 end
 ControllerFunctions.adminBridgeAuthorize = function(caller: Player, permission: string): boolean
 	local invoked, allowed = ControllerFunctions.globalInvoke("AuthorizeGlobalAction", caller.UserId, permission)
