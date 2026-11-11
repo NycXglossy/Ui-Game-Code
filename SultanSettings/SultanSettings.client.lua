@@ -395,11 +395,57 @@ render = function()
 	else renderSettings() end
 end
 
+-- Keep the compact ClubMusic overhead bar out of the way while Sultan
+-- Settings is open. Preserve each bar's previous state so closing this panel
+-- never forces a HUD visible that another menu intentionally hid.
+local hiddenClubHud: {[Instance]: boolean} = {}
+
+local function isCompactClubHud(instance: Instance): boolean
+	if not instance:IsA("GuiObject") then return false end
+	local normalizedName = string.lower(string.gsub(instance.Name, "[^%w]", ""))
+	return normalizedName == "topbarhud"
+		or normalizedName == "clubmusictopbarhud"
+		or normalizedName == "compactclubhud"
+		or normalizedName == "clubmusiccompacthud"
+end
+
+local function hideClubHud()
+	for _, descendant in ipairs(playerGui:GetDescendants()) do
+		if isCompactClubHud(descendant) then
+			local guiObject = descendant :: GuiObject
+			if hiddenClubHud[guiObject] == nil then
+				hiddenClubHud[guiObject] = guiObject.Visible
+			end
+			guiObject.Visible = false
+		end
+	end
+end
+
+local function restoreClubHud()
+	for instance, wasVisible in pairs(hiddenClubHud) do
+		if instance.Parent and instance:IsA("GuiObject") then
+			(instance :: GuiObject).Visible = wasVisible
+		end
+	end
+	table.clear(hiddenClubHud)
+end
+
+playerGui.DescendantAdded:Connect(function(descendant)
+	if panel.Visible and isCompactClubHud(descendant) then
+		local guiObject = descendant :: GuiObject
+		if hiddenClubHud[guiObject] == nil then
+			hiddenClubHud[guiObject] = guiObject.Visible
+		end
+		guiObject.Visible = false
+	end
+end)
+
 local function open()
 	if not refreshState() then return end
 	panel.Visible = true
 	shade.Visible = true
 	toggle.Visible = false
+	hideClubHud()
 	activeTab = "Settings"
 	render()
 end
@@ -408,6 +454,7 @@ local function closePanel()
 	panel.Visible = false
 	shade.Visible = false
 	toggle.Visible = true
+	restoreClubHud()
 end
 
 toggle.Activated:Connect(open)
