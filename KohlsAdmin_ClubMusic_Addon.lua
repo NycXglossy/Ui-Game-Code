@@ -182,6 +182,7 @@ return function(_K: any)
 		-- Read-only commands have no ClubMusic state-change Notice, so display
 		-- their result through Kohl's Admin's supported informational toast API.
 		if operation == "Status" or operation == "Queue" or operation == "OperationalCatalogRefresh"
+			or operation == "RequestMute" or operation == "ClearUserQueue" or operation == "EmergencyLock"
 			or operation == "DJSessionStatus" or operation == "DJSessionStart"
 			or operation == "DJSessionHandoff" or operation == "DJSessionEnd" then
 			local notifyOk, notifyError = pcall(function()
@@ -222,6 +223,13 @@ return function(_K: any)
 	register("clubmusic-remove", "Remove one queued ClubMusic track by its ID.", "General", "RemoveQueueEntry", {"cmremove"}, {
 		{type = "string", name = "QueueId", description = "Queue entry ID copied from ;cmqueue.", optional = false},
 	})
+	register("clubmusic-requestmute", "Disable or re-enable a player's ClubMusic requests across servers.", "Administration", "RequestMute", {"cmrequestmute"}, {
+		{type = "string", name = "TargetAndMode", description = "Numeric UserId followed by on or off, optionally followed by a reason.", optional = false},
+	})
+	register("clubmusic-clearuserqueue", "Remove all queued ClubMusic requests submitted by one player.", "Administration", "ClearUserQueue", {"cmclearuserqueue"}, {
+		{type = "string", name = "UserId", description = "Numeric Roblox UserId of the requester.", optional = false},
+	})
+	register("clubmusic-emergencylock", "Emergency-lock ClubMusic requests across all servers.", "Administration", "EmergencyLock", {"cmemergencylock"})
 
 	-- Security tools are registered in Kohl's Admin's Administration group.
 	-- The ClubMusic server bridge independently checks ClubMusic rank levels.
