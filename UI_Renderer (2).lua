@@ -81,7 +81,7 @@ local SHOP = {
 	{name="Neon Aura Effect",desc="A magenta-cyan aura that pulses on every beat.",price=600,rarity="Epic",kind="Product",id=0},
 	{name="VIP Backstage Pass",desc="Backstage lounge, priority song requests, 4 queue slots and 3s request cooldown.",price=1500,rarity="Legendary",kind="GamePass",passKey="vip",id=0},
 	{name="VVIP Ocean Crown Pass",desc="Everything in VIP plus 6 queue slots, 2s cooldown and higher request priority.",price=2500,rarity="Mythic",kind="GamePass",passKey="vvip",id=0},
-	{name="Tiki Tide Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="sultan",id=0},
+	{name="Tiki Tide Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="tikiTide",id=0},
 	{name="Neon Flower Lei",desc="Glowing hibiscus lei with petal trails.",price=150,rarity="Rare",kind="Product",id=0},
 	{name="LED Party Shades",desc="Visualizer lenses that react to the current track.",price=320,rarity="Epic",kind="Product",id=0},
 }
@@ -901,27 +901,27 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function syncLauncherVisibility()
 		-- The floating full-UI launcher must stay hidden behind Tiki Tide Settings too.
-		local sultanSettingsOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
-		toggleButton.Visible = not expanded and not sultanSettingsOpen
+		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
+		toggleButton.Visible = not expanded and not tikiTideSettingsOpen
 	end
 
 	local function setCompactHudVisibility(visible: boolean)
 		-- Share menu state with Tiki Tide Settings so neither UI can restore the HUD
 		-- while the other full-screen panel is still open.
 		playerGui:SetAttribute("ClubMusicMenuExpanded", expanded)
-		local sultanSettingsOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
+		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
 		for _, descendant in ipairs(playerGui:GetDescendants()) do
 			if descendant ~= hud and isCompactClubHud(descendant) then
 				(descendant :: GuiObject).Visible = false
 			end
 		end
-		hud.Visible = visible and not expanded and not sultanSettingsOpen
+		hud.Visible = visible and not expanded and not tikiTideSettingsOpen
 		syncLauncherVisibility()
 	end
 
 	-- Tiki Tide Settings owns this shared attribute; respond immediately when its
 	-- panel opens or closes, without forcing either menu to rebuild.
-	table.insert(connections, playerGui:GetAttributeChangedSignal("SultanSettingsOpen"):Connect(syncLauncherVisibility))
+	table.insert(connections, playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(syncLauncherVisibility))
 	syncLauncherVisibility()
 	-- Catch duplicate bars created by another renderer copy after this menu opens.
 	table.insert(connections, playerGui.DescendantAdded:Connect(function(descendant)
@@ -3596,8 +3596,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local itemId = tonumber(item.id) or 0
 			if item.kind == "GamePass" and itemId <= 0 then
 				local passKey = item.passKey or "vip"
-				if passKey == "sultan" then
-					itemId = tonumber(state.sultanGamePassId) or 0
+				if passKey == "tikiTide" then
+					itemId = tonumber(state.tikiTideGamePassId) or 0
 				elseif passKey == "vvip" then
 					itemId = tonumber(state.vvipGamePassId) or 0
 				else
@@ -4399,7 +4399,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local tier = tonumber(state.passTier) or 0
 		local vipId = tonumber(state.vipGamePassId) or 0
 		local vvipId = tonumber(state.vvipGamePassId) or 0
-		local sultanId = tonumber(state.sultanGamePassId) or 0
+		local tikiTidePassId = tonumber(state.tikiTideGamePassId) or 0
 		local passCard = card(244)
 		label(passCard, "ISLAND MEMBERSHIP", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.Gold, 14, true)
 		label(passCard, "Current tier: " .. nz(state.passName, if tier >= 3 then "TIKI TIDE" elseif tier == 2 then "VVIP" elseif tier == 1 then "VIP" else "GUEST"),
@@ -4408,7 +4408,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local baseCooldown = tonumber(perks.baseCooldown) or 8
 		local vip = if typeof(passPerks.vip) == "table" then passPerks.vip else {}
 		local vvip = if typeof(passPerks.vvip) == "table" then passPerks.vvip else {}
-		local sultan = if typeof(passPerks.sultan) == "table" then passPerks.sultan else {}
+		local tikiTide = if typeof(passPerks.tikiTide) == "table" then passPerks.tikiTide else {}
 		label(passCard, string.format("VIP  •  %d slots  •  %ds cooldown  •  priority requests",
 			type(vip.slots) == "number" and vip.slots or (tonumber(perks.slots) or 4),
 			type(vip.cooldown) == "number" and vip.cooldown or (tonumber(perks.cooldown) or 3)),
@@ -4418,8 +4418,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			type(vvip.cooldown) == "number" and vvip.cooldown or 2),
 			UDim2.fromOffset(12, 84), UDim2.new(1, -24, 0, 22), C.Cyan, 10, false)
 		label(passCard, string.format("TIKI TIDE  •  %d slots  •  %ds cooldown  •  highest priority",
-			type(sultan.slots) == "number" and sultan.slots or 8,
-			type(sultan.cooldown) == "number" and sultan.cooldown or 1),
+			type(tikiTide.slots) == "number" and tikiTide.slots or 8,
+			type(tikiTide.cooldown) == "number" and tikiTide.cooldown or 1),
 			UDim2.fromOffset(12, 110), UDim2.new(1, -24, 0, 22), C.Gold, 10, true)
 		label(passCard, string.format("Guest baseline: %d slots and %ds cooldown. Higher passes include lower-tier benefits.",
 			baseSlots, baseCooldown), UDim2.fromOffset(12, 136), UDim2.new(1, -24, 0, 28), C.Muted, 9, false)
@@ -4433,9 +4433,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				MarketplaceService:PromptGamePassPurchase(player, vvipId)
 			end, C.Cyan)
 		end
-		if tier < 3 and sultanId > 0 then
+		if tier < 3 and tikiTidePassId > 0 then
 			actionButton(passCard, "GET TIKI TIDE", UDim2.new(0.69, 0, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
-				MarketplaceService:PromptGamePassPurchase(player, sultanId)
+				MarketplaceService:PromptGamePassPurchase(player, tikiTidePassId)
 			end, C.Gold)
 		end
 	end
