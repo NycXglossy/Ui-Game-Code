@@ -450,9 +450,11 @@ end
 
 local function restoreClubHud()
 	playerGui:SetAttribute("SultanSettingsOpen", false)
+	local clubMenuExpanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
 	for instance, wasVisible in pairs(hiddenClubHud) do
 		if instance.Parent and instance:IsA("GuiObject") then
-			(instance :: GuiObject).Visible = wasVisible
+			-- Never reveal the compact HUD underneath the full-screen ClubMusic menu.
+			(instance :: GuiObject).Visible = wasVisible and not clubMenuExpanded
 		end
 	end
 	table.clear(hiddenClubHud)
