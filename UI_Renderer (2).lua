@@ -81,7 +81,7 @@ local SHOP = {
 	{name="Neon Aura Effect",desc="A magenta-cyan aura that pulses on every beat.",price=600,rarity="Epic",kind="Product",id=0},
 	{name="VIP Backstage Pass",desc="Backstage lounge, priority song requests, 4 queue slots and 3s request cooldown.",price=1500,rarity="Legendary",kind="GamePass",passKey="vip",id=0},
 	{name="VVIP Ocean Crown Pass",desc="Everything in VIP plus 6 queue slots, 2s cooldown and higher request priority.",price=2500,rarity="Mythic",kind="GamePass",passKey="vvip",id=0},
-	{name="Tiki Tide Sultan Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="sultan",id=0},
+	{name="Tiki Tide Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="sultan",id=0},
 	{name="Neon Flower Lei",desc="Glowing hibiscus lei with petal trails.",price=150,rarity="Rare",kind="Product",id=0},
 	{name="LED Party Shades",desc="Visualizer lenses that react to the current track.",price=320,rarity="Epic",kind="Product",id=0},
 }
@@ -900,13 +900,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function syncLauncherVisibility()
-		-- The floating full-UI launcher must stay hidden behind Sultan Settings too.
+		-- The floating full-UI launcher must stay hidden behind Tiki Tide Settings too.
 		local sultanSettingsOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
 		toggleButton.Visible = not expanded and not sultanSettingsOpen
 	end
 
 	local function setCompactHudVisibility(visible: boolean)
-		-- Share menu state with Sultan Settings so neither UI can restore the HUD
+		-- Share menu state with Tiki Tide Settings so neither UI can restore the HUD
 		-- while the other full-screen panel is still open.
 		playerGui:SetAttribute("ClubMusicMenuExpanded", expanded)
 		local sultanSettingsOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
@@ -919,7 +919,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		syncLauncherVisibility()
 	end
 
-	-- Sultan Settings owns this shared attribute; respond immediately when its
+	-- Tiki Tide Settings owns this shared attribute; respond immediately when its
 	-- panel opens or closes, without forcing either menu to rebuild.
 	table.insert(connections, playerGui:GetAttributeChangedSignal("SultanSettingsOpen"):Connect(syncLauncherVisibility))
 	syncLauncherVisibility()
@@ -3894,10 +3894,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function renderTitleEditor()
 		if state.customTitleUnlocked ~= true then
-			sectionLabel("CUSTOM TITLE  •  SULTAN EXCLUSIVE")
+			sectionLabel("CUSTOM TITLE  •  TIKI TIDE EXCLUSIVE")
 			local locked = card(112)
-			label(locked, "🔒  TIKI TIDE SULTAN REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
-			label(locked, "Unlock the Tiki Tide Sultan pass to create, style, and display your own overhead title.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
+			label(locked, "🔒  TIKI TIDE ACCESS REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
+			label(locked, "Unlock the Tiki Tide pass to create, style, and display your own overhead title.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
 			return
 		end
 		local unlocked, _, slotOf = titleSlotInfo()
@@ -4254,10 +4254,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function renderTitleManage()
 		if state.customTitleUnlocked ~= true then
-			sectionLabel("MANAGE TITLES  •  SULTAN EXCLUSIVE")
+			sectionLabel("MANAGE TITLES  •  TIKI TIDE EXCLUSIVE")
 			local locked = card(112)
-			label(locked, "🔒  TIKI TIDE SULTAN REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
-			label(locked, "Custom title slots and overhead title controls are exclusive to Tiki Tide Sultan members.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
+			label(locked, "🔒  TIKI TIDE ACCESS REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
+			label(locked, "Custom title slots and overhead title controls are exclusive to Tiki Tide members.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
 			return
 		end
 		local unlocked, active, slotOf, ts = titleSlotInfo()
@@ -4402,7 +4402,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local sultanId = tonumber(state.sultanGamePassId) or 0
 		local passCard = card(244)
 		label(passCard, "ISLAND MEMBERSHIP", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.Gold, 14, true)
-		label(passCard, "Current tier: " .. nz(state.passName, if tier >= 3 then "TIKI TIDE SULTAN" elseif tier == 2 then "VVIP" elseif tier == 1 then "VIP" else "GUEST"),
+		label(passCard, "Current tier: " .. nz(state.passName, if tier >= 3 then "TIKI TIDE" elseif tier == 2 then "VVIP" elseif tier == 1 then "VIP" else "GUEST"),
 			UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 20), C.White, 11, true)
 		local baseSlots = tonumber(perks.baseSlots) or 2
 		local baseCooldown = tonumber(perks.baseCooldown) or 8
@@ -4417,7 +4417,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			type(vvip.slots) == "number" and vvip.slots or 6,
 			type(vvip.cooldown) == "number" and vvip.cooldown or 2),
 			UDim2.fromOffset(12, 84), UDim2.new(1, -24, 0, 22), C.Cyan, 10, false)
-		label(passCard, string.format("TIKI TIDE SULTAN  •  %d slots  •  %ds cooldown  •  highest priority",
+		label(passCard, string.format("TIKI TIDE  •  %d slots  •  %ds cooldown  •  highest priority",
 			type(sultan.slots) == "number" and sultan.slots or 8,
 			type(sultan.cooldown) == "number" and sultan.cooldown or 1),
 			UDim2.fromOffset(12, 110), UDim2.new(1, -24, 0, 22), C.Gold, 10, true)
@@ -4434,7 +4434,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			end, C.Cyan)
 		end
 		if tier < 3 and sultanId > 0 then
-			actionButton(passCard, "GET SULTAN", UDim2.new(0.69, 0, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
+			actionButton(passCard, "GET TIKI TIDE", UDim2.new(0.69, 0, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
 				MarketplaceService:PromptGamePassPurchase(player, sultanId)
 			end, C.Gold)
 		end
