@@ -328,8 +328,8 @@ end
 
 local function updateVisibility()
 	local expanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
-	local sultanOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
-	local visible = not expanded and not sultanOpen
+	local tikiTideOpen = playerGui:GetAttribute("SultanSettingsOpen") == true
+	local visible = not expanded and not tikiTideOpen
 	shell.Visible = visible
 	playerGui:SetAttribute("UtilityBarVisible", visible)
 	if not visible then
