@@ -62,7 +62,7 @@ local shell = make("Frame", {
 	Name = "UtilityBar",
 	AnchorPoint = Vector2.new(0.5, 1),
 	Position = UDim2.new(0.5, 0, 1, -18),
-	Size = UDim2.new(0.94, 0, 0, 76),
+	Size = UDim2.fromOffset(760, 76),
 	BackgroundColor3 = COLORS.background,
 	BackgroundTransparency = 0.04,
 	BorderSizePixel = 0,
@@ -87,6 +87,9 @@ local rail = make("ScrollingFrame", {
 	AutomaticCanvasSize = Enum.AutomaticSize.X,
 	CanvasSize = UDim2.new(0, 0, 0, 0),
 	Selectable = false,
+	Active = true,
+	ElasticBehavior = Enum.ElasticBehavior.WhenScrollable,
+	ScrollingEnabled = true,
 }, shell) :: ScrollingFrame
 
 local layout = make("UIListLayout", {
@@ -212,17 +215,47 @@ end
 local function updateSizing()
 	local camera = workspace.CurrentCamera
 	local viewport = if camera then camera.ViewportSize else Vector2.new(800, 600)
-	local compact = viewport.X < 560
-	local buttonWidth = if compact then 58 else (if viewport.X < 900 then 70 else 82)
-	local gap = if compact then 5 else 7
+	local width = math.max(280, math.min(760, math.floor(viewport.X * (if viewport.X < 420 then 0.98 else 0.94))))
+	local shortScreen = viewport.Y < 460
+	local veryNarrow = viewport.X < 360
+	local narrow = viewport.X < 560
+	local tablet = viewport.X >= 560 and viewport.X < 900
+
+	-- Keep the bar inside the usable viewport while retaining a readable,
+	-- touch-friendly target size on phones and a larger presentation elsewhere.
+	local buttonWidth = if veryNarrow then 52 else (if narrow then 58 else (if tablet then 70 else 82))
+	local buttonHeight = if shortScreen then 46 else (if narrow then 52 else 58)
+	local gap = if veryNarrow then 4 else (if narrow then 5 else 7)
+	local shellHeight = if shortScreen then 58 else (if narrow then 66 else 76)
+
 	for _, button in ipairs(buttons) do
-		button.Size = UDim2.fromOffset(buttonWidth, 58)
+		button.Size = UDim2.fromOffset(buttonWidth, buttonHeight)
+		local mark = button:FindFirstChild("Mark")
+		if mark and mark:IsA("TextLabel") then
+			mark.Position = UDim2.new(0.5, 0, 0, if shortScreen then 2 else 4)
+			mark.Size = UDim2.fromOffset(28, if shortScreen then 22 else 25)
+			mark.TextSize = if veryNarrow then 17 else (if narrow then 19 else 21)
+		end
+		local label = button:FindFirstChild("Label")
+		if label and label:IsA("TextLabel") then
+			label.Position = UDim2.new(0.5, 0, 1, -4)
+			label.Size = UDim2.new(1, -4, 0, if shortScreen then 14 else 16)
+			label.TextSize = if veryNarrow then 8 else (if narrow then 9 else 10)
+		end
 	end
+
 	layout.Padding = UDim.new(0, gap)
-	shell.Size = UDim2.new(if viewport.X < 420 then 0.98 else 0.94, 0, 0, if viewport.Y < 520 then 68 else 76)
-	shell.Position = UDim2.new(0.5, 0, 1, if viewport.Y < 520 then -8 else -18)
+	shell.Size = UDim2.fromOffset(width, shellHeight)
+
+	-- Respect the device's bottom safe area (home indicator / system inset).
+	local _, bottomInset = GuiService:GetGuiInset()
+	local bottomOffset = math.max(8, bottomInset.Y + 8)
+	shell.Position = UDim2.new(0.5, 0, 1, -bottomOffset)
+
+	-- Calculate from the target width, not AbsoluteSize, which may still
+	-- contain the previous frame's dimensions immediately after a resize.
+	local availableWidth = math.max(0, width - 16)
 	local totalWidth = #buttons * buttonWidth + (#buttons - 1) * gap + 4
-	local availableWidth = math.max(0, shell.AbsoluteSize.X - 16)
 	if totalWidth <= availableWidth then
 		rail.CanvasPosition = Vector2.zero
 		rail.ScrollingEnabled = false
