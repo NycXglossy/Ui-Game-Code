@@ -947,10 +947,25 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		refs.timeLabel.Text = formatTime(elapsed) .. " / " .. formatTime(refs.duration)
 	end
 
-	local oldGui = playerGui:FindFirstChild("FirebeachMusicFestivalClubUI")
-	if oldGui then oldGui:Destroy() end
+	-- Never destroy a live main menu just because Mount was called again.
+	-- A second renderer module instance can have a separate Lua module cache,
+	-- so the per-module activeMounts guard above is not sufficient by itself.
+	local existingMainGui = playerGui:FindFirstChild("FirebeachMusicFestivalClubUI")
+	if existingMainGui and existingMainGui:IsA("ScreenGui") then
+		local adoptedMount = {
+			Gui = existingMainGui,
+			Notify = function() end,
+			Open = function() end,
+			Close = function() end,
+			Destroy = function() end,
+		}
+		activeMounts[player] = adoptedMount
+		return adoptedMount
+	end
+
+	-- Remove only the obsolete legacy root; never touch unrelated interfaces.
 	local legacyGui = playerGui:FindFirstChild("SunsetStageClubUI")
-	if legacyGui then legacyGui:Destroy() end
+	if legacyGui and legacyGui:IsA("ScreenGui") then legacyGui:Destroy() end
 
 	local gui = make("ScreenGui", {
 		Name = "FirebeachMusicFestivalClubUI",
