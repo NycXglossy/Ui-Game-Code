@@ -1,5 +1,5 @@
 --!strict
--- SultanSettings.client.lua
+-- Tiki Tide Settings client (legacy filename retained for install compatibility)
 -- Place in StarterPlayer/StarterPlayerScripts.
 -- Separate settings surface; ClubMusic's existing Title Tag tab remains the title editor.
 
@@ -19,11 +19,11 @@ local remotes = ReplicatedStorage:WaitForChild("SultanSettingsRemotes")
 local requestObject = remotes:WaitForChild("Request")
 local broadcastObject = remotes:WaitForChild("Broadcast")
 if not requestObject or not requestObject:IsA("RemoteFunction") then
-	warn("[Sultan Settings] Request RemoteFunction is missing or invalid.")
+	warn("[Tiki Tide] Request RemoteFunction is missing or invalid.")
 	return
 end
 if not broadcastObject or not broadcastObject:IsA("RemoteEvent") then
-	warn("[Sultan Settings] Broadcast RemoteEvent is missing or invalid.")
+	warn("[Tiki Tide] Broadcast RemoteEvent is missing or invalid.")
 	return
 end
 local request = requestObject :: RemoteFunction
@@ -117,7 +117,7 @@ local toggle = make("TextButton", {
 	Position = UDim2.new(0, 18, 0, 90),
 	Size = UDim2.fromOffset(116, 34),
 	BackgroundColor3 = COLORS.card,
-	Text = "SULTAN",
+	Text = "TIKI TIDE",
 	TextColor3 = COLORS.text,
 	TextSize = 11,
 	Font = Enum.Font.GothamBold,
@@ -158,7 +158,7 @@ local shade = make("TextButton", {
 	AutoButtonColor = false,
 	Selectable = false, -- Never let the full-screen backdrop steal controller focus.
 }, gui) :: TextButton
--- Keep the Sultan Settings shadow/backdrop fully transparent.
+-- Keep the Tiki Tide Settings shadow/backdrop fully transparent.
 shade.BackgroundTransparency = 1
 
 local panel = make("Frame", {
@@ -270,7 +270,7 @@ local title = make("TextLabel", {
 	Position = UDim2.fromOffset(18, 8),
 	Size = UDim2.new(1, -80, 0, 22),
 	BackgroundTransparency = 1,
-	Text = "SULTAN SETTINGS",
+	Text = "TIKI TIDE",
 	TextColor3 = COLORS.accent,
 	TextSize = 16,
 	Font = Enum.Font.GothamBold,
@@ -747,7 +747,7 @@ render = function()
 	end)
 end
 
--- Keep the compact ClubMusic overhead bar out of the way while Sultan
+-- Keep the compact ClubMusic overhead bar out of the way while Tiki Tide
 -- Settings is open. Preserve each bar's previous state so closing this panel
 -- never forces a HUD visible that another menu intentionally hid.
 local hiddenClubHud: {[Instance]: boolean} = {}
@@ -817,7 +817,7 @@ local function open()
 	end
 end
 
--- The separate Utility Bar requests Sultan Settings through a PlayerGui
+-- The separate Utility Bar requests Tiki Tide Settings through a PlayerGui
 -- attribute, keeping the launcher independent from this panel's implementation.
 local lastOpenRequest = tonumber(playerGui:GetAttribute("SultanSettingsOpenRequest")) or 0
 playerGui:GetAttributeChangedSignal("SultanSettingsOpenRequest"):Connect(function()
@@ -944,4 +944,4 @@ player.CharacterAdded:Connect(function()
 	end
 end)
 
-print("[Sultan Settings] Client UI loaded with gamepad navigation support.")
+print("[Tiki Tide] Client UI loaded with gamepad navigation support.")
