@@ -172,7 +172,18 @@ for index, definition in ipairs(definitions) do
 		Font = Enum.Font.GothamBold,
 	}, button)
 	local focus = make("UIStroke", {Name = "ControllerFocus", Color = COLORS.gold, Thickness = 2, Transparency = 1}, button) :: UIStroke
-	button.SelectionGained:Connect(function() focus.Transparency = 0 end)
+	button.SelectionGained:Connect(function()
+		focus.Transparency = 0
+		local viewLeft = rail.AbsolutePosition.X
+		local viewRight = viewLeft + rail.AbsoluteSize.X
+		local itemLeft = button.AbsolutePosition.X
+		local itemRight = itemLeft + button.AbsoluteSize.X
+		if itemLeft < viewLeft then
+			rail.CanvasPosition = Vector2.new(math.max(0, rail.CanvasPosition.X - (viewLeft - itemLeft)), 0)
+		elseif itemRight > viewRight then
+			rail.CanvasPosition = Vector2.new(rail.CanvasPosition.X + (itemRight - viewRight), 0)
+		end
+	end)
 	button.SelectionLost:Connect(function() focus.Transparency = 1 end)
 	button.MouseEnter:Connect(function()
 		if UserInputService:GetLastInputType() == Enum.UserInputType.MouseMovement then
