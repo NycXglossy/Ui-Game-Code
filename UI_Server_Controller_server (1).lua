@@ -5188,9 +5188,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local cleanReason = if reason ~= "" then string.sub(reason, 1, 120) else nil
 		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("SetTrackBlocked", trackId, mode == "on", caller.UserId, cleanReason)
 		if not ok or accepted ~= true then return false, tostring(accepted or "Track moderation update failed.") end
+		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
+		ControllerFunctions.blockedTrackCache[trackId] = {blocked = mode == "on", checkedAt = os.clock()}
 		if mode == "on" then
-			ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
-			ControllerFunctions.blockedTrackCache[trackId] = {blocked = true, checkedAt = os.clock()}
 			if globalQueueMode then
 				local purgeOk, purged, state = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntriesForTrack", trackId)
 				if not purgeOk or purged ~= true then
@@ -5956,9 +5956,10 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		end
 		return
 	end
-	if message.kind == "TrackModeration" and typeof(message.trackId) == "string" and message.blocked == true then
+	if message.kind == "TrackModeration" and typeof(message.trackId) == "string" and typeof(message.blocked) == "boolean" then
 		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
-		ControllerFunctions.blockedTrackCache[message.trackId] = {blocked = true, checkedAt = os.clock()}
+		ControllerFunctions.blockedTrackCache[message.trackId] = {blocked = message.blocked, checkedAt = os.clock()}
+		if message.blocked ~= true then return end
 		if globalQueueMode then
 			local purgeOk, purged, state = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntriesForTrack", message.trackId)
 			if purgeOk and purged == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
