@@ -21,7 +21,7 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 - Aura
 - Inventory
 
-The bar uses the ClubMusic dark-surface / muted-gold / teal visual language, fully rounded surfaces, viewport-aware sizing, horizontal scrolling on narrow screens, and controller focus navigation. It hides while the full ClubMusic menu or Tiki Tide Settings is open, then returns when those surfaces close. The legacy `SultanSettingsOpen` attribute name is retained internally for compatibility.
+The bar uses the ClubMusic dark-surface / muted-gold / teal visual language, fully rounded surfaces, viewport-aware sizing, horizontal scrolling on narrow screens, and controller focus navigation. It hides while the full ClubMusic menu or Tiki Tide Settings is open, then returns when those surfaces close. The legacy `TikiTideSettingsOpen` attribute name is retained internally for compatibility.
 
 ## Independent utility action contract
 
