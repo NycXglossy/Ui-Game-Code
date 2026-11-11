@@ -272,12 +272,13 @@ end
 local function updateSizing()
 	local camera = workspace.CurrentCamera
 	local viewport = if camera then camera.ViewportSize else Vector2.new(800, 600)
-	local width = math.max(280, math.min(760, math.floor(viewport.X * (if viewport.X < 420 then 0.98 else 0.94))))
+	local compactTouch = UserInputService.TouchEnabled and viewport.X < 900
+	local widthScale = if compactTouch then 0.88 else (if viewport.X < 420 then 0.98 else 0.94)
+	local width = math.max(280, math.min(760, math.floor(viewport.X * widthScale)))
 	local shortScreen = viewport.Y < 460
 	local veryNarrow = viewport.X < 360
 	local narrow = viewport.X < 560
 	local tablet = viewport.X >= 560 and viewport.X < 900
-	local compactTouch = UserInputService.TouchEnabled and viewport.X < 900
 
 	-- On touch devices keep the rail compact and lift it above the default
 	-- thumb-control zone so it does not sit over the joystick or jump button.
