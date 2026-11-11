@@ -238,6 +238,7 @@ local GENRES = {
 -- Renderer-side indexes are built from the same static genre catalog used by
 -- the browser. Server catalog updates can extend these maps later, but queue
 -- rendering must never depend on an optional update arriving first.
+local ALL_TRACKS: {any} = {}
 local TRACK_INDEX: {[string]: any} = {}
 local TRACK_GENRE: {[string]: any} = {}
 local TRACK_ARTWORK: {[string]: number} = {}
@@ -252,6 +253,7 @@ for _, genre in ipairs(GENRES) do
 				name = genre.name,
 				color = genre.color,
 			}
+			table.insert(ALL_TRACKS, track)
 		end
 	end
 end
