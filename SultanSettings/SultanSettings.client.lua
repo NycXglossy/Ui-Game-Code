@@ -20,16 +20,18 @@ local broadcast = remotes:WaitForChild("Broadcast", 10) :: RemoteEvent
 local old = playerGui:FindFirstChild("SultanSettingsGui")
 if old then old:Destroy() end
 
+-- Match the ClubMusic full-screen palette for a unified premium surface.
 local COLORS = {
-	background = Color3.fromRGB(15, 19, 29),
-	card = Color3.fromRGB(25, 31, 45),
-	card2 = Color3.fromRGB(34, 42, 59),
-	accent = Color3.fromRGB(232, 177, 91),
-	cyan = Color3.fromRGB(90, 220, 226),
-	text = Color3.fromRGB(242, 245, 250),
-	muted = Color3.fromRGB(158, 171, 190),
-	red = Color3.fromRGB(232, 93, 93),
-	green = Color3.fromRGB(77, 199, 139),
+	background = Color3.fromRGB(13, 16, 24),
+	card = Color3.fromRGB(21, 25, 37),
+	card2 = Color3.fromRGB(31, 37, 52),
+	accent = Color3.fromRGB(226, 194, 132),
+	cyan = Color3.fromRGB(119, 196, 203),
+	text = Color3.fromRGB(242, 241, 236),
+	muted = Color3.fromRGB(157, 164, 177),
+	red = Color3.fromRGB(218, 104, 112),
+	green = Color3.fromRGB(94, 184, 139),
+	magenta = Color3.fromRGB(224, 112, 151),
 }
 
 local function make(className: string, props: {[string]: any}, parent: Instance): Instance
@@ -69,14 +71,34 @@ local toggle = make("TextButton", {
 	Position = UDim2.new(1, -18, 0, 90),
 	Size = UDim2.fromOffset(116, 34),
 	BackgroundColor3 = COLORS.card,
-	Text = "♛  SULTAN",
-	TextColor3 = COLORS.accent,
-	TextSize = 12,
+	Text = "SULTAN",
+	TextColor3 = COLORS.text,
+	TextSize = 11,
 	Font = Enum.Font.GothamBold,
 	AutoButtonColor = true,
 	Visible = false,
 }, gui) :: TextButton
 rounded(toggle, 12)
+make("UIStroke", {Color = COLORS.accent, Transparency = 0.28, Thickness = 1.4}, toggle)
+make("UIGradient", {Rotation = 90, Color = ColorSequence.new(COLORS.card2, COLORS.card)}, toggle)
+-- Native equalizer mark: no emoji or special-font glyph dependency.
+local toggleMark = make("Frame", {
+	Name = "SultanMark", Position = UDim2.fromOffset(11, 9),
+	Size = UDim2.fromOffset(17, 16), BackgroundTransparency = 1,
+}, toggle)
+for index, height in ipairs({8, 14, 10}) do
+	make("Frame", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new((index - 0.5) / 3, 0, 1, 0),
+		Size = UDim2.fromOffset(3, height),
+		BackgroundColor3 = COLORS.accent,
+		BorderSizePixel = 0,
+	}, toggleMark)
+end
+toggle.TextXAlignment = Enum.TextXAlignment.Right
+toggle.TextYAlignment = Enum.TextYAlignment.Center
+toggle.TextSize = 10
+toggle.Size = UDim2.fromOffset(116, 36)
 
 local shade = make("TextButton", {
 	Name = "Shade",
@@ -100,8 +122,9 @@ local panel = make("Frame", {
 panel.Size = UDim2.fromOffset(560, 520)
 panel.Size = UDim2.new(0.88, 0, 0.82, 0)
 panel.ClipsDescendants = true
-rounded(panel, 18)
-make("UIStroke", {Color = COLORS.accent, Transparency = 0.55, Thickness = 1.2}, panel)
+rounded(panel, 20)
+make("UIStroke", {Color = COLORS.accent, Transparency = 0.28, Thickness = 1.5}, panel)
+make("UIGradient", {Rotation = 90, Color = ColorSequence.new(COLORS.background, COLORS.card)}, panel)
 
 local header = make("Frame", {
 	Size = UDim2.new(1, 0, 0, 58),
@@ -122,7 +145,7 @@ make("TextLabel", {
 	Position = UDim2.fromOffset(19, 31),
 	Size = UDim2.new(1, -90, 0, 16),
 	BackgroundTransparency = 1,
-	Text = "Personal controls • player access • messages",
+	Text = "PERSONAL CONTROLS  |  PLAYER ACCESS  |  MESSAGES",
 	TextColor3 = COLORS.muted,
 	TextSize = 9,
 	Font = Enum.Font.Gotham,
@@ -178,6 +201,7 @@ local function card(height: number): Frame
 		BorderSizePixel = 0,
 	}, content) :: Frame
 	rounded(frame, 12)
+	make("UIStroke", {Color = COLORS.accent, Transparency = 0.86, Thickness = 1}, frame)
 	return frame
 end
 
@@ -198,7 +222,8 @@ local function button(parent: Instance, text: string, pos: UDim2, size: UDim2, c
 		Text = text, TextColor3 = COLORS.text, TextSize = 10,
 		Font = Enum.Font.GothamBold, AutoButtonColor = true,
 	}, parent) :: TextButton
-	rounded(b, 8)
+	rounded(b, 9)
+	make("UIStroke", {Color = tint or COLORS.accent, Transparency = 0.78, Thickness = 1}, b)
 	b.Activated:Connect(callback)
 	return b
 end
@@ -259,6 +284,7 @@ local function refreshTabs()
 			Font = Enum.Font.GothamBold,
 		}, tabBar) :: TextButton
 		rounded(b, 9)
+		make("UIStroke", {Color = if activeTab == name then COLORS.accent else COLORS.card2, Transparency = if activeTab == name then 0.2 else 0.8, Thickness = 1}, b)
 		b.Activated:Connect(function()
 			activeTab = name
 			render()
@@ -410,6 +436,7 @@ local function isCompactClubHud(instance: Instance): boolean
 end
 
 local function hideClubHud()
+	playerGui:SetAttribute("SultanSettingsOpen", true)
 	for _, descendant in ipairs(playerGui:GetDescendants()) do
 		if isCompactClubHud(descendant) then
 			local guiObject = descendant :: GuiObject
@@ -422,6 +449,7 @@ local function hideClubHud()
 end
 
 local function restoreClubHud()
+	playerGui:SetAttribute("SultanSettingsOpen", false)
 	for instance, wasVisible in pairs(hiddenClubHud) do
 		if instance.Parent and instance:IsA("GuiObject") then
 			(instance :: GuiObject).Visible = wasVisible
@@ -510,9 +538,10 @@ broadcast.OnClientEvent:Connect(showBroadcast)
 
 local function updateVisibility()
 	local allowed = player:GetAttribute("IsTikiTideSultan") == true
-	toggle.Visible = allowed and not panel.Visible
+	toggle.Visible = allowed and not panel.Visible and playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
 end
 player:GetAttributeChangedSignal("IsTikiTideSultan"):Connect(updateVisibility)
+playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
 updateVisibility()
 
 player.CharacterAdded:Connect(function()
