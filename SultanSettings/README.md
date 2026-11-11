@@ -1,26 +1,26 @@
 # Tiki Tide Settings Add-on
 
-**Branding compatibility note:** The player attribute, remote folder, and script filenames still contain legacy `Sultan` identifiers because the existing ClubMusic controller and installed Roblox scripts use those exact integration keys. The visible product name is now **Tiki Tide**. Do not rename those runtime keys independently; doing so would break entitlement checks and the existing UI bridge until the controller is migrated in the same release.
+**Branding:** All runtime attributes, remotes, service markers, entitlement fields, and code identifiers use the Tiki Tide naming convention.
 
 This add-on is intentionally separate from the ClubMusic renderer and overhead title renderer.
 
 ## Install
 
-1. Add `SultanSettingsService.server.lua` as a **Script** under `ServerScriptService`.
-2. Add `SultanSettings.client.lua` as a **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
+1. Add `TikiTideSettingsService.server.lua` as a **Script** under `ServerScriptService`.
+2. Add `TikiTideSettings.client.lua` as a **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
 3. Keep the existing `ClubMusicBootstrap.client.lua`, `UI_Network`, `UI_Server_Controller`, and `ClubMusic_Overhead_Title_Renderer_client.lua` unchanged.
 4. Install the updated `UI_Renderer (2).lua` from this branch in place of the current ClubMusic UI renderer. It contains the small shared-state bridge that coordinates the compact HUD and floating launcher with Tiki Tide Settings; do not install it as a second parallel renderer.
-5. Ensure there is exactly one copy of `SultanSettingsService.server.lua` and one copy of `SultanSettings.client.lua`. The server service creates a runtime singleton marker in `ServerStorage` and refuses to start a second copy, preventing duplicate scripts from competing for `RemoteFunction.OnServerInvoke` or duplicating player lifecycle listeners.
+5. Ensure there is exactly one copy of `TikiTideSettingsService.server.lua` and one copy of `TikiTideSettings.client.lua`. The server service creates a runtime singleton marker in `ServerStorage` and refuses to start a second copy, preventing duplicate scripts from competing for `RemoteFunction.OnServerInvoke` or duplicating player lifecycle listeners.
 6. Publish/test in a private test place first.
 
-The server add-on creates `ReplicatedStorage/SultanSettingsRemotes` itself. It reads the server-owned `IsTikiTideSultan` player attribute set by the existing ClubMusic controller, and uses the existing server-only `ClubMusicAuthorizationResolver` for privileged gravity and announcement actions.
+The server add-on creates `ReplicatedStorage/TikiTideSettingsRemotes` itself. It reads the server-owned `HasTikiTideAccess` player attribute set by the existing ClubMusic controller, and uses the existing server-only `ClubMusicAuthorizationResolver` for privileged gravity and announcement actions.
 
-**Required entitlement configuration:** In the existing `UI_Server_Controller` configuration, set `TikiTideSultanPassId` to the real Tiki Tide Game Pass asset ID before testing pass-holder access. Its current value in the audited source is `0`, which disables Game Pass ownership grants. Existing verified staff rank level 1+ still receives Tiki Tide tier access. Tiki Tide pass ownership alone does not grant administrator permissions: gravity requires `GlobalConfig` (rank level 3+) and announcements require `GlobalAnnouncement` (rank level 2+).
+**Required entitlement configuration:** In the existing `UI_Server_Controller` configuration, set `TikiTidePassId` to the real Tiki Tide Game Pass asset ID before testing pass-holder access. Its current value in the audited source is `0`, which disables Game Pass ownership grants. Existing verified staff rank level 1+ still receives Tiki Tide tier access. Tiki Tide pass ownership alone does not grant administrator permissions: gravity requires `GlobalConfig` (rank level 3+) and announcements require `GlobalAnnouncement` (rank level 2+).
 
 ## Included
 
 - Tiki Tide-only walk speed (20–100) and jump power (80–300), applied on respawn only for verified Tiki Tide players; the service waits briefly for late-loading Humanoids in custom character rigs.
-- AFK state and filtered AFK message replicated as `SultanAFK` and `SultanAFKMessage` attributes.
+- AFK state and filtered AFK message replicated as `TikiTideAFK` and `TikiTideAFKMessage` attributes.
 - Opt-in teleport-to-me permission; teleport requests are validated on the server.
 - Gravity control (20–192.62) restricted to ClubMusic `GlobalConfig` permission.
 - Admin overhead broadcasts and server announcements restricted to `GlobalAnnouncement`; announcements have a 180-second server-wide cooldown.
@@ -44,7 +44,7 @@ In Roblox Studio with a gamepad connected, verify D-pad / thumbstick selection a
 
 ## Pass creation status and Studio test mode
 
-The Tiki Tide Game Pass has **not been created yet**. Keep `TikiTideSultanPassId = 0` until the real pass is published and its asset ID is available. A zero ID intentionally disables Tiki Tide Game Pass ownership grants; do not use a placeholder or another pass ID.
+The Tiki Tide Game Pass has **not been created yet**. Keep `TikiTidePassId = 0` until the real pass is published and its asset ID is available. A zero ID intentionally disables Tiki Tide Game Pass ownership grants; do not use a placeholder or another pass ID.
 
 The current controller configuration has `StudioStaff = true`. In Studio, that setting treats **every test player as OWNER**, which also grants Tiki Tide tier access through the server-verified staff path even while the Tiki Tide pass ID is zero. This is useful for testing the Tiki Tide interface, but it is **not** a valid guest-access or pass-ownership test. To test guest denial in Studio, temporarily set `StudioStaff = false`; with `GroupId = 0` and no matching `StaffUserIds`, Studio players will then be guests. Restore the intended production setting before publishing. Once the pass is created, configure only its actual asset ID and verify ownership in a published private test server.
 
@@ -56,7 +56,7 @@ Before publishing to the live experience:
 - [ ] Replace the existing ClubMusic renderer with this branch's updated `UI_Renderer (2).lua`; do not run both renderer copies.
 - [ ] Confirm the existing ClubMusic server controller and all of its required ServerStorage modules are installed exactly once.
 - [ ] Install exactly one Tiki Tide server Script and one Tiki Tide client LocalScript at the paths listed above; the server singleton guard will reject a second service copy.
-- [ ] Keep `TikiTideSultanPassId = 0` until the Tiki Tide Game Pass is actually created and published; the unconfigured shop entry displays `COMING SOON` and cannot launch a purchase prompt.
+- [ ] Keep `TikiTidePassId = 0` until the Tiki Tide Game Pass is actually created and published; the unconfigured shop entry displays `COMING SOON` and cannot launch a purchase prompt.
 - [ ] Set `StudioStaff = false` when validating guest denial in Studio; its current `true` value grants OWNER/Tiki Tide test access to every Studio player.
 - [ ] Test staff access, guest denial, entitlement revocation, respawn, and controller/UI transitions in a private test place.
 - [ ] After the Game Pass exists, add its real asset ID and verify a real owner and a non-owner in a published private server.
