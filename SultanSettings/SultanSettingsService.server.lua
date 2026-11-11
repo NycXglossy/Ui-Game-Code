@@ -295,6 +295,10 @@ local function bindPlayer(player: Player)
 			if player.Parent == Players then applyMovement(player) end
 		end)
 	end)
+	player.CharacterRemoving:Connect(function(character)
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then baseMovementByHumanoid[humanoid] = nil end
+	end)
 	player:SetAttribute("SultanAFK", false)
 	player:SetAttribute("SultanAFKMessage", "")
 	player:SetAttribute("SultanAllowTeleport", false)
