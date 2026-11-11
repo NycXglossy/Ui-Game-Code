@@ -5112,6 +5112,55 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, string.sub(table.concat(lines, "\n"), 1, 1800)
 	end
 	-- Security administration is exposed through this server-only bridge, not client remotes.
+	if operation == "RequestMute" or operation == "ClearUserQueue" or operation == "EmergencyLock" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_moderation_access_denied", operation)
+			return false, "ClubMusic administrator permission is required."
+		end
+	end
+	if operation == "RequestMute" then
+		if typeof(argument) ~= "string" or #argument < 3 or #argument > 220 then
+			return false, "Usage: ;cmrequestmute <UserId> on|off [reason]"
+		end
+		local rawUserId, mode, reason = string.match(argument, "^(%d+)%s+(%a+)%s*(.-)$")
+		local targetUserId = tonumber(rawUserId)
+		if not targetUserId or targetUserId < 1 or targetUserId % 1 ~= 0 or targetUserId > 9007199254740991 then
+			return false, "Provide a valid numeric Roblox UserId."
+		end
+		mode = if mode then string.lower(mode) else ""
+		if mode ~= "on" and mode ~= "off" then return false, "Use on or off. Example: ;cmrequestmute 123456 on Spam" end
+		local cleanReason = if reason ~= "" then string.sub(reason, 1, 160) else nil
+		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("SetRequestBlocked", targetUserId, mode == "on", caller.UserId)
+		if not ok or accepted ~= true then return false, tostring(accepted or "Request restriction update failed.") end
+		local target = Players:GetPlayerByUserId(targetUserId)
+		if mode == "on" then
+			blockedUsers[targetUserId] = true
+			ControllerFunctions.purgeUserEntries(targetUserId)
+		else
+			blockedUsers[targetUserId] = nil
+		end
+		ControllerFunctions.adminBridgeGlobalCall("RecordGlobalModerationAction", targetUserId, "RequestMute", mode, caller.UserId, cleanReason)
+		publishState(nil)
+		return true, string.format("ClubMusic requests %s for UserId %d%s.", if mode == "on" then "disabled" else "re-enabled", targetUserId, if target then " (" .. target.Name .. ")" else "")
+	end
+	if operation == "ClearUserQueue" then
+		if typeof(argument) ~= "string" or #argument > 24 or not string.match(argument, "^%d+$") then
+			return false, "Usage: ;cmclearuserqueue <numeric UserId>"
+		end
+		local targetUserId = tonumber(argument)
+		if not targetUserId or targetUserId < 1 or targetUserId % 1 ~= 0 or targetUserId > 9007199254740991 then return false, "Provide a valid numeric Roblox UserId." end
+		local removed = ControllerFunctions.purgeUserEntries(targetUserId)
+		publishState(nil)
+		return true, string.format("Removed %d queued ClubMusic request(s) for UserId %d.", removed, targetUserId)
+	end
+	if operation == "EmergencyLock" then
+		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("PublishDJCommand", "SetRequestLock", {locked = true}, caller.UserId)
+		if not ok or accepted ~= true then return false, tostring(accepted or "Global request lock could not be persisted.") end
+		requestsLocked = true
+		ControllerFunctions.broadcast("ClubMusic requests have been emergency-locked by staff.", "warn")
+		publishState(nil)
+		return true, "ClubMusic requests are now locked across servers. Use ;cmlock after the incident to reopen them."
+	end
 	if operation == "SecurityStatus" then
 		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
 			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
