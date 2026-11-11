@@ -608,7 +608,8 @@ local function renderPlayers()
 		local username = tostring(entry.name or "")
 		label(row, display .. "  @" .. username, UDim2.fromOffset(10, 4), UDim2.new(0.62, -10, 0, 18), COLORS.text, 9)
 		label(row, if entry.allowTeleport then "TELEPORT ALLOWED" else "PERMISSION OFF", UDim2.fromOffset(10, 24), UDim2.new(0.62, -10, 0, 16), if entry.allowTeleport then COLORS.green else COLORS.muted, 8)
-		local teleportButton = button(row, if entry.allowTeleport then "TELEPORT" else "LOCKED", UDim2.new(1, -104, 0, 9), UDim2.fromOffset(94, 30), function()
+		local teleportButton: TextButton
+		teleportButton = button(row, if entry.allowTeleport then "TELEPORT" else "LOCKED", UDim2.new(1, -104, 0, 9), UDim2.fromOffset(94, 30), function()
 			if entry.allowTeleport ~= true then
 				notify("This player has not enabled teleport access.")
 				return
