@@ -596,16 +596,17 @@ local queue: any = {}
 local queueManager: any = nil
 local globalQueueMode = false
 local globalTrackRevision = 0
-__CLUBMUSIC_ControllerFunctions.globalPlaybackEndTime__ = 0
+ControllerFunctions.globalPlaybackEndTime = 0
 local localCatalogRevision = 0
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
+local refreshLocalCatalog: (() -> boolean)? = nil
 local nowPlaying: any = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
-__CLUBMUSIC_ControllerFunctions.pendingCrossfadeGlobalRevision__ = -1
-__CLUBMUSIC_ControllerFunctions.pendingCrossfadeGlobalCommitted__ = false
-__CLUBMUSIC_ControllerFunctions.pendingCrossfadeDeadline__ = 0
+ControllerFunctions.pendingCrossfadeGlobalRevision = -1
+ControllerFunctions.pendingCrossfadeGlobalCommitted = false
+ControllerFunctions.pendingCrossfadeDeadline = 0
 local audioTransitionTrackToken = 0
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
@@ -1481,7 +1482,6 @@ local globalQueueRevision = 0
 local globalCatalogRevision = 0
 local globalCatalogChangeTrackId: string? = nil
 local globalCatalogChangeKind: string? = nil
-refreshLocalCatalog: (() -> boolean)? = nil
 ControllerFunctions.refreshCatalogWhenReady = function(): boolean
 	-- The controller publishes its remote contract before the cross-server
 	-- invalidation listener is defined. A very early UI action waits briefly for
