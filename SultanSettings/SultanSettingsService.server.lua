@@ -264,6 +264,13 @@ local function handleRequest(player: Player, action: any, payload: any)
 		if typeof(gravity) ~= "number" or gravity ~= gravity or gravity == math.huge or gravity == -math.huge then
 			return fail("Invalid gravity value.")
 		end
+		-- Keep the entitlement and administrator checks adjacent to the mutation.
+		-- This makes the intended authorization boundary explicit if the resolver
+		-- implementation later gains yielding work.
+		if not isSultan(player) or player.Parent ~= Players
+			or not hasClubPermission(player, "GlobalConfig") then
+			return fail("Administrator configuration permission is no longer available.")
+		end
 		workspace.Gravity = math.clamp(gravity, 20, 192.62)
 		return {ok = true, message = "Server gravity updated.", data = snapshot(player)}
 	elseif action == "BubbleBroadcast" then
