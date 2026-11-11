@@ -538,6 +538,13 @@ bindFunction("GetGlobalQueueState", function()
 	return MusicGlobalQueueService:GetSnapshot()
 end)
 
+bindFunction("RemoveGlobalQueueEntriesForTrack", function(trackId: any)
+	if not SERVICE_ENABLED or typeof(trackId) ~= "string" or #trackId < 1 or #trackId > 64
+		or not string.match(trackId, "^[%w%-_]+$") then return false, nil, "Invalid track ID." end
+	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
+	return MusicGlobalQueueService:RemoveTrackEntries(trackId)
+end)
+
 bindFunction("EnqueueGlobalQueueEntry", function(entry: any, playerQueueCap: any, catalogRevision: any)
 	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
