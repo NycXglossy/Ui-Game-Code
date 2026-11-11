@@ -8,7 +8,7 @@ This add-on is intentionally separate from the ClubMusic renderer and overhead t
 2. Add `SultanSettings.client.lua` as a **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
 3. Keep the existing `ClubMusicBootstrap.client.lua`, `UI_Network`, `UI_Server_Controller`, and `ClubMusic_Overhead_Title_Renderer_client.lua` unchanged.
 4. Install the updated `UI_Renderer (2).lua` from this branch in place of the current ClubMusic UI renderer. It contains the small shared-state bridge that coordinates the compact HUD and floating launcher with Sultan Settings; do not install it as a second parallel renderer.
-5. Ensure there is exactly one copy of `SultanSettingsService.server.lua` and one copy of `SultanSettings.client.lua`. Duplicate service copies compete for the same `RemoteFunction.OnServerInvoke` callback and can create duplicate event listeners.
+5. Ensure there is exactly one copy of `SultanSettingsService.server.lua` and one copy of `SultanSettings.client.lua`. The server service creates a runtime singleton marker in `ServerStorage` and refuses to start a second copy, preventing duplicate scripts from competing for `RemoteFunction.OnServerInvoke` or duplicating player lifecycle listeners.
 6. Publish/test in a private test place first.
 
 The server add-on creates `ReplicatedStorage/SultanSettingsRemotes` itself. It reads the server-owned `IsTikiTideSultan` player attribute set by the existing ClubMusic controller, and uses the existing server-only `ClubMusicAuthorizationResolver` for privileged gravity and announcement actions.
@@ -53,8 +53,8 @@ Before publishing to the live experience:
 
 - [ ] Replace the existing ClubMusic renderer with this branch's updated `UI_Renderer (2).lua`; do not run both renderer copies.
 - [ ] Confirm the existing ClubMusic server controller and all of its required ServerStorage modules are installed exactly once.
-- [ ] Install exactly one Sultan server Script and one Sultan client LocalScript at the paths listed above.
-- [ ] Keep `TikiTideSultanPassId = 0` until the Sultan Game Pass is actually created and published.
+- [ ] Install exactly one Sultan server Script and one Sultan client LocalScript at the paths listed above; the server singleton guard will reject a second service copy.
+- [ ] Keep `TikiTideSultanPassId = 0` until the Sultan Game Pass is actually created and published; the unconfigured shop entry displays `COMING SOON` and cannot launch a purchase prompt.
 - [ ] Set `StudioStaff = false` when validating guest denial in Studio; its current `true` value grants OWNER/Sultan test access to every Studio player.
 - [ ] Test staff access, guest denial, entitlement revocation, respawn, and controller/UI transitions in a private test place.
 - [ ] After the Game Pass exists, add its real asset ID and verify a real owner and a non-owner in a published private server.
