@@ -2833,7 +2833,13 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 			-- Build one fallback entry for this transition. Retrying a stale revision
 			-- must not consume additional playlist cursor positions or pick new tracks.
 			local playlistFallback = ControllerFunctions.nextPlaylistTrack()
-			local fallback = if playlistFallback then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil) else ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
+			local autoFallback = if playlistFallback then nil else ControllerFunctions.pickAutoTrack()
+			if not playlistFallback and not autoFallback then
+				return false, "No playable catalog tracks are available for the shared transition."
+			end
+			local fallback = if playlistFallback
+				then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil)
+				else ControllerFunctions.makeEntry(autoFallback :: Track, "auto", nil)
 			local function attemptGlobalAdvance(): (boolean, string?)
 				local expectedRevision = globalTrackRevision
 				local callOk, didAdvance, state, message = ControllerFunctions.globalInvoke(
@@ -2852,11 +2858,15 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 				-- playlist cursor or a new Auto DJ fallback if the old ID disappeared.
 				if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
 					and ControllerFunctions.refreshCatalogWhenReady() then
-					if not TRACK_BY_ID[fallback.trackId] then
+					if not isPlayableTrack(TRACK_BY_ID[fallback.trackId]) then
 						local refreshedPlaylistTrack = ControllerFunctions.nextPlaylistTrack()
+						local refreshedAutoTrack = if refreshedPlaylistTrack then nil else ControllerFunctions.pickAutoTrack()
+						if not refreshedPlaylistTrack and not refreshedAutoTrack then
+							return false, "No playable catalog tracks are available after catalog refresh."
+						end
 						fallback = if refreshedPlaylistTrack
 							then ControllerFunctions.makeEntry(refreshedPlaylistTrack, "playlist", nil)
-							else ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
+							else ControllerFunctions.makeEntry(refreshedAutoTrack :: Track, "auto", nil)
 					end
 					didAdvance, failureReason = attemptGlobalAdvance()
 				end
@@ -2910,8 +2920,11 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 	end
 	local ok, err = pcall(function()
 		local nextEntry = queueManager:PopNext()
-		if nextEntry then
-		else nextEntry = ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil) end
+		if not nextEntry then
+			local autoTrack = ControllerFunctions.pickAutoTrack()
+			if not autoTrack then error("No playable catalog tracks are available for the next transition.") end
+			nextEntry = ControllerFunctions.makeEntry(autoTrack, "auto", nil)
+		end
 		ControllerFunctions.setNowPlaying(nextEntry :: QueueEntry)
 		ControllerFunctions.topUpAuto()
 	end)
@@ -2966,10 +2979,17 @@ task.spawn(function()
 	end
 	if nowPlaying.trackId == "" then
 		local playlistFallback = ControllerFunctions.nextPlaylistTrack()
-		local fallback = if playlistFallback then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil) else ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
-		local callOk, advanced, state = ControllerFunctions.globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback, localCatalogRevision)
-		if callOk and advanced == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state)
-		elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		local autoFallback = if playlistFallback then nil else ControllerFunctions.pickAutoTrack()
+		if playlistFallback or autoFallback then
+			local fallback = if playlistFallback
+				then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil)
+				else ControllerFunctions.makeEntry(autoFallback :: Track, "auto", nil)
+			local callOk, advanced, state = ControllerFunctions.globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback, localCatalogRevision)
+			if callOk and advanced == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state)
+			elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+		else
+			warn("[ClubMusic] Global startup is waiting for a playable catalog track.")
+		end
 	end
 	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 	ControllerFunctions.topUpAuto()
