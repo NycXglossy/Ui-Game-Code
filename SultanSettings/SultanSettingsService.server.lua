@@ -8,6 +8,17 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local TextService = game:GetService("TextService")
 
+-- A second copy would overwrite RemoteFunction.OnServerInvoke and duplicate
+-- player lifecycle listeners. Refuse to start if another copy already owns the service.
+local SERVICE_MARKER_NAME = "SultanSettingsServiceActive"
+if ServerStorage:FindFirstChild(SERVICE_MARKER_NAME) then
+	error("[Sultan Settings] Duplicate service detected; keep exactly one server Script.")
+end
+local serviceMarker = Instance.new("BoolValue")
+serviceMarker.Name = SERVICE_MARKER_NAME
+serviceMarker.Value = true
+serviceMarker.Parent = ServerStorage
+
 local FOLDER_NAME = "SultanSettingsRemotes"
 local REQUEST_COOLDOWN = 0.25
 local ANNOUNCEMENT_COOLDOWN = 180
