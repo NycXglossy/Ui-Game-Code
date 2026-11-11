@@ -187,7 +187,7 @@ end
 
 local definitions = {
 	{key = "RefreshOutfit", label = "Refresh", tint = COLORS.cyan},
-	{key = "SultanSettings", label = "Sultan", tint = COLORS.gold},
+	{key = "SultanSettings", label = "Tiki", tint = COLORS.gold},
 	{key = "Mount", label = "Mount", tint = COLORS.cyan},
 	{key = "Size", label = "Size", tint = COLORS.gold},
 	{key = "Clone", label = "Clone", tint = COLORS.cyan},
@@ -256,7 +256,7 @@ for index, definition in ipairs(definitions) do
 	button.Activated:Connect(function()
 		if definition.key == "SultanSettings" then
 			if player:GetAttribute("IsTikiTideSultan") ~= true then
-				showToast("Sultan access is required.")
+				showToast("Tiki Tide access is required.")
 				return
 			end
 			local current = tonumber(playerGui:GetAttribute("SultanSettingsOpenRequest")) or 0
@@ -348,7 +348,7 @@ wireNavigation()
 
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("SultanSettingsOpen"):Connect(updateVisibility)
--- The Sultan entry stays in the seven-button layout; its activation is
+-- The Tiki Tide entry stays in the seven-button layout; its activation is
 -- entitlement-checked before the panel receives an open request.
 
 local viewportConnection: RBXScriptConnection? = nil
