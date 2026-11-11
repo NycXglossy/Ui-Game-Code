@@ -14,21 +14,36 @@ local ANNOUNCEMENT_COOLDOWN = 180
 local BUBBLE_COOLDOWN = 5
 local MAX_MESSAGE_LENGTH = 180
 
-local folder = ReplicatedStorage:FindFirstChild(FOLDER_NAME) :: Folder?
+local existingFolder = ReplicatedStorage:FindFirstChild(FOLDER_NAME)
+if existingFolder and not existingFolder:IsA("Folder") then
+	error("[Sultan Settings] ReplicatedStorage." .. FOLDER_NAME .. " exists but is not a Folder; refusing to replace an unrelated instance.")
+end
+
+local folder = existingFolder :: Folder?
 if not folder then
 	folder = Instance.new("Folder")
 	folder.Name = FOLDER_NAME
 	folder.Parent = ReplicatedStorage
 end
 
-local request = folder:FindFirstChild("Request") :: RemoteFunction?
+local existingRequest = folder:FindFirstChild("Request")
+if existingRequest and not existingRequest:IsA("RemoteFunction") then
+	error("[Sultan Settings] Request exists with the wrong class; expected RemoteFunction.")
+end
+
+local request = existingRequest :: RemoteFunction?
 if not request then
 	request = Instance.new("RemoteFunction")
 	request.Name = "Request"
 	request.Parent = folder
 end
 
-local broadcast = folder:FindFirstChild("Broadcast") :: RemoteEvent?
+local existingBroadcast = folder:FindFirstChild("Broadcast")
+if existingBroadcast and not existingBroadcast:IsA("RemoteEvent") then
+	error("[Sultan Settings] Broadcast exists with the wrong class; expected RemoteEvent.")
+end
+
+local broadcast = existingBroadcast :: RemoteEvent?
 if not broadcast then
 	broadcast = Instance.new("RemoteEvent")
 	broadcast.Name = "Broadcast"
