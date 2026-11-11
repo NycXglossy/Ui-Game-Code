@@ -2306,6 +2306,20 @@ ControllerFunctions.insertIndex = function(tier: number): number
 	return lastPlayer + 1
 end
 
+ControllerFunctions.isTrackBlocked = function(trackId: string): boolean
+	if not globalQueueMode then return false end
+	local cache = ControllerFunctions.blockedTrackCache
+	if not cache then cache = {}; ControllerFunctions.blockedTrackCache = cache end
+	local cached = cache[trackId]
+	if typeof(cached) == "table" and os.clock() - cached.checkedAt < 30 then return cached.blocked end
+	local invoked, blocked, lookupOk = ControllerFunctions.globalInvoke("IsTrackBlocked", trackId)
+	if not invoked or lookupOk ~= true then
+		return not RunService:IsStudio()
+	end
+	cache[trackId] = {blocked = blocked == true, checkedAt = os.clock()}
+	return blocked == true
+end
+
 ControllerFunctions.pickAutoTrack = function(): Track
 	local queued: {[string]: boolean} = {}
 	for _, entry in ipairs(queue) do queued[entry.trackId] = true end
@@ -2316,7 +2330,8 @@ ControllerFunctions.pickAutoTrack = function(): Track
 	local preferred: {Track} = {}
 	for _, id in ipairs(ALL_TRACK_IDS) do
 		local track = TRACK_BY_ID[id]
-		if not queued[id] and not recentSet[id] and id ~= nowPlaying.trackId then
+		if not queued[id] and not recentSet[id] and id ~= nowPlaying.trackId
+			and not ControllerFunctions.isTrackBlocked(id) then
 			table.insert(pool, track)
 			if track.genreId ~= lastAutoGenre then table.insert(preferred, track) end
 		end
@@ -2337,7 +2352,7 @@ ControllerFunctions.nextPlaylistTrack = function(): Track?
 		if activePlaylistCursor > #activePlaylistTracks then activePlaylistCursor = 1 end
 		local track = activePlaylistTracks[activePlaylistCursor]
 		activePlaylistCursor += 1
-		if TRACK_BY_ID[track.id] then return track end
+		if TRACK_BY_ID[track.id] and not ControllerFunctions.isTrackBlocked(track.id) then return track end
 	end
 	return nil
 end
@@ -3720,11 +3735,7 @@ end
 -- Used by Creator Hub audio requests, which re-check after yielding for the asset lookup.
 ControllerFunctions.requestBlockReason = function(player: Player, trackId: string, now: number): string?
 	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
-	local trackCheckOk, trackBlocked = ControllerFunctions.globalInvoke("IsTrackBlocked", trackId)
-	if trackCheckOk and trackBlocked == true then return "That track has been blocked by ClubMusic staff." end
-	if not trackCheckOk and not RunService:IsStudio() and globalQueueMode then
-		return "Track moderation status is unavailable; requests are temporarily paused."
-	end
+	if ControllerFunctions.isTrackBlocked(trackId) then return "That track has been blocked by ClubMusic staff." end
 	if requestsLocked and ControllerFunctions.getLevel(player) < 1 then return "Requests are locked by staff right now." end
 	if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
 	local cooldown = ControllerFunctions.cooldownFor(player)
@@ -5178,6 +5189,15 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("SetTrackBlocked", trackId, mode == "on", caller.UserId, cleanReason)
 		if not ok or accepted ~= true then return false, tostring(accepted or "Track moderation update failed.") end
 		if mode == "on" then
+			ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
+			ControllerFunctions.blockedTrackCache[trackId] = {blocked = true, checkedAt = os.clock()}
+			if globalQueueMode then
+				local purgeOk, purged, state = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntriesForTrack", trackId)
+				if not purgeOk or purged ~= true then
+					return false, "Track was blocked, but the shared queue purge could not be confirmed. Retry ;cmblocktrack " .. trackId .. " on."
+				end
+				if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
+			end
 			for index = #queue, 1, -1 do
 				if queue[index].trackId == trackId then queueManager:RemoveAt(index, true) end
 			end
@@ -5937,6 +5957,12 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		return
 	end
 	if message.kind == "TrackModeration" and typeof(message.trackId) == "string" and message.blocked == true then
+		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
+		ControllerFunctions.blockedTrackCache[message.trackId] = {blocked = true, checkedAt = os.clock()}
+		if globalQueueMode then
+			local purgeOk, purged, state = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntriesForTrack", message.trackId)
+			if purgeOk and purged == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
+		end
 		for index = #queue, 1, -1 do
 			if queue[index].trackId == message.trackId then queueManager:RemoveAt(index, true) end
 		end
