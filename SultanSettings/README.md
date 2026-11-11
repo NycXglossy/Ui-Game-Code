@@ -11,6 +11,8 @@ This add-on is intentionally separate from the ClubMusic renderer and overhead t
 
 The server add-on creates `ReplicatedStorage/SultanSettingsRemotes` itself. It reads the server-owned `IsTikiTideSultan` player attribute set by the existing ClubMusic controller, and uses the existing server-only `ClubMusicAuthorizationResolver` for privileged gravity and announcement actions.
 
+**Required entitlement configuration:** In the existing `UI_Server_Controller` configuration, set `TikiTideSultanPassId` to the real Sultan Game Pass asset ID before testing pass-holder access. Its current value in the audited source is `0`, which disables Game Pass ownership grants. Existing verified staff rank level 1+ still receives Sultan-tier access. Sultan pass ownership alone does not grant administrator permissions: gravity requires `GlobalConfig` (rank level 3+) and announcements require `GlobalAnnouncement` (rank level 2+).
+
 ## Included
 
 - Sultan-only walk speed (20–100) and jump power (80–300), applied on respawn only for verified Sultan players.
