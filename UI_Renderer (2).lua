@@ -875,19 +875,30 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	-- Keep every stale/duplicate compact bar suppressed. Only this renderer's
 	-- active HUD is allowed to return when the full menu closes.
+	local function isCompactClubHud(instance: Instance): boolean
+		if not instance:IsA("GuiObject") then return false end
+		local normalizedName = string.lower(string.gsub(instance.Name, "[^%w]", ""))
+		return normalizedName == "topbarhud"
+			or normalizedName == "clubmusictopbarhud"
+			or normalizedName == "compactclubhud"
+			or normalizedName == "clubmusiccompacthud"
+	end
+
 	local function setCompactHudVisibility(visible: boolean)
+		-- Hide every known compact ClubMusic bar, including stale copies created
+		-- by an older renderer. Never toggle the active bar on while expanded.
 		for _, descendant in ipairs(playerGui:GetDescendants()) do
-			if descendant ~= hud and descendant.Name == "TopBarHUD" and descendant:IsA("GuiObject") then
-				descendant.Visible = false
+			if descendant ~= hud and isCompactClubHud(descendant) then
+				(descendant :: GuiObject).Visible = false
 			end
 		end
-		hud.Visible = visible
+		hud.Visible = visible and not expanded
 	end
 
 	-- Catch duplicate bars created by another renderer copy after this menu opens.
 	table.insert(connections, playerGui.DescendantAdded:Connect(function(descendant)
-		if expanded and descendant.Name == "TopBarHUD" and descendant:IsA("GuiObject") then
-			descendant.Visible = false
+		if expanded and isCompactClubHud(descendant) then
+			(descendant :: GuiObject).Visible = false
 		end
 	end))
 
@@ -4654,16 +4665,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	applyStateFn = applyState
 
 	local function open()
-		if destroyed then return end
+		if destroyed or expanded then return end
 		expanded = true
 		setCompactHudVisibility(false)
 		shade.Visible = true
+		panel.Size = panelTarget
 		panel.Visible = true
 		toggleButton.Visible = false
-		panel.Size = UDim2.new(panelTarget.X.Scale * 0.95, 0, panelTarget.Y.Scale * 0.95, 0)
-		TweenService:Create(panel, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = panelTarget,
-		}):Play()
 		renderTab()
 		if UserInputService.GamepadEnabled then
 			task.defer(function()
@@ -4675,7 +4683,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function close()
-		if destroyed then return end
+		if destroyed or not expanded then return end
 		stopPreview()
 		expanded = false
 		setCompactHudVisibility(true)
