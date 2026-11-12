@@ -4748,6 +4748,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end)
 	end
 
+	local mobileStateRenderQueued = false
 	local function applyState(newState: any)
 		if destroyed or typeof(newState) ~= "table" then return end
 		local cleanState = sanitizeStateValue(newState, 0, {})
@@ -4759,7 +4760,27 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- own paginated requests and must not be destroyed/recreated for unrelated
 		-- playback updates; doing so restarts the catalog request and looks like
 		-- the entire music library is constantly refreshing.
-		if not destroyed and activeTab ~= "Music" and activeTab ~= "All Tracks" and activeTab ~= "Audio ID" then
+		if destroyed or activeTab == "Music" or activeTab == "All Tracks" or activeTab == "Audio ID" then
+			return
+		end
+		-- A closed menu is rendered from the latest state when opened; rebuilding
+		-- hidden mobile content only wastes frames and can expose partial redraws.
+		if not expanded then return end
+		if currentDevice == "Mobile" then
+			-- Coalesce bursty server snapshots on touch devices. Rebuilding every
+			-- card immediately clears and recreates the visible content tree, which
+			-- can appear as a partial panel flicker on slower mobile render frames.
+			if mobileStateRenderQueued then return end
+			mobileStateRenderQueued = true
+			local requestedTab = activeTab
+			task.delay(0.18, function()
+				mobileStateRenderQueued = false
+				if not destroyed and expanded and activeTab == requestedTab
+					and activeTab ~= "Music" and activeTab ~= "All Tracks" and activeTab ~= "Audio ID" then
+					renderTab()
+				end
+			end)
+		else
 			renderTab()
 		end
 	end
