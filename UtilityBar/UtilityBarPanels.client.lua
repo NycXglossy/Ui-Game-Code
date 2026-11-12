@@ -122,7 +122,7 @@ local function open(name: string)
 		local apply=button(body,"APPLY SIZE",C.teal,UDim2.new(.08,0,0,136),UDim2.new(.84,0,0,46))
 		apply.Activated:Connect(function() invoke("Size",value) end)
 		local reset=button(body,"RESET TO 100%",C.gold,UDim2.new(.08,0,0,190),UDim2.new(.84,0,0,38))
-		reset.Activated:Connect(function() value=1; valueLabel.Text="100%"; fill.Size=UDim2.new(.5,0,1,0); knob.Position=UDim2.new(.5,0,.5,0); invoke("Size",1) end)
+		reset.Activated:Connect(function() value=1; valueLabel.Text="1.00×"; local resetAlpha=(1-.5)/4.5; fill.Size=UDim2.new(resetAlpha,0,1,0); knob.Position=UDim2.new(resetAlpha,0,.5,0); invoke("Size",1) end)
 	elseif name=="Mount" then
 		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.05,0,.12,0),Size=UDim2.new(.9,0,0,60),Font=Enum.Font.GothamMedium,Text="Equip or unequip your available mount. A Mount Tool must be installed in your inventory.",TextWrapped=true,TextColor3=C.muted,TextSize=12},body)
 		local act=button(body,"EQUIP / UNEQUIP MOUNT",C.teal,UDim2.new(.08,0,.52,0),UDim2.new(.84,0,0,52))
