@@ -171,7 +171,11 @@ local function refresh()
 			return shopRemote:InvokeServer("GetShop")
 		end)
 		if ok and typeof(data) == "table" then
-			balance.Text = tostring(math.max(0, math.floor(tonumber(data.coins) or 0))) .. " COINS"
+			if data.ok == true then
+				balance.Text = tostring(math.max(0, math.floor(tonumber(data.coins) or 0))) .. " COINS"
+			else
+				balance.Text = "LOADING COINS"
+			end
 		else
 			balance.Text = "COINS —"
 		end
