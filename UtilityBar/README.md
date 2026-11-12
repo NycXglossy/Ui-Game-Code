@@ -7,9 +7,10 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 1. Add `UtilityBar.client.lua` as a **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
 2. Add `UtilityBarActions.client.lua` as a second **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
 3. Add `UtilityBarActions.server.lua` as a **Script** under `ServerScriptService`.
-4. Keep exactly one copy of each Utility Bar script.
-5. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
-6. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the existing settings-open request attribute (legacy internal name retained for compatibility).
+4. Add `UtilityBarExtendedActions.server.lua` as a second **Script** under `ServerScriptService`.
+5. Keep exactly one copy of each Utility Bar script.
+6. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
+7. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the existing settings-open request attribute.
 
 ## Included buttons
 
@@ -37,25 +38,25 @@ The `UtilityBarActions.client.lua` module listens for `RefreshOutfit` and invoke
 
 This refreshes the player's current Roblox account avatar; it is not an outfit catalog or saved-outfit picker. Changing to a different outfit requires a separate approved outfit-selection flow.
 
-### Still dispatch-only
+### Implemented: Mount, Size, Clone, and Aura
 
-`Mount`, `Size`, `Clone`, `Aura`, and `Inventory` remain dispatch-only until their independent modules and any required assets or server validation are added.
+The `UtilityBarExtendedActions.server.lua` script owns these actions through the allowlisted `UtilityBarRemotes.ExecuteUtility` RemoteFunction. The client sends only an action name; the server validates the action, applies a per-player cooldown, and operates only on the requesting player's character.
 
-A separate client utility module can subscribe with:
+- **Mount:** equips or unequips a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
+- **Size:** cycles Small, Large, and Default on R15 avatars. Original body scale values are captured per character and restored for the Default preset. R6 avatars receive a clear unsupported message.
+- **Clone:** creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
+- **Aura:** toggles a server-created teal-and-gold Highlight on the requesting player's character.
 
-```lua
-local player = game:GetService("Players").LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local actionEvent = playerGui:WaitForChild("UtilityBarAction")
+Mount requires an existing mount Tool; this update does not invent or import a third-party mount model. The extended actions are separate from ClubMusic and do not issue music, queue, catalog, or DJ requests.
 
-actionEvent.Event:Connect(function(actionName)
-	if actionName == "Mount" then
-		-- Open or toggle the independent Mount utility.
-	end
-end)
-```
+### Security and lifecycle
 
-The launcher remains separate from ClubMusic. Refresh Outfit is now connected to its own server-validated avatar refresh service; the five listed dispatch-only actions still need their own modules. The bar itself does not call ClubMusic playback APIs.
+- The server accepts only the four explicit action names; clients cannot supply target players, asset IDs, scale values, or arbitrary instances.
+- Requests are throttled per player on the server.
+- Size values are clamped and based on each character's captured baseline.
+- Clone scripts are removed and its parts cannot collide, touch, or be queried; clones expire automatically and are cleaned up when their owner leaves.
+- Aura instances are tracked per player and cleaned up when the player leaves.
+- Refresh Outfit remains independently server-authoritative with its own cooldown.
 
 ## Validation
 
@@ -65,5 +66,9 @@ The launcher remains separate from ClubMusic. Refresh Outfit is now connected to
 - [ ] Test touch, mouse, keyboard, and D-pad / thumbstick navigation.
 - [ ] Test narrow mobile viewport and landscape rotation; verify horizontal scrolling works without clipping.
 - [ ] Confirm utility clicks fire the documented local event and do not issue music requests.
-- [ ] Install the server Script and verify Refresh Outfit updates only the requesting player's avatar.
+- [ ] Install both server Scripts and verify Refresh Outfit updates only the requesting player's avatar.
+- [ ] Verify Mount equips only a tagged/named mount Tool and reports clearly when none is installed.
+- [ ] Verify Size cycles on R15, restores the captured baseline, and safely rejects R6.
+- [ ] Verify Clone is non-interactive, expires after 12 seconds, and is cleaned up on leave.
+- [ ] Verify Aura toggles off and cleans up on leave.
 - [ ] Verify repeated refresh requests are throttled and failed avatar lookups show a safe message.
