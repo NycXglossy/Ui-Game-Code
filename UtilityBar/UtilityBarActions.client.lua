@@ -429,4 +429,4 @@ actionEvent.Event:Connect(function(actionName: string)
 	end)
 end)
 
-print("[UtilityBar] Custom Inventory and Refresh Outfit actions connected.")
+print("[UtilityBar] Inventory, Tools, Accessories, and Refresh Outfit actions connected.")
