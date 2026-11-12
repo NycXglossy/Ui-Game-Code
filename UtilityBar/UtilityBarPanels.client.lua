@@ -39,7 +39,13 @@ make("UICorner",{CornerRadius=UDim.new(1,0)},accent)
 local body=make("Frame",{Name="Body",Position=UDim2.fromOffset(16,62),Size=UDim2.new(1,-32,1,-76),BackgroundTransparency=1},panel) :: Frame
 local status=make("TextLabel",{BackgroundTransparency=1,AnchorPoint=Vector2.new(.5,1),Position=UDim2.new(.5,0,1,-8),Size=UDim2.new(1,-30,0,20),Font=Enum.Font.GothamMedium,Text="",TextColor3=C.muted,TextSize=11},panel) :: TextLabel
 local function rounded(obj: Instance, px: number) make("UICorner",{CornerRadius=UDim.new(0,px)},obj) end
+local panelConnections: {RBXScriptConnection} = {}
+local function connectPanel(signal: RBXScriptSignal, callback: (...any) -> ())
+	table.insert(panelConnections, signal:Connect(callback))
+end
 local function clearBody()
+	for _, connection in ipairs(panelConnections) do connection:Disconnect() end
+	table.clear(panelConnections)
 	for _, child in ipairs(body:GetChildren()) do child:Destroy() end
 end
 local function button(parent: Instance, label: string, tint: Color3, position: UDim2, size: UDim2): TextButton
@@ -102,8 +108,8 @@ local function open(name: string)
 			valueLabel.Text=tostring(math.floor(value*100+.5)).."%"
 		end
 		track.InputBegan:Connect(function(input) if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=true; setFromX(input.Position.X) end end)
-		UserInputService.InputChanged:Connect(function(input) if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then setFromX(input.Position.X) end end)
-		UserInputService.InputEnded:Connect(function(input) if dragging and (input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch) then dragging=false end end)
+		connectPanel(UserInputService.InputChanged, function(input) if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then setFromX(input.Position.X) end end)
+		connectPanel(UserInputService.InputEnded, function(input) if dragging and (input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch) then dragging=false end end)
 		local apply=button(body,"APPLY SIZE",C.teal,UDim2.new(.08,0,0,136),UDim2.new(.84,0,0,46))
 		apply.Activated:Connect(function() invoke("Size",value) end)
 		local reset=button(body,"RESET TO 100%",C.gold,UDim2.new(.08,0,0,190),UDim2.new(.84,0,0,38))
