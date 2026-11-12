@@ -118,7 +118,7 @@ local function createClone(player: Player): (boolean, string)
 			descendant.CanCollide = false
 			descendant.CanTouch = false
 			descendant.CanQuery = false
-			 descendant.Massless = true
+			descendant.Massless = true
 		end
 	end
 	local cloneRoot = clone:FindFirstChild("HumanoidRootPart")
