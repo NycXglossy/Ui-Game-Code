@@ -11,6 +11,7 @@ local COOLDOWN = 1.25
 local CLONE_LIFETIME = 12
 local lastRequest: {[number]: number} = {}
 local sizeStep: {[number]: number} = {}
+local sizeBaseline: {[number]: {humanoid: Humanoid, height: number, width: number, depth: number, head: number}} = {}
 local auraByPlayer: {[number]: Highlight} = {}
 
 local folder = ReplicatedStorage:FindFirstChild(REMOTE_FOLDER)
@@ -49,13 +50,25 @@ local function setSize(player: Player): (boolean, string)
 			and depth:IsA("NumberValue") and head:IsA("NumberValue")) then
 		return false, "Size presets require an R15 avatar."
 	end
+	local baseline = sizeBaseline[player.UserId]
+	if not baseline or baseline.humanoid ~= humanoid then
+		baseline = {
+			humanoid = humanoid,
+			height = height.Value,
+			width = width.Value,
+			depth = depth.Value,
+			head = head.Value,
+		}
+		sizeBaseline[player.UserId] = baseline
+		sizeStep[player.UserId] = 0
+	end
 	local step = ((sizeStep[player.UserId] or 0) % 3) + 1
 	sizeStep[player.UserId] = step
 	local factor = if step == 1 then 0.85 elseif step == 2 then 1.15 else 1
-	height.Value = factor
-	width.Value = factor
-	depth.Value = factor
-	head.Value = if step == 3 then 1 else math.clamp(factor, 0.9, 1.1)
+	height.Value = math.clamp(baseline.height * factor, 0.5, 1.5)
+	width.Value = math.clamp(baseline.width * factor, 0.5, 1.5)
+	depth.Value = math.clamp(baseline.depth * factor, 0.5, 1.5)
+	head.Value = math.clamp(baseline.head * (if step == 3 then 1 else factor), 0.5, 1.5)
 	return true, if step == 1 then "Small size preset applied."
 		elseif step == 2 then "Large size preset applied." else "Default size restored."
 end
@@ -166,6 +179,7 @@ end
 Players.PlayerRemoving:Connect(function(player)
 	lastRequest[player.UserId] = nil
 	sizeStep[player.UserId] = nil
+	sizeBaseline[player.UserId] = nil
 	local aura = auraByPlayer[player.UserId]
 	if aura then aura:Destroy() end
 	auraByPlayer[player.UserId] = nil
