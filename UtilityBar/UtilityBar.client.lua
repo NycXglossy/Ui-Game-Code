@@ -272,7 +272,7 @@ end
 local function updateSizing()
 	local camera = workspace.CurrentCamera
 	local viewport = if camera then camera.ViewportSize else Vector2.new(800, 600)
-	local compactTouch = UserInputService.TouchEnabled and viewport.X < 900
+	local compactTouch = UserInputService.PreferredInput == Enum.PreferredInput.Touch and viewport.X < 900
 	local tablet = viewport.X >= 560 and viewport.X < 900
 	local desktop = viewport.X >= 900
 	local widthScale = if compactTouch then 0.64 else (if desktop then 0.82 else (if viewport.X < 420 then 0.98 else 0.94))
@@ -330,6 +330,10 @@ local function updateSizing()
 	end
 end
 
+local function isGamepadPreferred(): boolean
+	return UserInputService.PreferredInput == Enum.PreferredInput.Gamepad
+end
+
 local function updateVisibility()
 	local expanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
 	local tikiTideOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
@@ -340,6 +344,8 @@ local function updateVisibility()
 	if not visible then
 		local selected = GuiService.SelectedObject
 		if selected and selected:IsDescendantOf(gui) then GuiService.SelectedObject = nil end
+	elseif isGamepadPreferred() and not GuiService.SelectedObject then
+		GuiService.SelectedObject = buttons[1]
 	end
 end
 
@@ -371,17 +377,15 @@ bindViewport()
 updateSizing()
 updateVisibility()
 
-UserInputService.LastInputTypeChanged:Connect(function(inputType)
-	local isGamepad = inputType == Enum.UserInputType.Gamepad1
-		or inputType == Enum.UserInputType.Gamepad2
-		or inputType == Enum.UserInputType.Gamepad3
-		or inputType == Enum.UserInputType.Gamepad4
-		or inputType == Enum.UserInputType.Gamepad5
-		or inputType == Enum.UserInputType.Gamepad6
-		or inputType == Enum.UserInputType.Gamepad7
-		or inputType == Enum.UserInputType.Gamepad8
-	if isGamepad and shell.Visible and not GuiService.SelectedObject then
+-- PreferredInput handles hybrid devices more reliably than raw last-input
+-- events, which can alternate rapidly between touch, mouse, and controller.
+UserInputService:GetPropertyChangedSignal("PreferredInput"):Connect(function()
+	updateSizing()
+	if isGamepadPreferred() and shell.Visible and not GuiService.SelectedObject then
 		GuiService.SelectedObject = buttons[1]
+	elseif not isGamepadPreferred() then
+		local selected = GuiService.SelectedObject
+		if selected and selected:IsDescendantOf(gui) then GuiService.SelectedObject = nil end
 	end
 end)
 
