@@ -4943,7 +4943,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		state = cleanState
 		syncElapsed()
 		updateHud()
-		if not destroyed then renderTab() end
+		-- Playback/state snapshots arrive regularly. The catalog pages own their
+		-- own paginated requests and must not be destroyed/recreated for unrelated
+		-- playback updates; doing so restarts the catalog request and looks like
+		-- the entire music library is constantly refreshing.
+		if not destroyed and activeTab ~= "Music" and activeTab ~= "All Tracks" and activeTab ~= "Audio ID" then
+			renderTab()
+		end
 	end
 
 	applyStateFn = applyState
