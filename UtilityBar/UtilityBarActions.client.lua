@@ -199,7 +199,7 @@ inventoryTitle.BackgroundTransparency = 1
 inventoryTitle.Position = UDim2.fromOffset(18, 10)
 inventoryTitle.Size = UDim2.new(1, -78, 0, 30)
 inventoryTitle.Font = Enum.Font.GothamBlack
-inventoryTitle.Text = if mode == "Accessories" then "YOUR ACCESSORIES" else if mode == "Tools" then "YOUR TOOLS" else "YOUR INVENTORY"
+inventoryTitle.Text = "YOUR INVENTORY"
 inventoryTitle.TextColor3 = Color3.fromRGB(242, 241, 236)
 inventoryTitle.TextSize = 17
 inventoryTitle.TextXAlignment = Enum.TextXAlignment.Left
