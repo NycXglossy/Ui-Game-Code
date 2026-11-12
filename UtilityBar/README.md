@@ -71,7 +71,8 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 ## Validation
 
-- [ ] Install all three client LocalScripts and both server Scripts once; verify nine buttons appear in the bottom utility rail. Open Inventory and verify Backpack/equipped Tools can be equipped and unequipped from the same list.
+- [ ] Install all four client LocalScripts and all three server Scripts once; verify nine buttons appear in the bottom utility rail. Open Inventory and verify Backpack/equipped Tools can be equipped and unequipped from the same list.
+- [ ] Open Tool Shop; verify its separate panel appears, the coin balance loads from the server, and three Coming Soon placeholders display without purchase controls.
 - [ ] Verify Mount, Clone, Size and Aura each open their own separate control panel; verify Aura has three style tabs and three target tabs (Character, Tools, Accessories), and Size has a working 0.50×–5.00× slider with a 1.00× reset.
 - [ ] Open the full ClubMusic menu; verify the utility rail hides and returns on close.
 - [ ] Open Tiki Tide Settings; verify the rail hides and returns on close.
@@ -86,7 +87,7 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 - [ ] Verify repeated refresh requests are throttled and failed avatar lookups show a safe message.
 
 
-### Tool Shop and Coins foundation (new)
+### Tool Shop and Coins foundation
 
 - **Tool Shop** is a separate ninth utility-bar tab. It does not replace or modify Inventory. Inventory remains the only place for equipping and unequipping owned Tools.
 - The shop intentionally displays three **COMING SOON** placeholder slots. No Tool assets, item names, prices, or purchase buttons have been invented or configured.
