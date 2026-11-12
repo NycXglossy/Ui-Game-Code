@@ -1956,7 +1956,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- Temporary catalog entries are informational only: never offer favorites or requests.
 		if string.sub(id, 1, 5) == "temp-" then
 			label(frame, "COMING SOON", UDim2.new(1, if compact then -112 else -124, 0, if compact then 49 else 18), UDim2.fromOffset(if compact then 104 else 116, 30), C.Gold, 10, true)
-			return
+			return frame
 		end
 
 		local favorites: any = state.favorites
