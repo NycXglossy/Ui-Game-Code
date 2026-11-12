@@ -5,7 +5,6 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
@@ -84,25 +83,161 @@ local function showMessage(text: string)
 	end)
 end
 
+
+-- Custom inventory panel: Roblox does not expose a supported API to open
+-- the built-in Backpack window, so this panel lists the player's actual Tools.
+local inventoryPanel = Instance.new("Frame")
+inventoryPanel.Name = "InventoryPanel"
+inventoryPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+inventoryPanel.Position = UDim2.fromScale(0.5, 0.5)
+inventoryPanel.Size = UDim2.fromOffset(420, 430)
+inventoryPanel.BackgroundColor3 = Color3.fromRGB(15, 19, 28)
+inventoryPanel.BorderSizePixel = 0
+inventoryPanel.Visible = false
+inventoryPanel.Parent = feedbackGui
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 18)
+panelCorner.Parent = inventoryPanel
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Color = Color3.fromRGB(226, 194, 132)
+panelStroke.Transparency = 0.35
+panelStroke.Thickness = 1
+panelStroke.Parent = inventoryPanel
+
+local inventoryTitle = Instance.new("TextLabel")
+inventoryTitle.BackgroundTransparency = 1
+inventoryTitle.Position = UDim2.fromOffset(18, 12)
+inventoryTitle.Size = UDim2.new(1, -78, 0, 32)
+inventoryTitle.Font = Enum.Font.GothamBold
+inventoryTitle.Text = "INVENTORY"
+inventoryTitle.TextColor3 = Color3.fromRGB(242, 241, 236)
+inventoryTitle.TextSize = 16
+inventoryTitle.TextXAlignment = Enum.TextXAlignment.Left
+inventoryTitle.Parent = inventoryPanel
+
+local closeInventory = Instance.new("TextButton")
+closeInventory.Name = "Close"
+closeInventory.AnchorPoint = Vector2.new(1, 0)
+closeInventory.Position = UDim2.new(1, -12, 0, 12)
+closeInventory.Size = UDim2.fromOffset(34, 30)
+closeInventory.BackgroundColor3 = Color3.fromRGB(37, 45, 60)
+closeInventory.BorderSizePixel = 0
+closeInventory.Font = Enum.Font.GothamBold
+closeInventory.Text = "×"
+closeInventory.TextColor3 = Color3.fromRGB(242, 241, 236)
+closeInventory.TextSize = 20
+closeInventory.Parent = inventoryPanel
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 9)
+closeCorner.Parent = closeInventory
+
+local inventoryHint = Instance.new("TextLabel")
+inventoryHint.BackgroundTransparency = 1
+inventoryHint.Position = UDim2.fromOffset(18, 46)
+inventoryHint.Size = UDim2.new(1, -36, 0, 22)
+inventoryHint.Font = Enum.Font.Gotham
+inventoryHint.Text = "Select an item to equip or unequip"
+inventoryHint.TextColor3 = Color3.fromRGB(157, 164, 177)
+inventoryHint.TextSize = 11
+inventoryHint.TextXAlignment = Enum.TextXAlignment.Left
+inventoryHint.Parent = inventoryPanel
+
+local inventoryList = Instance.new("ScrollingFrame")
+inventoryList.Name = "Items"
+inventoryList.Position = UDim2.fromOffset(12, 76)
+inventoryList.Size = UDim2.new(1, -24, 1, -88)
+inventoryList.BackgroundTransparency = 1
+inventoryList.BorderSizePixel = 0
+inventoryList.ScrollBarThickness = 4
+inventoryList.CanvasSize = UDim2.new()
+inventoryList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+inventoryList.Parent = inventoryPanel
+local inventoryLayout = Instance.new("UIListLayout")
+inventoryLayout.Padding = UDim.new(0, 6)
+inventoryLayout.SortOrder = Enum.SortOrder.Name
+inventoryLayout.Parent = inventoryList
+
+local function refreshInventory()
+	for _, child in ipairs(inventoryList:GetChildren()) do
+		if child:IsA("GuiObject") then child:Destroy() end
+	end
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	local character = player.Character
+	local tools: {Tool} = {}
+	if backpack then
+		for _, item in ipairs(backpack:GetChildren()) do
+			if item:IsA("Tool") then table.insert(tools, item) end
+		end
+	end
+	if character then
+		for _, item in ipairs(character:GetChildren()) do
+			if item:IsA("Tool") and not table.find(tools, item) then table.insert(tools, item) end
+		end
+	end
+	table.sort(tools, function(a, b) return string.lower(a.Name) < string.lower(b.Name) end)
+
+	if #tools == 0 then
+		local empty = Instance.new("TextLabel")
+		empty.Name = "EmptyState"
+		empty.Size = UDim2.new(1, -8, 0, 54)
+		empty.BackgroundColor3 = Color3.fromRGB(24, 29, 41)
+		empty.BorderSizePixel = 0
+		empty.Font = Enum.Font.GothamMedium
+		empty.Text = "No tools in your inventory"
+		empty.TextColor3 = Color3.fromRGB(157, 164, 177)
+		empty.TextSize = 12
+		empty.Parent = inventoryList
+		local emptyCorner = Instance.new("UICorner")
+		emptyCorner.CornerRadius = UDim.new(0, 10)
+		emptyCorner.Parent = empty
+		return
+	end
+
+	for index, tool in ipairs(tools) do
+		local equipped = character ~= nil and tool.Parent == character
+		local itemButton = Instance.new("TextButton")
+		itemButton.Name = "Item_" .. tostring(index)
+		itemButton.LayoutOrder = index
+		itemButton.Size = UDim2.new(1, -8, 0, 46)
+		itemButton.BackgroundColor3 = Color3.fromRGB(24, 29, 41)
+		itemButton.BorderSizePixel = 0
+		itemButton.AutoButtonColor = true
+		itemButton.Font = Enum.Font.GothamSemibold
+		itemButton.Text = (equipped and "EQUIPPED  •  " or "EQUIP  •  ") .. tool.Name
+		itemButton.TextColor3 = equipped and Color3.fromRGB(226, 194, 132) or Color3.fromRGB(242, 241, 236)
+		itemButton.TextSize = 12
+		itemButton.Parent = inventoryList
+		local itemCorner = Instance.new("UICorner")
+		itemCorner.CornerRadius = UDim.new(0, 10)
+		itemCorner.Parent = itemButton
+		itemButton.Activated:Connect(function()
+			local currentCharacter = player.Character
+			local humanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+			if not humanoid or not tool.Parent then
+				showMessage("That item is no longer available.")
+				refreshInventory()
+				return
+			end
+			if tool.Parent == currentCharacter then
+				humanoid:UnequipTools()
+			else
+				humanoid:EquipTool(tool)
+			end
+			task.defer(refreshInventory)
+		end)
+	end
+end
+
+local function openInventory()
+	inventoryPanel.Visible = true
+	refreshInventory()
+end
+closeInventory.Activated:Connect(function() inventoryPanel.Visible = false end)
+
 local requestPending = false
 actionEvent.Event:Connect(function(actionName: string)
 	if actionName == "Inventory" then
-		local ok, isEnabled = pcall(function()
-			return StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Backpack)
-		end)
-		if not ok then
-			showMessage("Roblox inventory is unavailable right now.")
-			return
-		end
-		local setOk, setError = pcall(function()
-			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, not isEnabled)
-		end)
-		if not setOk then
-			warn("[UtilityBar] Inventory toggle failed: " .. tostring(setError))
-			showMessage("Could not toggle the Roblox inventory.")
-		else
-			showMessage(if isEnabled then "Inventory hidden." else "Inventory opened.")
-		end
+		openInventory()
 		return
 	end
 
@@ -135,4 +270,4 @@ actionEvent.Event:Connect(function(actionName: string)
 	end)
 end)
 
-print("[UtilityBar] Inventory and Refresh Outfit actions connected.")
+print("[UtilityBar] Custom Inventory and Refresh Outfit actions connected.")
