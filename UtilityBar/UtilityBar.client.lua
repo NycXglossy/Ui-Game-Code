@@ -333,7 +333,8 @@ end
 local function updateVisibility()
 	local expanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
 	local tikiTideOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
-	local visible = not expanded and not tikiTideOpen
+	local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
+	local visible = not expanded and not tikiTideOpen and not inventoryOpen
 	shell.Visible = visible
 	playerGui:SetAttribute("UtilityBarVisible", visible)
 	if not visible then
@@ -352,6 +353,7 @@ wireNavigation()
 
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(updateVisibility)
+playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(updateVisibility)
 -- The Tiki Tide entry stays in the seven-button layout; its activation is
 -- entitlement-checked before the panel receives an open request.
 
