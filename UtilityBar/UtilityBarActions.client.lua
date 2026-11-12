@@ -395,7 +395,7 @@ closeInventory.Activated:Connect(closeInventoryPanel)
 local requestPending = false
 actionEvent.Event:Connect(function(actionName: string)
 	if actionName == "Inventory" or actionName == "Tools" or actionName == "Accessories" then
-		openInventory(if actionName == "Inventory" then nil else actionName)
+		openInventory(if actionName == "Accessories" then "Accessories" else nil)
 		return
 	end
 
@@ -429,4 +429,4 @@ actionEvent.Event:Connect(function(actionName: string)
 	end)
 end)
 
-print("[UtilityBar] Inventory, Tools, Accessories, and Refresh Outfit actions connected.")
+print("[UtilityBar] Unified Inventory (Tool equip/unequip), Accessories, and Refresh Outfit actions connected.")
