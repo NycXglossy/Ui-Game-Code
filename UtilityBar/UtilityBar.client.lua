@@ -200,7 +200,6 @@ local definitions = {
 	{key = "Clone", label = "Clone", tint = COLORS.cyan},
 	{key = "Aura", label = "Aura", tint = COLORS.gold},
 	{key = "Inventory", label = "Inventory", compactLabel = "Bag", tint = COLORS.cyan},
-	{key = "Tools", label = "Tools", compactLabel = "Tools", tint = COLORS.gold},
 	{key = "Accessories", label = "Accessories", compactLabel = "Acc.", tint = COLORS.cyan},
 }
 
@@ -407,4 +406,4 @@ gui.Destroying:Connect(function()
 	end
 end)
 
-print("[Utility Bar] Separate nine-action launcher loaded.")
+print("[Utility Bar] Separate eight-action launcher loaded.")
