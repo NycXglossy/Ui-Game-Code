@@ -299,9 +299,14 @@ end
 
 local function openInventory()
 	inventoryPanel.Visible = true
+	playerGui:SetAttribute("UtilityInventoryOpen", true)
 	refreshInventory()
 end
-closeInventory.Activated:Connect(function() inventoryPanel.Visible = false end)
+local function closeInventoryPanel()
+	inventoryPanel.Visible = false
+	playerGui:SetAttribute("UtilityInventoryOpen", false)
+end
+closeInventory.Activated:Connect(closeInventoryPanel)
 
 local requestPending = false
 actionEvent.Event:Connect(function(actionName: string)
