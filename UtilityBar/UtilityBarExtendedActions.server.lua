@@ -12,7 +12,7 @@ local CLONE_LIFETIME = 12
 local lastRequest: {[number]: number} = {}
 local sizeStep: {[number]: number} = {}
 local sizeBaseline: {[number]: {humanoid: Humanoid, height: number, width: number, depth: number, head: number}} = {}
-local auraByPlayer: {[number]: Highlight} = {}
+local auraByPlayer: {[number]: {highlights: {Highlight}, connection: RBXScriptConnection?}} = {}
 
 local folder = ReplicatedStorage:FindFirstChild(REMOTE_FOLDER)
 if folder and not folder:IsA("Folder") then folder:Destroy(); folder = nil end
@@ -131,6 +131,16 @@ local function createClone(player: Player): (boolean, string)
 	return true, "Temporary character clone created for 12 seconds."
 end
 
+local function clearAura(userId: number)
+	local state = auraByPlayer[userId]
+	if not state then return end
+	if state.connection then state.connection:Disconnect() end
+	for _, highlight in ipairs(state.highlights) do
+		if highlight.Parent then highlight:Destroy() end
+	end
+	auraByPlayer[userId] = nil
+end
+
 local function setAura(player: Player, preset: any): (boolean, string)
 	if typeof(preset) ~= "string" then return false, "Choose an aura style." end
 	local styles = {
@@ -142,19 +152,44 @@ local function setAura(player: Player, preset: any): (boolean, string)
 	if not style then return false, "That aura style is not available." end
 	local character = player.Character
 	if not character or not character.Parent then return false, "Your character is not ready." end
-	local highlight = auraByPlayer[player.UserId]
-	if highlight and highlight.Parent then highlight:Destroy() end
-	highlight = Instance.new("Highlight")
-	highlight.Name = "UtilityAura"
-	highlight.Adornee = character
-	highlight.FillColor = style.fill
-	highlight.OutlineColor = style.outline
-	highlight.FillTransparency = 0.78
-	highlight.OutlineTransparency = 0.12
-	highlight.DepthMode = Enum.HighlightDepthMode.Occluded
-	highlight.Parent = character
-	auraByPlayer[player.UserId] = highlight
-	return true, preset .. " aura applied."
+
+	clearAura(player.UserId)
+	local state = {highlights = {} :: {Highlight}, connection = nil :: RBXScriptConnection?}
+	local function addHighlight(target: Instance, name: string)
+		local highlight = Instance.new("Highlight")
+		highlight.Name = name
+		highlight.Adornee = target
+		highlight.FillColor = style.fill
+		highlight.OutlineColor = style.outline
+		highlight.FillTransparency = 0.78
+		highlight.OutlineTransparency = 0.12
+		highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+		highlight.Parent = character
+		table.insert(state.highlights, highlight)
+	end
+
+	-- Main character aura plus explicit handle highlights for equipped Tools and Accessories.
+	addHighlight(character, "UtilityAura")
+	local function addWearableHandle(descendant: Instance)
+		if not descendant:IsA("BasePart") or descendant.Name ~= "Handle" then return end
+		local ancestor = descendant.Parent
+		while ancestor and ancestor ~= character do
+			if ancestor:IsA("Tool") then
+				addHighlight(descendant, "UtilityAura_Tool")
+				return
+			elseif ancestor:IsA("Accessory") then
+				addHighlight(descendant, "UtilityAura_Accessory")
+				return
+			end
+			ancestor = ancestor.Parent
+		end
+	end
+	for _, descendant in ipairs(character:GetDescendants()) do
+		addWearableHandle(descendant)
+	end
+	state.connection = character.DescendantAdded:Connect(addWearableHandle)
+	auraByPlayer[player.UserId] = state
+	return true, preset .. " aura applied to your character, equipped tools, and accessories."
 end
 
 execute.OnServerInvoke = function(player: Player, actionName: any, value: any): (boolean, string)
@@ -178,24 +213,8 @@ Players.PlayerRemoving:Connect(function(player)
 	lastRequest[player.UserId] = nil
 	sizeStep[player.UserId] = nil
 	sizeBaseline[player.UserId] = nil
-	local aura = auraByPlayer[player.UserId]
-	if aura then aura:Destroy() end
-	auraByPlayer[player.UserId] = nil
+	clearAura(player.UserId)
 	local clone = workspace:FindFirstChild("UtilityClone_" .. player.UserId)
 	if clone then clone:Destroy() end
 end)
-
-print("[UtilityBar] Extended Mount, Size, Clone, and Aura actions ready.")
-
-Players.PlayerRemoving:Connect(function(player)
-	lastRequest[player.UserId] = nil
-	sizeStep[player.UserId] = nil
-	sizeBaseline[player.UserId] = nil
-	local aura = auraByPlayer[player.UserId]
-	if aura then aura:Destroy() end
-	auraByPlayer[player.UserId] = nil
-	local clone = workspace:FindFirstChild("UtilityClone_" .. player.UserId)
-	if clone then clone:Destroy() end
-end)
-
 print("[UtilityBar] Extended Mount, Size, Clone, and Aura actions ready.")
