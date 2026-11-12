@@ -185,6 +185,11 @@ local function buildUtilityIcon(parent: Instance, kind: string, color: Color3): 
 		part("ToolHandle",.30,.58,.13,.68,-38)
 		part("ToolHead",.62,.28,.60,.16,0)
 		part("ToolEnd",.78,.28,.16,.32,0)
+	elseif kind == "ToolShop" then
+		outline("ShopBag",.5,.54,.66,.62)
+		part("ShopHandle",.5,.17,.34,.12,0)
+		part("ShopWheelA",.32,.88,.14,.14,0)
+		part("ShopWheelB",.68,.88,.14,.14,0)
 	elseif kind == "Accessories" then
 		outline("AccessoryBand",.5,.52,.68,.62)
 		part("AccessoryGem",.5,.18,.22,.22,0)
@@ -200,6 +205,7 @@ local definitions = {
 	{key = "Clone", label = "Clone", tint = COLORS.cyan},
 	{key = "Aura", label = "Aura", tint = COLORS.gold},
 	{key = "Inventory", label = "Inventory", compactLabel = "Bag", tint = COLORS.cyan},
+	{key = "ToolShop", label = "Tool Shop", compactLabel = "Shop", tint = COLORS.gold},
 	{key = "Accessories", label = "Accessories", compactLabel = "Acc.", tint = COLORS.cyan},
 }
 
@@ -347,7 +353,8 @@ local function updateVisibility()
 	local tikiTideOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
 	local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
 	local utilityPanelOpen = playerGui:GetAttribute("UtilityActionPanelOpen") == true
-	local visible = not expanded and not tikiTideOpen and not inventoryOpen and not utilityPanelOpen
+	local toolShopOpen = playerGui:GetAttribute("UtilityToolShopOpen") == true
+	local visible = not expanded and not tikiTideOpen and not inventoryOpen and not utilityPanelOpen and not toolShopOpen
 	shell.Visible = visible
 	playerGui:SetAttribute("UtilityBarVisible", visible)
 	if not visible then
@@ -370,6 +377,7 @@ playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisib
 playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("UtilityActionPanelOpen"):Connect(updateVisibility)
+playerGui:GetAttributeChangedSignal("UtilityToolShopOpen"):Connect(updateVisibility)
 -- The Tiki Tide entry stays in the seven-button layout; its activation is
 -- entitlement-checked before the panel receives an open request.
 
@@ -406,4 +414,4 @@ gui.Destroying:Connect(function()
 	end
 end)
 
-print("[Utility Bar] Separate eight-action launcher loaded.")
+print("[Utility Bar] Separate nine-action launcher loaded.")
