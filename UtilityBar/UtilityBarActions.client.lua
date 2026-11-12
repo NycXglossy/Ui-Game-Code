@@ -380,6 +380,8 @@ local function refreshInventory(mode: string?)
 end
 
 local function openInventory(mode: string?)
+	inventoryTitle.Text = if mode == "Accessories" then "YOUR ACCESSORIES" else if mode == "Tools" then "YOUR TOOLS" else "YOUR INVENTORY"
+	inventoryHint.Text = if mode == "Accessories" then "Equipped accessories on your character" else "Select a Tool to equip or unequip"
 	inventoryPanel.Visible = true
 	playerGui:SetAttribute("UtilityInventoryOpen", true)
 	refreshInventory(mode)
