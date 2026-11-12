@@ -6,11 +6,12 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 
 1. Add `UtilityBar.client.lua` as a **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
 2. Add `UtilityBarActions.client.lua` as a second **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
-3. Add `UtilityBarActions.server.lua` as a **Script** under `ServerScriptService`.
-4. Add `UtilityBarExtendedActions.server.lua` as a second **Script** under `ServerScriptService`.
-5. Keep exactly one copy of each Utility Bar script.
-6. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
-7. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the existing settings-open request attribute.
+3. Add `UtilityBarPanels.client.lua` as a third **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
+4. Add `UtilityBarActions.server.lua` as a **Script** under `ServerScriptService`.
+5. Add `UtilityBarExtendedActions.server.lua` as a second **Script** under `ServerScriptService`.
+6. Keep exactly one copy of each Utility Bar script.
+7. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
+8. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the existing settings-open request attribute.
 
 ## Included buttons
 
@@ -43,9 +44,10 @@ This refreshes the player's current Roblox account avatar; it is not an outfit c
 The `UtilityBarExtendedActions.server.lua` script owns these actions through the allowlisted `UtilityBarRemotes.ExecuteUtility` RemoteFunction. The client sends only an action name; the server validates the action, applies a per-player cooldown, and operates only on the requesting player's character.
 
 - **Mount:** equips or unequips a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
-- **Size:** cycles Small, Large, and Default on R15 avatars. Original body scale values are captured per character and restored for the Default preset. R6 avatars receive a clear unsupported message.
-- **Clone:** creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
-- **Aura:** toggles a server-created teal-and-gold Highlight on the requesting player's character.
+- **Size:** opens its own control panel with a 65%–135% adjustable slider and a 100% reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
+- **Clone:** opens its own single-tab panel with a Create Clone action. The server creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
+- **Mount:** opens its own single-tab panel with an Equip / Unequip action for the tagged or named mount Tool.
+- **Aura:** opens a three-tab style panel: Teal Glow, Royal Gold, and Tiki Tide. Selecting Apply sends the chosen preset to the server, which creates the matching Highlight.
 
 Mount requires an existing mount Tool; this update does not invent or import a third-party mount model. The extended actions are separate from ClubMusic and do not issue music, queue, catalog, or DJ requests.
 
@@ -60,7 +62,8 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 ## Validation
 
-- [ ] Install once and verify seven buttons appear in the bottom utility rail.
+- [ ] Install all three client LocalScripts and both server Scripts once; verify seven buttons appear in the bottom utility rail.
+- [ ] Verify Mount, Clone, Size and Aura each open their own separate control panel; verify Aura has three style tabs and Size has a working adjustable slider and 100% reset.
 - [ ] Open the full ClubMusic menu; verify the utility rail hides and returns on close.
 - [ ] Open Tiki Tide Settings; verify the rail hides and returns on close.
 - [ ] Test touch, mouse, keyboard, and D-pad / thumbstick navigation.
