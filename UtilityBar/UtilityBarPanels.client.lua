@@ -72,40 +72,49 @@ local function open(name: string)
 	status.Text=""
 	clearBody()
 	if name=="Aura" then
-		local tabNames={"TEAL GLOW","ROYAL GOLD","TIKI TIDE"}
+		local styleNames={"TEAL GLOW","ROYAL GOLD","TIKI TIDE"}
 		local presets={"Teal Glow","Royal Gold","Tiki Tide"}
-		local active=1
-		local tabRow=make("Frame",{BackgroundTransparency=1,Size=UDim2.new(1,0,0,46)},body)
-		local content=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,54),Size=UDim2.new(1,0,1,-54)},body)
+		local targetNames={"CHARACTER","TOOLS","ACCESSORIES"}
+		local targets={"Character","Tools","Accessories"}
+		local activeStyle,activeTarget=1,1
+		local styleRow=make("Frame",{BackgroundTransparency=1,Size=UDim2.new(1,0,0,42)},body)
+		local targetRow=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,46),Size=UDim2.new(1,0,0,42)},body)
+		local content=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,94),Size=UDim2.new(1,0,1,-94)},body)
 		local function drawAura()
-			for _,child in ipairs(tabRow:GetChildren()) do child:Destroy() end
+			for _,child in ipairs(styleRow:GetChildren()) do child:Destroy() end
+			for _,child in ipairs(targetRow:GetChildren()) do child:Destroy() end
 			for _,child in ipairs(content:GetChildren()) do child:Destroy() end
-			for i,label in ipairs(tabNames) do
-				local tab=button(tabRow,label,if i==active then C.gold else C.muted,UDim2.new((i-1)/3,3,0,2),UDim2.new(1/3,-6,0,40))
-				tab.TextSize=10
-				tab.Activated:Connect(function() active=i; drawAura() end)
+			for i,label in ipairs(styleNames) do
+				local tab=button(styleRow,label,if i==activeStyle then C.gold else C.muted,UDim2.new((i-1)/3,2,0,1),UDim2.new(1/3,-4,0,38))
+				 tab.TextSize=9
+				tab.Activated:Connect(function() activeStyle=i; drawAura() end)
 			end
-			local desc=make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,8),Size=UDim2.new(1,0,0,42),Font=Enum.Font.GothamMedium,Text="Aura applies to your character, equipped Tools, and Accessories.",TextColor3=C.muted,TextSize=12},content)
-			local apply=button(content,"APPLY "..string.upper(presets[active]),C.teal,UDim2.new(.08,0,.48,0),UDim2.new(.84,0,0,52))
-			apply.Activated:Connect(function() invoke("Aura",presets[active]) end)
+			for i,label in ipairs(targetNames) do
+				local tab=button(targetRow,label,if i==activeTarget then C.teal else C.muted,UDim2.new((i-1)/3,2,0,1),UDim2.new(1/3,-4,0,38))
+				tab.TextSize=9
+				tab.Activated:Connect(function() activeTarget=i; drawAura() end)
+			end
+			make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,0),Size=UDim2.new(1,0,0,28),Font=Enum.Font.GothamMedium,Text="Apply "..targets[activeTarget].." only",TextColor3=C.muted,TextSize=12},content)
+			local apply=button(content,"APPLY "..string.upper(presets[activeStyle]),C.teal,UDim2.new(.08,0,0,36),UDim2.new(.84,0,0,42))
+			apply.Activated:Connect(function() invoke("Aura",{preset=presets[activeStyle],target=targets[activeTarget]}) end)
 		end
 		drawAura()
 	elseif name=="Size" then
 		local value=1.0
-		local valueLabel=make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,4),Size=UDim2.new(1,0,0,34),Font=Enum.Font.GothamBold,Text="100%",TextColor3=C.gold,TextSize=22},body) :: TextLabel
-		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,38),Size=UDim2.new(1,0,0,22),Font=Enum.Font.GothamMedium,Text="Character scale · 65% to 135%",TextColor3=C.muted,TextSize=11},body)
+		local valueLabel=make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,4),Size=UDim2.new(1,0,0,34),Font=Enum.Font.GothamBold,Text="1.00×",TextColor3=C.gold,TextSize=22},body) :: TextLabel
+		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,38),Size=UDim2.new(1,0,0,22),Font=Enum.Font.GothamMedium,Text="Character scale · 0.50× to 5.00×",TextColor3=C.muted,TextSize=11},body)
 		local track=make("Frame",{Position=UDim2.new(.08,0,0,91),Size=UDim2.new(.84,0,0,10),BackgroundColor3=C.hover,BorderSizePixel=0},body) :: Frame
 		rounded(track,8)
-		local fill=make("Frame",{Size=UDim2.new(.5,0,1,0),BackgroundColor3=C.teal,BorderSizePixel=0},track) :: Frame
+		local fill=make("Frame",{Size=UDim2.new((1-.5)/4.5,0,1,0),BackgroundColor3=C.teal,BorderSizePixel=0},track) :: Frame
 		rounded(fill,8)
-		local knob=make("Frame",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.new(.5,0,.5,0),Size=UDim2.fromOffset(22,22),BackgroundColor3=C.gold,BorderSizePixel=0},track) :: Frame
+		local knob=make("Frame",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.new((1-.5)/4.5,0,.5,0),Size=UDim2.fromOffset(22,22),BackgroundColor3=C.gold,BorderSizePixel=0},track) :: Frame
 		rounded(knob,11); make("UIStroke",{Color=C.bg,Thickness=2},knob)
 		local dragging=false
 		local function setFromX(x: number)
 			local alpha=math.clamp((x-track.AbsolutePosition.X)/math.max(1,track.AbsoluteSize.X),0,1)
-			value=math.floor((.65+alpha*.70)*100+.5)/100
+			value=math.floor((.5+alpha*4.5)*100+.5)/100
 			fill.Size=UDim2.new(alpha,0,1,0); knob.Position=UDim2.new(alpha,0,.5,0)
-			valueLabel.Text=tostring(math.floor(value*100+.5)).."%"
+			valueLabel.Text=string.format("%.2f×",value)
 		end
 		track.InputBegan:Connect(function(input) if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=true; setFromX(input.Position.X) end end)
 		connectPanel(UserInputService.InputChanged, function(input) if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then setFromX(input.Position.X) end end)
