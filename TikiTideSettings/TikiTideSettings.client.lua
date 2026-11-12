@@ -797,6 +797,9 @@ playerGui.DescendantAdded:Connect(function(descendant)
 end)
 
 local function open()
+	-- Inventory owns the foreground interaction layer; do not allow a settings
+	-- request to reopen this surface until the inventory has been dismissed.
+	if playerGui:GetAttribute("UtilityInventoryOpen") == true then return end
 	if not refreshState() then return end
 	panel.Visible = true
 	shade.Visible = true
@@ -834,6 +837,7 @@ local function closePanel()
 	-- rejects unauthorized access in GetSnapshot and every privileged action.
 	-- The launcher itself is hidden only while either full settings/menu surface is open.
 	toggle.Visible = playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
+		and playerGui:GetAttribute("UtilityInventoryOpen") ~= true
 	restoreClubHud()
 	if controllerMode and toggle.Visible then
 		GuiService.SelectedObject = toggle
@@ -917,23 +921,26 @@ broadcast.OnClientEvent:Connect(showBroadcast)
 local function updateVisibility()
 	local allowed = player:GetAttribute("HasTikiTideAccess") == true
 	local clubMenuExpanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
+	local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
 
-	-- Immediately close the settings surface if server entitlement is revoked
-	-- or the main ClubMusic menu opens, preventing overlapping privileged UI.
-	if panel.Visible and (not allowed or clubMenuExpanded) then
+	-- Inventory and the main ClubMusic menu own the foreground layer. Close
+	-- Tiki Tide immediately when either opens, and restore its launcher only
+	-- after both surfaces have closed.
+	if panel.Visible and (not allowed or clubMenuExpanded or inventoryOpen) then
 		closePanel()
 		return
 	end
 
 	-- Do not use a client-replicated entitlement attribute as the only way
 	-- to discover the launcher. Server authorization remains the security boundary.
-	toggle.Visible = not panel.Visible and not clubMenuExpanded
+	toggle.Visible = not panel.Visible and not clubMenuExpanded and not inventoryOpen
 	if not toggle.Visible and GuiService.SelectedObject == toggle then
 		GuiService.SelectedObject = nil
 	end
 end
 player:GetAttributeChangedSignal("HasTikiTideAccess"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
+playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(updateVisibility)
 updateVisibility()
 
 player.CharacterAdded:Connect(function()
