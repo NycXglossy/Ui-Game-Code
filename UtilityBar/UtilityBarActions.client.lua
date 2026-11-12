@@ -388,32 +388,6 @@ actionEvent.Event:Connect(function(actionName: string)
 		return
 	end
 
-	if actionName == "Mount" or actionName == "Size" or actionName == "Clone" or actionName == "Aura" then
-		if not extendedRemote or not extendedRemote:IsA("RemoteFunction") then
-			showMessage("Utility service is unavailable. Install UtilityBarExtendedActions.server.lua.")
-			return
-		end
-		if requestPending then
-			showMessage("A utility request is already in progress.")
-			return
-		end
-		requestPending = true
-		showMessage(actionName .. " request…")
-		task.spawn(function()
-			local ok, success, resultMessage = pcall(function()
-				return (extendedRemote :: RemoteFunction):InvokeServer(actionName)
-			end)
-			requestPending = false
-			if not ok then
-				warn("[UtilityBar] " .. actionName .. " request failed: " .. tostring(success))
-				showMessage("Could not contact the utility service. Try again.")
-			else
-				showMessage(if typeof(resultMessage) == "string" then resultMessage
-					else (if success == true then actionName .. " completed." else actionName .. " was not completed."))
-			end
-		end)
-		return
-	end
 
 	if actionName ~= "RefreshOutfit" then return end
 	if not refreshRemote or not refreshRemote:IsA("RemoteFunction") then
