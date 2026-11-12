@@ -21,8 +21,7 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 - Size
 - Clone
 - Aura
-- Inventory
-- Tools
+- Inventory (includes Tool equip/unequip)
 - Accessories
 
 The bar uses the ClubMusic dark-surface / muted-gold / teal visual language, fully rounded surfaces, viewport-aware sizing, horizontal scrolling on narrow screens, and controller focus navigation. It hides while the full ClubMusic menu or Tiki Tide Settings is open, then returns when those surfaces close. The Tiki Tide Settings panel uses the shared `TikiTideSettingsOpen` state attribute.
@@ -33,12 +32,11 @@ For actions other than Tiki Tide Settings, the bar fires the local BindableEvent
 
 `PlayerGui.UtilityBarAction:Fire(actionName)`
 
-Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone`, `Aura`, `Inventory`, `Tools`, and `Accessories`.
+Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone`, `Aura`, `Inventory`, and `Accessories`. Legacy `Tools` requests are routed to the unified Inventory view.
 
 ### Implemented: Inventory, Tools, and Accessories
 
-- **Inventory:** retains the original inventory view of Tools.
-- **Tools:** opens a dedicated Tool list containing Backpack and equipped Tools; selecting a Tool equips or unequips it.
+- **Inventory:** includes every Tool in the Backpack and currently equipped Tools in one list. Selecting a Tool equips it; selecting an equipped Tool unequips it. The separate Tools launcher button has been removed so Tool management lives in one place.
 - **Accessories:** opens a dedicated list of currently equipped character Accessories. This is a view panel; Roblox character Accessories are shown as worn items and are not moved or removed by this panel.
 
 ### Implemented: Refresh Outfit
@@ -70,7 +68,7 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 ## Validation
 
-- [ ] Install all three client LocalScripts and both server Scripts once; verify nine buttons appear in the bottom utility rail.
+- [ ] Install all three client LocalScripts and both server Scripts once; verify eight buttons appear in the bottom utility rail. Open Inventory and verify Backpack/equipped Tools can be equipped and unequipped from the same list.
 - [ ] Verify Mount, Clone, Size and Aura each open their own separate control panel; verify Aura has three style tabs and three target tabs (Character, Tools, Accessories), and Size has a working 0.50×–5.00× slider with a 1.00× reset.
 - [ ] Open the full ClubMusic menu; verify the utility rail hides and returns on close.
 - [ ] Open Tiki Tide Settings; verify the rail hides and returns on close.
