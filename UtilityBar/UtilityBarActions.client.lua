@@ -199,7 +199,7 @@ inventoryTitle.BackgroundTransparency = 1
 inventoryTitle.Position = UDim2.fromOffset(18, 10)
 inventoryTitle.Size = UDim2.new(1, -78, 0, 30)
 inventoryTitle.Font = Enum.Font.GothamBlack
-inventoryTitle.Text = "YOUR INVENTORY"
+inventoryTitle.Text = if mode == "Accessories" then "YOUR ACCESSORIES" else if mode == "Tools" then "YOUR TOOLS" else "YOUR INVENTORY"
 inventoryTitle.TextColor3 = Color3.fromRGB(242, 241, 236)
 inventoryTitle.TextSize = 17
 inventoryTitle.TextXAlignment = Enum.TextXAlignment.Left
@@ -252,13 +252,14 @@ inventoryLayout.Padding = UDim.new(0, 6)
 inventoryLayout.SortOrder = Enum.SortOrder.Name
 inventoryLayout.Parent = inventoryList
 
-local function refreshInventory()
+local function refreshInventory(mode: string?)
 	for _, child in ipairs(inventoryList:GetChildren()) do
 		if child:IsA("GuiObject") then child:Destroy() end
 	end
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	local character = player.Character
 	local tools: {Tool} = {}
+	local accessories: {Accessory} = {}
 	if backpack then
 		for _, item in ipairs(backpack:GetChildren()) do
 			if item:IsA("Tool") then table.insert(tools, item) end
@@ -266,19 +267,25 @@ local function refreshInventory()
 	end
 	if character then
 		for _, item in ipairs(character:GetChildren()) do
-			if item:IsA("Tool") and not table.find(tools, item) then table.insert(tools, item) end
+			if item:IsA("Tool") and not table.find(tools, item) then
+				table.insert(tools, item)
+			elseif item:IsA("Accessory") then
+				table.insert(accessories, item)
+			end
 		end
 	end
-	table.sort(tools, function(a, b) return string.lower(a.Name) < string.lower(b.Name) end)
+	local showingAccessories = mode == "Accessories"
+	local displayItems: {Instance} = if showingAccessories then accessories else tools
+	table.sort(displayItems, function(a, b) return string.lower(a.Name) < string.lower(b.Name) end)
 
-	if #tools == 0 then
+	if #displayItems == 0 then
 		local empty = Instance.new("TextLabel")
 		empty.Name = "EmptyState"
 		empty.Size = UDim2.new(1, -8, 0, 54)
 		empty.BackgroundColor3 = Color3.fromRGB(24, 29, 41)
 		empty.BorderSizePixel = 0
 		empty.Font = Enum.Font.GothamMedium
-		empty.Text = "YOUR INVENTORY IS EMPTY"
+		empty.Text = if showingAccessories then "NO ACCESSORIES ARE EQUIPPED" else if mode == "Tools" then "NO TOOLS IN YOUR INVENTORY" else "YOUR INVENTORY IS EMPTY"
 		empty.TextColor3 = Color3.fromRGB(157, 164, 177)
 		empty.TextSize = 11
 		empty.Parent = inventoryList
@@ -293,8 +300,10 @@ local function refreshInventory()
 		return
 	end
 
-	for index, tool in ipairs(tools) do
-		local equipped = character ~= nil and tool.Parent == character
+	for index, item in ipairs(displayItems) do
+		local tool = if item:IsA("Tool") then item else nil
+		local accessory = if item:IsA("Accessory") then item else nil
+		local equipped = character ~= nil and item.Parent == character
 		local itemButton = Instance.new("TextButton")
 		itemButton.Name = "Item_" .. tostring(index)
 		itemButton.LayoutOrder = index
@@ -330,7 +339,7 @@ local function refreshInventory()
 		itemName.Position = UDim2.fromOffset(23, 0)
 		itemName.Size = UDim2.new(1, -132, 1, 0)
 		itemName.Font = Enum.Font.GothamSemibold
-		itemName.Text = tool.Name
+		itemName.Text = item.Name
 		itemName.TextColor3 = Color3.fromRGB(242, 241, 236)
 		itemName.TextSize = 13
 		itemName.TextTruncate = Enum.TextTruncate.AtEnd
@@ -345,7 +354,7 @@ local function refreshInventory()
 		itemStatus.BackgroundColor3 = equipped and Color3.fromRGB(74, 61, 39) or Color3.fromRGB(35, 53, 59)
 		itemStatus.BorderSizePixel = 0
 		itemStatus.Font = Enum.Font.GothamBold
-		itemStatus.Text = equipped and "EQUIPPED" or "EQUIP"
+		itemStatus.Text = if accessory then "WORN" else (if equipped then "EQUIPPED" else "EQUIP")
 		itemStatus.TextColor3 = equipped and Color3.fromRGB(226, 194, 132) or Color3.fromRGB(119, 196, 203)
 		itemStatus.TextSize = 9
 		itemStatus.Parent = itemButton
@@ -353,27 +362,27 @@ local function refreshInventory()
 		statusCorner.CornerRadius = UDim.new(0, 8)
 		statusCorner.Parent = itemStatus
 		itemButton.Activated:Connect(function()
-			local currentCharacter = player.Character
-			local humanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
-			if not humanoid or not tool.Parent then
-				showMessage("That item is no longer available.")
-				refreshInventory()
+			if accessory then
+				showMessage("Accessories are displayed here; manage worn items through your avatar or inventory.")
 				return
 			end
-			if tool.Parent == currentCharacter then
-				humanoid:UnequipTools()
-			else
-				humanoid:EquipTool(tool)
+			local currentCharacter = player.Character
+			local humanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+			if not humanoid or not tool or not tool.Parent then
+				showMessage("That item is no longer available.")
+				refreshInventory(mode)
+				return
 			end
-			task.defer(refreshInventory)
+			if tool.Parent == currentCharacter then humanoid:UnequipTools() else humanoid:EquipTool(tool) end
+			task.defer(function() refreshInventory(mode) end)
 		end)
 	end
 end
 
-local function openInventory()
+local function openInventory(mode: string?)
 	inventoryPanel.Visible = true
 	playerGui:SetAttribute("UtilityInventoryOpen", true)
-	refreshInventory()
+	refreshInventory(mode)
 end
 local function closeInventoryPanel()
 	inventoryPanel.Visible = false
@@ -383,8 +392,8 @@ closeInventory.Activated:Connect(closeInventoryPanel)
 
 local requestPending = false
 actionEvent.Event:Connect(function(actionName: string)
-	if actionName == "Inventory" then
-		openInventory()
+	if actionName == "Inventory" or actionName == "Tools" or actionName == "Accessories" then
+		openInventory(if actionName == "Inventory" then nil else actionName)
 		return
 	end
 
