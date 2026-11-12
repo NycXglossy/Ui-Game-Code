@@ -276,17 +276,17 @@ local function updateSizing()
 	local tablet = viewport.X >= 560 and viewport.X < 900
 	local desktop = viewport.X >= 900
 	local widthScale = if compactTouch then 0.64 else (if desktop then 0.82 else (if viewport.X < 420 then 0.98 else 0.94))
-	local width = math.max(if compactTouch then 220 else (if desktop then 500 else 280), math.min(if compactTouch then 520 else (if desktop then 640 else 760), math.floor(viewport.X * widthScale)))
+	local width = math.max(if compactTouch then 220 else (if desktop then 500 else 280), math.min(if compactTouch then 520 else (if desktop then 600 else 760), math.floor(viewport.X * widthScale)))
 	local shortScreen = viewport.Y < 460
 	local veryNarrow = viewport.X < 360
 	local narrow = viewport.X < 560
 
 	-- On touch devices keep the rail compact and lift it above the default
 	-- thumb-control zone so it does not sit over the joystick or jump button.
-	local buttonWidth = if compactTouch then 26 else (if desktop then 70 else (if veryNarrow then 52 else (if narrow then 58 else (if tablet then 70 else 82))))
-	local buttonHeight = if compactTouch then 30 else (if desktop then (if shortScreen then 46 else 50) else (if shortScreen then 46 else (if narrow then 52 else 58)))
-	local gap = if compactTouch then 1 else (if desktop then 5 else (if veryNarrow then 4 else (if narrow then 5 else 7)))
-	local shellHeight = if compactTouch then 36 else (if desktop then (if shortScreen then 54 else 62) else (if shortScreen then 58 else (if narrow then 66 else 76)))
+	local buttonWidth = if compactTouch then 26 else (if desktop then 64 else (if veryNarrow then 52 else (if narrow then 58 else (if tablet then 70 else 82))))
+	local buttonHeight = if compactTouch then 30 else (if desktop then (if shortScreen then 42 else 46) else (if shortScreen then 46 else (if narrow then 52 else 58)))
+	local gap = if compactTouch then 1 else (if desktop then 4 else (if veryNarrow then 4 else (if narrow then 5 else 7)))
+	local shellHeight = if compactTouch then 36 else (if desktop then (if shortScreen then 50 else 56) else (if shortScreen then 58 else (if narrow then 66 else 76)))
 
 	for _, button in ipairs(buttons) do
 		button.Size = UDim2.fromOffset(buttonWidth, buttonHeight)
@@ -294,12 +294,12 @@ local function updateSizing()
 		local definition = definitionIndex and definitions[definitionIndex] or nil
 		local iconTile = button:FindFirstChild("IconTile")
 		if iconTile and iconTile:IsA("Frame") then
-			iconTile.Size = UDim2.fromOffset(if compactTouch then 19 else (if desktop then 31 else (if veryNarrow then 31 else 36)), if compactTouch then 17 else (if desktop then 27 else (if shortScreen then 27 else 31)))
+			iconTile.Size = UDim2.fromOffset(if compactTouch then 19 else (if desktop then 29 else (if veryNarrow then 31 else 36)), if compactTouch then 17 else (if desktop then 25 else (if shortScreen then 27 else 31)))
 		end
 		local icon = button:FindFirstChild("PremiumIcon_" .. button.Name:gsub("Button", ""))
 		if icon and icon:IsA("Frame") then
 			icon.Position = UDim2.new(0.5, 0, 0, if compactTouch then 1 else (if shortScreen then 3 else 5))
-			icon.Size = UDim2.fromOffset(if compactTouch then 14 else (if desktop then 24 else (if veryNarrow then 23 else 27)), if compactTouch then 14 else (if desktop then 22 else (if shortScreen then 21 else 25)))
+			icon.Size = UDim2.fromOffset(if compactTouch then 14 else (if desktop then 22 else (if veryNarrow then 23 else 27)), if compactTouch then 14 else (if desktop then 20 else (if shortScreen then 21 else 25)))
 		end
 		local label = button:FindFirstChild("Label")
 		if label and label:IsA("TextLabel") then
