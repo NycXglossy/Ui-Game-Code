@@ -38,7 +38,11 @@ local function getCharacter(player: Player): (Model?, Humanoid?)
 	return character, humanoid
 end
 
-local function setSize(player: Player): (boolean, string)
+local function setSize(player: Player, requestedFactor: any): (boolean, string)
+	if typeof(requestedFactor) ~= "number" or requestedFactor ~= requestedFactor then
+		return false, "Choose a valid character size."
+	end
+	local factor = math.clamp(requestedFactor, 0.65, 1.35)
 	local character, humanoid = getCharacter(player)
 	if not character or not humanoid then return false, "Your character is not ready." end
 	local height = humanoid:FindFirstChild("BodyHeightScale")
@@ -48,29 +52,18 @@ local function setSize(player: Player): (boolean, string)
 	if not (height and width and depth and head)
 		or not (height:IsA("NumberValue") and width:IsA("NumberValue")
 			and depth:IsA("NumberValue") and head:IsA("NumberValue")) then
-		return false, "Size presets require an R15 avatar."
+		return false, "Adjustable size requires an R15 avatar."
 	end
 	local baseline = sizeBaseline[player.UserId]
 	if not baseline or baseline.humanoid ~= humanoid then
-		baseline = {
-			humanoid = humanoid,
-			height = height.Value,
-			width = width.Value,
-			depth = depth.Value,
-			head = head.Value,
-		}
+		baseline = {humanoid=humanoid,height=height.Value,width=width.Value,depth=depth.Value,head=head.Value}
 		sizeBaseline[player.UserId] = baseline
-		sizeStep[player.UserId] = 0
 	end
-	local step = ((sizeStep[player.UserId] or 0) % 3) + 1
-	sizeStep[player.UserId] = step
-	local factor = if step == 1 then 0.85 elseif step == 2 then 1.15 else 1
 	height.Value = math.clamp(baseline.height * factor, 0.5, 1.5)
 	width.Value = math.clamp(baseline.width * factor, 0.5, 1.5)
 	depth.Value = math.clamp(baseline.depth * factor, 0.5, 1.5)
-	head.Value = math.clamp(baseline.head * (if step == 3 then 1 else factor), 0.5, 1.5)
-	return true, if step == 1 then "Small size preset applied."
-		elseif step == 2 then "Large size preset applied." else "Default size restored."
+	head.Value = math.clamp(baseline.head * factor, 0.5, 1.5)
+	return true, string.format("Character size set to %d%%.", math.floor(factor * 100 + 0.5))
 end
 
 local function toggleMount(player: Player): (boolean, string)
@@ -138,29 +131,33 @@ local function createClone(player: Player): (boolean, string)
 	return true, "Temporary character clone created for 12 seconds."
 end
 
-local function toggleAura(player: Player): (boolean, string)
-	local existing = auraByPlayer[player.UserId]
-	if existing and existing.Parent then
-		existing:Destroy()
-		auraByPlayer[player.UserId] = nil
-		return true, "Aura disabled."
-	end
+local function setAura(player: Player, preset: any): (boolean, string)
+	if typeof(preset) ~= "string" then return false, "Choose an aura style." end
+	local styles = {
+		["Teal Glow"] = {fill=Color3.fromRGB(75, 190, 196), outline=Color3.fromRGB(119, 224, 224)},
+		["Royal Gold"] = {fill=Color3.fromRGB(190, 139, 55), outline=Color3.fromRGB(255, 218, 145)},
+		["Tiki Tide"] = {fill=Color3.fromRGB(119, 196, 203), outline=Color3.fromRGB(226, 194, 132)},
+	}
+	local style = styles[preset]
+	if not style then return false, "That aura style is not available." end
 	local character = player.Character
 	if not character or not character.Parent then return false, "Your character is not ready." end
-	local highlight = Instance.new("Highlight")
+	local highlight = auraByPlayer[player.UserId]
+	if highlight and highlight.Parent then highlight:Destroy() end
+	highlight = Instance.new("Highlight")
 	highlight.Name = "UtilityAura"
 	highlight.Adornee = character
-	highlight.FillColor = Color3.fromRGB(119, 196, 203)
-	highlight.OutlineColor = Color3.fromRGB(226, 194, 132)
+	highlight.FillColor = style.fill
+	highlight.OutlineColor = style.outline
 	highlight.FillTransparency = 0.78
 	highlight.OutlineTransparency = 0.12
 	highlight.DepthMode = Enum.HighlightDepthMode.Occluded
 	highlight.Parent = character
 	auraByPlayer[player.UserId] = highlight
-	return true, "Aura enabled."
+	return true, preset .. " aura applied."
 end
 
-execute.OnServerInvoke = function(player: Player, actionName: any): (boolean, string)
+execute.OnServerInvoke = function(player: Player, actionName: any, value: any): (boolean, string)
 	if typeof(actionName) ~= "string" then return false, "Invalid utility request." end
 	local allowed = actionName == "Mount" or actionName == "Size"
 		or actionName == "Clone" or actionName == "Aura"
@@ -171,10 +168,24 @@ execute.OnServerInvoke = function(player: Player, actionName: any): (boolean, st
 	end
 	lastRequest[player.UserId] = now
 	if actionName == "Mount" then return toggleMount(player) end
-	if actionName == "Size" then return setSize(player) end
+	if actionName == "Size" then return setSize(player, value) end
 	if actionName == "Clone" then return createClone(player) end
-	return toggleAura(player)
+	return setAura(player, value)
 end
+
+
+Players.PlayerRemoving:Connect(function(player)
+	lastRequest[player.UserId] = nil
+	sizeStep[player.UserId] = nil
+	sizeBaseline[player.UserId] = nil
+	local aura = auraByPlayer[player.UserId]
+	if aura then aura:Destroy() end
+	auraByPlayer[player.UserId] = nil
+	local clone = workspace:FindFirstChild("UtilityClone_" .. player.UserId)
+	if clone then clone:Destroy() end
+end)
+
+print("[UtilityBar] Extended Mount, Size, Clone, and Aura actions ready.")
 
 Players.PlayerRemoving:Connect(function(player)
 	lastRequest[player.UserId] = nil
