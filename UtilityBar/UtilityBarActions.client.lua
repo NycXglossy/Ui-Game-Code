@@ -90,14 +90,16 @@ local inventoryPanel = Instance.new("Frame")
 inventoryPanel.Name = "InventoryPanel"
 inventoryPanel.AnchorPoint = Vector2.new(0.5, 0.5)
 inventoryPanel.Position = UDim2.fromScale(0.5, 0.5)
-inventoryPanel.Size = UDim2.new(0.9, 0, 0.75, 0)
+-- Scale with the available viewport on phones, tablets, laptops, and desktops.
+-- A maximum size keeps the panel comfortable on large monitors; deliberately
+-- avoid a minimum pixel size so compact screens are never forced off-screen.
+inventoryPanel.Size = UDim2.new(0.9, 0, 0.78, 0)
 inventoryPanel.BackgroundColor3 = Color3.fromRGB(15, 19, 28)
 inventoryPanel.BorderSizePixel = 0
 inventoryPanel.Visible = false
 inventoryPanel.Parent = feedbackGui
 local panelSize = Instance.new("UISizeConstraint")
-panelSize.MinSize = Vector2.new(280, 260)
-panelSize.MaxSize = Vector2.new(460, 520)
+panelSize.MaxSize = Vector2.new(560, 620)
 panelSize.Parent = inventoryPanel
 local panelCorner = Instance.new("UICorner")
 panelCorner.CornerRadius = UDim.new(0, 18)
