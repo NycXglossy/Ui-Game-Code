@@ -1,10 +1,11 @@
 --!strict
 -- UtilityBarActions.client.lua
 -- Place as a LocalScript in StarterPlayer/StarterPlayerScripts.
--- Handles only the independent Refresh Outfit action for now.
+-- Handles independent client-side Inventory and server-authoritative Refresh Outfit actions.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
@@ -17,9 +18,9 @@ end
 
 local remoteFolder = ReplicatedStorage:WaitForChild("UtilityBarRemotes", 20)
 local refreshRemote = if remoteFolder then remoteFolder:WaitForChild("RefreshOwnAvatar", 20) else nil
-if not refreshRemote or not refreshRemote:IsA("RemoteFunction") then
-	warn("[UtilityBar] RefreshOwnAvatar remote was not found. Install UtilityBarActions.server.lua.")
-	return
+if refreshRemote and not refreshRemote:IsA("RemoteFunction") then
+	warn("[UtilityBar] RefreshOwnAvatar has an invalid class; Refresh Outfit is unavailable.")
+	refreshRemote = nil
 end
 
 local existingGui = playerGui:FindFirstChild("UtilityActionFeedback")
@@ -85,7 +86,31 @@ end
 
 local requestPending = false
 actionEvent.Event:Connect(function(actionName: string)
+	if actionName == "Inventory" then
+		local ok, isEnabled = pcall(function()
+			return StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Backpack)
+		end)
+		if not ok then
+			showMessage("Roblox inventory is unavailable right now.")
+			return
+		end
+		local setOk, setError = pcall(function()
+			StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, not isEnabled)
+		end)
+		if not setOk then
+			warn("[UtilityBar] Inventory toggle failed: " .. tostring(setError))
+			showMessage("Could not toggle the Roblox inventory.")
+		else
+			showMessage(if isEnabled then "Inventory hidden." else "Inventory opened.")
+		end
+		return
+	end
+
 	if actionName ~= "RefreshOutfit" then return end
+	if not refreshRemote or not refreshRemote:IsA("RemoteFunction") then
+		showMessage("Avatar refresh service is unavailable.")
+		return
+	end
 	if requestPending then
 		showMessage("Avatar refresh is already in progress.")
 		return
@@ -110,4 +135,4 @@ actionEvent.Event:Connect(function(actionName: string)
 	end)
 end)
 
-print("[UtilityBar] Refresh Outfit action connected.")
+print("[UtilityBar] Inventory and Refresh Outfit actions connected.")
