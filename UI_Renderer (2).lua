@@ -1119,26 +1119,42 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function setCompactHudVisibility(visible: boolean)
-		-- Share menu state with Tiki Tide Settings so neither UI can restore the HUD
-		-- while the other full-screen panel is still open.
+		-- Keep the compact HUD hidden while any full-size companion panel is open.
 		playerGui:SetAttribute("ClubMusicMenuExpanded", expanded)
 		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
+		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
 		for _, descendant in ipairs(playerGui:GetDescendants()) do
 			if descendant ~= hud and isCompactClubHud(descendant) then
 				(descendant :: GuiObject).Visible = false
 			end
 		end
-		hud.Visible = visible and not expanded and not tikiTideSettingsOpen
+		hud.Visible = visible and not expanded and not tikiTideSettingsOpen and not inventoryOpen
 		syncLauncherVisibility()
 	end
 
-	-- Tiki Tide Settings owns this shared attribute; respond immediately when its
-	-- panel opens or closes, without forcing either menu to rebuild.
-	table.insert(connections, playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(syncLauncherVisibility))
-	syncLauncherVisibility()
-	-- Catch duplicate bars created by another renderer copy after this menu opens.
+	local function syncExternalPanelHudVisibility()
+		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
+		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
+		if inventoryOpen or tikiTideSettingsOpen or expanded then
+			for _, descendant in ipairs(playerGui:GetDescendants()) do
+				if descendant ~= hud and isCompactClubHud(descendant) then
+					(descendant :: GuiObject).Visible = false
+				end
+			end
+		end
+		hud.Visible = not expanded and not tikiTideSettingsOpen and not inventoryOpen
+		syncLauncherVisibility()
+	end
+
+	-- Coordinate compact-HUD visibility with Tiki Tide Settings and the
+	-- independent Utility Bar inventory without rebuilding either interface.
+	table.insert(connections, playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(syncExternalPanelHudVisibility))
+	table.insert(connections, playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(syncExternalPanelHudVisibility))
+	syncExternalPanelHudVisibility()
+	-- Catch duplicate bars created by another renderer copy while a panel is open.
 	table.insert(connections, playerGui.DescendantAdded:Connect(function(descendant)
-		if expanded and isCompactClubHud(descendant) then
+		if (expanded or playerGui:GetAttribute("UtilityInventoryOpen") == true
+			or playerGui:GetAttribute("TikiTideSettingsOpen") == true) and isCompactClubHud(descendant) then
 			(descendant :: GuiObject).Visible = false
 		end
 	end))
