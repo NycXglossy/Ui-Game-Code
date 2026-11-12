@@ -42,7 +42,7 @@ local function setSize(player: Player, requestedFactor: any): (boolean, string)
 	if typeof(requestedFactor) ~= "number" or requestedFactor ~= requestedFactor then
 		return false, "Choose a valid character size."
 	end
-	local factor = math.clamp(requestedFactor, 0.65, 1.35)
+	local factor = math.clamp(requestedFactor, 0.5, 5)
 	local character, humanoid = getCharacter(player)
 	if not character or not humanoid then return false, "Your character is not ready." end
 	local height = humanoid:FindFirstChild("BodyHeightScale")
@@ -59,11 +59,11 @@ local function setSize(player: Player, requestedFactor: any): (boolean, string)
 		baseline = {humanoid=humanoid,height=height.Value,width=width.Value,depth=depth.Value,head=head.Value}
 		sizeBaseline[player.UserId] = baseline
 	end
-	height.Value = math.clamp(baseline.height * factor, 0.5, 1.5)
-	width.Value = math.clamp(baseline.width * factor, 0.5, 1.5)
-	depth.Value = math.clamp(baseline.depth * factor, 0.5, 1.5)
-	head.Value = math.clamp(baseline.head * factor, 0.5, 1.5)
-	return true, string.format("Character size set to %d%%.", math.floor(factor * 100 + 0.5))
+	height.Value = baseline.height * factor
+	width.Value = baseline.width * factor
+	depth.Value = baseline.depth * factor
+	head.Value = baseline.head * factor
+	return true, string.format("Character size set to %.2f×.", factor)
 end
 
 local function toggleMount(player: Player): (boolean, string)
@@ -141,8 +141,11 @@ local function clearAura(userId: number)
 	auraByPlayer[userId] = nil
 end
 
-local function setAura(player: Player, preset: any): (boolean, string)
+local function setAura(player: Player, request: any): (boolean, string)
+	if typeof(request) ~= "table" then return false, "Choose an aura style and target." end
+	local preset, target = request.preset, request.target
 	if typeof(preset) ~= "string" then return false, "Choose an aura style." end
+	if target ~= "Character" and target ~= "Tools" and target ~= "Accessories" then return false, "Choose Character, Tools, or Accessories." end
 	local styles = {
 		["Teal Glow"] = {fill=Color3.fromRGB(75, 190, 196), outline=Color3.fromRGB(119, 224, 224)},
 		["Royal Gold"] = {fill=Color3.fromRGB(190, 139, 55), outline=Color3.fromRGB(255, 218, 145)},
@@ -152,13 +155,12 @@ local function setAura(player: Player, preset: any): (boolean, string)
 	if not style then return false, "That aura style is not available." end
 	local character = player.Character
 	if not character or not character.Parent then return false, "Your character is not ready." end
-
 	clearAura(player.UserId)
 	local state = {highlights = {} :: {Highlight}, connection = nil :: RBXScriptConnection?}
-	local function addHighlight(target: Instance, name: string)
+	local function addHighlight(targetInstance: Instance, name: string)
 		local highlight = Instance.new("Highlight")
 		highlight.Name = name
-		highlight.Adornee = target
+		highlight.Adornee = targetInstance
 		highlight.FillColor = style.fill
 		highlight.OutlineColor = style.outline
 		highlight.FillTransparency = 0.78
@@ -167,29 +169,26 @@ local function setAura(player: Player, preset: any): (boolean, string)
 		highlight.Parent = character
 		table.insert(state.highlights, highlight)
 	end
-
-	-- Main character aura plus explicit handle highlights for equipped Tools and Accessories.
-	addHighlight(character, "UtilityAura")
-	local function addWearableHandle(descendant: Instance)
-		if not descendant:IsA("BasePart") or descendant.Name ~= "Handle" then return end
+	local function addTarget(descendant: Instance)
+		if target == "Character" or not descendant:IsA("BasePart") or descendant.Name ~= "Handle" then return end
 		local ancestor = descendant.Parent
 		while ancestor and ancestor ~= character do
-			if ancestor:IsA("Tool") then
-				addHighlight(descendant, "UtilityAura_Tool")
-				return
-			elseif ancestor:IsA("Accessory") then
-				addHighlight(descendant, "UtilityAura_Accessory")
-				return
+			if target == "Tools" and ancestor:IsA("Tool") then
+				addHighlight(descendant, "UtilityAura_Tool"); return
+			elseif target == "Accessories" and ancestor:IsA("Accessory") then
+				addHighlight(descendant, "UtilityAura_Accessory"); return
 			end
 			ancestor = ancestor.Parent
 		end
 	end
-	for _, descendant in ipairs(character:GetDescendants()) do
-		addWearableHandle(descendant)
+	if target == "Character" then
+		addHighlight(character, "UtilityAura")
+	else
+		for _, descendant in ipairs(character:GetDescendants()) do addTarget(descendant) end
+		state.connection = character.DescendantAdded:Connect(addTarget)
 	end
-	state.connection = character.DescendantAdded:Connect(addWearableHandle)
 	auraByPlayer[player.UserId] = state
-	return true, preset .. " aura applied to your character, equipped tools, and accessories."
+	return true, preset .. " aura applied to " .. string.lower(target) .. "."
 end
 
 execute.OnServerInvoke = function(player: Player, actionName: any, value: any): (boolean, string)
