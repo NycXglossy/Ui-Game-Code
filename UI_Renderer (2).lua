@@ -1113,9 +1113,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function syncLauncherVisibility()
-		-- The floating full-UI launcher must stay hidden behind Tiki Tide Settings too.
+		-- Keep the floating full-UI launcher hidden behind every companion panel.
 		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
-		toggleButton.Visible = not expanded and not tikiTideSettingsOpen
+		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
+		toggleButton.Visible = not expanded and not tikiTideSettingsOpen and not inventoryOpen
 	end
 
 	local function setCompactHudVisibility(visible: boolean)
