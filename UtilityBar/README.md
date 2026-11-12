@@ -44,7 +44,7 @@ This refreshes the player's current Roblox account avatar; it is not an outfit c
 The `UtilityBarExtendedActions.server.lua` script owns these actions through the allowlisted `UtilityBarRemotes.ExecuteUtility` RemoteFunction. The client sends only an action name; the server validates the action, applies a per-player cooldown, and operates only on the requesting player's character.
 
 - **Mount:** equips or unequips a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
-- **Size:** opens its own control panel with a 65%–135% adjustable slider and a 100% reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
+- **Size:** opens its own control panel with a 0.50×–5.00× adjustable slider and a 1.00× reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
 - **Clone:** opens its own single-tab panel with a Create Clone action. The server creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
 - **Mount:** opens its own single-tab panel with an Equip / Unequip action for the tagged or named mount Tool.
 - **Aura:** opens a three-tab style panel: Teal Glow, Royal Gold, and Tiki Tide. Selecting Apply sends the chosen preset to the server, which highlights the character and equipped Tool and Accessory handles. Newly equipped Tools and Accessories receive the active aura automatically.
@@ -55,7 +55,7 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 - The server accepts only the four explicit action names; clients cannot supply target players, asset IDs, scale values, or arbitrary instances.
 - Requests are throttled per player on the server.
-- Size values are clamped and based on each character's captured baseline.
+- Size values are clamped to 0.50×–5.00× and based on each character's captured baseline.
 - Clone scripts are removed and its parts cannot collide, touch, or be queried; clones expire automatically and are cleaned up when their owner leaves.
 - Aura instances are tracked per player and cleaned up when the player leaves.
 - Refresh Outfit remains independently server-authoritative with its own cooldown.
@@ -63,7 +63,7 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 ## Validation
 
 - [ ] Install all three client LocalScripts and both server Scripts once; verify seven buttons appear in the bottom utility rail.
-- [ ] Verify Mount, Clone, Size and Aura each open their own separate control panel; verify Aura has three style tabs and Size has a working adjustable slider and 100% reset.
+- [ ] Verify Mount, Clone, Size and Aura each open their own separate control panel; verify Aura has three style tabs and three target tabs (Character, Tools, Accessories), and Size has a working 0.50×–5.00× slider with a 1.00× reset.
 - [ ] Open the full ClubMusic menu; verify the utility rail hides and returns on close.
 - [ ] Open Tiki Tide Settings; verify the rail hides and returns on close.
 - [ ] Test touch, mouse, keyboard, and D-pad / thumbstick navigation.
