@@ -6,6 +6,8 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -99,8 +101,69 @@ inventoryPanel.BorderSizePixel = 0
 inventoryPanel.Visible = false
 inventoryPanel.Parent = feedbackGui
 local panelSize = Instance.new("UISizeConstraint")
-panelSize.MaxSize = Vector2.new(560, 620)
 panelSize.Parent = inventoryPanel
+
+-- Match the main ClubMusic menu's exact device profiles and viewport-fit math.
+-- This keeps the complete panel, including its close control, inside short laptop
+-- screens and adapts again when the window is resized or a device rotates.
+local inventoryScale = Instance.new("UIScale")
+inventoryScale.Parent = inventoryPanel
+
+local INVENTORY_PROFILES = {
+	Desktop = { base = 1.00, refX = 1280, refY = 720, minF = 0.80, w = 0.68, h = 0.80,
+		min = Vector2.new(360, 340) },
+	Tablet = { base = 0.92, refX = 1024, refY = 600, minF = 0.85, w = 0.72, h = 0.80,
+		min = Vector2.new(320, 280) },
+	Mobile = { base = 0.90, refX = 640, refY = 340, minF = 0.90, w = 0.94, h = 0.90,
+		min = Vector2.new(280, 220) },
+	VR = { base = 0.90, refX = 1280, refY = 720, minF = 0.90, w = 0.60, h = 0.70,
+		min = Vector2.new(320, 300) },
+	Console = { base = 1.00, refX = 1280, refY = 720, minF = 1.00, w = 0.66, h = 0.76,
+		min = Vector2.new(360, 320) },
+}
+
+local function getInventoryDevice(viewport: Vector2): string
+	if UserInputService.VREnabled then return "VR" end
+	if GuiService:IsTenFootInterface() then return "Console" end
+	local touch = UserInputService.TouchEnabled
+	local keyboard = UserInputService.KeyboardEnabled
+	if touch and not keyboard then
+		return if math.min(viewport.X, viewport.Y) >= 600 then "Tablet" else "Mobile"
+	end
+	if UserInputService.GamepadEnabled and not keyboard and not touch then return "Console" end
+	return "Desktop"
+end
+
+local function applyInventoryLayout()
+	local camera = workspace.CurrentCamera
+	local viewport = if camera then camera.ViewportSize else Vector2.new(1280, 720)
+	local profile = INVENTORY_PROFILES[getInventoryDevice(viewport)]
+	local fit = math.clamp(math.min(viewport.X / profile.refX, viewport.Y / profile.refY), profile.minF, 1)
+	local scale = profile.base * fit
+	inventoryScale.Scale = scale
+
+	local targetWidth = math.max(1, viewport.X * profile.w / scale)
+	local targetHeight = math.max(1, viewport.Y * profile.h / scale)
+	panelSize.MinSize = Vector2.new(
+		math.min(profile.min.X, targetWidth * 0.90),
+		math.min(profile.min.Y, targetHeight * 0.90)
+	)
+	panelSize.MaxSize = Vector2.new(targetWidth, targetHeight)
+	inventoryPanel.Size = UDim2.new(profile.w / scale, 0, profile.h / scale, 0)
+end
+
+local inventoryCameraConnection: RBXScriptConnection? = nil
+local function bindInventoryCamera()
+	if inventoryCameraConnection then inventoryCameraConnection:Disconnect() end
+	local camera = workspace.CurrentCamera
+	if camera then
+		inventoryCameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyInventoryLayout)
+	end
+	applyInventoryLayout()
+end
+bindInventoryCamera()
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindInventoryCamera)
+UserInputService.LastInputTypeChanged:Connect(applyInventoryLayout)
 local panelCorner = Instance.new("UICorner")
 panelCorner.CornerRadius = UDim.new(0, 18)
 panelCorner.Parent = inventoryPanel
