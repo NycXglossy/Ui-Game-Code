@@ -1,4 +1,4 @@
-# Utility Bar — Phase 1
+# Utility Bar — Phases 1–9
 
 A standalone, responsive utility launcher for the experience. It is intentionally separate from ClubMusic playback, queue, DJ, catalog, and music networking.
 
