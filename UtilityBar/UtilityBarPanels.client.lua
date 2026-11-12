@@ -85,7 +85,7 @@ local function open(name: string)
 				tab.TextSize=10
 				tab.Activated:Connect(function() active=i; drawAura() end)
 			end
-			local desc=make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,8),Size=UDim2.new(1,0,0,42),Font=Enum.Font.GothamMedium,Text="Choose an aura style for your character.",TextColor3=C.muted,TextSize=12},content)
+			local desc=make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,8),Size=UDim2.new(1,0,0,42),Font=Enum.Font.GothamMedium,Text="Aura applies to your character, equipped Tools, and Accessories.",TextColor3=C.muted,TextSize=12},content)
 			local apply=button(content,"APPLY "..string.upper(presets[active]),C.teal,UDim2.new(.08,0,.48,0),UDim2.new(.84,0,0,52))
 			apply.Activated:Connect(function() invoke("Aura",presets[active]) end)
 		end
