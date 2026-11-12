@@ -294,8 +294,8 @@ local TAGS = {
 -- w / h  = panel size as a fraction of the screen
 -- min/max= panel pixel limits (in unscaled UI units)
 local PROFILES: {[string]: any} = {
-	Desktop = { base = 0.88, refX = 1280, refY = 720, minF = 0.80, w = 0.62, h = 0.74,
-		min = Vector2.new(320, 300), max = Vector2.new(820, 640), toggle = 48, togglePos = UDim2.new(1, -14, 0.55, 0), hudTop = 8 },
+	Desktop = { base = 1.00, refX = 1280, refY = 720, minF = 0.80, w = 0.68, h = 0.80,
+		min = Vector2.new(360, 340), max = Vector2.new(1100, 820), toggle = 48, togglePos = UDim2.new(1, -14, 0.55, 0), hudTop = 8 },
 	Tablet = { base = 0.92, refX = 1024, refY = 600, minF = 0.85, w = 0.72, h = 0.80,
 		min = Vector2.new(320, 280), max = Vector2.new(820, 640), toggle = 52, togglePos = UDim2.new(1, -14, 0.5, 0), hudTop = 8 },
 	Mobile = { base = 0.90, refX = 640, refY = 340, minF = 0.90, w = 0.94, h = 0.90,
