@@ -47,7 +47,7 @@ The `UtilityBarExtendedActions.server.lua` script owns these actions through the
 - **Size:** opens its own control panel with a 65%–135% adjustable slider and a 100% reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
 - **Clone:** opens its own single-tab panel with a Create Clone action. The server creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
 - **Mount:** opens its own single-tab panel with an Equip / Unequip action for the tagged or named mount Tool.
-- **Aura:** opens a three-tab style panel: Teal Glow, Royal Gold, and Tiki Tide. Selecting Apply sends the chosen preset to the server, which creates the matching Highlight.
+- **Aura:** opens a three-tab style panel: Teal Glow, Royal Gold, and Tiki Tide. Selecting Apply sends the chosen preset to the server, which highlights the character and equipped Tool and Accessory handles. Newly equipped Tools and Accessories receive the active aura automatically.
 
 Mount requires an existing mount Tool; this update does not invent or import a third-party mount model. The extended actions are separate from ClubMusic and do not issue music, queue, catalog, or DJ requests.
 
