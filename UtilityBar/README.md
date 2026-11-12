@@ -7,11 +7,13 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 1. Add `UtilityBar.client.lua` as a **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
 2. Add `UtilityBarActions.client.lua` as a second **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
 3. Add `UtilityBarPanels.client.lua` as a third **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
-4. Add `UtilityBarActions.server.lua` as a **Script** under `ServerScriptService`.
-5. Add `UtilityBarExtendedActions.server.lua` as a second **Script** under `ServerScriptService`.
-6. Keep exactly one copy of each Utility Bar script.
-7. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
-8. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the existing settings-open request attribute.
+4. Add `ToolShop.client.lua` as a fourth **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
+5. Add `UtilityBarActions.server.lua` as a **Script** under `ServerScriptService`.
+6. Add `UtilityBarExtendedActions.server.lua` as a second **Script** under `ServerScriptService`.
+7. Add `ToolShop.server.lua` as a third **Script** under `ServerScriptService`.
+8. Keep exactly one copy of each Utility Bar script.
+9. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
+10. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the existing settings-open request attribute.
 
 ## Included buttons
 
@@ -22,6 +24,7 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 - Clone
 - Aura
 - Inventory (includes Tool equip/unequip)
+- Tool Shop (separate placeholder storefront)
 - Accessories
 
 The bar uses the ClubMusic dark-surface / muted-gold / teal visual language, fully rounded surfaces, viewport-aware sizing, horizontal scrolling on narrow screens, and controller focus navigation. It hides while the full ClubMusic menu or Tiki Tide Settings is open, then returns when those surfaces close. The Tiki Tide Settings panel uses the shared `TikiTideSettingsOpen` state attribute.
@@ -68,7 +71,7 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 ## Validation
 
-- [ ] Install all three client LocalScripts and both server Scripts once; verify eight buttons appear in the bottom utility rail. Open Inventory and verify Backpack/equipped Tools can be equipped and unequipped from the same list.
+- [ ] Install all three client LocalScripts and both server Scripts once; verify nine buttons appear in the bottom utility rail. Open Inventory and verify Backpack/equipped Tools can be equipped and unequipped from the same list.
 - [ ] Verify Mount, Clone, Size and Aura each open their own separate control panel; verify Aura has three style tabs and three target tabs (Character, Tools, Accessories), and Size has a working 0.50×–5.00× slider with a 1.00× reset.
 - [ ] Open the full ClubMusic menu; verify the utility rail hides and returns on close.
 - [ ] Open Tiki Tide Settings; verify the rail hides and returns on close.
@@ -81,3 +84,14 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 - [ ] Verify Clone is non-interactive, expires after 12 seconds, and is cleaned up on leave.
 - [ ] Verify Aura toggles off and cleans up on leave.
 - [ ] Verify repeated refresh requests are throttled and failed avatar lookups show a safe message.
+
+
+### Tool Shop and Coins foundation (new)
+
+- **Tool Shop** is a separate ninth utility-bar tab. It does not replace or modify Inventory. Inventory remains the only place for equipping and unequipping owned Tools.
+- The shop intentionally displays three **COMING SOON** placeholder slots. No Tool assets, item names, prices, or purchase buttons have been invented or configured.
+- `ToolShop.server.lua` creates `leaderstats.Coins` when it does not already exist as an IntValue and persists the balance in the `TikiTideCoins_v1` DataStore. The starting balance is deliberately `0` in the script's `STARTING_COINS` setting; change it only when the game's launch economy is decided.
+- Enable **Game Settings → Security → Enable Studio Access to API Services** for Studio DataStore testing. Published experiences need DataStore access enabled. Test persistence in a separate test place before release.
+- Server-side reward systems can award currency by changing the player's `leaderstats.Coins.Value` from server code. Never award Coins from a LocalScript or accept a client-supplied balance.
+- When real stock is ready, place approved Tool assets in `ServerStorage.UtilityToolShop` and define server-owned prices/descriptions. A later shop-stock phase must add purchase validation, ownership persistence, and respawn re-granting before enabling Buy buttons; this placeholder phase does not sell anything.
+- The shop RemoteFunction currently supports read-only `GetShop` requests. It exposes no client-side currency mutation or purchase operation.
