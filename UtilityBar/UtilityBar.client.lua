@@ -181,6 +181,13 @@ local function buildUtilityIcon(parent: Instance, kind: string, color: Color3): 
 		outline("BagBody",.5,.58,.72,.62)
 		outline("BagFlap",.5,.29,.42,.26)
 		part("BagHandle",.5,.08,.28,.10,0)
+	elseif kind == "Tools" then
+		part("ToolHandle",.30,.58,.13,.68,-38)
+		part("ToolHead",.62,.28,.60,.16,0)
+		part("ToolEnd",.78,.28,.16,.32,0)
+	elseif kind == "Accessories" then
+		outline("AccessoryBand",.5,.52,.68,.62)
+		part("AccessoryGem",.5,.18,.22,.22,0)
 	end
 	return root
 end
@@ -193,6 +200,8 @@ local definitions = {
 	{key = "Clone", label = "Clone", tint = COLORS.cyan},
 	{key = "Aura", label = "Aura", tint = COLORS.gold},
 	{key = "Inventory", label = "Inventory", compactLabel = "Bag", tint = COLORS.cyan},
+	{key = "Tools", label = "Tools", compactLabel = "Tools", tint = COLORS.gold},
+	{key = "Accessories", label = "Accessories", compactLabel = "Acc.", tint = COLORS.cyan},
 }
 
 local buttons: {TextButton} = {}
@@ -398,4 +407,4 @@ gui.Destroying:Connect(function()
 	end
 end)
 
-print("[Utility Bar] Separate seven-action launcher loaded.")
+print("[Utility Bar] Separate nine-action launcher loaded.")
