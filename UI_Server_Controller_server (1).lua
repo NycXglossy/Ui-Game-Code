@@ -693,6 +693,7 @@ ControllerFunctions.bindActiveAudioPlayingSignal = function()
 end
 
 local playbackPaused = false
+local audioReloadInProgress = false
 local lastGlobalPlaybackRevision = 0
 -- Prevent out-of-order persistence replies from an earlier pause/resume/restart
 -- overwriting a newer local control action on the same track.
@@ -1508,7 +1509,7 @@ end
 -- Recover the current server-local audio source without changing queue ownership,
 -- track identity, or the authoritative playback clock. This is deliberately blocked
 -- during a crossfade so a manual recovery cannot interrupt a deck handoff.
-ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
+local function performReloadServerMusic(): (boolean, string?)
 	local asset = nowPlaying.soundId or CONFIG.SoundIds[nowPlaying.trackId] or ""
 	if typeof(asset) ~= "string" or #asset > 64
 		or not string.match(asset, "^rbxassetid://%d+$") then
@@ -1610,7 +1611,20 @@ ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
 	until os.clock() >= resumeDeadline
 	return false, "The audio source did not resume after reloading. Please try again."
 end
--- Optional cross-server service bridge. The UI remains functional if this separate
+
+ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
+	if audioReloadInProgress then
+		return false, "An audio reload is already in progress."
+	end
+	audioReloadInProgress = true
+	local callOk, recovered, recoveryError = pcall(performReloadServerMusic)
+	audioReloadInProgress = false
+	if not callOk then
+		return false, "Audio reload failed safely: " .. tostring(recovered)
+	end
+	return recovered == true, recoveryError
+end
+ The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
 local receiptHashModule = ServerStorage:WaitForChild("ClubMusic_ReceiptHash", 20)
@@ -6942,13 +6956,13 @@ task.spawn(function()
 	local ticks = 0
 	while true do
 		task.wait(1)
-		if not playbackPaused then
+		if not playbackPaused and not audioReloadInProgress then
 			nowPlaying.elapsed += 1
 		end
 		ticks += 1
 
 		local currentGeneration = playbackGeneration
-		local shouldAdvance = not playbackPaused and nowPlaying.trackId ~= ""
+		local shouldAdvance = not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.elapsed >= nowPlaying.duration
 		-- Catalog tracks without a configured SoundId are intentionally silent
 		-- UI/visualizer entries. Do not treat their non-playing Sound as a failed
@@ -7002,7 +7016,7 @@ task.spawn(function()
 		-- Each server prepares the same authoritative global queue head. At fade
 		-- completion the queue service CAS commits that exact entry once; peers
 		-- accept the same committed entry rather than advancing a second time.
-		if not playbackPaused and nowPlaying.trackId ~= ""
+		if not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
 			local remaining = nowPlaying.duration - nowPlaying.elapsed
 			if globalQueueMode and ControllerFunctions.globalPlaybackEndTime > 0 then
