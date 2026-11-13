@@ -2779,6 +2779,9 @@ local transitionInProgress = false
 local crossfadeAttemptedGeneration = -1
 local crossfadeBoundaryWaitGeneration = -1
 local crossfadeBoundaryWaitStartedAt = 0
+local stoppedAudioGeneration = -1
+local stoppedAudioSince = 0
+local audioRecoveryAttemptedGeneration = -1
 
 ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: boolean?)
 	if preserveAudio ~= true then ControllerFunctions.cancelAudioTransition("track-change") end
@@ -6828,19 +6831,46 @@ task.spawn(function()
 		-- Catalog tracks without a configured SoundId are intentionally silent
 		-- UI/visualizer entries. Do not treat their non-playing Sound as a failed
 		-- asset: let their catalog duration drive the normal transition instead.
-		if not shouldAdvance and not playbackPaused and nowPlaying.trackId ~= ""
-			and nowPlaying.soundId ~= "" and nowPlaying.elapsed >= 15 and not ControllerFunctions.getAudioSnapshot().playing then
-			-- IsLoaded/TimeLength distinguishes a confirmed stopped/ended sound from
-			-- an audio asset that is still buffering. If loading never completes,
-			-- the 45-second ceiling prevents a permanently stuck track.
-			local audio = ControllerFunctions.getAudioSnapshot()
+		-- A transient IsPlaying=false must not be treated as end-of-track.
+		-- Require a short stable stop, then attempt one in-place resume from the
+		-- captured playhead before allowing the queue watchdog to advance.
+		local audio = ControllerFunctions.getAudioSnapshot()
+		if playbackPaused or nowPlaying.trackId == "" or nowPlaying.soundId == ""
+			or audio.playing == true then
+			stoppedAudioGeneration = -1
+			stoppedAudioSince = 0
+			audioRecoveryAttemptedGeneration = -1
+		elseif not shouldAdvance and nowPlaying.elapsed >= 15 then
+			local now = os.clock()
+			if stoppedAudioGeneration ~= currentGeneration then
+				stoppedAudioGeneration = currentGeneration
+				stoppedAudioSince = now
+				audioRecoveryAttemptedGeneration = -1
+			end
+			local stoppedFor = math.max(0, now - stoppedAudioSince)
 			local loadedAndKnownLength = audio.ready and audio.length > 0
-			shouldAdvance = loadedAndKnownLength or nowPlaying.elapsed >= 45
-			if shouldAdvance then
+			local playheadAtEnd = loadedAndKnownLength
+				and audio.position >= math.max(0, audio.length - 1.5)
+			if stoppedFor >= 2 and not playheadAtEnd and loadedAndKnownLength
+				and audioRecoveryAttemptedGeneration ~= currentGeneration then
+				audioRecoveryAttemptedGeneration = currentGeneration
+				local resumePosition = math.clamp(audio.position, 0, math.max(0, audio.length - 0.25))
+				local seekOk, seekResult = pcall(ControllerFunctions.seekAudio, resumePosition)
+				local playOk, playResult = false, false
+				if seekOk and seekResult ~= false then
+					playOk, playResult = pcall(ControllerFunctions.playAudio)
+				end
+				if not playOk or playResult == false then
+					warn("[ClubMusic] Playback watchdog could not resume the stopped track at its saved playhead.")
+				end
+			elseif (playheadAtEnd and stoppedFor >= 2)
+				or (audioRecoveryAttemptedGeneration == currentGeneration and stoppedFor >= 7)
+				or (not loadedAndKnownLength and nowPlaying.elapsed >= 45) then
+				shouldAdvance = true
 				local playbackAdapter = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playback
 				local quality = if playbackAdapter then playbackAdapter:InspectQuality() else nil
 				local reason = if typeof(quality) == "table" then tostring(quality.state or "Unknown") else "WatchdogStoppedTrack"
-				warn("[ClubMusic] Playback watchdog detected a stopped or unplayable track (" .. reason .. "); advancing safely.")
+				warn("[ClubMusic] Playback watchdog confirmed an ended or unrecoverable track (" .. reason .. "); advancing safely.")
 				if ControllerFunctions.ErrorHandler then
 					ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, musicSound)
 				end
