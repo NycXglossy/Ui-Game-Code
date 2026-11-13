@@ -6132,7 +6132,10 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 				nowPlaying.vip = hint.vip == true
 				nowPlaying.soundId = tostring(hint.soundId or "")
 				globalTrackRevision = hintedRevision
-				globalAudioSyncPending = true
+				local crossfadeManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
+				-- If this server already owns the prepared incoming deck, do not
+				-- schedule a later setNowPlaying call that could restart that deck.
+				globalAudioSyncPending = not (crossfadeManager ~= nil and crossfadeManager.active == true)
 				publishState(nil)
 			end
 		end
