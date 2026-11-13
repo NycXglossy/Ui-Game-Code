@@ -1062,11 +1062,21 @@ globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Serv
 	getChecks = function()
 		local health = if globalHealthService then globalHealthService:GetStatus() else nil
 		local recovery = if globalRecoveryService then globalRecoveryService:GetStatus() else nil
+		local registry = if globalRegistryService then globalRegistryService:GetStatus() else nil
+		local sync = getGlobalSyncStatus()
 		return {
-			LocalHealth = health ~= nil and health.localState == "Healthy",
+			LocalHealth = if health == nil then {pending = true, detail = "Local health monitor has not completed its first check."}
+				else health.localState == "Healthy",
 			QueueModule = queueModule.Parent == ServerStorage and queueModule:IsA("ModuleScript"),
-			Recovery = recovery ~= nil and (recovery.state == "Healthy" or recovery.state == "Disabled"),
-			Registry = globalRegistryService ~= nil and globalRegistryService:GetStatus().state == "Healthy",
+			Recovery = if recovery == nil or recovery.state == "Starting" then
+				{pending = true, detail = if recovery then recovery.detail else "Recovery service has not started."}
+				else recovery.state == "Healthy" or recovery.state == "Disabled",
+			Registry = if registry == nil or registry.state == "Starting" then
+				{pending = true, detail = "Server registry is waiting for its first MemoryStore heartbeat."}
+				else registry.state == "Healthy" or registry.state == "Disabled",
+			SyncHeartbeat = if sync.state == "Starting" or sync.state == "Unverified" then
+				{pending = true, detail = sync.detail}
+				else sync.state == "Healthy" or sync.state == "Disabled",
 		}
 	end,
 	reportError = reportOperationalError,
