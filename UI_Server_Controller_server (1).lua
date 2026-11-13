@@ -1166,11 +1166,22 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				then math.max(0, tonumber(outgoingSnapshot.position) or 0) else 0
 			local stopOk, stopResult = pcall(function()
 				if outgoing.kind == "Backend" and outgoing.backend then
-					return outgoing.backend:Stop()
+					-- Stop the retired AudioPlayer before ownership changes; Cleanup
+					-- below then destroys its complete output graph.
+					local stopped, stopError = outgoing.backend:Stop()
+					if stopped == false then error(tostring(stopError or "Outgoing AudioPlayer did not stop.")) end
+					return true
 				elseif outgoing.kind == "Sound" and outgoing.instance
 					and outgoing.instance:IsA("Sound") then
-					outgoing.instance:Stop()
-					return not outgoing.instance.IsPlaying
+					-- Sound can retain a short decoded tail after Stop(). Hard-mute
+					-- the retired deck first, then stop and rewind it so no buffered
+					-- fragment leaks over the newly committed AudioPlayer.
+					local sound = outgoing.instance
+					sound.Volume = 0
+					sound:Stop()
+					sound.TimePosition = 0
+					sound:Stop()
+					return not sound.IsPlaying
 				end
 				return false
 			end)
