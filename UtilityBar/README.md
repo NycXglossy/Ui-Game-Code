@@ -35,7 +35,7 @@ For actions other than Tiki Tide Settings, the bar fires the local BindableEvent
 
 `PlayerGui.UtilityBarAction:Fire(actionName)`
 
-Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone`, `Aura`, `Inventory`, and `Accessories`. Legacy `Tools` requests are routed to the unified Inventory view.
+Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone`, `Aura`, `Inventory`, `Accessories`, and `ToolShop`. The Tool Shop panel listens directly for `ToolShop`; Inventory remains the only equip/unequip surface. Legacy `Tools` requests are routed to the unified Inventory view.
 
 ### Implemented: Inventory, Tools, and Accessories
 
@@ -56,7 +56,7 @@ The `UtilityBarExtendedActions.server.lua` script owns these actions through the
 - **Size:** opens its own control panel with a 0.50×–5.00× adjustable slider and a 1.00× reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
 - **Clone:** opens its own single-tab panel with a Create Clone action. The server creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
 - **Mount:** opens its own single-tab panel with an Equip / Unequip action for the tagged or named mount Tool.
-- **Aura:** opens a three-tab style panel: Teal Glow, Royal Gold, and Tiki Tide. Selecting Apply sends the chosen preset to the server, which highlights the character and equipped Tool and Accessory handles. Newly equipped Tools and Accessories receive the active aura automatically.
+- **Aura:** opens three style tabs (Teal Glow, Royal Gold, Tiki Tide) and three target tabs (Character, Tools, Accessories). Apply uses server-owned Highlights; Clear Aura removes the active effect. Newly equipped Tools and Accessories receive the selected aura while it remains active.
 
 Mount requires an existing mount Tool; this update does not invent or import a third-party mount model. The extended actions are separate from ClubMusic and do not issue music, queue, catalog, or DJ requests.
 
@@ -66,7 +66,7 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 - Requests are throttled per player on the server.
 - Size values are clamped to 0.50×–5.00× and based on each character's captured baseline.
 - Clone scripts are removed and its parts cannot collide, touch, or be queried; clones expire automatically and are cleaned up when their owner leaves.
-- Aura instances are tracked per player and cleaned up when the player leaves.
+- Aura instances are tracked per player and cleared when the player clears the effect, changes character, or leaves.
 - Refresh Outfit remains independently server-authoritative with its own cooldown.
 
 ## Validation
@@ -77,13 +77,13 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 - [ ] Open the full ClubMusic menu; verify the utility rail hides and returns on close.
 - [ ] Open Tiki Tide Settings; verify the rail hides and returns on close.
 - [ ] Test touch, mouse, keyboard, and D-pad / thumbstick navigation.
-- [ ] Test narrow mobile viewport and landscape rotation; verify horizontal scrolling works without clipping.
+- [ ] Test narrow mobile viewport and landscape rotation; verify horizontal scrolling works without clipping and the Inventory, control-panel, and Tool Shop surfaces remain within the touch viewport.
 - [ ] Confirm utility clicks fire the documented local event and do not issue music requests.
 - [ ] Install both server Scripts and verify Refresh Outfit updates only the requesting player's avatar.
 - [ ] Verify Mount equips only a tagged/named mount Tool and reports clearly when none is installed.
 - [ ] Verify Size cycles on R15, restores the captured baseline, and safely rejects R6.
 - [ ] Verify Clone is non-interactive, expires after 12 seconds, and is cleaned up on leave.
-- [ ] Verify Aura toggles off and cleans up on leave.
+- [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
 - [ ] Verify repeated refresh requests are throttled and failed avatar lookups show a safe message.
 
 
