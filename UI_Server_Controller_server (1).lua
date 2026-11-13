@@ -4812,59 +4812,111 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
+		local expectedTrackRevision = globalTrackRevision
+		local expectedTrackId = nowPlaying.trackId
 		ControllerFunctions.cancelAudioTransition(if desiredPaused then "pause" else "resume")
-		if globalQueueMode then
-			local position = nowPlaying.elapsed
-			pcall(function() local audio = ControllerFunctions.getAudioSnapshot(); if audio.ready then position = audio.position end end)
-			local callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlayback", desiredPaused, position, globalTrackRevision, false)
-			if not callOk or changed ~= true or typeof(state) ~= "table" then
-				notify(player, tostring(message or "Global playback state could not be saved."), "warn")
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				return false, tostring(message or "Global playback state could not be saved.")
+
+		-- Apply the control to this server's active source immediately. Durable
+		-- global persistence and cross-server notification happen after the UI/audio
+		-- response so DataStore latency cannot stall the button.
+		local position = nowPlaying.elapsed
+		pcall(function()
+			local audio = ControllerFunctions.getAudioSnapshot()
+			if audio.ready then position = audio.position end
+		end)
+		nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
+		playbackPaused = desiredPaused
+		local audioOk, audioError = pcall(function()
+			local audio = ControllerFunctions.getAudioSnapshot()
+			if audio.ready then
+				local seekOk, seekResult = ControllerFunctions.seekAudio(nowPlaying.elapsed)
+				if seekOk == false or seekResult == false then error("Could not preserve the current playback position.") end
 			end
-			ControllerFunctions.applyGlobalQueueState(state)
-			notify(player, if desiredPaused then "Music paused globally." else "Music resumed globally.", "ok")
-		else
-			local position = nowPlaying.elapsed
-			pcall(function() local audio = ControllerFunctions.getAudioSnapshot(); if audio.ready then position = audio.position end end)
-			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
-			playbackPaused = desiredPaused
-			pcall(function()
-				local audio = ControllerFunctions.getAudioSnapshot()
-				if audio.ready then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
-				if playbackPaused then ControllerFunctions.pauseAudio() else ControllerFunctions.resumeAudio() end
-			end)
-			local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused, position = nowPlaying.elapsed}, player.UserId)
-			if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
-			if not globalOk or globalPublished ~= true then notify(player, "Playback changed on this server, but cross-server sync is unavailable.", "warn") end
-			notify(player, if playbackPaused then "Music paused." else "Music resumed.", "ok")
+			local controlOk, controlResult = if desiredPaused
+				then ControllerFunctions.pauseAudio() else ControllerFunctions.resumeAudio()
+			if controlOk == false or controlResult == false then error("The audio source rejected the pause/resume command.") end
+		end)
+		if not audioOk then
+			playbackPaused = not desiredPaused
+			notify(player, "Audio control could not be applied: " .. tostring(audioError), "warn")
+			return false, tostring(audioError)
 		end
 		publishState(nil)
+		notify(player, if desiredPaused then "Music paused." else "Music resumed.", "ok")
+
+		if globalQueueMode then
+			task.spawn(function()
+				local callOk, changed, state, message = ControllerFunctions.globalInvoke(
+					"SetGlobalPlayback", desiredPaused, position, expectedTrackRevision, false
+				)
+				if callOk and changed == true and typeof(state) == "table" then
+					if nowPlaying.trackId == expectedTrackId and globalTrackRevision == expectedTrackRevision then
+						ControllerFunctions.applyGlobalQueueState(state)
+					end
+				else
+					notify(player, tostring(message or "Playback changed locally, but global synchronization could not be confirmed."), "warn")
+					if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				end
+			end)
+		else
+			task.spawn(function()
+				local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke(
+					"PublishDJCommand", "SetPlaybackPaused",
+					{paused = desiredPaused, position = nowPlaying.elapsed}, player.UserId
+				)
+				if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then
+					lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision))
+				elseif not RunService:IsStudio() then
+					notify(player, "Playback changed here, but cross-server sync is unavailable.", "warn")
+				end
+			end)
+		end
 		return true, if desiredPaused then "Music paused." else "Music resumed."
 	end
 
 	if action == "DJRestart" then
 		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
+		local expectedTrackRevision = globalTrackRevision
+		local expectedTrackId = nowPlaying.trackId
+		local restartAsset = nowPlaying.soundId
 		ControllerFunctions.cancelAudioTransition("restart")
-		if globalQueueMode then
-			local callOk, restarted, state, message = ControllerFunctions.globalInvoke("SetGlobalPlayback", false, 0, globalTrackRevision, true)
-			if not callOk or restarted ~= true or typeof(state) ~= "table" then
-				notify(player, tostring(message or "Global restart could not be confirmed."), "warn")
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				return false, tostring(message or "Global restart could not be confirmed.")
-			end
-			ControllerFunctions.applyGlobalQueueState(state)
-			notify(player, "Current track restarted across servers.", "ok")
-		else
-			nowPlaying.elapsed = 0; playbackPaused = false
-			ControllerFunctions.startServerMusic(nowPlaying.soundId)
-			local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
-			if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
-			if not globalOk or globalPublished ~= true then notify(player, "Track restarted here, but cross-server sync is unavailable.", "warn")
-			else notify(player, "Current track restarted across servers.", "ok") end
-		end
+
+		-- Restart the active deck locally first; the shared restart revision is
+		-- committed asynchronously so slow storage cannot delay the button.
+		nowPlaying.elapsed = 0
+		playbackPaused = false
+		ControllerFunctions.startServerMusic(restartAsset)
 		publishState(nil)
+		notify(player, "Current track restarted.", "ok")
+
+		if globalQueueMode then
+			task.spawn(function()
+				local callOk, restarted, state, message = ControllerFunctions.globalInvoke(
+					"SetGlobalPlayback", false, 0, expectedTrackRevision, true
+				)
+				if callOk and restarted == true and typeof(state) == "table" then
+					if nowPlaying.trackId == expectedTrackId and globalTrackRevision == expectedTrackRevision then
+						ControllerFunctions.applyGlobalQueueState(state)
+					end
+				else
+					notify(player, tostring(message or "Track restarted here, but global restart could not be confirmed."), "warn")
+					if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+				end
+			end)
+		else
+			task.spawn(function()
+				local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke(
+					"PublishDJCommand", "Restart", {}, player.UserId
+				)
+				if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then
+					lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision))
+					notify(player, "Restart synchronized.", "ok")
+				elseif not RunService:IsStudio() then
+					notify(player, "Track restarted here, but cross-server sync is unavailable.", "warn")
+				end
+			end)
+		end
 		return true, "Current track restarted."
 	end
 
