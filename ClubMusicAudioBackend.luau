@@ -137,21 +137,31 @@ end
 -- Resume restores the saved position and starts the same asset again.
 function Backend:Pause(): (boolean, string?)
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
+	if self.paused then return true, nil end
 	if not self.player.IsPlaying then return true, nil end
-	self.pausedAt = self.player.TimePosition
-	self.paused = true
+	local positionOk, position = pcall(function() return self.player.TimePosition end)
+	if not positionOk or not finite(position) or position < 0 then
+		return false, "Audio playhead could not be captured for pause."
+	end
 	local ok, err = pcall(function() self.player:Stop() end)
-	if not ok then self.paused = false; return false, tostring(err) end
+	if not ok then return false, tostring(err) end
+	self.pausedAt = position
+	self.paused = true
 	return true, nil
 end
 
 function Backend:Resume(): (boolean, string?)
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
 	if not self.paused then return true, nil end
-	self.player.TimePosition = math.max(0, self.pausedAt)
+	if not self.player.IsReady then return false, "Audio asset is not ready to resume." end
+	local position = math.max(0, self.pausedAt)
+	local ok, err = pcall(function()
+		self.player.TimePosition = position
+		self.player:Play()
+	end)
+	if not ok then return false, tostring(err) end
 	self.paused = false
-	local ok, err = pcall(function() self.player:Play() end)
-	if not ok then self.paused = true; return false, tostring(err) end
+	self.pausedAt = 0
 	return true, nil
 end
 
@@ -168,11 +178,16 @@ function Backend:Seek(position: number): (boolean, string?)
 	if not self:IsAvailable() or not finite(position) or position < 0 then
 		return false, "Invalid seek request."
 	end
-	local ok, err = pcall(function()
-		self.player.TimePosition = position
-		if self.paused then self.pausedAt = position end
-	end)
+	local target = position
+	if self.player.IsReady then
+		local lengthOk, length = pcall(function() return self.player.TimeLength end)
+		if lengthOk and finite(length) and length > 0 then
+			if target > length then return false, "Seek position exceeds the loaded track duration." end
+		end
+	end
+	local ok, err = pcall(function() self.player.TimePosition = target end)
 	if not ok then return false, tostring(err) end
+	if self.paused then self.pausedAt = target end
 	return true, nil
 end
 
