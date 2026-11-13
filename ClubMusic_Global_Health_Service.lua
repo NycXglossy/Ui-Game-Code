@@ -73,6 +73,7 @@ function HealthService:Start(): boolean
             -- make the local result and cross-server service/sync state explicit.
             local state = "Healthy"
             local details = {}
+            local startupPending = false
 
             if not enabledOk then
                 state = "Degraded"
@@ -96,14 +97,18 @@ function HealthService:Start(): boolean
                 state = "Degraded"
                 table.insert(details, tostring(sync.detail or "Cross-server messaging heartbeat has stopped."))
             elseif sync.state == "Unverified" or sync.state == "Starting" then
+                startupPending = true
                 table.insert(details, tostring(sync.detail or "No other server has been observed yet; cross-server sync is unverified."))
             end
             if not recoveryOk or type(recovery) ~= "table" then
                 state = "Degraded"
                 table.insert(details, "Recovery service status is unavailable.")
-            elseif recovery.state == "Degraded" or recovery.state == "Starting" then
+            elseif recovery.state == "Degraded" then
                 state = "Degraded"
-                table.insert(details, tostring(recovery.detail or "Queue storage probe has not recovered."))
+                table.insert(details, tostring(recovery.detail or "Queue storage probe has failed."))
+            elseif recovery.state == "Starting" then
+                startupPending = true
+                table.insert(details, tostring(recovery.detail or "Waiting for the first authoritative shared-queue probe."))
             elseif recovery.state == "CatalogChangePending" then
                 state = "Degraded"
                 table.insert(details, tostring(recovery.detail or "A catalog reservation requires its original operation to be resumed."))
@@ -112,6 +117,9 @@ function HealthService:Start(): boolean
                 table.insert(details, "Cross-server recovery checks are disabled.")
             end
 
+            if state == "Healthy" and startupPending then
+                state = "Starting"
+            end
             local detail = if #details > 0 then table.concat(details, " ") else "Global API, queue module, and shared queue storage probe are healthy."
             self.status = {
                 state = state,
@@ -133,12 +141,10 @@ function HealthService:Start(): boolean
                 if state == "Degraded" and type(dependencies.reportError) == "function" then
                     pcall(dependencies.reportError, "GlobalHealth", "HealthCheck", detail, dependencies.apiFolder)
                 end
-                if state == "Healthy" then
-                    print("[ClubMusic Global Health] " .. detail)
-                elseif state ~= "Disabled" then
+                if state == "Degraded" then
                     warn("[ClubMusic Global Health] " .. detail)
                 else
-                    print("[ClubMusic Global Health] " .. detail)
+                    print("[ClubMusic Global Health][" .. state .. "] " .. detail)
                 end
             end
 
