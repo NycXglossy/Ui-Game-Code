@@ -5009,7 +5009,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		end
 		if not globalQueueMode then ControllerFunctions.globalInvoke("PublishDJCommand", "Skip", {}, player.UserId) end
 		notify(player, "Track skipped.", "ok")
-		ControllerFunctions.publishPlaybackState()
+		-- advance() commits through setNowPlaying(), which already publishes the
+		-- immediate playback snapshot. Avoid rebuilding and broadcasting the
+		-- same full per-player state a second time for this skip request.
 		return true, "Track skipped."
 	end
 
