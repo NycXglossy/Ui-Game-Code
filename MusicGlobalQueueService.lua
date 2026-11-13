@@ -338,11 +338,27 @@ local function transact(mutator: (State) -> (boolean, string?)): (boolean, State
 		task.wait(0.25 * (2 ^ (attempt - 1)))
 	end
 	if not ok then
-		-- An earlier attempt may have committed; invalidate any local read cache
-		-- so the next reconciliation does not reuse a pre-transaction snapshot.
+		-- Make one read-back attempt before reporting failure. A receipt proves
+		-- that an earlier attempt committed even if every write response failed.
+		local verifyOk, verifyRaw = withStoreOperation(Enum.DataStoreRequestType.GetAsync, function()
+			return store:GetAsync(KEY)
+		end)
+		if verifyOk and typeof(verifyRaw) == "table" then
+			local verified = sanitizeState(verifyRaw)
+			for _, committedId in ipairs(verified.recentOperationIds) do
+				if committedId == operationId then
+					local verifiedSnapshot = detached(verified)
+					cachedSnapshot = verifiedSnapshot
+					cachedSnapshotAt = os.clock()
+					return true, detached(verifiedSnapshot), nil
+				end
+			end
+		end
+		-- An earlier attempt may still have committed; invalidate any local read
+		-- cache so the next reconciliation does not reuse a pre-transaction snapshot.
 		cachedSnapshot = nil
 		cachedSnapshotAt = 0
-		warn("[ClubMusic Global Queue] DataStore transaction failed after safe retries: " .. tostring(result))
+		warn("[ClubMusic Global Queue] DataStore transaction failed after safe retries and receipt verification: " .. tostring(result))
 		return false, nil, "Global queue storage is unavailable. No local-only change was applied."
 	end
 	local snapshot: State? = nil
