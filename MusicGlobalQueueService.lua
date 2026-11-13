@@ -233,11 +233,14 @@ local function sanitizeState(raw: any): State
 	if typeof(raw.queue) == "table" then
 		local seenIds: {[string]: boolean} = {}
 		local seenTracks: {[string]: boolean} = {}
+		local recentSet: {[string]: boolean} = {}
+		for _, trackId in ipairs(state.recentTrackIds) do recentSet[trackId] = true end
 		for _, rawEntry in ipairs(raw.queue) do
 			if #state.queue >= MAX_QUEUE then break end
 			local entry = sanitizeEntry(rawEntry)
 			if entry and not seenIds[entry.id] and not seenTracks[entry.trackId]
-				and (not state.current or state.current.trackId ~= entry.trackId) then
+				and (not state.current or state.current.trackId ~= entry.trackId)
+				and not (entry.source == "auto" and recentSet[entry.trackId]) then
 				table.insert(state.queue, entry)
 				seenIds[entry.id] = true
 				seenTracks[entry.trackId] = true
@@ -667,6 +670,13 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 				return false, "The prepared next queue entry is no longer first."
 			end
 		end
+		local recentBeforeAdvance: {[string]: boolean} = {}
+		for _, trackId in ipairs(state.recentTrackIds) do recentBeforeAdvance[trackId] = true end
+		-- Discard stale Auto DJ entries prepared before the shared history advanced.
+		while state.queue[1] and state.queue[1].source == "auto"
+			and recentBeforeAdvance[state.queue[1].trackId] do
+			table.remove(state.queue, 1)
+		end
 		local nextEntry = table.remove(state.queue, 1)
 		if not nextEntry then
 			if state.rotation.enabled then
@@ -695,6 +705,15 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 		table.insert(recentTrackIds, nextEntry.trackId)
 		while #recentTrackIds > 6 do table.remove(recentTrackIds, 1) end
 		state.recentTrackIds = recentTrackIds
+		local recentNow: {[string]: boolean} = {}
+		for _, trackId in ipairs(recentTrackIds) do recentNow[trackId] = true end
+		local retainedQueue = {}
+		for _, queued in ipairs(state.queue) do
+			if queued.source ~= "auto" or not recentNow[queued.trackId] then
+				table.insert(retainedQueue, queued)
+			end
+		end
+		state.queue = retainedQueue
 		state.playback.paused = false
 		state.playback.position = 0
 		state.playback.anchorTime = Workspace:GetServerTimeNow()
