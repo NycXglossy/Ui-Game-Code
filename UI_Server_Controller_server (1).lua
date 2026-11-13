@@ -861,7 +861,8 @@ ControllerFunctions.pauseAudio = function()
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Pause() end
 	source.instance:Pause()
-	return true, nil
+	local position = source.instance.TimePosition
+	return true, nil, if ControllerFunctions.isFiniteNumber(position) then math.max(0, position) else nil
 end
 ControllerFunctions.resumeAudio = function()
 	audioSourceRevision += 1
@@ -5028,22 +5029,24 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		-- Apply the control to this server's active source immediately. Durable
 		-- global persistence and cross-server notification happen after the UI/audio
 		-- response so DataStore latency cannot stall the button.
-		local position = nowPlaying.elapsed
-		local audioSnapshot = ControllerFunctions.getAudioSnapshot()
-		if audioSnapshot.ready then position = audioSnapshot.position end
-		nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
+		-- Pause captures the authoritative playhead as part of the pause call.
+		-- Resume reuses the saved value; neither path needs a second full audio
+		-- snapshot read before the latency-sensitive control is applied.
+		local position = math.clamp(tonumber(nowPlaying.elapsed) or 0, 0, nowPlaying.duration)
 		playbackPaused = desiredPaused
 		local audioOk, audioError = pcall(function()
-			-- Pause/Resume already preserve their own playhead. Avoid a redundant
-			-- seek here: it can trigger decoder repositioning and audible delay.
-			local controlOk, controlResult
+			local controlOk, controlResult, capturedPosition
 			if desiredPaused then
-				controlOk, controlResult = ControllerFunctions.pauseAudio()
+				controlOk, controlResult, capturedPosition = ControllerFunctions.pauseAudio()
+				if ControllerFunctions.isFiniteNumber(capturedPosition) then
+					position = math.clamp(capturedPosition, 0, nowPlaying.duration)
+				end
 			else
 				controlOk, controlResult = ControllerFunctions.resumeAudio()
 			end
 			if controlOk == false or controlResult == false then error("The audio source rejected the pause/resume command.") end
 		end)
+		if audioOk then nowPlaying.elapsed = position end
 		if not audioOk then
 			playbackPaused = not desiredPaused
 			notify(player, "Audio control could not be applied: " .. tostring(audioError), "warn")
