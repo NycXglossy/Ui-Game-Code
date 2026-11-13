@@ -2688,6 +2688,10 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 			end
 		end
 		if preservePreparedCrossfade then
+			-- The prepared incoming deck already owns this committed transition;
+			-- clear any metadata-hint sync request so a later snapshot cannot
+			-- restart the deck after its crossfade has completed.
+			globalAudioSyncPending = false
 			-- Keep the outgoing deck untouched until the prepared incoming deck
 			-- completes its local fade and commits controller ownership.
 		elseif restartObserved then
@@ -6118,7 +6122,7 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 			and typeof(hint.title) == "string" and typeof(hint.artist) == "string"
 			and ControllerFunctions.isFiniteNumber(hint.duration) and hint.duration >= 1
 			and ControllerFunctions.isFiniteNumber(hint.trackRevision)
-			and hint.trackRevision >= globalTrackRevision and hint.trackRevision % 1 == 0 then
+			and hint.trackRevision > globalTrackRevision and hint.trackRevision % 1 == 0 then
 			local hintedRevision = math.floor(hint.trackRevision)
 			if hintedRevision > globalTrackRevision or nowPlaying.trackId ~= hint.trackId then
 				nowPlaying.trackId = hint.trackId
