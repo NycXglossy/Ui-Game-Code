@@ -5,6 +5,8 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -218,6 +220,19 @@ local function closePanel()
 	panel.Visible = false
 	playerGui:SetAttribute("UtilityToolShopOpen", false)
 end
+playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(function()
+	if playerGui:GetAttribute("ClubMusicMenuExpanded") == true then closePanel() end
+end)
+playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(function()
+	if playerGui:GetAttribute("TikiTideSettingsOpen") == true then closePanel() end
+end)
+local BACK_ACTION = "UtilityToolShop_Back"
+ContextActionService:BindActionAtPriority(BACK_ACTION, function(_, inputState)
+	if inputState ~= Enum.UserInputState.Begin or not panel.Visible then return Enum.ContextActionResult.Pass end
+	if UserInputService:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
+	closePanel()
+	return Enum.ContextActionResult.Sink
+end, false, 2900, Enum.KeyCode.ButtonB, Enum.KeyCode.Escape)
 close.Activated:Connect(closePanel)
 actionEvent.Event:Connect(function(actionName: string)
 	if actionName ~= "ToolShop" then return end
@@ -226,6 +241,7 @@ actionEvent.Event:Connect(function(actionName: string)
 	refresh()
 end)
 gui.Destroying:Connect(function()
+	ContextActionService:UnbindAction(BACK_ACTION)
 	if shopCameraConnection then shopCameraConnection:Disconnect(); shopCameraConnection=nil end
 	playerGui:SetAttribute("UtilityToolShopOpen",false)
 end)
