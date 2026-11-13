@@ -2705,7 +2705,18 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 					else ControllerFunctions.stopServerMusic(); ControllerFunctions.setAudioAsset("") end
 				end
 				audio = ControllerFunctions.getAudioSnapshot()
-				if audio.ready and math.abs(audio.position - nowPlaying.elapsed) > 2 then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
+				-- Do not chase small clock differences with bidirectional seeks. A
+				-- stale global snapshot can otherwise pull a healthy live stream
+				-- backwards every resync (most noticeable on mobile clients).
+				-- Only recover when the audio clock is substantially BEHIND the
+				-- authoritative position, and never seek during an active crossfade.
+				local activeCrossfade = ControllerFunctions.ChildManagers
+					and ControllerFunctions.ChildManagers.Crossfade
+				local crossfadeInProgress = activeCrossfade ~= nil and activeCrossfade.active == true
+				local audioLag = nowPlaying.elapsed - audio.position
+				if audio.ready and not crossfadeInProgress and audioLag >= 8 then
+					ControllerFunctions.seekAudio(nowPlaying.elapsed)
+				end
 				if playbackPaused then ControllerFunctions.pauseAudio()
 				elseif not audio.playing and nowPlaying.soundId ~= "" then ControllerFunctions.playAudio() end
 			end)
