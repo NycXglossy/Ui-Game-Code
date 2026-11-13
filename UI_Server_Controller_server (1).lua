@@ -1402,6 +1402,34 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	end
 end
 
+-- Restart the already-loaded asset in place. Avoid reassigning SoundId and
+-- reapplying track gain/speed on every restart; those operations are needed for
+-- track changes, not for replaying the current deck.
+ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, string?)
+	if typeof(soundId) ~= "string" or #soundId > 64
+		or not string.match(soundId, "^rbxassetid://%d+$") then
+		return false, "The current track has no valid audio asset."
+	end
+	local snapshot = ControllerFunctions.getAudioSnapshot()
+	if snapshot.asset ~= soundId then
+		ControllerFunctions.startServerMusic(soundId)
+		return true, nil
+	end
+	local stopOk, stopResult, stopError = pcall(ControllerFunctions.stopAudio)
+	if not stopOk or stopResult == false then
+		return false, tostring(stopError or stopResult or "The current audio source could not be stopped.")
+	end
+	local seekOk, seekResult, seekError = pcall(ControllerFunctions.seekAudio, 0)
+	if not seekOk or seekResult == false then
+		return false, tostring(seekError or seekResult or "The current audio source could not be reset.")
+	end
+	local playOk, playResult, playError = pcall(ControllerFunctions.playAudio)
+	if not playOk or playResult == false then
+		return false, tostring(playError or playResult or "The current audio source could not be restarted.")
+	end
+	return true, nil
+end
+
 -- Recover the current server-local audio source without changing queue ownership,
 -- track identity, or the authoritative playback clock. This is deliberately blocked
 -- during a crossfade so a manual recovery cannot interrupt a deck handoff.
@@ -4927,10 +4955,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		-- global persistence and cross-server notification happen after the UI/audio
 		-- response so DataStore latency cannot stall the button.
 		local position = nowPlaying.elapsed
-		pcall(function()
-			local audio = ControllerFunctions.getAudioSnapshot()
-			if audio.ready then position = audio.position end
-		end)
+		local audioSnapshot = ControllerFunctions.getAudioSnapshot()
+		if audioSnapshot.ready then position = audioSnapshot.position end
 		nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
 		playbackPaused = desiredPaused
 		local audioOk, audioError = pcall(function()
@@ -4997,7 +5023,12 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		-- committed asynchronously so slow storage cannot delay the button.
 		nowPlaying.elapsed = 0
 		playbackPaused = false
-		ControllerFunctions.startServerMusic(restartAsset)
+		local restartOk, restartError = ControllerFunctions.restartServerMusic(restartAsset)
+		if not restartOk then
+			playbackPaused = true
+			notify(player, "Track restart could not be applied: " .. tostring(restartError), "warn")
+			return false, tostring(restartError)
+		end
 		publishState(nil)
 		notify(player, "Current track restarted.", "ok")
 
