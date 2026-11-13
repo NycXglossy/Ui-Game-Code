@@ -486,8 +486,8 @@ function Network.VoteSkip()
 	Network.Send("VoteSkip", {})
 end
 
-function Network.ReloadSong()
-	Network.Send("ReloadSong", {})
+function Network.ReloadSong(): boolean
+	return Network.Send("ReloadSong", {})
 end
 
 function Network.DJSkip()
