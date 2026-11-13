@@ -877,7 +877,7 @@ end
 -- is still required before any production enablement.
 ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, string?)
 	if typeof(candidate) ~= "table" then return false, "A prepared audio backend is required." end
-	for _, methodName in ipairs({ "IsReady", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetAsset", "SetGain", "SetPlaybackSpeed", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
+	for _, methodName in ipairs({ "IsReady", "GetReadinessSnapshot", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetAsset", "SetGain", "SetPlaybackSpeed", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
 		if typeof(candidate[methodName]) ~= "function" then return false, "Audio backend is missing " .. methodName .. "." end
 	end
 	local playerOk, player = pcall(function() return candidate:GetPlayer() end)
@@ -961,11 +961,13 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 			candidateCleanup()
 			return false, "Playback changed while the incoming backend was loading."
 		end
-		local readyOk, readyValue = pcall(function() return candidate:IsReady() end)
-		local lengthOk, lengthValue = pcall(function() return candidate:GetTimeLength() end)
-		if readyOk and readyValue == true and lengthOk
-			and typeof(lengthValue) == "number" and ControllerFunctions.isFiniteNumber(lengthValue)
-			and lengthValue > 0 then
+		local readinessOk, readiness = pcall(function() return candidate:GetReadinessSnapshot() end)
+		if readinessOk and typeof(readiness) == "table"
+			and readiness.ready == true
+			and readiness.asset == asset
+			and typeof(readiness.length) == "number"
+			and ControllerFunctions.isFiniteNumber(readiness.length)
+			and readiness.length > 0 then
 			ready = true
 			break
 		end
@@ -1005,6 +1007,15 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 	if not candidatePlaying then
 		candidateCleanup()
 		return false, "Incoming audio backend did not enter the playing state; legacy playback was kept."
+	end
+	-- Confirm the decoder still owns the intended asset after Play reports
+	-- IsPlaying; stale/empty readiness must never be committed as the new source.
+	local finalReadinessOk, finalReadiness = pcall(function() return candidate:GetReadinessSnapshot() end)
+	if not finalReadinessOk or typeof(finalReadiness) ~= "table"
+		or finalReadiness.ready ~= true or finalReadiness.asset ~= asset
+		or not ControllerFunctions.isFiniteNumber(finalReadiness.length) or finalReadiness.length <= 0 then
+		candidateCleanup()
+		return false, "Incoming audio readiness changed during startup; legacy playback was kept."
 	end
 	if wasPaused then
 		local pauseOk, pauseResult = pcall(function() return candidate:Pause() end)
