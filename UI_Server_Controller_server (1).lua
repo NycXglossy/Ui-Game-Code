@@ -3623,14 +3623,15 @@ end
 -- Playback state is latency-sensitive: don't hold title, pause, or restart
 -- updates behind the general-purpose state coalescing interval.
 ControllerFunctions.publishPlaybackState = function()
-	task.defer(function()
-		for _, target in ipairs(Players:GetPlayers()) do
-			local ok, snapshot = pcall(ControllerFunctions.snapshotFor, target)
-			if ok and target.Parent == Players then
-				pcall(function() stateRemote:FireClient(target, snapshot) end)
-			end
+	-- Playback commits already run on the server task that owns the new state.
+	-- Build and send the snapshot in that same task so clients don't wait for
+	-- another deferred scheduler turn to learn the new title/pause/restart state.
+	for _, target in ipairs(Players:GetPlayers()) do
+		local ok, snapshot = pcall(ControllerFunctions.snapshotFor, target)
+		if ok and target.Parent == Players then
+			pcall(function() stateRemote:FireClient(target, snapshot) end)
 		end
-	end)
+	end
 end
 
 publishState = function(player: Player?)
