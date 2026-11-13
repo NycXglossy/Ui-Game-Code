@@ -2665,7 +2665,7 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 			and restartRevision <= previousRestartRevision
 			and typeof(current) == "table" and current.id == pendingPreparedEntry.id
 		if preservePreparedCrossfade then ControllerFunctions.pendingCrossfadeGlobalCommitted = true end
-		if nowPlaying.trackId ~= current.trackId and not preservePreparedCrossfade then
+		if (nowPlaying.trackId ~= current.trackId or globalAudioSyncPending) and not preservePreparedCrossfade then
 			globalAudioSyncPending = true
 			local entry: QueueEntry = {
 				id = tostring(current.id), trackId = current.trackId, title = tostring(current.title),
@@ -6110,6 +6110,32 @@ end
 ControllerFunctions.handleGlobalMessage = function(message: any)
 	if typeof(message) ~= "table" then return end
 	if message.kind == "QueueChanged" and globalQueueMode then
+		-- A committed transition carries a small, service-validated metadata hint.
+		-- Apply it immediately for responsive title/duration UI, then reconcile
+		-- playback and the complete queue from the authoritative DataStore snapshot.
+		local hint = message.trackHint
+		if typeof(hint) == "table" and typeof(hint.trackId) == "string"
+			and typeof(hint.title) == "string" and typeof(hint.artist) == "string"
+			and ControllerFunctions.isFiniteNumber(hint.duration) and hint.duration >= 1
+			and ControllerFunctions.isFiniteNumber(hint.trackRevision)
+			and hint.trackRevision >= globalTrackRevision and hint.trackRevision % 1 == 0 then
+			local hintedRevision = math.floor(hint.trackRevision)
+			if hintedRevision > globalTrackRevision or nowPlaying.trackId ~= hint.trackId then
+				nowPlaying.trackId = hint.trackId
+				nowPlaying.title = hint.title
+				nowPlaying.artist = hint.artist
+				nowPlaying.genre = tostring(hint.genre or "Unknown")
+				nowPlaying.duration = math.max(1, hint.duration)
+				nowPlaying.dj = if hint.source == "playlist" then "Playlist: " .. activePlaylistName else "Automated Selector"
+				nowPlaying.source = tostring(hint.source or "auto")
+				nowPlaying.requestedBy = tostring(hint.requestedBy or "Auto DJ")
+				nowPlaying.vip = hint.vip == true
+				nowPlaying.soundId = tostring(hint.soundId or "")
+				globalTrackRevision = hintedRevision
+				globalAudioSyncPending = true
+				publishState(nil)
+			end
+		end
 		-- Coalesce same-tick queue notifications, but do not add a fixed debounce
 		-- to track transitions. A skip must refresh title/duration on peer servers
 		-- as soon as the authoritative snapshot can be read.
