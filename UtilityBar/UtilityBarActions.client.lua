@@ -385,10 +385,16 @@ local function openInventory(mode: string?)
 	inventoryPanel.Visible = true
 	playerGui:SetAttribute("UtilityInventoryOpen", true)
 	refreshInventory(mode)
+	if UserInputService.PreferredInput == Enum.PreferredInput.Gamepad or GuiService:IsTenFootInterface() then
+		local firstItem=inventoryList:FindFirstChildWhichIsA("TextButton")
+		GuiService.SelectedObject=firstItem or closeInventory
+	end
 end
 local function closeInventoryPanel()
 	inventoryPanel.Visible = false
 	playerGui:SetAttribute("UtilityInventoryOpen", false)
+	local selected=GuiService.SelectedObject
+	if selected and selected:IsDescendantOf(inventoryPanel) then GuiService.SelectedObject=nil end
 end
 closeInventory.Activated:Connect(closeInventoryPanel)
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(function()
