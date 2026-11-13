@@ -735,6 +735,28 @@ ControllerFunctions.getAudioSnapshot = function()
 		asset = sound.SoundId,
 	}
 end
+-- Per-track loudness trim for the 11 Club Exclusives. A 1.5 multiplier is a
+-- first-pass +50% boost. It is applied before the fader so crossfade gain and
+-- the player's MusicGroup master-volume preference remain independent.
+local TRACK_VOLUME_TRIM_OVERRIDES: {[string]: number} = {
+	["custom-100919684616729"] = 1.5, -- CROWN OF THE NIGHT
+	["custom-99973341792058"] = 1.5, -- Midnight Lucid
+	["custom-137104933242988"] = 1.5, -- Empire of Stone
+	["custom-84266261446965"] = 1.5, -- Anvil_of_Ruin
+	["custom-85420661204078"] = 1.5, -- Code in the Smoke
+	["custom-134987433423089"] = 1.5, -- Rich Lifestyle
+	["custom-92952858514774"] = 1.5, -- Metallic Chaos Within Magic Theory
+	["custom-117388170134707"] = 1.5, -- Steel Collision
+	["custom-86468432953052"] = 1.5, -- Fallen Star Blues
+	["custom-126526272193872"] = 1.5, -- Winter Between Us
+	["custom-96399574470852"] = 1.5, -- Terminal Frequency
+}
+local function getTrackVolumeTrim(trackId: string?): number
+	if typeof(trackId) ~= "string" then return 1 end
+	return TRACK_VOLUME_TRIM_OVERRIDES[trackId] or 1
+end
+ControllerFunctions.getTrackVolumeTrim = getTrackVolumeTrim
+
 -- Gain is owned by the active source. Keep the crossfade/profile contract
 -- backend-neutral so a transition never assumes the outgoing deck is at 100%.
 ControllerFunctions.getAudioGain = function(sourceOverride: any?): (boolean, number)
@@ -748,7 +770,10 @@ ControllerFunctions.getAudioGain = function(sourceOverride: any?): (boolean, num
 	end
 	local sound = source.instance
 	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false, 0 end
-	local value = sound.Volume
+	-- Legacy Sound.Volume carries the per-track trim as well as the fader.
+	-- Expose only the normalized 0..1 fader value to crossfade management.
+	local trim = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or ""))
+	local value = sound.Volume / trim
 	if not ControllerFunctions.isFiniteNumber(value) or value < 0 or value > 1 then return false, 0 end
 	return true, value
 end
@@ -762,7 +787,8 @@ ControllerFunctions.setAudioGain = function(value: number, sourceOverride: any?)
 	end
 	local sound = source.instance
 	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
-	local ok = pcall(function() sound.Volume = value end)
+	local trim = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or ""))
+	local ok = pcall(function() sound.Volume = value * trim end)
 	return ok
 end
 
@@ -996,6 +1022,7 @@ ControllerFunctions.tryModernAudioBackendMigration = function()
 	local createOk, candidate = pcall(BackendClass.new, {
 		Name = "ClubMusicMainAudioBackend",
 		Parent = SoundService,
+		Volume = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or "")),
 		InitialGain = 0,
 	})
 	if not createOk or typeof(candidate) ~= "table" then
@@ -1075,7 +1102,12 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 	local transitionRevision = nil
 	local context = {
 		CreateDeck = function()
-			return BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService"), InitialGain = 0 })
+			local deck = BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService"), InitialGain = 0 })
+			local incomingTrackId = if typeof(pendingCrossfadeEntry) == "table"
+				then tostring(pendingCrossfadeEntry.trackId or "") else ""
+			local player = deck:GetPlayer()
+			if player then player.Volume = getTrackVolumeTrim(incomingTrackId) end
+			return deck
 		end,
 		GetRemainingTime = function()
 			if globalQueueMode and ControllerFunctions.pendingCrossfadeGlobalRevision >= 0 and ControllerFunctions.pendingCrossfadeDeadline > 0 then
@@ -1342,7 +1374,21 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	if setOk == false then warn("[ClubMusic] Server audio asset could not be assigned: " .. tostring(setError)); return end
 	local seekOk, seekError = ControllerFunctions.seekAudio(0)
 	if seekOk == false then warn("[ClubMusic] Server audio position could not be reset: " .. tostring(seekError)); return end
-	local speedOk = ControllerFunctions.applyTrackPlaybackSpeed(tostring(nowPlaying.trackId or ""))
+	local trackId = tostring(nowPlaying.trackId or "")
+	local trim = getTrackVolumeTrim(trackId)
+	local volumeOk = pcall(function()
+		if activeAudioSource.kind == "Backend" and activeAudioSource.backend then
+			local player = activeAudioSource.backend:GetPlayer()
+			if not player then error("Active AudioPlayer is unavailable.") end
+			player.Volume = trim
+		else
+			local sound = activeAudioSource.instance
+			if typeof(sound) ~= "Instance" or not sound:IsA("Sound") then error("Active Sound is unavailable.") end
+			sound.Volume = trim
+		end
+	end)
+	if not volumeOk then warn("[ClubMusic] Track volume trim could not be applied; playback was not started."); return end
+	local speedOk = ControllerFunctions.applyTrackPlaybackSpeed(trackId)
 	if not speedOk then warn("[ClubMusic] Track playback speed could not be applied; playback was not started."); return end
 	local ok, err = pcall(function()
 		ControllerFunctions.playAudio()
