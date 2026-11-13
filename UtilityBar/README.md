@@ -70,6 +70,8 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 ## Validation
 
+The repository-side integration audit and static contract checks are complete. The checklist below is the remaining Roblox Studio runtime validation; GitHub edits cannot simulate live Roblox input, character physics, DataStore availability, or cross-device rendering, so do not treat unchecked items as runtime-tested.
+
 - [ ] Install all four client LocalScripts and all three server Scripts once; verify nine buttons appear in the bottom utility rail. Open Inventory and verify Backpack/equipped Tools can be equipped and unequipped from the same list.
 - [ ] Open Tool Shop; verify its separate panel appears, the coin balance loads from the server, and three Coming Soon placeholders display without purchase controls.
 - [ ] Verify Mount, Clone, Size and Aura each open their own separate control panel; verify Aura has three style tabs and three target tabs (Character, Tools, Accessories), and Size has a working 0.50×–5.00× slider with a 1.00× reset.
