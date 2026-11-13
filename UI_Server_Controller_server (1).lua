@@ -72,6 +72,9 @@ local CONFIG = {
 	-- "Enable Studio Access to API Services" is disabled. Set true only when
 	-- you intentionally want Studio to use the live DataStore.
 	StudioUseDataStore = false,
+	-- Keep shared queue storage disabled in Studio by default. Studio API access is
+	-- optional and often unavailable; local queue playback must remain usable.
+	StudioUseGlobalQueue = false,
 
 	-- Keep the legacy Sound as the default until the modern AudioPlayer route is validated in Studio.
 	UseModernAudioBackend = false,
@@ -2946,8 +2949,13 @@ else
 end
 
 -- Switch to shared authority only when the separately configured global service
--- confirms it is enabled. Studio remains local unless explicitly enabled there.
+-- confirms it is enabled. Studio stays on its working local queue by default;
+-- opt in only when Studio API access and the shared DataStore are intentionally configured.
 task.spawn(function()
+	if RunService:IsStudio() and not CONFIG.StudioUseGlobalQueue then
+		print("[ClubMusic] Studio local-queue mode is active; shared queue handoff is disabled.")
+		return
+	end
 	local enabledCallOk, enabled = false, false
 	for _ = 1, 30 do
 		enabledCallOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
