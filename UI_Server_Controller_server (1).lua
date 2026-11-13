@@ -782,7 +782,8 @@ ControllerFunctions.setAudioPlaybackSpeed = function(value: number): boolean
 	end
 	local sound = source.instance
 	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
-	return pcall(function() sound.PlaybackSpeed = value end)
+	local ok = pcall(function() sound.PlaybackSpeed = value end)
+	return ok
 end
 ControllerFunctions.applyTrackPlaybackSpeed = function(trackId: string): boolean
 	local speed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId]
