@@ -869,7 +869,7 @@ end
 -- is still required before any production enablement.
 ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, string?)
 	if typeof(candidate) ~= "table" then return false, "A prepared audio backend is required." end
-	for _, methodName in ipairs({ "IsReady", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetAsset", "SetGain", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
+	for _, methodName in ipairs({ "IsReady", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetAsset", "SetGain", "SetPlaybackSpeed", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
 		if typeof(candidate[methodName]) ~= "function" then return false, "Audio backend is missing " .. methodName .. "." end
 	end
 	local playerOk, player = pcall(function() return candidate:GetPlayer() end)
@@ -938,6 +938,13 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 		candidateCleanup()
 		return false, "Incoming audio backend could not load the current asset."
 	end
+	local trackId = tostring(nowPlaying and nowPlaying.trackId or "")
+	local playbackSpeed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId] or 1
+	local speedOk, speedResult = pcall(function() return candidate:SetPlaybackSpeed(playbackSpeed) end)
+	if not speedOk or speedResult == false then
+		candidateCleanup()
+		return false, "Incoming audio backend could not apply the current track playback speed."
+	end
 
 	local deadline = os.clock() + 8
 	local ready = false
@@ -947,12 +954,18 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 			return false, "Playback changed while the incoming backend was loading."
 		end
 		local readyOk, readyValue = pcall(function() return candidate:IsReady() end)
-		if readyOk and readyValue == true then ready = true; break end
+		local lengthOk, lengthValue = pcall(function() return candidate:GetTimeLength() end)
+		if readyOk and readyValue == true and lengthOk
+			and typeof(lengthValue) == "number" and ControllerFunctions.isFiniteNumber(lengthValue)
+			and lengthValue > 0 then
+			ready = true
+			break
+		end
 		task.wait(0.1)
 	end
 	if not ready then
 		candidateCleanup()
-		return false, "Incoming audio backend did not become ready before the handoff timeout."
+		return false, "Incoming audio backend did not become ready with a valid duration before the handoff timeout."
 	end
 	if not outgoingStillCurrent() then
 		candidateCleanup()
@@ -963,6 +976,27 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 	if not playOk or playResult == false then
 		candidateCleanup()
 		return false, "Incoming audio backend could not start for handoff."
+	end
+	-- AudioPlayer:Play can return before its playback state is observable.
+	-- Keep the candidate muted and the legacy source authoritative until the
+	-- new deck reports IsPlaying; abandon the cutover if it never starts.
+	local startDeadline = os.clock() + 2
+	local candidatePlaying = false
+	while os.clock() < startDeadline do
+		if not outgoingStillCurrent() then
+			candidateCleanup()
+			return false, "Playback changed while the incoming backend was starting."
+		end
+		local playingOk, playingValue = pcall(function() return candidate:IsPlaying() end)
+		if playingOk and playingValue == true then
+			candidatePlaying = true
+			break
+		end
+		task.wait(0.05)
+	end
+	if not candidatePlaying then
+		candidateCleanup()
+		return false, "Incoming audio backend did not enter the playing state; legacy playback was kept."
 	end
 	if wasPaused then
 		local pauseOk, pauseResult = pcall(function() return candidate:Pause() end)
