@@ -2779,9 +2779,9 @@ local transitionInProgress = false
 local crossfadeAttemptedGeneration = -1
 local crossfadeBoundaryWaitGeneration = -1
 local crossfadeBoundaryWaitStartedAt = 0
-ControllerFunctions.ControllerFunctions.stoppedAudioGeneration = -1
-ControllerFunctions.ControllerFunctions.stoppedAudioSince = 0
-ControllerFunctions.ControllerFunctions.audioRecoveryAttemptedGeneration = -1
+ControllerFunctions.stoppedAudioGeneration = -1
+ControllerFunctions.stoppedAudioSince = 0
+ControllerFunctions.audioRecoveryAttemptedGeneration = -1
 
 ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: boolean?)
 	if preserveAudio ~= true then ControllerFunctions.cancelAudioTransition("track-change") end
@@ -6837,23 +6837,23 @@ task.spawn(function()
 		local audio = ControllerFunctions.getAudioSnapshot()
 		if playbackPaused or nowPlaying.trackId == "" or nowPlaying.soundId == ""
 			or audio.playing == true then
-			stoppedAudioGeneration = -1
-			stoppedAudioSince = 0
-			audioRecoveryAttemptedGeneration = -1
+			ControllerFunctions.stoppedAudioGeneration = -1
+			ControllerFunctions.stoppedAudioSince = 0
+			ControllerFunctions.audioRecoveryAttemptedGeneration = -1
 		elseif not shouldAdvance and nowPlaying.elapsed >= 15 then
 			local now = os.clock()
-			if stoppedAudioGeneration ~= currentGeneration then
-				stoppedAudioGeneration = currentGeneration
-				stoppedAudioSince = now
-				audioRecoveryAttemptedGeneration = -1
+			if ControllerFunctions.stoppedAudioGeneration ~= currentGeneration then
+				ControllerFunctions.stoppedAudioGeneration = currentGeneration
+				ControllerFunctions.stoppedAudioSince = now
+				ControllerFunctions.audioRecoveryAttemptedGeneration = -1
 			end
-			local stoppedFor = math.max(0, now - stoppedAudioSince)
+			local stoppedFor = math.max(0, now - ControllerFunctions.stoppedAudioSince)
 			local loadedAndKnownLength = audio.ready and audio.length > 0
 			local playheadAtEnd = loadedAndKnownLength
 				and audio.position >= math.max(0, audio.length - 1.5)
 			if stoppedFor >= 2 and not playheadAtEnd and loadedAndKnownLength
-				and audioRecoveryAttemptedGeneration ~= currentGeneration then
-				audioRecoveryAttemptedGeneration = currentGeneration
+				and ControllerFunctions.audioRecoveryAttemptedGeneration ~= currentGeneration then
+				ControllerFunctions.audioRecoveryAttemptedGeneration = currentGeneration
 				local resumePosition = math.clamp(audio.position, 0, math.max(0, audio.length - 0.25))
 				local seekOk, seekResult = pcall(ControllerFunctions.seekAudio, resumePosition)
 				local playOk, playResult = false, false
@@ -6864,7 +6864,7 @@ task.spawn(function()
 					warn("[ClubMusic] Playback watchdog could not resume the stopped track at its saved playhead.")
 				end
 			elseif (playheadAtEnd and stoppedFor >= 2)
-				or (audioRecoveryAttemptedGeneration == currentGeneration and stoppedFor >= 7)
+				or (ControllerFunctions.audioRecoveryAttemptedGeneration == currentGeneration and stoppedFor >= 7)
 				or (not loadedAndKnownLength and nowPlaying.elapsed >= 45) then
 				shouldAdvance = true
 				local playbackAdapter = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playback
