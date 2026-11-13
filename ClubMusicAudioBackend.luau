@@ -117,6 +117,25 @@ function Backend:IsReady(): boolean
 	return ok and ready == true
 end
 
+-- Readiness is a multi-property condition for safe handoff: the asset must be
+-- selected, the decoder must be ready, and duration must be finite and positive.
+function Backend:GetReadinessSnapshot(): {ready: boolean, length: number, asset: string}
+	if not self:IsAvailable() then
+		return { ready = false, length = 0, asset = "" }
+	end
+	local ok, ready, length, asset = pcall(function()
+		return self.player.IsReady, self.player.TimeLength, self.player.Asset
+	end)
+	if not ok then return { ready = false, length = 0, asset = self.currentAsset } end
+	local validLength = if finite(length) then math.max(0, length) else 0
+	local validAsset = if typeof(asset) == "string" then asset else self.currentAsset
+	return {
+		ready = ready == true and validLength > 0 and validAsset ~= "",
+		length = validLength,
+		asset = validAsset,
+	}
+end
+
 function Backend:GetTimePosition(): number
 	if not self:IsAvailable() then return 0 end
 	local ok, position = pcall(function() return self.player.TimePosition end)
