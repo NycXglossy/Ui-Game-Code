@@ -960,7 +960,14 @@ if healthModule and globalRecoveryService then
 	end)
 	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
 		globalHealthService = instance
-		globalHealthService:Start()
+		-- The first health pass otherwise runs before Messaging subscriptions and
+		-- the recovery service have completed their initial probes.
+		task.delay(4, function()
+			if globalHealthService == instance then
+				local startOk, startError = pcall(function() instance:Start() end)
+				if not startOk then warn("[ClubMusic Global Health] Delayed startup failed: " .. tostring(startError)) end
+			end
+		end)
 	else
 		warn("[ClubMusic Global] Could not initialize Global Health Service: " .. tostring(instance))
 	end
@@ -1064,7 +1071,17 @@ globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Serv
 	end,
 	reportError = reportOperationalError,
 }, {"Start", "GetStatus", "Check"})
-if globalWatchdogService then globalWatchdogService:Start() end
+if globalWatchdogService then
+	local watchdog = globalWatchdogService
+	-- Registry and recovery are intentionally asynchronous. Do not classify their
+	-- initial Starting state as a fault during the service bootstrap window.
+	task.delay(10, function()
+		if globalWatchdogService == watchdog then
+			local startOk, startError = pcall(function() watchdog:Start() end)
+			if not startOk then warn("[ClubMusic Global Watchdog] Delayed startup failed: " .. tostring(startError)) end
+		end
+	end)
+end
 
 -- Security services remain independent; authorization denies by default until a trusted resolver exists.
 globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {
