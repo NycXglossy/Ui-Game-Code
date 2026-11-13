@@ -817,49 +817,52 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return thisToast
 	end
 
-	local function send(action: string, payload: any?)
-		if destroyed then return end
+	local function send(action: string, payload: any?): boolean
+		if destroyed then return false end
 		if typeof(action) ~= "string" or not ALLOWED_ACTIONS[action] then
 			warn("[ClubMusic UI] Blocked unknown client action.")
-			return
+			return false
 		end
 		if payload ~= nil and typeof(payload) ~= "table" then
 			warn("[ClubMusic UI] Blocked malformed action payload: " .. action)
-			return
+			return false
 		end
 		local now = os.clock()
 		local interval = ACTION_MIN_INTERVAL[action] or 0.10
-		if now - (lastActionAt[action] or 0) < interval then return end
+		if now - (lastActionAt[action] or 0) < interval then return false end
 		lastActionAt[action] = now
 		if typeof(Network.Send) ~= "function" then
 			notify("Network action unavailable: " .. action, C.Red)
-			return
+			return false
 		end
 		local ok, result = pcall(Network.Send, action, payload or {})
 		if not ok then
 			warn("[ClubMusic UI] Send failed: " .. tostring(result))
 			notify("Could not send request.", C.Red)
+			return false
 		end
+		return result == true
 	end
 
-	local function callNetwork(method: string, ...)
-		if destroyed then return end
+	local function callNetwork(method: string, ...): boolean
+		if destroyed then return false end
 		if typeof(method) ~= "string" or not ALLOWED_NETWORK_METHODS[method] then
 			warn("[ClubMusic UI] Blocked unknown network method.")
-			return
+			return false
 		end
 		local fn = Network[method]
-		-- Missing optional wrappers fall back to Network.Send at the call site.
-		if typeof(fn) ~= "function" then return end
+		if typeof(fn) ~= "function" then return false end
 		local now = os.clock()
 		local interval = ACTION_MIN_INTERVAL[method] or 0.10
-		if now - (lastActionAt[method] or 0) < interval then return end
+		if now - (lastActionAt[method] or 0) < interval then return false end
 		lastActionAt[method] = now
-		local ok, err = pcall(fn, ...)
+		local ok, result = pcall(fn, ...)
 		if not ok then
-			warn("[ClubMusic UI] " .. method .. ": " .. tostring(err))
+			warn("[ClubMusic UI] " .. method .. ": " .. tostring(result))
 			notify("Action failed.", C.Red)
+			return false
 		end
+		return result ~= false
 	end
 
 	-- Premium floating launcher: coordinated with the dark, gold and cyan ClubMusic surfaces.
@@ -1606,12 +1609,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end)
 		return button
 	end
-	local function act(method: string, payload: {[string]: any}, ...)
+	local function act(method: string, payload: {[string]: any}, ...): boolean
 		if typeof(Network[method]) == "function" then
-			callNetwork(method, ...)
-		else
-			send(method, payload)
+			return callNetwork(method, ...)
 		end
+		return send(method, payload)
 	end
 
 	local function requestsDisabled(): (boolean, string)
@@ -1647,12 +1649,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			return
 		end
 		lastReload = os.clock()
-		act("ReloadSong", {})
+		local sent = act("ReloadSong", {})
+		if not sent then
+			notify("Reload request could not be sent. Please wait a moment and try again.", C.Red)
+			return
+		end
 		if typeof(Network.GetState) == "function" and applyStateFn then
 			local ok, fresh = pcall(Network.GetState)
 			if ok and typeof(fresh) == "table" then applyStateFn(fresh) end
 		end
-		notify("Reloading song…", C.Cyan)
+		notify("Reload request sent. Waiting for the server…", C.Cyan)
 	end
 
 	local currentTrackId: any
