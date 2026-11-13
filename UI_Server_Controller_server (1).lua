@@ -694,6 +694,9 @@ end
 
 local playbackPaused = false
 local lastGlobalPlaybackRevision = 0
+-- Prevent out-of-order persistence replies from an earlier pause/resume/restart
+-- overwriting a newer local control action on the same track.
+local playbackControlRequestId = 0
 
 -- One controller-owned source contract. The legacy Sound remains the active
 -- implementation until every route is migrated and a Studio cutover is validated.
@@ -4914,6 +4917,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
+		playbackControlRequestId += 1
+		local controlRequestId = playbackControlRequestId
 		local expectedTrackRevision = globalTrackRevision
 		local expectedTrackId = nowPlaying.trackId
 		ControllerFunctions.cancelAudioTransition(if desiredPaused then "pause" else "resume")
@@ -4929,11 +4934,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
 		playbackPaused = desiredPaused
 		local audioOk, audioError = pcall(function()
-			local audio = ControllerFunctions.getAudioSnapshot()
-			if audio.ready then
-				local seekOk, seekResult = ControllerFunctions.seekAudio(nowPlaying.elapsed)
-				if seekOk == false or seekResult == false then error("Could not preserve the current playback position.") end
-			end
+			-- Pause/Resume already preserve their own playhead. Avoid a redundant
+			-- seek here: it can trigger decoder repositioning and audible delay.
 			local controlOk, controlResult
 			if desiredPaused then
 				controlOk, controlResult = ControllerFunctions.pauseAudio()
@@ -4956,10 +4958,11 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 					"SetGlobalPlayback", desiredPaused, position, expectedTrackRevision, false
 				)
 				if callOk and changed == true and typeof(state) == "table" then
-					if nowPlaying.trackId == expectedTrackId and globalTrackRevision == expectedTrackRevision then
+					if playbackControlRequestId == controlRequestId
+						and nowPlaying.trackId == expectedTrackId and globalTrackRevision == expectedTrackRevision then
 						ControllerFunctions.applyGlobalQueueState(state)
 					end
-				else
+				elseif playbackControlRequestId == controlRequestId then
 					notify(player, tostring(message or "Playback changed locally, but global synchronization could not be confirmed."), "warn")
 					if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 				end
@@ -4983,6 +4986,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	if action == "DJRestart" then
 		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
+		playbackControlRequestId += 1
+		local controlRequestId = playbackControlRequestId
 		local expectedTrackRevision = globalTrackRevision
 		local expectedTrackId = nowPlaying.trackId
 		local restartAsset = nowPlaying.soundId
@@ -5002,10 +5007,11 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 					"SetGlobalPlayback", false, 0, expectedTrackRevision, true
 				)
 				if callOk and restarted == true and typeof(state) == "table" then
-					if nowPlaying.trackId == expectedTrackId and globalTrackRevision == expectedTrackRevision then
+					if playbackControlRequestId == controlRequestId
+						and nowPlaying.trackId == expectedTrackId and globalTrackRevision == expectedTrackRevision then
 						ControllerFunctions.applyGlobalQueueState(state)
 					end
-				else
+				elseif playbackControlRequestId == controlRequestId then
 					notify(player, tostring(message or "Track restarted here, but global restart could not be confirmed."), "warn")
 					if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 				end
