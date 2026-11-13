@@ -206,12 +206,32 @@ function Backend:Reload(position: number?): (boolean, string?)
 	local wasPaused = self.paused
 	local target = if position == nil then (if wasPaused then self.pausedAt else self:GetTimePosition()) else position
 	if not finite(target) or target < 0 then return false, "Invalid reload position." end
+
+	-- Force a fresh decoder selection even when the requested asset ID matches.
+	local resetOk, resetError = pcall(function()
+		self.player:Stop()
+		self.player.Asset = ""
+	end)
+	if not resetOk then return false, tostring(resetError) end
+	self.currentAsset = ""
+	self.paused = false
+	self.pausedAt = 0
+	task.wait()
 	local selected, selectError = self:SetAsset(asset)
 	if not selected then return false, selectError end
+
+	local deadline = os.clock() + 8
+	local ready = false
+	repeat
+		task.wait(0.1)
+		local readiness = self:GetReadinessSnapshot()
+		ready = readiness.ready == true and readiness.asset == asset and readiness.length > 0
+	until ready or os.clock() >= deadline
+	if not ready then return false, "The AudioPlayer decoder did not become ready within 8 seconds." end
+
 	local seeked, seekError = self:Seek(target)
 	if not seeked then return false, seekError end
 	if wasPaused then
-		-- Reloading a paused deck must not silently turn it into active playback.
 		self.pausedAt = self:GetTimePosition()
 		self.paused = true
 		return true, nil
