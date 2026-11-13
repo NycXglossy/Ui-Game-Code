@@ -2702,16 +2702,9 @@ ControllerFunctions.pickAutoTrack = function(): Track?
 		lastAutoGenre = chosen.genreId
 		return chosen
 	end
-	-- If recent-history constraints exclude every track, do not select the
-	-- current track as a fallback. Waiting for a valid successor is safer than
-	-- creating an immediate repeat in the shared queue.
-	for _, id in ipairs(ALL_TRACK_IDS) do
-		local track = TRACK_BY_ID[id]
-		if isPlayableTrack(track) and id ~= nowPlaying.trackId
-			and not ControllerFunctions.isTrackBlocked(id) then
-			return track
-		end
-	end
+	-- Never bypass recent-history exclusions when the preferred pool is empty.
+	-- Waiting for the next authoritative refill is safer than replaying a
+	-- recently heard track simply to keep the queue populated.
 	return nil
 end
 
@@ -2941,6 +2934,20 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 	if not ControllerFunctions.isFiniteNumber(catalogRevision) or catalogRevision < 0 or catalogRevision % 1 ~= 0
 		or catalogRevision > 9007199254740991 then return false end
 	globalCatalogRevision = math.max(globalCatalogRevision, catalogRevision)
+	-- Recent-play history is shared playback state, not a per-server guess.
+	-- This keeps every server's Auto DJ picker aligned with the same last six tracks.
+	table.clear(recentTracks)
+	if typeof(state.recentTrackIds) == "table" then
+		for _, trackId in ipairs(state.recentTrackIds) do
+			if typeof(trackId) == "string" and #trackId > 0 and #trackId <= 32 then
+				table.insert(recentTracks, trackId)
+			end
+		end
+	end
+	if #recentTracks == 0 and typeof(state.current) == "table" and typeof(state.current.trackId) == "string" then
+		table.insert(recentTracks, state.current.trackId)
+	end
+	while #recentTracks > CONFIG.AutoAvoidRecent do table.remove(recentTracks, 1) end
 	globalCatalogChangeTrackId = if typeof(state.catalogChangeTrackId) == "string" then state.catalogChangeTrackId else nil
 	globalCatalogChangeKind = if state.catalogChangeKind == "add" or state.catalogChangeKind == "remove"
 		then state.catalogChangeKind else nil
@@ -3218,6 +3225,12 @@ enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
 		or string.find(failureText, "budget", 1, true) ~= nil
 	-- Keep global authority unless repeated snapshot reads also fail.
 	if syncGlobalQueueSnapshot and globalQueueMode then syncGlobalQueueSnapshot() end
+	if string.find(failureText, "recently played", 1, true) then
+		-- A different server may have prepared this batch from an older local
+		-- history snapshot. Rebuild after applying the authoritative history.
+		task.defer(ControllerFunctions.topUpAuto)
+		return false, tostring(message or "Recent-play history changed; rebuilding Auto DJ queue.")
+	end
 	if not globalQueueMode and queueManager and storageFailure then
 		if storageFailure then
 			for _, entry in ipairs(entries) do
