@@ -1526,70 +1526,81 @@ ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
 	if typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
 		return false, "The active audio source is unavailable."
 	end
-
-	-- Capture the decoder's real playhead before Stop resets a legacy Sound's
-	-- TimePosition. Fall back to the authoritative server clock only if needed.
 	local duration = math.max(1, tonumber(nowPlaying.duration) or 1)
 	local position = if ControllerFunctions.isFiniteNumber(snapshot.position)
 		then snapshot.position else nowPlaying.elapsed
 	position = math.clamp(position, 0, math.max(0, duration - 0.5))
+	local expectedTrackId = tostring(nowPlaying.trackId or "")
+	local expectedTransitionToken = audioTransitionTrackToken
 
-	local stopOk, stopResult = pcall(ControllerFunctions.stopAudio)
-	if not stopOk or stopResult == false then
-		return false, "The current audio source could not be stopped safely."
-	end
-
-	if tostring(snapshot.asset or "") ~= asset then
-		local setOk, setResult = pcall(ControllerFunctions.setAudioAsset, asset)
-		if not setOk or setResult == false then
-			return false, "The current track asset could not be restored."
+	if source.kind == "Backend" and source.backend then
+		-- AudioPlayer reload must reselect the asset and wait for its decoder;
+		-- Stop/Seek/Play on the same selection is not a reliable recovery.
+		local reloadCallOk, reloaded, reloadError = pcall(function()
+			return source.backend:Reload(position)
+		end)
+		if not reloadCallOk or reloaded ~= true then
+			return false, tostring(reloadError or reloaded or "The modern audio decoder could not be reloaded.")
 		end
-	end
-
-	-- Legacy Sound may need its decoder to finish loading again before Roblox
-	-- accepts a TimePosition write. Preload and wait only on this manual recovery
-	-- path; normal playback and cross-server synchronization remain untouched.
-	if source.kind ~= "Backend" and source.instance and source.instance:IsA("Sound") then
+	elseif source.kind == "Sound" and source.instance and source.instance:IsA("Sound") then
 		local sound = source.instance
-		if sound.SoundId ~= asset then sound.SoundId = asset end
-		if not sound.IsLoaded then
-			pcall(function() ContentProvider:PreloadAsync({ sound }) end)
-			local deadline = os.clock() + 5
-			while not sound.IsLoaded and os.clock() < deadline do task.wait(0.1) end
+		if sound.Parent == nil then return false, "The active audio Sound is no longer available." end
+
+		-- Force Roblox to discard the current decoder selection even when the
+		-- SoundId is unchanged. A same-ID assignment alone does not guarantee
+		-- recovery from a stuck/silent decoder.
+		local resetOk, resetError = pcall(function()
+			sound:Stop()
+			sound.SoundId = ""
+		end)
+		if not resetOk then return false, "The audio decoder could not be reset: " .. tostring(resetError) end
+		task.wait()
+		local assignOk, assignError = pcall(function() sound.SoundId = asset end)
+		if not assignOk then return false, "The current track asset could not be reselected: " .. tostring(assignError) end
+
+		local loadDeadline = os.clock() + 8
+		local loaded = false
+		repeat
+			task.wait(0.1)
+			loaded = sound.Parent ~= nil and sound.SoundId == asset
+				and sound.IsLoaded == true and ControllerFunctions.isFiniteNumber(sound.TimeLength)
+				and sound.TimeLength > 0
+		until loaded or os.clock() >= loadDeadline
+		if not loaded then
+			return false, "The audio asset did not finish decoding within 8 seconds. Please try reload again."
 		end
-		if not sound.IsLoaded then
-			return false, "The current audio asset did not finish loading; please try reload again."
+
+		if not ControllerFunctions.applyTrackPlaybackSpeed(expectedTrackId) then
+			return false, "The current track playback speed could not be restored."
 		end
+		local seekOk, seekError = pcall(function() sound.TimePosition = position end)
+		if not seekOk then return false, "The current track position could not be restored: " .. tostring(seekError) end
+		local actualPosition = sound.TimePosition
+		if not ControllerFunctions.isFiniteNumber(actualPosition) or math.abs(actualPosition - position) > 1.5 then
+			return false, "The audio decoder did not accept the restored track position."
+		end
+		local playOk, playError = pcall(function() sound:Play() end)
+		if not playOk then return false, "The audio source could not resume: " .. tostring(playError) end
+	else
+		return false, "The active audio source does not support reload recovery."
 	end
 
-	local speedOk = ControllerFunctions.applyTrackPlaybackSpeed(tostring(nowPlaying.trackId or ""))
-	if not speedOk then return false, "The current track playback speed could not be restored." end
-
-	local seekOk, seekResult = pcall(ControllerFunctions.seekAudio, position)
-	if not seekOk or seekResult == false then
-		return false, "The current track position could not be restored."
-	end
-	local playOk, playResult = pcall(ControllerFunctions.playAudio)
-	if not playOk or playResult == false then
-		return false, "The audio source could not resume playback."
-	end
-
-	-- Confirm the source actually resumed instead of reporting success after a
-	-- no-op Play call. A brief bounded wait accommodates decoder startup.
-	local resumeDeadline = os.clock() + 2
-	local resumed = false
+	-- Confirm actual playback and fence out a track change that occurred while
+	-- the decoder was loading. Never report success for a stale source.
+	local resumeDeadline = os.clock() + 3
 	repeat
 		task.wait(0.1)
+		if activeAudioSource ~= source or tostring(nowPlaying.trackId or "") ~= expectedTrackId
+			or audioTransitionTrackToken ~= expectedTransitionToken or playbackPaused then
+			return false, "The current track changed during reload; no stale playback state was committed."
+		end
 		local stateOk, current = pcall(ControllerFunctions.getAudioSnapshot)
-		if stateOk and typeof(current) == "table" and current.playing == true then
-			resumed = true
-			break
+		if stateOk and typeof(current) == "table" and current.playing == true
+			and current.asset == asset then
+			return true, nil
 		end
 	until os.clock() >= resumeDeadline
-	if not resumed then
-		return false, "The audio source did not resume. Please try reload again."
-	end
-	return true, nil
+	return false, "The audio source did not resume after reloading. Please try again."
 end
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
