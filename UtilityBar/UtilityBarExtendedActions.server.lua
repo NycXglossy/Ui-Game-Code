@@ -12,7 +12,7 @@ local CLONE_LIFETIME = 12
 local lastRequest: {[number]: number} = {}
 local sizeStep: {[number]: number} = {}
 local sizeBaseline: {[number]: {humanoid: Humanoid, height: number, width: number, depth: number, head: number}} = {}
-local auraByPlayer: {[number]: {highlights: {Highlight}, connection: RBXScriptConnection?}} = {}
+local auraByPlayer: {[number]: {highlights: {Highlight}, connection: RBXScriptConnection?, character: Model}} = {}
 
 local folder = ReplicatedStorage:FindFirstChild(REMOTE_FOLDER)
 if folder and not folder:IsA("Folder") then folder:Destroy(); folder = nil end
@@ -156,7 +156,7 @@ local function setAura(player: Player, request: any): (boolean, string)
 	local character = player.Character
 	if not character or not character.Parent then return false, "Your character is not ready." end
 	clearAura(player.UserId)
-	local state = {highlights = {} :: {Highlight}, connection = nil :: RBXScriptConnection?}
+	local state = {highlights = {} :: {Highlight}, connection = nil :: RBXScriptConnection?, character = character}
 	local function addHighlight(targetInstance: Instance, name: string)
 		local highlight = Instance.new("Highlight")
 		highlight.Name = name
@@ -194,7 +194,7 @@ end
 execute.OnServerInvoke = function(player: Player, actionName: any, value: any): (boolean, string)
 	if typeof(actionName) ~= "string" then return false, "Invalid utility request." end
 	local allowed = actionName == "Mount" or actionName == "Size"
-		or actionName == "Clone" or actionName == "Aura"
+		or actionName == "Clone" or actionName == "Aura" or actionName == "ClearAura"
 	if not allowed then return false, "This utility action is not available." end
 	local now = os.clock()
 	if now - (lastRequest[player.UserId] or 0) < COOLDOWN then
@@ -204,9 +204,21 @@ execute.OnServerInvoke = function(player: Player, actionName: any, value: any): 
 	if actionName == "Mount" then return toggleMount(player) end
 	if actionName == "Size" then return setSize(player, value) end
 	if actionName == "Clone" then return createClone(player) end
+	if actionName == "ClearAura" then
+		clearAura(player.UserId)
+		return true, "Aura cleared."
+	end
 	return setAura(player, value)
 end
 
+
+local function clearPlayerAuraOnCharacterChange(player: Player)
+	player.CharacterRemoving:Connect(function()
+		clearAura(player.UserId)
+	end)
+end
+for _, player in ipairs(Players:GetPlayers()) do clearPlayerAuraOnCharacterChange(player) end
+Players.PlayerAdded:Connect(clearPlayerAuraOnCharacterChange)
 
 Players.PlayerRemoving:Connect(function(player)
 	lastRequest[player.UserId] = nil
