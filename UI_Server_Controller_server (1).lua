@@ -630,6 +630,9 @@ local queueManager: any = nil
 local globalQueueMode = false
 local enterLocalQueueBackup: ((string) -> ())? = nil
 local globalTrackRevision = 0
+-- Display hints may lead the authoritative snapshot, but must never advance
+-- queue ownership or the revision used by crossfade compare-and-swap.
+local globalMetadataHintRevision = -1
 ControllerFunctions.globalPlaybackEndTime = 0
 local localCatalogRevision = 0
 local syncGlobalQueueSnapshot: (() -> boolean)? = nil
@@ -6122,26 +6125,22 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 			and typeof(hint.title) == "string" and typeof(hint.artist) == "string"
 			and ControllerFunctions.isFiniteNumber(hint.duration) and hint.duration >= 1
 			and ControllerFunctions.isFiniteNumber(hint.trackRevision)
-			and hint.trackRevision > globalTrackRevision and hint.trackRevision % 1 == 0 then
-			local hintedRevision = math.floor(hint.trackRevision)
-			if hintedRevision > globalTrackRevision or nowPlaying.trackId ~= hint.trackId then
-				nowPlaying.trackId = hint.trackId
-				nowPlaying.title = hint.title
-				nowPlaying.artist = hint.artist
-				nowPlaying.genre = tostring(hint.genre or "Unknown")
-				nowPlaying.duration = math.max(1, hint.duration)
-				nowPlaying.dj = if hint.source == "playlist" then "Playlist: " .. activePlaylistName else "Automated Selector"
-				nowPlaying.source = tostring(hint.source or "auto")
-				nowPlaying.requestedBy = tostring(hint.requestedBy or "Auto DJ")
-				nowPlaying.vip = hint.vip == true
-				nowPlaying.soundId = tostring(hint.soundId or "")
-				globalTrackRevision = hintedRevision
-				local crossfadeManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
-				-- If this server already owns the prepared incoming deck, do not
-				-- schedule a later setNowPlaying call that could restart that deck.
-				globalAudioSyncPending = not (crossfadeManager ~= nil and crossfadeManager.active == true)
-				publishState(nil)
-			end
+			and hint.trackRevision > math.max(globalTrackRevision, globalMetadataHintRevision)
+			and hint.trackRevision % 1 == 0 then
+			-- This is presentation-only. Do not change nowPlaying.trackId,
+			-- soundId, globalTrackRevision, or audio sync state here: those belong
+			-- to the authoritative snapshot/CAS and crossfade OnCommit path.
+			globalMetadataHintRevision = math.floor(hint.trackRevision)
+			nowPlaying.title = hint.title
+			nowPlaying.artist = hint.artist
+			nowPlaying.genre = tostring(hint.genre or "Unknown")
+			nowPlaying.duration = math.max(1, hint.duration)
+			nowPlaying.elapsed = 0
+			nowPlaying.dj = if hint.source == "playlist" then "Playlist: " .. activePlaylistName else "Automated Selector"
+			nowPlaying.source = tostring(hint.source or "auto")
+			nowPlaying.requestedBy = tostring(hint.requestedBy or "Auto DJ")
+			nowPlaying.vip = hint.vip == true
+			publishState(nil)
 		end
 		-- Coalesce same-tick queue notifications, but do not add a fixed debounce
 		-- to track transitions. A skip must refresh title/duration on peer servers
