@@ -391,6 +391,12 @@ local function closeInventoryPanel()
 	playerGui:SetAttribute("UtilityInventoryOpen", false)
 end
 closeInventory.Activated:Connect(closeInventoryPanel)
+playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(function()
+	if playerGui:GetAttribute("ClubMusicMenuExpanded") == true then closeInventoryPanel() end
+end)
+playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(function()
+	if playerGui:GetAttribute("TikiTideSettingsOpen") == true then closeInventoryPanel() end
+end)
 
 local requestPending = false
 actionEvent.Event:Connect(function(actionName: string)
