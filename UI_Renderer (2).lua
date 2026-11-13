@@ -4797,24 +4797,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- hidden mobile content only wastes frames and can expose partial redraws.
 		if not expanded then return end
 		if currentDevice == "Mobile" then
-			-- Do not rebuild the mobile content tree for playback-clock-only
-			-- snapshots. The progress HUD already interpolates elapsed locally.
-			if not mobileRenderStateChanged(previousState, cleanState) then return end
-			-- Coalesce meaningful server updates so several changes in one burst
-			-- produce only one content rebuild on slower mobile render frames.
-			if mobileStateRenderQueued then return end
-			mobileStateRenderQueued = true
-			local requestedTab = activeTab
-			task.delay(0.18, function()
-				mobileStateRenderQueued = false
-				if not destroyed and expanded and activeTab == requestedTab
-					and activeTab ~= "Music" and activeTab ~= "All Tracks" and activeTab ~= "Audio ID" then
-					renderTab()
-				end
-			end)
-		else
-			renderTab()
+			-- Keep the mounted mobile tab tree stable while the menu is open.
+			-- Even coalesced snapshot-driven clear/rebuild cycles can produce a
+			-- brief visible flash on touch devices. State and the compact HUD are
+			-- still updated above; the active page refreshes on the next tab
+			-- selection or when the menu is reopened.
+			return
 		end
+		renderTab()
 	end
 
 	applyStateFn = applyState
