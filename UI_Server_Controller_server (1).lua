@@ -1177,10 +1177,25 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 					-- the retired deck first, then stop and rewind it so no buffered
 					-- fragment leaks over the newly committed AudioPlayer.
 					local sound = outgoing.instance
+					local soundParent = sound.Parent
+					-- Mute before stopping so the retired legacy deck cannot remain
+					-- audible while clients process the replicated stop/position update.
 					sound.Volume = 0
 					sound:Stop()
 					sound.TimePosition = 0
 					sound:Stop()
+					-- A small delayed reassertion closes an intermittent replication/
+					-- decoder-tail race observed at the end of otherwise successful fades.
+					-- Do not touch it if another path has already made this Sound active again.
+					task.delay(0.15, function()
+						if sound.Parent and sound.Parent == soundParent and activeAudioSource ~= outgoing then
+							pcall(function()
+								sound.Volume = 0
+							sound:Stop()
+							sound.TimePosition = 0
+						end)
+						end
+					end)
 					return not sound.IsPlaying
 				end
 				return false
