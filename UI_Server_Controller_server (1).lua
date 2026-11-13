@@ -1415,17 +1415,19 @@ ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, strin
 		ControllerFunctions.startServerMusic(soundId)
 		return true, nil
 	end
-	local stopOk, stopResult, stopError = pcall(ControllerFunctions.stopAudio)
-	if not stopOk or stopResult == false then
-		return false, tostring(stopError or stopResult or "The current audio source could not be stopped.")
-	end
+
+	-- Reset the active playhead in place instead of Stop -> Seek -> Play.
+	-- Stopping a loaded source can force the decoder to reinitialize and adds
+	-- avoidable latency. If the source was paused/stopped, start it after seeking.
 	local seekOk, seekResult, seekError = pcall(ControllerFunctions.seekAudio, 0)
 	if not seekOk or seekResult == false then
 		return false, tostring(seekError or seekResult or "The current audio source could not be reset.")
 	end
-	local playOk, playResult, playError = pcall(ControllerFunctions.playAudio)
-	if not playOk or playResult == false then
-		return false, tostring(playError or playResult or "The current audio source could not be restarted.")
+	if snapshot.playing ~= true then
+		local playOk, playResult, playError = pcall(ControllerFunctions.playAudio)
+		if not playOk or playResult == false then
+			return false, tostring(playError or playResult or "The current audio source could not be restarted.")
+		end
 	end
 	return true, nil
 end
