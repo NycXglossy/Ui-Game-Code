@@ -78,6 +78,7 @@ function Backend.new(config: Config?)
 		destroyed = false,
 		paused = false,
 		pausedAt = 0,
+		currentAsset = "",
 	}, Backend)
 end
 
@@ -90,11 +91,23 @@ function Backend:SetAsset(asset: string): (boolean, string?)
 	if typeof(asset) ~= "string" or #asset > 64 or not string.match(asset, "^rbxassetid://%d+$") then
 		return false, "Invalid audio asset ID."
 	end
-	self:Stop()
+	local stopped, stopError = self:Stop()
+	if not stopped then return false, stopError or "The current audio could not be stopped safely." end
+	local previousAsset = self.currentAsset
 	local ok, err = pcall(function()
 		self.player.Asset = asset
 	end)
-	if not ok then return false, tostring(err) end
+	if not ok then
+		-- Keep the previous asset selected if replacement fails. Playback remains
+		-- stopped; the controller can explicitly retry or resume it.
+		if previousAsset ~= "" then
+			pcall(function() self.player.Asset = previousAsset end)
+		end
+		return false, tostring(err)
+	end
+	self.currentAsset = asset
+	self.paused = false
+	self.pausedAt = 0
 	return true, nil
 end
 
@@ -117,20 +130,42 @@ function Backend:IsPlaying(): boolean
 end
 
 function Backend:Play(asset: string?, position: number?): (boolean, string?)
+	if position ~= nil and (not finite(position) or position < 0) then
+		return false, "Invalid playback position."
+	end
 	if asset ~= nil then
 		local ok, err = self:SetAsset(asset)
 		if not ok then return false, err end
 	end
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
-	if position ~= nil then
-		if not finite(position) or position < 0 then return false, "Invalid playback position." end
-		self.player.TimePosition = position
-	end
+	local ok, err = pcall(function()
+		if position ~= nil then self.player.TimePosition = position end
+		self.player:Play()
+	end)
+	if not ok then return false, tostring(err) end
 	self.paused = false
 	self.pausedAt = 0
-	local ok, err = pcall(function() self.player:Play() end)
-	if not ok then return false, tostring(err) end
 	return true, nil
+end
+
+function Backend:GetAsset(): string
+	if not self:IsAvailable() then return "" end
+	if self.currentAsset ~= "" then return self.currentAsset end
+	local ok, asset = pcall(function() return self.player.Asset end)
+	return if ok and typeof(asset) == "string" then asset else ""
+end
+
+-- Re-select the current asset and restart it from a known position. The caller
+-- owns readiness waits and decides when a recovered source may be committed.
+function Backend:Reload(position: number?): (boolean, string?)
+	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
+	local asset = self:GetAsset()
+	if asset == "" then return false, "No audio asset is selected for reload." end
+	local target = if position == nil then self:GetTimePosition() else position
+	if not finite(target) or target < 0 then return false, "Invalid reload position." end
+	local selected, selectError = self:SetAsset(asset)
+	if not selected then return false, selectError end
+	return self:Play(nil, target)
 end
 
 -- AudioPlayer has no Sound-style Pause method. Preserve the playhead and stop;
