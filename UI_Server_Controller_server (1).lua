@@ -4832,8 +4832,12 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 				local seekOk, seekResult = ControllerFunctions.seekAudio(nowPlaying.elapsed)
 				if seekOk == false or seekResult == false then error("Could not preserve the current playback position.") end
 			end
-			local controlOk, controlResult = if desiredPaused
-				then ControllerFunctions.pauseAudio() else ControllerFunctions.resumeAudio()
+			local controlOk, controlResult
+			if desiredPaused then
+				controlOk, controlResult = ControllerFunctions.pauseAudio()
+			else
+				controlOk, controlResult = ControllerFunctions.resumeAudio()
+			end
 			if controlOk == false or controlResult == false then error("The audio source rejected the pause/resume command.") end
 		end)
 		if not audioOk then
