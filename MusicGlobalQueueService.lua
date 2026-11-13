@@ -80,7 +80,9 @@ type State = {
 	catalogChangeKind: string?,
 	updatedAt: number,
 	updatedBy: number,
+	recentTrackIds: {string},
 	recentOperationIds: {string},
+
 }
 
 local cachedSnapshot: State? = nil
@@ -179,7 +181,9 @@ local function defaultState(): State
 		catalogChangeKind = nil,
 		updatedAt = os.time(),
 		updatedBy = 0,
+		recentTrackIds = {},
 		recentOperationIds = {},
+
 	}
 end
 
@@ -199,6 +203,18 @@ local function sanitizeState(raw: any): State
 		end
 	end
 	state.autoQueueHold = raw.autoQueueHold == true
+	if typeof(raw.recentTrackIds) == "table" then
+		local seenRecent: {[string]: boolean} = {}
+		local startIndex = math.max(1, #raw.recentTrackIds - 5)
+		for index = startIndex, #raw.recentTrackIds do
+			local trackId = raw.recentTrackIds[index]
+			if typeof(trackId) == "string" and #trackId > 0 and #trackId <= 32
+				and string.match(trackId, "^[%w%-_]+$") and not seenRecent[trackId] then
+				table.insert(state.recentTrackIds, trackId)
+				seenRecent[trackId] = true
+			end
+		end
+	end
 	state.catalogRevision = if finite(raw.catalogRevision)
 		then math.clamp(math.floor(raw.catalogRevision), 0, MAX_SAFE_INTEGER) else 0
 	-- Accept the earlier in-branch reservation field during rollout so an
@@ -266,6 +282,7 @@ local function detached(state: State): State
 	result.playback = table.clone(state.playback)
 	result.rotation = table.clone(state.rotation)
 	result.rotation.trackIds = table.clone(state.rotation.trackIds)
+	result.recentTrackIds = table.clone(state.recentTrackIds)
 	result.recentOperationIds = table.clone(state.recentOperationIds)
 	return result
 end
@@ -490,6 +507,8 @@ function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any
 			seenIds[queued.id] = true
 			seenTracks[queued.trackId] = true
 		end
+		local recentSet: {[string]: boolean} = {}
+		for _, trackId in ipairs(state.recentTrackIds) do recentSet[trackId] = true end
 		local added = 0
 		for _, entry in ipairs(entries) do
 			if #state.queue >= target or #state.queue >= hardLimit then break end
@@ -498,6 +517,9 @@ function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any
 			end
 			if seenIds[entry.id] or seenTracks[entry.trackId] then
 				return false, "Automatic queue batch contains a duplicate or already-playing track."
+			end
+			if entry.source == "auto" and recentSet[entry.trackId] then
+				return false, "Automatic queue batch contains a recently played track; refill must be rebuilt."
 			end
 			if entry.source == "playlist" then
 				if not state.rotation.enabled then return false, "Playlist rotation is not active globally." end
@@ -666,6 +688,13 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 			return false, "The next track matches the current track; refusing an immediate repeat."
 		end
 		state.current = cloneEntry(nextEntry)
+		local recentTrackIds = {}
+		for _, trackId in ipairs(state.recentTrackIds) do
+			if trackId ~= nextEntry.trackId then table.insert(recentTrackIds, trackId) end
+		end
+		table.insert(recentTrackIds, nextEntry.trackId)
+		while #recentTrackIds > 6 do table.remove(recentTrackIds, 1) end
+		state.recentTrackIds = recentTrackIds
 		state.playback.paused = false
 		state.playback.position = 0
 		state.playback.anchorTime = Workspace:GetServerTimeNow()
