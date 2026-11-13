@@ -6110,11 +6110,12 @@ end
 ControllerFunctions.handleGlobalMessage = function(message: any)
 	if typeof(message) ~= "table" then return end
 	if message.kind == "QueueChanged" and globalQueueMode then
-		-- Coalesce bursts (for example, several automatic queue inserts) into one
-		-- authoritative snapshot read. Observer servers only refresh their HUD mirror.
+		-- Coalesce same-tick queue notifications, but do not add a fixed debounce
+		-- to track transitions. A skip must refresh title/duration on peer servers
+		-- as soon as the authoritative snapshot can be read.
 		if not globalQueueRefreshScheduled then
 			globalQueueRefreshScheduled = true
-			task.delay(0.2, function()
+			task.defer(function()
 				-- MessagingService is only an invalidation hint. If a transient
 				-- DataStore read fails, retry the read with short backoff instead
 				-- of leaving this server's HUD mirror stale until the slow poll.
