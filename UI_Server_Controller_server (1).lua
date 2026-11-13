@@ -764,7 +764,11 @@ local TRACK_VOLUME_TRIM_OVERRIDES: {[string]: number} = {
 }
 local function getTrackVolumeTrim(trackId: string?): number
 	if typeof(trackId) ~= "string" then return 1 end
-	return TRACK_VOLUME_TRIM_OVERRIDES[trackId] or 1
+	local configured = TRACK_VOLUME_TRIM_OVERRIDES[trackId]
+	if not ControllerFunctions.isFiniteNumber(configured) or configured <= 0 then return 1 end
+	-- Sound.Volume and AudioPlayer.Volume both support values above 1, but
+	-- clamp the shared per-track trim to their documented 0..10 range.
+	return math.clamp(configured, 0.01, 10)
 end
 ControllerFunctions.getTrackVolumeTrim = getTrackVolumeTrim
 
@@ -1163,7 +1167,10 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			local incomingTrackId = if typeof(pendingCrossfadeEntry) == "table"
 				then tostring(pendingCrossfadeEntry.trackId or "") else ""
 			local player = deck:GetPlayer()
-			if player then player.Volume = getTrackVolumeTrim(incomingTrackId) end
+			if player then
+				local trim = getTrackVolumeTrim(incomingTrackId)
+				if ControllerFunctions.isFiniteNumber(trim) then player.Volume = math.clamp(trim, 0.01, 10) end
+			end
 			return deck
 		end,
 		GetRemainingTime = function()
@@ -1437,11 +1444,11 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 		if activeAudioSource.kind == "Backend" and activeAudioSource.backend then
 			local player = activeAudioSource.backend:GetPlayer()
 			if not player then error("Active AudioPlayer is unavailable.") end
-			player.Volume = trim
+			player.Volume = math.clamp(trim, 0.01, 10)
 		else
 			local sound = activeAudioSource.instance
 			if typeof(sound) ~= "Instance" or not sound:IsA("Sound") then error("Active Sound is unavailable.") end
-			sound.Volume = trim
+			sound.Volume = math.clamp(trim, 0.01, 10)
 		end
 	end)
 	if not volumeOk then warn("[ClubMusic] Track volume trim could not be applied; playback was not started."); return end
