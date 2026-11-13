@@ -161,7 +161,7 @@ function Backend:Reload(position: number?): (boolean, string?)
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
 	local asset = self:GetAsset()
 	if asset == "" then return false, "No audio asset is selected for reload." end
-	local target = if position == nil then self:GetTimePosition() else position
+	local target = if position == nil then (if self.paused then self.pausedAt else self:GetTimePosition()) else position
 	if not finite(target) or target < 0 then return false, "Invalid reload position." end
 	local selected, selectError = self:SetAsset(asset)
 	if not selected then return false, selectError end
