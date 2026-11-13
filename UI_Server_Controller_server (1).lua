@@ -766,6 +766,30 @@ ControllerFunctions.setAudioGain = function(value: number, sourceOverride: any?)
 	return ok
 end
 
+-- Track-specific playback-rate corrections. CROWN OF THE NIGHT's uploaded
+-- source is already time-stretched by 9% with pitch preserved, so Roblox must
+-- play that asset at normal speed rather than applying another 1.09 multiplier.
+local TRACK_PLAYBACK_SPEED_OVERRIDES: {[string]: number} = {
+	["custom-100919684616729"] = 1.0,
+}
+ControllerFunctions.setAudioPlaybackSpeed = function(value: number): boolean
+	if not ControllerFunctions.isFiniteNumber(value) or value < 0.5 or value > 2 then return false end
+	local source = activeAudioSource
+	if typeof(source) ~= "table" then return false end
+	if source.kind == "Backend" and source.backend then
+		local ok, result = pcall(function() return source.backend:SetPlaybackSpeed(value) end)
+		return ok and result ~= false
+	end
+	local sound = source.instance
+	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
+	return pcall(function() sound.PlaybackSpeed = value end)
+end
+ControllerFunctions.applyTrackPlaybackSpeed = function(trackId: string): boolean
+	local speed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId]
+	if speed == nil then return true end
+	return ControllerFunctions.setAudioPlaybackSpeed(speed)
+end
+
 ControllerFunctions.setAudioAsset = function(asset: string)
 	audioSourceRevision += 1
 	local source = activeAudioSource
@@ -1317,6 +1341,8 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	if setOk == false then warn("[ClubMusic] Server audio asset could not be assigned: " .. tostring(setError)); return end
 	local seekOk, seekError = ControllerFunctions.seekAudio(0)
 	if seekOk == false then warn("[ClubMusic] Server audio position could not be reset: " .. tostring(seekError)); return end
+	local speedOk = ControllerFunctions.applyTrackPlaybackSpeed(tostring(nowPlaying.trackId or ""))
+	if not speedOk then warn("[ClubMusic] Track playback speed could not be applied; playback was not started."); return end
 	local ok, err = pcall(function()
 		ControllerFunctions.playAudio()
 		if playbackPaused then ControllerFunctions.pauseAudio() end
@@ -1370,6 +1396,9 @@ ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
 	end)
 	if not seekOk or seekResult == false then
 		return false, "The current track position could not be restored."
+	end
+	if not ControllerFunctions.applyTrackPlaybackSpeed(tostring(nowPlaying.trackId or "")) then
+		return false, "The current track playback speed could not be restored."
 	end
 
 	local playOk, playResult = pcall(function()
