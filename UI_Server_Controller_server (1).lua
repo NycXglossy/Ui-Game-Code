@@ -711,16 +711,24 @@ ControllerFunctions.getAudioSnapshot = function()
 			local ok, value = pcall(function() return backend[methodName](backend) end)
 			return if ok then value else fallback
 		end
-		local player = read("GetPlayer", nil)
-		local asset = ""
-		if player then pcall(function() asset = tostring(player.Asset) end) end
+		local asset = read("GetAsset", "")
+		if typeof(asset) ~= "string" then asset = "" end
+		if asset == "" then
+			local player = read("GetPlayer", nil)
+			if player then pcall(function() asset = tostring(player.Asset) end) end
+		end
+		local function finiteNonNegative(value: any): number
+			local numberValue = tonumber(value)
+			if numberValue == nil or numberValue ~= numberValue or numberValue == math.huge or numberValue == -math.huge then return 0 end
+			return math.max(0, numberValue)
+		end
 		return {
 			kind = "AudioPlayer",
 			ready = read("IsReady", false) == true,
 			playing = read("IsPlaying", false) == true,
 			paused = playbackPaused,
-			position = math.max(0, tonumber(read("GetTimePosition", 0)) or 0),
-			length = math.max(0, tonumber(read("GetTimeLength", 0)) or 0),
+			position = finiteNonNegative(read("GetTimePosition", 0)),
+			length = finiteNonNegative(read("GetTimeLength", 0)),
 			asset = asset,
 		}
 	end
