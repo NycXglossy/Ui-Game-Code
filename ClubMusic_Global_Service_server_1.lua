@@ -94,8 +94,10 @@ local xpReceiptStore: any = nil
 local MAX_PURCHASE_ID_LENGTH = 128
 
 if SERVICE_ENABLED then
+	-- Durable DataStore handles are required for global queue authority.
+	-- MemoryStore is an optimization for shared rate limits, not a prerequisite
+	-- for playback; queue calls can use the conservative per-server limiter.
 	local storesOk, storesError = pcall(function()
-		budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
 		moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 		globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
 		globalConfigStore = DataStoreService:GetDataStore("ClubMusic_GlobalConfig_v1")
@@ -103,8 +105,19 @@ if SERVICE_ENABLED then
 	end)
 	if not storesOk then
 		SERVICE_ENABLED = false
-		warn("[ClubMusic Global] Cross-server storage initialization failed; global features are disabled safely: "
+		warn("[ClubMusic Global] DataStore handle initialization failed; global features are disabled safely: "
 			.. tostring(storesError))
+	else
+		local budgetOk, budgetResult = pcall(function()
+			return MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
+		end)
+		if budgetOk then
+			budgetMap = budgetResult
+		else
+			budgetMap = nil
+			warn("[ClubMusic Global] MemoryStore budget unavailable; global queue will use conservative local rate limits: "
+				.. tostring(budgetResult))
+		end
 	end
 end
 
@@ -545,8 +558,11 @@ end)
 bindFunction("PublishDJCommand", publishDJCommand)
 
 local function allowGlobalQueueStoreOperation(): boolean
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	return shared and allowed
+	-- When MemoryStore is down, consumeShared already applies a conservative
+	-- per-server fallback bucket. Keep the DataStore-backed global queue online
+	-- instead of treating a budget-service outage as a queue-storage outage.
+	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	return allowed == true
 end
 
 -- Global queue API: every mutation is atomic in the shared DataStore.
