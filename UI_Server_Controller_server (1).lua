@@ -1108,18 +1108,16 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 					local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
 						or string.find(failureText, "temporarily", 1, true) ~= nil
 						or string.find(failureText, "budget", 1, true) ~= nil
-					if storageFailure and enterLocalQueueBackup then
-						enterLocalQueueBackup("crossfade commit failed: " .. failureText)
-						-- The global CAS was rejected as unavailable. Continue this
-						-- prepared handoff through the mirrored local queue instead.
-						if queue[1] == entry then
-							isGlobalTransition = false
-							ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-							ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-							ControllerFunctions.pendingCrossfadeDeadline = 0
-						else
-							return false
+					if (storageFailure or not globalQueueMode) and queue[1] == entry then
+						if globalQueueMode and enterLocalQueueBackup then
+							enterLocalQueueBackup("crossfade commit failed: " .. failureText)
 						end
+						-- The global snapshot/commit is unavailable. Continue this
+						-- prepared handoff through the mirrored local queue instead.
+						isGlobalTransition = false
+						ControllerFunctions.pendingCrossfadeGlobalRevision = -1
+						ControllerFunctions.pendingCrossfadeGlobalCommitted = false
+						ControllerFunctions.pendingCrossfadeDeadline = 0
 					else
 						if not callOk then warn("[ClubMusic][Crossfade] Global queue commit unavailable: " .. tostring(didAdvance)) end
 						if didAdvance ~= true and message then
