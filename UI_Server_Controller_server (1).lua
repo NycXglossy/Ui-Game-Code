@@ -72,9 +72,9 @@ local CONFIG = {
 	-- "Enable Studio Access to API Services" is disabled. Set true only when
 	-- you intentionally want Studio to use the live DataStore.
 	StudioUseDataStore = false,
-	-- Keep shared queue storage disabled in Studio by default. Studio API access is
-	-- optional and often unavailable; local queue playback must remain usable.
-	StudioUseGlobalQueue = false,
+	-- Keep global playback enabled in Studio too; if shared storage is unavailable,
+	-- this server falls back to its independent local queue and retries recovery.
+	StudioUseGlobalQueue = true,
 
 	-- Keep the legacy Sound as the default until the modern AudioPlayer route is validated in Studio.
 	UseModernAudioBackend = false,
@@ -628,6 +628,7 @@ local modernAudioMigrationAttempted = false
 local queue: any = {}
 local queueManager: any = nil
 local globalQueueMode = false
+local enterLocalQueueBackup: ((string) -> ())? = nil
 local globalTrackRevision = 0
 ControllerFunctions.globalPlaybackEndTime = 0
 local localCatalogRevision = 0
@@ -2741,6 +2742,14 @@ ControllerFunctions.syncGlobalPlaylistRotation = function(): (boolean, string?)
 	return true, nil
 end
 
+enterLocalQueueBackup = function(reason: string)
+	if not globalQueueMode then return end
+	globalQueueMode = false
+	ControllerFunctions.globalPlaybackEndTime = 0
+	warn("[ClubMusic] Global queue unavailable; this server is using its independent local backup queue. " .. tostring(reason))
+	publishState(nil)
+end
+
 syncGlobalQueueSnapshot = function(): boolean
 	if not globalQueueMode or globalQueueSyncBusy then return false end
 	globalQueueSyncBusy = true
@@ -2753,6 +2762,7 @@ syncGlobalQueueSnapshot = function(): boolean
 	globalQueueSyncBusy = false
 	if not syncOk then
 		warn("[ClubMusic] Global queue snapshot reconciliation failed: " .. tostring(applied))
+		if enterLocalQueueBackup then enterLocalQueueBackup(tostring(applied)) end
 		return false
 	end
 	if applied then publishState(nil) end
@@ -2909,6 +2919,15 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 		end
 		if not advanced then
 			warn("[ClubMusic] Global transition was not applied: " .. tostring(reason))
+			local failureText = string.lower(tostring(reason or ""))
+			local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
+				or string.find(failureText, "temporarily", 1, true) ~= nil
+			if storageFailure and enterLocalQueueBackup then
+				enterLocalQueueBackup(tostring(reason))
+				-- The failed global CAS did not commit, so consume the mirrored
+				-- queue head locally rather than leaving the audio stalled.
+				return ControllerFunctions.advance(expectedGeneration)
+			end
 			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			return false, reason
 		end
@@ -2966,10 +2985,9 @@ task.spawn(function()
 	globalQueueMode = true
 	local readOk = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
 	if not readOk then
-		table.clear(queue)
-		nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""; nowPlaying.elapsed = 0
-		ControllerFunctions.stopServerMusic()
-		warn("[ClubMusic] Global queue could not be loaded; shared playback and requests remain fail-closed.")
+		-- Local queue playback was already initialized above. Preserve it instead
+		-- of stopping working audio when the shared snapshot is temporarily unavailable.
+		if enterLocalQueueBackup then enterLocalQueueBackup("initial shared snapshot could not be loaded") end
 		return
 	end
 	if localCatalogRevision ~= globalCatalogRevision then
@@ -3001,6 +3019,30 @@ task.spawn(function()
 	end
 	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 	ControllerFunctions.topUpAuto()
+end)
+
+-- Retry global authority independently while this server is on its local backup.
+-- A successful snapshot rejoins the authoritative current track and position.
+task.spawn(function()
+	while script.Parent do
+		task.wait(20 + math.random(0, 10))
+		if not globalQueueMode then
+			local enabledOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
+			if enabledOk and enabled == true then
+				globalQueueMode = true
+				local recovered = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
+				if recovered then
+					print("[ClubMusic] Global queue recovered; this server rejoined synchronized playback.")
+					if localCatalogRevision ~= globalCatalogRevision then
+						ControllerFunctions.refreshCatalogWhenReady()
+					end
+					ControllerFunctions.topUpAuto()
+				else
+					globalQueueMode = false
+				end
+			end
+		end
+	end
 end)
 
 -- MessagingService is the primary fast invalidation path. Periodic snapshots are
