@@ -1521,49 +1521,76 @@ ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
 		return false, "Please wait for the current crossfade to finish before reloading audio."
 	end
 
+	local source = activeAudioSource
 	local snapshot = ControllerFunctions.getAudioSnapshot()
 	if typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
 		return false, "The active audio source is unavailable."
 	end
 
+	-- Capture the decoder's real playhead before Stop resets a legacy Sound's
+	-- TimePosition. Fall back to the authoritative server clock only if needed.
 	local duration = math.max(1, tonumber(nowPlaying.duration) or 1)
-	local position = math.clamp(tonumber(nowPlaying.elapsed) or 0, 0, math.max(0, duration - 0.5))
-	local stopOk, stopResult = pcall(function()
-		return ControllerFunctions.stopAudio()
-	end)
+	local position = if ControllerFunctions.isFiniteNumber(snapshot.position)
+		then snapshot.position else nowPlaying.elapsed
+	position = math.clamp(position, 0, math.max(0, duration - 0.5))
+
+	local stopOk, stopResult = pcall(ControllerFunctions.stopAudio)
 	if not stopOk or stopResult == false then
 		return false, "The current audio source could not be stopped safely."
 	end
 
 	if tostring(snapshot.asset or "") ~= asset then
-		local setOk, setResult = pcall(function()
-			return ControllerFunctions.setAudioAsset(asset)
-		end)
+		local setOk, setResult = pcall(ControllerFunctions.setAudioAsset, asset)
 		if not setOk or setResult == false then
 			return false, "The current track asset could not be restored."
 		end
 	end
 
-	local seekOk, seekResult = pcall(function()
-		return ControllerFunctions.seekAudio(position)
-	end)
+	-- Legacy Sound may need its decoder to finish loading again before Roblox
+	-- accepts a TimePosition write. Preload and wait only on this manual recovery
+	-- path; normal playback and cross-server synchronization remain untouched.
+	if source.kind ~= "Backend" and source.instance and source.instance:IsA("Sound") then
+		local sound = source.instance
+		if sound.SoundId ~= asset then sound.SoundId = asset end
+		if not sound.IsLoaded then
+			pcall(function() ContentProvider:PreloadAsync({ sound }) end)
+			local deadline = os.clock() + 5
+			while not sound.IsLoaded and os.clock() < deadline do task.wait(0.1) end
+		end
+		if not sound.IsLoaded then
+			return false, "The current audio asset did not finish loading; please try reload again."
+		end
+	end
+
+	local speedOk = ControllerFunctions.applyTrackPlaybackSpeed(tostring(nowPlaying.trackId or ""))
+	if not speedOk then return false, "The current track playback speed could not be restored." end
+
+	local seekOk, seekResult = pcall(ControllerFunctions.seekAudio, position)
 	if not seekOk or seekResult == false then
 		return false, "The current track position could not be restored."
 	end
-	if not ControllerFunctions.applyTrackPlaybackSpeed(tostring(nowPlaying.trackId or "")) then
-		return false, "The current track playback speed could not be restored."
-	end
-
-	local playOk, playResult = pcall(function()
-		return ControllerFunctions.playAudio()
-	end)
+	local playOk, playResult = pcall(ControllerFunctions.playAudio)
 	if not playOk or playResult == false then
 		return false, "The audio source could not resume playback."
 	end
 
+	-- Confirm the source actually resumed instead of reporting success after a
+	-- no-op Play call. A brief bounded wait accommodates decoder startup.
+	local resumeDeadline = os.clock() + 2
+	local resumed = false
+	repeat
+		task.wait(0.1)
+		local stateOk, current = pcall(ControllerFunctions.getAudioSnapshot)
+		if stateOk and typeof(current) == "table" and current.playing == true then
+			resumed = true
+			break
+		end
+	until os.clock() >= resumeDeadline
+	if not resumed then
+		return false, "The audio source did not resume. Please try reload again."
+	end
 	return true, nil
 end
-
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
