@@ -218,21 +218,29 @@ end
 
 -- AudioPlayer has no Sound-style Pause method. Preserve the playhead and stop;
 -- Resume restores the saved position and starts the same asset again.
-function Backend:Pause(): (boolean, string?)
-	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
-	if self.paused then return true, nil end
+function Backend:Pause(): (boolean, string?, number?)
+	if not self:IsAvailable() then return false, "Audio backend is unavailable.", nil end
+	if self.paused then return true, nil, self.pausedAt end
 	local playingOk, playing = pcall(function() return self.player.IsPlaying end)
-	if not playingOk then return false, "Audio playback state could not be read for pause." end
-	if not playing then return true, nil end
+	if not playingOk then return false, "Audio playback state could not be read for pause.", nil end
+	if not playing then
+		local positionOk, position = pcall(function() return self.player.TimePosition end)
+		if not positionOk or not finite(position) or position < 0 then
+			return false, "Audio playhead could not be captured for pause.", nil
+		end
+		self.pausedAt = position
+		self.paused = true
+		return true, nil, position
+	end
 	local positionOk, position = pcall(function() return self.player.TimePosition end)
 	if not positionOk or not finite(position) or position < 0 then
-		return false, "Audio playhead could not be captured for pause."
+		return false, "Audio playhead could not be captured for pause.", nil
 	end
 	local ok, err = pcall(function() self.player:Stop() end)
-	if not ok then return false, tostring(err) end
+	if not ok then return false, tostring(err), nil end
 	self.pausedAt = position
 	self.paused = true
-	return true, nil
+	return true, nil, position
 end
 
 function Backend:Resume(): (boolean, string?)
