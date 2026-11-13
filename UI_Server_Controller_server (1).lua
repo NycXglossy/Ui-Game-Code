@@ -2824,6 +2824,7 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 		table.remove(recentTracks, 1)
 	end
 	table.clear(skipVotes)
+	if ControllerFunctions.publishPlaybackState then ControllerFunctions.publishPlaybackState() end
 end
 
 -- Shared queue mirror. The global DataStore is authoritative when the global
@@ -3590,6 +3591,19 @@ ControllerFunctions.flushPendingState = function()
 		stateFlushScheduled = true
 		task.defer(ControllerFunctions.flushPendingState)
 	end
+end
+
+-- Playback state is latency-sensitive: don't hold title, pause, or restart
+-- updates behind the general-purpose state coalescing interval.
+ControllerFunctions.publishPlaybackState = function()
+	task.defer(function()
+		for _, target in ipairs(Players:GetPlayers()) do
+			local ok, snapshot = pcall(ControllerFunctions.snapshotFor, target)
+			if ok and target.Parent == Players then
+				pcall(function() stateRemote:FireClient(target, snapshot) end)
+			end
+		end
+	end)
 end
 
 publishState = function(player: Player?)
@@ -4984,7 +4998,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		end
 		if not globalQueueMode then ControllerFunctions.globalInvoke("PublishDJCommand", "Skip", {}, player.UserId) end
 		notify(player, "Track skipped.", "ok")
-		publishState(nil)
+		ControllerFunctions.publishPlaybackState()
 		return true, "Track skipped."
 	end
 
@@ -5022,7 +5036,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, "Audio control could not be applied: " .. tostring(audioError), "warn")
 			return false, tostring(audioError)
 		end
-		publishState(nil)
+		ControllerFunctions.publishPlaybackState()
 		notify(player, if desiredPaused then "Music paused." else "Music resumed.", "ok")
 
 		if globalQueueMode then
@@ -5076,7 +5090,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, "Track restart could not be applied: " .. tostring(restartError), "warn")
 			return false, tostring(restartError)
 		end
-		publishState(nil)
+		ControllerFunctions.publishPlaybackState()
 		notify(player, "Current track restarted.", "ok")
 
 		if globalQueueMode then
@@ -6442,7 +6456,7 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 			nowPlaying.source = tostring(hint.source or "auto")
 			nowPlaying.requestedBy = tostring(hint.requestedBy or "Auto DJ")
 			nowPlaying.vip = hint.vip == true
-			publishState(nil)
+			ControllerFunctions.publishPlaybackState()
 		end
 		-- Coalesce same-tick queue notifications, but do not add a fixed debounce
 		-- to track transitions. A skip must refresh title/duration on peer servers
