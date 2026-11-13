@@ -128,9 +128,12 @@ function Backend:GetReadinessSnapshot(): {ready: boolean, length: number, asset:
 	end)
 	if not ok then return { ready = false, length = 0, asset = self.currentAsset } end
 	local validLength = if finite(length) then math.max(0, length) else 0
-	local validAsset = if typeof(asset) == "string" then asset else self.currentAsset
+	local validAsset = if typeof(asset) == "string" then asset else ""
+	-- A decoder can briefly report IsReady for a previous selection while a
+	-- replacement asset is loading. Never expose that stale readiness as usable.
+	local assetMatchesSelection = self.currentAsset ~= "" and validAsset == self.currentAsset
 	return {
-		ready = ready == true and validLength > 0 and validAsset ~= "",
+		ready = ready == true and validLength > 0 and assetMatchesSelection,
 		length = validLength,
 		asset = validAsset,
 	}
