@@ -72,9 +72,9 @@ local CONFIG = {
 	-- "Enable Studio Access to API Services" is disabled. Set true only when
 	-- you intentionally want Studio to use the live DataStore.
 	StudioUseDataStore = false,
-	-- Keep global playback enabled in Studio too; if shared storage is unavailable,
-	-- this server falls back to its independent local queue and retries recovery.
-	StudioUseGlobalQueue = true,
+	-- Studio must remain isolated from published public-server playback and queue state.
+	-- The public servers still use the shared global queue through the global service.
+	StudioUseGlobalQueue = false,
 
 	-- Keep the legacy Sound as the default until the modern AudioPlayer route is validated in Studio.
 	UseModernAudioBackend = false,
