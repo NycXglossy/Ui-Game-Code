@@ -39,6 +39,8 @@ local MAX_TEXT = 100
 local MAX_SOUND_ID = 64
 local MAX_DURATION = 3600
 local MAX_SAFE_INTEGER = 9007199254740991
+local MAX_RECENT_OPERATION_IDS = 128
+local MAX_TRANSACTION_ATTEMPTS = 3
 
 export type QueueEntry = {
 	id: string,
@@ -78,6 +80,7 @@ type State = {
 	catalogChangeKind: string?,
 	updatedAt: number,
 	updatedBy: number,
+	recentOperationIds: {string},
 }
 
 local cachedSnapshot: State? = nil
@@ -176,6 +179,7 @@ local function defaultState(): State
 		catalogChangeKind = nil,
 		updatedAt = os.time(),
 		updatedBy = 0,
+		recentOperationIds = {},
 	}
 end
 
@@ -185,6 +189,15 @@ local function sanitizeState(raw: any): State
 	state.revision = if finite(raw.revision) then math.clamp(math.floor(raw.revision), 0, MAX_SAFE_INTEGER) else 0
 	state.updatedAt = if finite(raw.updatedAt) then math.max(0, math.floor(raw.updatedAt)) else os.time()
 	state.updatedBy = if finite(raw.updatedBy) then math.max(0, math.floor(raw.updatedBy)) else 0
+	if typeof(raw.recentOperationIds) == "table" then
+		local startIndex = math.max(1, #raw.recentOperationIds - MAX_RECENT_OPERATION_IDS + 1)
+		for index = startIndex, #raw.recentOperationIds do
+			local operationId = raw.recentOperationIds[index]
+			if typeof(operationId) == "string" and #operationId <= 64 then
+				table.insert(state.recentOperationIds, operationId)
+			end
+		end
+	end
 	state.autoQueueHold = raw.autoQueueHold == true
 	state.catalogRevision = if finite(raw.catalogRevision)
 		then math.clamp(math.floor(raw.catalogRevision), 0, MAX_SAFE_INTEGER) else 0
@@ -253,7 +266,21 @@ local function detached(state: State): State
 	result.playback = table.clone(state.playback)
 	result.rotation = table.clone(state.rotation)
 	result.rotation.trackIds = table.clone(state.rotation.trackIds)
+	result.recentOperationIds = table.clone(state.recentOperationIds)
 	return result
+end
+
+local function isTransientDataStoreError(errorMessage: any): boolean
+	local message = string.lower(tostring(errorMessage or ""))
+	return string.find(message, "http 500", 1, true) ~= nil
+		or string.find(message, "http 502", 1, true) ~= nil
+		or string.find(message, "http 503", 1, true) ~= nil
+		or string.find(message, "http 504", 1, true) ~= nil
+		or string.find(message, "internalservererror", 1, true) ~= nil
+		or string.find(message, "throttl", 1, true) ~= nil
+		or string.find(message, "too many requests", 1, true) ~= nil
+		or string.find(message, "timed out", 1, true) ~= nil
+		or string.find(message, "temporarily unavailable", 1, true) ~= nil
 end
 
 local function transact(mutator: (State) -> (boolean, string?)): (boolean, State?, string?)
@@ -262,36 +289,60 @@ local function transact(mutator: (State) -> (boolean, string?)): (boolean, State
 		warn("[ClubMusic Global Queue] " .. tostring(storeInitializationError or storeError))
 		return false, nil, storeError
 	end
+	-- Keep one operation identity across retries. If Roblox committed an
+	-- UpdateAsync but returned an HTTP error, the next attempt recognizes the
+	-- receipt and reports success without applying the mutation twice.
+	local operationId = HttpService:GenerateGUID(false)
 	local accepted = false
 	local reason = "Shared queue update was rejected."
-	local ok, result = withStoreOperation(Enum.DataStoreRequestType.UpdateAsync, function()
-		return store:UpdateAsync(KEY, function(old)
-			accepted = false
-			reason = "Shared queue update was rejected."
-			local state = sanitizeState(old)
-			-- Keep a detached pre-mutation value so a rejected transaction on a
-			-- brand-new key cannot accidentally persist partial callback mutations.
-			local original = detached(state)
-			-- DataStore revisions are used as monotonic concurrency markers. Refuse
-			-- writes at the exact-integer ceiling rather than silently losing precision.
-			if state.revision >= MAX_SAFE_INTEGER then
-				reason = "Global queue revision limit reached; writes are paused for safe recovery."
+	local ok, result = false, nil
+	for attempt = 1, MAX_TRANSACTION_ATTEMPTS do
+		ok, result = withStoreOperation(Enum.DataStoreRequestType.UpdateAsync, function()
+			return store:UpdateAsync(KEY, function(old)
+				accepted = false
+				reason = "Shared queue update was rejected."
+				local state = sanitizeState(old)
+				local original = detached(state)
+				-- A prior attempt may have committed even if its response failed.
+				for _, committedId in ipairs(state.recentOperationIds) do
+					if committedId == operationId then
+						accepted = true
+						reason = ""
+						return old or original
+					end
+				end
+				if state.revision >= MAX_SAFE_INTEGER then
+					reason = "Global queue revision limit reached; writes are paused for safe recovery."
+					return old or original
+				end
+				local changed, message = mutator(state)
+				if changed then
+					state.revision += 1
+					state.updatedAt = os.time()
+					table.insert(state.recentOperationIds, operationId)
+					while #state.recentOperationIds > MAX_RECENT_OPERATION_IDS do
+						table.remove(state.recentOperationIds, 1)
+					end
+					accepted = true
+					reason = ""
+					return state
+				end
+				reason = message or reason
 				return old or original
-			end
-			local changed, message = mutator(state)
-			if changed then
-				state.revision += 1
-				state.updatedAt = os.time()
-				accepted = true
-				reason = ""
-				return state
-			end
-			reason = message or reason
-			return old or original
+			end)
 		end)
-	end)
+		if ok or not isTransientDataStoreError(result) or attempt >= MAX_TRANSACTION_ATTEMPTS then
+			break
+		end
+		-- Exponential backoff: 0.25s, then 0.5s. The retry reuses operationId.
+		task.wait(0.25 * (2 ^ (attempt - 1)))
+	end
 	if not ok then
-		warn("[ClubMusic Global Queue] DataStore transaction failed: " .. tostring(result))
+		-- An earlier attempt may have committed; invalidate any local read cache
+		-- so the next reconciliation does not reuse a pre-transaction snapshot.
+		cachedSnapshot = nil
+		cachedSnapshotAt = 0
+		warn("[ClubMusic Global Queue] DataStore transaction failed after safe retries: " .. tostring(result))
 		return false, nil, "Global queue storage is unavailable. No local-only change was applied."
 	end
 	local snapshot: State? = nil
