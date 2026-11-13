@@ -2779,9 +2779,9 @@ local transitionInProgress = false
 local crossfadeAttemptedGeneration = -1
 local crossfadeBoundaryWaitGeneration = -1
 local crossfadeBoundaryWaitStartedAt = 0
-local stoppedAudioGeneration = -1
-local stoppedAudioSince = 0
-local audioRecoveryAttemptedGeneration = -1
+ControllerFunctions.ControllerFunctions.stoppedAudioGeneration = -1
+ControllerFunctions.ControllerFunctions.stoppedAudioSince = 0
+ControllerFunctions.ControllerFunctions.audioRecoveryAttemptedGeneration = -1
 
 ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: boolean?)
 	if preserveAudio ~= true then ControllerFunctions.cancelAudioTransition("track-change") end
