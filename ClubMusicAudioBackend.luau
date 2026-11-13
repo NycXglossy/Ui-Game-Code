@@ -181,11 +181,20 @@ function Backend:Reload(position: number?): (boolean, string?)
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
 	local asset = self:GetAsset()
 	if asset == "" then return false, "No audio asset is selected for reload." end
-	local target = if position == nil then (if self.paused then self.pausedAt else self:GetTimePosition()) else position
+	local wasPaused = self.paused
+	local target = if position == nil then (if wasPaused then self.pausedAt else self:GetTimePosition()) else position
 	if not finite(target) or target < 0 then return false, "Invalid reload position." end
 	local selected, selectError = self:SetAsset(asset)
 	if not selected then return false, selectError end
-	return self:Play(nil, target)
+	local seeked, seekError = self:Seek(target)
+	if not seeked then return false, seekError end
+	if wasPaused then
+		-- Reloading a paused deck must not silently turn it into active playback.
+		self.pausedAt = self:GetTimePosition()
+		self.paused = true
+		return true, nil
+	end
+	return self:Play()
 end
 
 -- AudioPlayer has no Sound-style Pause method. Preserve the playhead and stop;
@@ -254,9 +263,25 @@ function Backend:Seek(position: number): (boolean, string?)
 			if target > length then return false, "Seek position exceeds the loaded track duration." end
 		end
 	end
+	local previousPausedAt = self.pausedAt
 	local ok, err = pcall(function() self.player.TimePosition = target end)
-	if not ok then return false, tostring(err) end
-	if self.paused then self.pausedAt = target end
+	-- Some engine/property failures can occur after a partial playhead update.
+	-- Read back the actual position so a paused snapshot never advertises a
+	-- stale point when the AudioPlayer did move before reporting the error.
+	local readOk, actualPosition = pcall(function() return self.player.TimePosition end)
+	if readOk and finite(actualPosition) and actualPosition >= 0 and self.paused then
+		self.pausedAt = actualPosition
+	end
+	if not ok then
+		if not readOk or not finite(actualPosition) or actualPosition < 0 then
+			self.pausedAt = previousPausedAt
+		end
+		return false, tostring(err)
+	end
+	if not readOk or not finite(actualPosition) or actualPosition < 0 then
+		if self.paused then self.pausedAt = previousPausedAt end
+		return false, "The seek position could not be verified."
+	end
 	return true, nil
 end
 
