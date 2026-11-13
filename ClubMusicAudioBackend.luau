@@ -144,11 +144,25 @@ function Backend:Play(asset: string?, position: number?): (boolean, string?)
 		if not ok then return false, err end
 	end
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
+	local wasPaused = self.paused
+	local previousPausedAt = self.pausedAt
 	local ok, err = pcall(function()
 		if position ~= nil then self.player.TimePosition = position end
 		self.player:Play()
 	end)
-	if not ok then return false, tostring(err) end
+	if not ok then
+		-- Play can fail after the engine has partially changed state. Prefer
+		-- the engine's observable state over leaving a false paused snapshot.
+		local stateOk, isPlaying = pcall(function() return self.player.IsPlaying end)
+		if stateOk and isPlaying == true then
+			self.paused = false
+			self.pausedAt = 0
+		else
+			self.paused = wasPaused
+			self.pausedAt = previousPausedAt
+		end
+		return false, tostring(err)
+	end
 	self.paused = false
 	self.pausedAt = 0
 	return true, nil
@@ -202,7 +216,16 @@ function Backend:Resume(): (boolean, string?)
 		self.player.TimePosition = position
 		self.player:Play()
 	end)
-	if not ok then return false, tostring(err) end
+	if not ok then
+		-- Retain the saved pause point unless the engine actually began playing.
+		-- This makes a retry safe after a transient property/API failure.
+		local stateOk, isPlaying = pcall(function() return self.player.IsPlaying end)
+		if stateOk and isPlaying == true then
+			self.paused = false
+			self.pausedAt = 0
+		end
+		return false, tostring(err)
+	end
 	self.paused = false
 	self.pausedAt = 0
 	return true, nil
