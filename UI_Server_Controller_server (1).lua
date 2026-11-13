@@ -1104,11 +1104,29 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 					committed = syncOk == true and ControllerFunctions.pendingCrossfadeGlobalCommitted == true
 				end
 				if not committed then
-					if not callOk then warn("[ClubMusic][Crossfade] Global queue commit unavailable: " .. tostring(didAdvance)) end
-					if didAdvance ~= true and message then
-						warn("[ClubMusic][Crossfade] Global queue did not commit the prepared entry: " .. tostring(message))
+					local failureText = string.lower(tostring(message or didAdvance or ""))
+					local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
+						or string.find(failureText, "temporarily", 1, true) ~= nil
+						or string.find(failureText, "budget", 1, true) ~= nil
+					if storageFailure and enterLocalQueueBackup then
+						enterLocalQueueBackup("crossfade commit failed: " .. failureText)
+						-- The global CAS was rejected as unavailable. Continue this
+						-- prepared handoff through the mirrored local queue instead.
+						if queue[1] == entry then
+							isGlobalTransition = false
+							ControllerFunctions.pendingCrossfadeGlobalRevision = -1
+							ControllerFunctions.pendingCrossfadeGlobalCommitted = false
+							ControllerFunctions.pendingCrossfadeDeadline = 0
+						else
+							return false
+						end
+					else
+						if not callOk then warn("[ClubMusic][Crossfade] Global queue commit unavailable: " .. tostring(didAdvance)) end
+						if didAdvance ~= true and message then
+							warn("[ClubMusic][Crossfade] Global queue did not commit the prepared entry: " .. tostring(message))
+						end
+						return false
 					end
-					return false
 				end
 			elseif queue[1] ~= entry then
 				return false
@@ -2785,6 +2803,11 @@ enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
 		if callOk and writeOk == true then return true, nil end
 	end
 	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+	if not globalQueueMode and queueManager and string.find(string.lower(tostring(message or "")), "unavailable", 1, true) then
+		queueManager:Insert(#queue + 1, entry)
+		publishState(nil)
+		return true, nil
+	end
 	return false, tostring(message or "Global queue is unavailable.")
 end
 
@@ -2813,6 +2836,19 @@ enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
 		if callOk and writeOk == true then return true, nil end
 	end
 	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+	if not globalQueueMode and queueManager then
+		local storageFailure = string.find(string.lower(tostring(message or "")), "unavailable", 1, true) ~= nil
+			or string.find(string.lower(tostring(message or "")), "temporarily", 1, true) ~= nil
+			or string.find(string.lower(tostring(message or "")), "budget", 1, true) ~= nil
+		if storageFailure then
+			for _, entry in ipairs(entries) do
+				if #queue >= CONFIG.MaxQueueSize then break end
+				queueManager:Insert(#queue + 1, entry)
+			end
+			publishState(nil)
+			return true, nil
+		end
+	end
 	return false, tostring(message or "Global automatic queue refill is unavailable.")
 end
 
