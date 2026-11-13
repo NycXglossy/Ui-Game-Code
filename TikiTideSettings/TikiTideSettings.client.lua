@@ -799,7 +799,9 @@ end)
 local function open()
 	-- Inventory owns the foreground interaction layer; do not allow a settings
 	-- request to reopen this surface until the inventory has been dismissed.
-	if playerGui:GetAttribute("UtilityInventoryOpen") == true then return end
+	if playerGui:GetAttribute("UtilityInventoryOpen") == true
+		or playerGui:GetAttribute("UtilityActionPanelOpen") == true
+		or playerGui:GetAttribute("UtilityToolShopOpen") == true then return end
 	if not refreshState() then return end
 	panel.Visible = true
 	shade.Visible = true
@@ -838,6 +840,8 @@ local function closePanel()
 	-- The launcher itself is hidden only while either full settings/menu surface is open.
 	toggle.Visible = playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
 		and playerGui:GetAttribute("UtilityInventoryOpen") ~= true
+		and playerGui:GetAttribute("UtilityActionPanelOpen") ~= true
+		and playerGui:GetAttribute("UtilityToolShopOpen") ~= true
 	restoreClubHud()
 	if controllerMode and toggle.Visible then
 		GuiService.SelectedObject = toggle
@@ -922,18 +926,20 @@ local function updateVisibility()
 	local allowed = player:GetAttribute("HasTikiTideAccess") == true
 	local clubMenuExpanded = playerGui:GetAttribute("ClubMusicMenuExpanded") == true
 	local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
+	local utilityPanelOpen = playerGui:GetAttribute("UtilityActionPanelOpen") == true
+	local toolShopOpen = playerGui:GetAttribute("UtilityToolShopOpen") == true
 
 	-- Inventory and the main ClubMusic menu own the foreground layer. Close
 	-- Tiki Tide immediately when either opens, and restore its launcher only
 	-- after both surfaces have closed.
-	if panel.Visible and (not allowed or clubMenuExpanded or inventoryOpen) then
+	if panel.Visible and (not allowed or clubMenuExpanded or inventoryOpen or utilityPanelOpen or toolShopOpen) then
 		closePanel()
 		return
 	end
 
 	-- Do not use a client-replicated entitlement attribute as the only way
 	-- to discover the launcher. Server authorization remains the security boundary.
-	toggle.Visible = not panel.Visible and not clubMenuExpanded and not inventoryOpen
+	toggle.Visible = not panel.Visible and not clubMenuExpanded and not inventoryOpen and not utilityPanelOpen and not toolShopOpen
 	if not toggle.Visible and GuiService.SelectedObject == toggle then
 		GuiService.SelectedObject = nil
 	end
@@ -941,6 +947,8 @@ end
 player:GetAttributeChangedSignal("HasTikiTideAccess"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(updateVisibility)
+playerGui:GetAttributeChangedSignal("UtilityActionPanelOpen"):Connect(updateVisibility)
+playerGui:GetAttributeChangedSignal("UtilityToolShopOpen"):Connect(updateVisibility)
 updateVisibility()
 
 player.CharacterAdded:Connect(function()
