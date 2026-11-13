@@ -1300,6 +1300,62 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	end
 end
 
+-- Recover the current server-local audio source without changing queue ownership,
+-- track identity, or the authoritative playback clock. This is deliberately blocked
+-- during a crossfade so a manual recovery cannot interrupt a deck handoff.
+ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
+	local asset = nowPlaying.soundId or CONFIG.SoundIds[nowPlaying.trackId] or ""
+	if typeof(asset) ~= "string" or #asset > 64
+		or not string.match(asset, "^rbxassetid://%d+$") then
+		return false, "There is no playable audio asset for the current track."
+	end
+	if playbackPaused then return false, "Playback is paused; resume it before reloading audio." end
+	local managers = ControllerFunctions.ChildManagers
+	local crossfade = managers and managers.Crossfade
+	if crossfade and crossfade.active then
+		return false, "Please wait for the current crossfade to finish before reloading audio."
+	end
+
+	local snapshot = ControllerFunctions.getAudioSnapshot()
+	if typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
+		return false, "The active audio source is unavailable."
+	end
+
+	local duration = math.max(1, tonumber(nowPlaying.duration) or 1)
+	local position = math.clamp(tonumber(nowPlaying.elapsed) or 0, 0, math.max(0, duration - 0.5))
+	local stopOk, stopResult = pcall(function()
+		return ControllerFunctions.stopAudio()
+	end)
+	if not stopOk or stopResult == false then
+		return false, "The current audio source could not be stopped safely."
+	end
+
+	if tostring(snapshot.asset or "") ~= asset then
+		local setOk, setResult = pcall(function()
+			return ControllerFunctions.setAudioAsset(asset)
+		end)
+		if not setOk or setResult == false then
+			return false, "The current track asset could not be restored."
+		end
+	end
+
+	local seekOk, seekResult = pcall(function()
+		return ControllerFunctions.seekAudio(position)
+	end)
+	if not seekOk or seekResult == false then
+		return false, "The current track position could not be restored."
+	end
+
+	local playOk, playResult = pcall(function()
+		return ControllerFunctions.playAudio()
+	end)
+	if not playOk or playResult == false then
+		return false, "The audio source could not resume playback."
+	end
+
+	return true, nil
+end
+
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
@@ -4628,9 +4684,13 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local last = lastReloadAt[player.UserId] or -1000
 		if now - last < CONFIG.ReloadCooldownSeconds then return end
 		lastReloadAt[player.UserId] = now
-		-- Bumping the nonce makes this player's next snapshot differ, so their client re-processes
-		-- the current track (e.g. an audio script can restart playback at the right position).
-		reloadNonce[player.UserId] = (reloadNonce[player.UserId] or 0) + 1
+		local recovered, recoveryError = ControllerFunctions.reloadServerMusic()
+		if recovered then
+			reloadNonce[player.UserId] = (reloadNonce[player.UserId] or 0) + 1
+			notify(player, "Audio reloaded at the current track position.", "ok")
+		else
+			notify(player, tostring(recoveryError or "Audio reload could not be completed."), "warn")
+		end
 		publishState(player)
 		return
 	end
