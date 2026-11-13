@@ -112,21 +112,27 @@ function Backend:SetAsset(asset: string): (boolean, string?)
 end
 
 function Backend:IsReady(): boolean
-	return self:IsAvailable() and self.player.IsReady
+	if not self:IsAvailable() then return false end
+	local ok, ready = pcall(function() return self.player.IsReady end)
+	return ok and ready == true
 end
 
 function Backend:GetTimePosition(): number
 	if not self:IsAvailable() then return 0 end
-	return math.max(0, self.player.TimePosition)
+	local ok, position = pcall(function() return self.player.TimePosition end)
+	return if ok and finite(position) then math.max(0, position) else 0
 end
 
 function Backend:GetTimeLength(): number
-	if not self:IsAvailable() or not self.player.IsReady then return 0 end
-	return math.max(0, self.player.TimeLength)
+	if not self:IsReady() then return 0 end
+	local ok, length = pcall(function() return self.player.TimeLength end)
+	return if ok and finite(length) then math.max(0, length) else 0
 end
 
 function Backend:IsPlaying(): boolean
-	return self:IsAvailable() and self.player.IsPlaying and not self.paused
+	if not self:IsAvailable() or self.paused then return false end
+	local ok, playing = pcall(function() return self.player.IsPlaying end)
+	return ok and playing == true
 end
 
 function Backend:Play(asset: string?, position: number?): (boolean, string?)
@@ -173,7 +179,9 @@ end
 function Backend:Pause(): (boolean, string?)
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
 	if self.paused then return true, nil end
-	if not self.player.IsPlaying then return true, nil end
+	local playingOk, playing = pcall(function() return self.player.IsPlaying end)
+	if not playingOk then return false, "Audio playback state could not be read for pause." end
+	if not playing then return true, nil end
 	local positionOk, position = pcall(function() return self.player.TimePosition end)
 	if not positionOk or not finite(position) or position < 0 then
 		return false, "Audio playhead could not be captured for pause."
@@ -188,7 +196,7 @@ end
 function Backend:Resume(): (boolean, string?)
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
 	if not self.paused then return true, nil end
-	if not self.player.IsReady then return false, "Audio asset is not ready to resume." end
+	if not self:IsReady() then return false, "Audio asset is not ready to resume." end
 	local position = math.max(0, self.pausedAt)
 	local ok, err = pcall(function()
 		self.player.TimePosition = position
@@ -214,7 +222,7 @@ function Backend:Seek(position: number): (boolean, string?)
 		return false, "Invalid seek request."
 	end
 	local target = position
-	if self.player.IsReady then
+	if self:IsReady() then
 		local lengthOk, length = pcall(function() return self.player.TimeLength end)
 		if lengthOk and finite(length) and length > 0 then
 			if target > length then return false, "Seek position exceeds the loaded track duration." end
