@@ -27,7 +27,31 @@ local function make(className: string, props: {[string]: any}, parent: Instance)
 end
 local gui=make("ScreenGui",{Name="UtilityControlPanels",ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=32},playerGui) :: ScreenGui
 local panel=make("Frame",{Name="Panel",AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),Size=UDim2.new(.86,0,.62,0),BackgroundColor3=C.bg,BorderSizePixel=0,Visible=false},gui) :: Frame
-make("UISizeConstraint",{MinSize=Vector2.new(270,230),MaxSize=Vector2.new(620,430)},panel)
+local panelConstraint=make("UISizeConstraint",{MinSize=Vector2.new(270,230),MaxSize=Vector2.new(620,430)},panel) :: UISizeConstraint
+local function applyPanelDeviceLayout()
+	local camera=workspace.CurrentCamera
+	local viewport=if camera then camera.ViewportSize else Vector2.new(1280,720)
+	local touch=UserInputService.TouchEnabled and viewport.X<900
+	if touch then
+		panel.Size=UDim2.new(.94,0,.90,0)
+		panelConstraint.MinSize=Vector2.zero
+		panelConstraint.MaxSize=Vector2.new(math.min(620,viewport.X*.96),math.min(430,viewport.Y*.94))
+	else
+		-- Preserve the established desktop/laptop panel dimensions exactly.
+		panel.Size=UDim2.new(.86,0,.62,0)
+		panelConstraint.MinSize=Vector2.new(270,230)
+		panelConstraint.MaxSize=Vector2.new(620,430)
+	end
+end
+local panelCameraConnection: RBXScriptConnection?=nil
+local function bindPanelCamera()
+	if panelCameraConnection then panelCameraConnection:Disconnect(); panelCameraConnection=nil end
+	local camera=workspace.CurrentCamera
+	if camera then panelCameraConnection=camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyPanelDeviceLayout) end
+	applyPanelDeviceLayout()
+end
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindPanelCamera)
+bindPanelCamera()
 make("UICorner",{CornerRadius=UDim.new(0,20)},panel)
 make("UIStroke",{Color=C.gold,Transparency=.42,Thickness=1},panel)
 make("UIGradient",{Rotation=90,Color=ColorSequence.new(Color3.fromRGB(28,34,47),C.bg)},panel)
@@ -97,6 +121,8 @@ local function open(name: string)
 			make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,0),Size=UDim2.new(1,0,0,28),Font=Enum.Font.GothamMedium,Text="Apply "..targets[activeTarget].." only",TextColor3=C.muted,TextSize=12},content)
 			local apply=button(content,"APPLY "..string.upper(presets[activeStyle]),C.teal,UDim2.new(.08,0,0,36),UDim2.new(.84,0,0,42))
 			apply.Activated:Connect(function() invoke("Aura",{preset=presets[activeStyle],target=targets[activeTarget]}) end)
+			local clear=button(content,"CLEAR AURA",C.gold,UDim2.new(.08,0,0,88),UDim2.new(.84,0,0,38))
+			clear.Activated:Connect(function() invoke("ClearAura") end)
 		end
 		drawAura()
 	elseif name=="Size" then
@@ -141,5 +167,8 @@ close.Activated:Connect(closePanel)
 actionEvent.Event:Connect(function(actionName: string)
 	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" then open(actionName) end
 end)
-gui.Destroying:Connect(function() playerGui:SetAttribute("UtilityActionPanelOpen",false) end)
+gui.Destroying:Connect(function()
+	if panelCameraConnection then panelCameraConnection:Disconnect(); panelCameraConnection=nil end
+	playerGui:SetAttribute("UtilityActionPanelOpen",false)
+end)
 print("[Utility Bar] Separate Mount, Size, Clone and three-style Aura panels ready.")
