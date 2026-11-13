@@ -40,6 +40,30 @@ local sizeConstraint = Instance.new("UISizeConstraint")
 sizeConstraint.MinSize = Vector2.new(280, 240)
 sizeConstraint.MaxSize = Vector2.new(760, 560)
 sizeConstraint.Parent = panel
+local function applyShopDeviceLayout()
+	local camera=workspace.CurrentCamera
+	local viewport=if camera then camera.ViewportSize else Vector2.new(1280,720)
+	local touch=UserInputService.TouchEnabled and viewport.X<900
+	if touch then
+		panel.Size=UDim2.new(.94,0,.90,0)
+		sizeConstraint.MinSize=Vector2.zero
+		sizeConstraint.MaxSize=Vector2.new(math.min(760,viewport.X*.96),math.min(560,viewport.Y*.94))
+	else
+		-- Keep the established desktop/laptop storefront geometry unchanged.
+		panel.Size=UDim2.new(.88,0,.72,0)
+		sizeConstraint.MinSize=Vector2.new(280,240)
+		sizeConstraint.MaxSize=Vector2.new(760,560)
+	end
+end
+local shopCameraConnection: RBXScriptConnection?=nil
+local function bindShopCamera()
+	if shopCameraConnection then shopCameraConnection:Disconnect(); shopCameraConnection=nil end
+	local camera=workspace.CurrentCamera
+	if camera then shopCameraConnection=camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyShopDeviceLayout) end
+	applyShopDeviceLayout()
+end
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindShopCamera)
+bindShopCamera()
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 18)
 corner.Parent = panel
@@ -200,5 +224,9 @@ actionEvent.Event:Connect(function(actionName: string)
 	panel.Visible = true
 	playerGui:SetAttribute("UtilityToolShopOpen", true)
 	refresh()
+end)
+gui.Destroying:Connect(function()
+	if shopCameraConnection then shopCameraConnection:Disconnect(); shopCameraConnection=nil end
+	playerGui:SetAttribute("UtilityToolShopOpen",false)
 end)
 print("[Tool Shop] Placeholder catalog connected; no purchasable items configured.")
