@@ -660,6 +660,11 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 			nextEntry = fallback
 		end
 		if not nextEntry then return false, "No valid next track is available." end
+		-- Final authoritative guard: never commit the currently playing track as
+		-- its own successor, even if a stale queue or fallback picker supplied it.
+		if state.current and state.current.trackId == nextEntry.trackId then
+			return false, "The next track matches the current track; refusing an immediate repeat."
+		end
 		state.current = cloneEntry(nextEntry)
 		state.playback.paused = false
 		state.playback.position = 0
