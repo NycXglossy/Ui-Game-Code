@@ -87,7 +87,8 @@ local function toggleMount(player: Player): (boolean, string)
 		return false, "Mount is ready for a mount Tool. Add a Tool named Mount or set UtilityMount=true."
 	end
 	if mountTool.Parent == character then
-		humanoid:UnequipTools()
+		if not backpack then return false, "Your Backpack is not ready yet." end
+		mountTool.Parent = backpack
 		return true, "Mount tool unequipped."
 	end
 	humanoid:EquipTool(mountTool)
