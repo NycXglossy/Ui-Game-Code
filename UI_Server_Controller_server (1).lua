@@ -2800,10 +2800,15 @@ enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
 		if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
 		if callOk and writeOk == true then return true, nil end
 	end
-	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 	local failureText = string.lower(tostring(message or writeOk or ""))
-	if not globalQueueMode and queueManager and (string.find(failureText, "unavailable", 1, true)
-		or string.find(failureText, "temporarily", 1, true) or string.find(failureText, "budget", 1, true)) then
+	local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
+		or string.find(failureText, "temporarily", 1, true) ~= nil
+		or string.find(failureText, "budget", 1, true) ~= nil
+	if storageFailure and globalQueueMode and enterLocalQueueBackup then
+		enterLocalQueueBackup("queue request could not reach shared storage: " .. failureText)
+	end
+	if syncGlobalQueueSnapshot and globalQueueMode then syncGlobalQueueSnapshot() end
+	if not globalQueueMode and queueManager and storageFailure then
 		queueManager:Insert(#queue + 1, entry)
 		publishState(nil)
 		return true, nil
@@ -2835,12 +2840,15 @@ enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
 		if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
 		if callOk and writeOk == true then return true, nil end
 	end
-	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-	if not globalQueueMode and queueManager then
-		local failureText = string.lower(tostring(message or writeOk or ""))
-		local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
-			or string.find(failureText, "temporarily", 1, true) ~= nil
-			or string.find(failureText, "budget", 1, true) ~= nil
+	local failureText = string.lower(tostring(message or writeOk or ""))
+	local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
+		or string.find(failureText, "temporarily", 1, true) ~= nil
+		or string.find(failureText, "budget", 1, true) ~= nil
+	if storageFailure and globalQueueMode and enterLocalQueueBackup then
+		enterLocalQueueBackup("automatic queue refill could not reach shared storage: " .. failureText)
+	end
+	if syncGlobalQueueSnapshot and globalQueueMode then syncGlobalQueueSnapshot() end
+	if not globalQueueMode and queueManager and storageFailure then
 		if storageFailure then
 			for _, entry in ipairs(entries) do
 				if #queue >= CONFIG.MaxQueueSize then break end
