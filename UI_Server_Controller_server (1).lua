@@ -1232,12 +1232,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 					local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
 						or string.find(failureText, "temporarily", 1, true) ~= nil
 						or string.find(failureText, "budget", 1, true) ~= nil
-					if (storageFailure or not globalQueueMode) and queue[1] == entry then
-						if globalQueueMode and enterLocalQueueBackup then
-							enterLocalQueueBackup("crossfade commit failed: " .. failureText)
-						end
-						-- The global snapshot/commit is unavailable. Continue this
-						-- prepared handoff through the mirrored local queue instead.
+					if not globalQueueMode and queue[1] == entry then
+						-- Repeated snapshot failures have already moved this server to
+						-- local backup. Never split queues after a single failed commit.
 						isGlobalTransition = false
 						ControllerFunctions.pendingCrossfadeGlobalRevision = -1
 						ControllerFunctions.pendingCrossfadeGlobalCommitted = false
@@ -1810,6 +1807,8 @@ ControllerFunctions.refreshCatalogWhenReady = function(): boolean
 	return false
 end
 local globalQueueSyncBusy = false
+local globalQueueSnapshotFailureCount = 0
+local GLOBAL_QUEUE_SNAPSHOT_FAILURE_LIMIT = 3
 local globalQueueRefreshScheduled = false
 local globalPlaybackInitialized = false
 -- A newly joined server must align its audio deck once the asset is ready,
@@ -3073,18 +3072,26 @@ syncGlobalQueueSnapshot = function(): boolean
 	globalQueueSyncBusy = true
 	-- A malformed or unexpectedly-shaped bridge response must not strand the
 	-- sync lock. Keep the whole read/apply path protected and always release it.
-	local syncOk, applied = pcall(function(): boolean
-		local callOk, readOk, state = ControllerFunctions.globalInvoke("GetGlobalQueueState")
-		return callOk == true and readOk == true and ControllerFunctions.applyGlobalQueueState(state)
+	local syncOk, applied, failureReason = pcall(function()
+		local callOk, readOk, state, message = ControllerFunctions.globalInvoke("GetGlobalQueueState")
+		local didApply = callOk == true and readOk == true and ControllerFunctions.applyGlobalQueueState(state)
+		return didApply == true, if didApply then nil else tostring(message or "Global queue snapshot could not be read or applied.")
 	end)
 	globalQueueSyncBusy = false
-	if not syncOk then
-		warn("[ClubMusic] Global queue snapshot reconciliation failed: " .. tostring(applied))
-		if enterLocalQueueBackup then enterLocalQueueBackup(tostring(applied)) end
+	if not syncOk or applied ~= true then
+		globalQueueSnapshotFailureCount += 1
+		local reason = tostring(if syncOk then failureReason else applied)
+		warn("[ClubMusic] Global queue snapshot reconciliation failed (" .. tostring(globalQueueSnapshotFailureCount) .. "/" .. tostring(GLOBAL_QUEUE_SNAPSHOT_FAILURE_LIMIT) .. "): " .. reason)
+		-- A single failed read must not split this server onto a local queue.
+		-- Fall back only after repeated consecutive snapshot failures.
+		if globalQueueSnapshotFailureCount >= GLOBAL_QUEUE_SNAPSHOT_FAILURE_LIMIT and enterLocalQueueBackup then
+			enterLocalQueueBackup(reason)
+		end
 		return false
 	end
-	if applied then publishState(nil) end
-	return applied == true
+	globalQueueSnapshotFailureCount = 0
+	publishState(nil)
+	return true
 end
 
 enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
@@ -3106,9 +3113,8 @@ enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
 	local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
 		or string.find(failureText, "temporarily", 1, true) ~= nil
 		or string.find(failureText, "budget", 1, true) ~= nil
-	if storageFailure and globalQueueMode and enterLocalQueueBackup then
-		enterLocalQueueBackup("queue request could not reach shared storage: " .. failureText)
-	end
+	-- A failed write alone does not prove shared storage is unavailable. A
+	-- fresh snapshot decides whether this server must remain global or fall back.
 	if syncGlobalQueueSnapshot and globalQueueMode then syncGlobalQueueSnapshot() end
 	if not globalQueueMode and queueManager and storageFailure then
 		queueManager:Insert(#queue + 1, entry)
@@ -3146,9 +3152,7 @@ enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
 	local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
 		or string.find(failureText, "temporarily", 1, true) ~= nil
 		or string.find(failureText, "budget", 1, true) ~= nil
-	if storageFailure and globalQueueMode and enterLocalQueueBackup then
-		enterLocalQueueBackup("automatic queue refill could not reach shared storage: " .. failureText)
-	end
+	-- Keep global authority unless repeated snapshot reads also fail.
 	if syncGlobalQueueSnapshot and globalQueueMode then syncGlobalQueueSnapshot() end
 	if not globalQueueMode and queueManager and storageFailure then
 		if storageFailure then
@@ -3269,13 +3273,14 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 			local failureText = string.lower(tostring(reason or ""))
 			local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
 				or string.find(failureText, "temporarily", 1, true) ~= nil
-			if storageFailure and enterLocalQueueBackup then
-				enterLocalQueueBackup(tostring(reason))
-				-- The failed global CAS did not commit, so consume the mirrored
-				-- queue head locally rather than leaving the audio stalled.
+			-- Reconcile first. A transient write error or a single failed read
+			-- must not make this server advance independently of the global queue.
+			if syncGlobalQueueSnapshot and globalQueueMode then syncGlobalQueueSnapshot() end
+			if storageFailure and not globalQueueMode then
+				-- The snapshot failure threshold has been reached; local playback
+				-- is now the deliberate outage fallback.
 				return ControllerFunctions.advance(expectedGeneration)
 			end
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			return false, reason
 		end
 		local maintenanceOk, maintenanceError = pcall(function()
@@ -3330,11 +3335,15 @@ task.spawn(function()
 	end
 	if not enabledCallOk or enabled ~= true then return end
 	globalQueueMode = true
-	local readOk = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
+	local readOk = false
+	for snapshotAttempt = 1, GLOBAL_QUEUE_SNAPSHOT_FAILURE_LIMIT do
+		readOk = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot() or false
+		if readOk or not globalQueueMode then break end
+		task.wait(snapshotAttempt)
+	end
 	if not readOk then
-		-- Local queue playback was already initialized above. Preserve it instead
-		-- of stopping working audio when the shared snapshot is temporarily unavailable.
-		if enterLocalQueueBackup then enterLocalQueueBackup("initial shared snapshot could not be loaded") end
+		-- The snapshot helper enters local backup only after the repeated-failure
+		-- threshold; until then this server retains global authority.
 		return
 	end
 	if localCatalogRevision ~= globalCatalogRevision then
