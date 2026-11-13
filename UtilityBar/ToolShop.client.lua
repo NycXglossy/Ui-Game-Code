@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
@@ -219,6 +220,7 @@ end
 local function closePanel()
 	panel.Visible = false
 	playerGui:SetAttribute("UtilityToolShopOpen", false)
+	if GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(panel) then GuiService.SelectedObject=nil end
 end
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(function()
 	if playerGui:GetAttribute("ClubMusicMenuExpanded") == true then closePanel() end
@@ -239,6 +241,9 @@ actionEvent.Event:Connect(function(actionName: string)
 	panel.Visible = true
 	playerGui:SetAttribute("UtilityToolShopOpen", true)
 	refresh()
+	if UserInputService.PreferredInput == Enum.PreferredInput.Gamepad or GuiService:IsTenFootInterface() then
+		GuiService.SelectedObject=close
+	end
 end)
 gui.Destroying:Connect(function()
 	ContextActionService:UnbindAction(BACK_ACTION)
