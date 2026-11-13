@@ -1573,9 +1573,17 @@ ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
 		if not ControllerFunctions.applyTrackPlaybackSpeed(expectedTrackId) then
 			return false, "The current track playback speed could not be restored."
 		end
+		-- Clamp against the freshly decoded duration, not only catalog metadata.
+		position = math.clamp(position, 0, math.max(0, sound.TimeLength - 0.5))
 		local seekOk, seekError = pcall(function() sound.TimePosition = position end)
 		if not seekOk then return false, "The current track position could not be restored: " .. tostring(seekError) end
-		local actualPosition = sound.TimePosition
+		local seekDeadline = os.clock() + 1
+		local actualPosition = -1
+		repeat
+			task.wait(0.05)
+			actualPosition = sound.TimePosition
+		until ControllerFunctions.isFiniteNumber(actualPosition)
+			and math.abs(actualPosition - position) <= 1.5 or os.clock() >= seekDeadline
 		if not ControllerFunctions.isFiniteNumber(actualPosition) or math.abs(actualPosition - position) > 1.5 then
 			return false, "The audio decoder did not accept the restored track position."
 		end
