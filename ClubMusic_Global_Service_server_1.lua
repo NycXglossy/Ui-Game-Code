@@ -641,7 +641,18 @@ bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallback
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry, catalogRevision, expectedNextEntryId)
 	if ok then
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
+		-- Carry the compact committed track metadata in the invalidation message.
+		-- Peer servers can update title/duration immediately without waiting for
+		-- an additional DataStore snapshot round trip.
+		local current = state.current
+		local playback = state.playback
+		local trackHint = if typeof(current) == "table" and typeof(playback) == "table" then {
+			id = current.id, trackId = current.trackId, title = current.title, artist = current.artist,
+			genre = current.genre, duration = current.duration, requestedBy = current.requestedBy,
+			userId = current.userId, source = current.source, vip = current.vip,
+			soundId = current.soundId, trackRevision = playback.trackRevision,
+		} else nil
+		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision, trackHint = trackHint})
 		-- A committed next-track transition is the resume path after ForceStop.
 		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
 		if budgetShared and budgetAllowed then
@@ -1458,7 +1469,34 @@ local function onQueueChanged(message)
 	if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
 		MusicGlobalQueueService:InvalidateSnapshot()
 	end
-	globalEventBindable:Fire({kind = "QueueChanged", revision = math.floor(data.revision), senderJob = data.senderJob})
+	local trackHint = nil
+	if typeof(data.trackHint) == "table" then
+		local hint = data.trackHint
+		local validTrack = typeof(hint.trackId) == "string" and #hint.trackId > 0 and #hint.trackId <= 64
+			and string.match(hint.trackId, "^[%w%-_]+$") ~= nil
+			and typeof(hint.title) == "string" and #hint.title <= 160
+			and typeof(hint.artist) == "string" and #hint.artist <= 100
+			and finiteNumber(hint.duration) and hint.duration >= 1 and hint.duration <= 86400
+			and finiteNumber(hint.trackRevision) and hint.trackRevision >= 0 and hint.trackRevision % 1 == 0
+		if validTrack then
+			trackHint = {
+				id = if typeof(hint.id) == "string" then string.sub(hint.id, 1, 64) else "",
+				trackId = hint.trackId, title = hint.title, artist = hint.artist,
+				genre = if typeof(hint.genre) == "string" then string.sub(hint.genre, 1, 40) else "Unknown",
+				duration = hint.duration,
+				requestedBy = if typeof(hint.requestedBy) == "string" then string.sub(hint.requestedBy, 1, 80) else "Auto DJ",
+				userId = if finiteNumber(hint.userId) then math.max(0, math.floor(hint.userId)) else 0,
+				source = if typeof(hint.source) == "string" then string.sub(hint.source, 1, 24) else "auto",
+				vip = hint.vip == true,
+				soundId = if typeof(hint.soundId) == "string" then string.sub(hint.soundId, 1, 64) else "",
+				trackRevision = math.floor(hint.trackRevision),
+			}
+		end
+	end
+	globalEventBindable:Fire({
+		kind = "QueueChanged", revision = math.floor(data.revision),
+		senderJob = data.senderJob, trackHint = trackHint,
+	})
 end
 
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
