@@ -210,10 +210,13 @@ end
 
 function Backend:Stop(): (boolean, string?)
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
-	self.paused = false
-	self.pausedAt = 0
+	-- Keep the logical pause snapshot intact unless the engine confirms Stop.
+	-- A transient Stop failure must not silently turn a paused deck into a
+	-- playing-state deck or discard the position needed by Resume.
 	local ok, err = pcall(function() self.player:Stop() end)
 	if not ok then return false, tostring(err) end
+	self.paused = false
+	self.pausedAt = 0
 	return true, nil
 end
 
