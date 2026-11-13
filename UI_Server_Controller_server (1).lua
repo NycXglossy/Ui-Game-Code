@@ -6956,6 +6956,29 @@ task.spawn(function()
 				then (nextEntry.soundId or CONFIG.SoundIds[nextEntry.trackId] or "") else ""
 			local validNextAsset = typeof(nextAsset) == "string" and #nextAsset <= 64
 				and string.match(nextAsset, "^rbxassetid://%d+$") ~= nil
+			-- Before preparing a shared transition, reconcile this server's queue
+			-- head and playback revision against the authoritative global snapshot.
+			-- A stale local mirror must never choose a different incoming song.
+			if globalQueueMode and crossfade and not crossfade.destroyed and not crossfade.active
+				and crossfadeAttemptedGeneration ~= currentGeneration
+				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
+				and remaining > (CONFIG.CrossfadeDurationSeconds + 1) then
+				local snapshotFresh = syncGlobalQueueSnapshot ~= nil and syncGlobalQueueSnapshot()
+				if snapshotFresh then
+					currentGeneration = playbackGeneration
+					shouldAdvance = not playbackPaused and nowPlaying.trackId ~= ""
+						and nowPlaying.elapsed >= nowPlaying.duration
+					remaining = math.max(0, ControllerFunctions.globalPlaybackEndTime
+						- game:GetService("Workspace"):GetServerTimeNow())
+					nextEntry = queue[1]
+					nextAsset = if typeof(nextEntry) == "table"
+						then (nextEntry.soundId or CONFIG.SoundIds[nextEntry.trackId] or "") else ""
+					validNextAsset = typeof(nextAsset) == "string" and #nextAsset <= 64
+						and string.match(nextAsset, "^rbxassetid://%d+$") ~= nil
+				else
+					validNextAsset = false
+				end
+			end
 			if crossfade and not crossfade.destroyed and not crossfade.active
 				and crossfadeAttemptedGeneration ~= currentGeneration
 				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
