@@ -1624,7 +1624,7 @@ ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
 	end
 	return recovered == true, recoveryError
 end
- The UI remains functional if this separate
+-- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
 local receiptHashModule = ServerStorage:WaitForChild("ClubMusic_ReceiptHash", 20)
