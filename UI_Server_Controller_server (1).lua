@@ -1542,6 +1542,9 @@ end
 local globalQueueSyncBusy = false
 local globalQueueRefreshScheduled = false
 local globalPlaybackInitialized = false
+-- A newly joined server must align its audio deck once the asset is ready,
+-- even when that deck initially reports position 0 or is ahead of the snapshot.
+local globalAudioSyncPending = true
 local enqueueGlobalQueueBatch: (({QueueEntry}) -> (boolean, string?))? = nil
 local activePlaylistId: string? = nil
 local globalPlaylistRotationEnabled = false
@@ -2663,6 +2666,7 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 			and typeof(current) == "table" and current.id == pendingPreparedEntry.id
 		if preservePreparedCrossfade then ControllerFunctions.pendingCrossfadeGlobalCommitted = true end
 		if nowPlaying.trackId ~= current.trackId and not preservePreparedCrossfade then
+			globalAudioSyncPending = true
 			local entry: QueueEntry = {
 				id = tostring(current.id), trackId = current.trackId, title = tostring(current.title),
 				artist = tostring(current.artist), duration = tonumber(current.duration) or 1,
@@ -2701,21 +2705,30 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 			pcall(function()
 				local audio = ControllerFunctions.getAudioSnapshot()
 				if audio.asset ~= nowPlaying.soundId then
+					globalAudioSyncPending = true
 					if nowPlaying.soundId ~= "" then ControllerFunctions.startServerMusic(nowPlaying.soundId)
 					else ControllerFunctions.stopServerMusic(); ControllerFunctions.setAudioAsset("") end
 				end
 				audio = ControllerFunctions.getAudioSnapshot()
-				-- Do not chase small clock differences with bidirectional seeks. A
-				-- stale global snapshot can otherwise pull a healthy live stream
-				-- backwards every resync (most noticeable on mobile clients).
-				-- Only recover when the audio clock is substantially BEHIND the
-				-- authoritative position, and never seek during an active crossfade.
+				-- Initial alignment is different from routine drift correction: a
+				-- joining server may load the shared track at 0 (or at a stale local
+				-- position). Wait for readiness, then seek exactly to the global
+				-- clock once. Never do this during a crossfade.
 				local activeCrossfade = ControllerFunctions.ChildManagers
 					and ControllerFunctions.ChildManagers.Crossfade
 				local crossfadeInProgress = activeCrossfade ~= nil and activeCrossfade.active == true
 				local audioLag = nowPlaying.elapsed - audio.position
-				if audio.ready and not crossfadeInProgress and audioLag >= 8 then
-					ControllerFunctions.seekAudio(nowPlaying.elapsed)
+				if audio.ready and not crossfadeInProgress then
+					if globalAudioSyncPending then
+						local seekOk, seekResult = pcall(function()
+							return ControllerFunctions.seekAudio(nowPlaying.elapsed)
+						end)
+						if seekOk and seekResult ~= false then globalAudioSyncPending = false end
+					elseif audioLag >= 8 then
+						-- Routine recovery remains one-way to avoid stale snapshots
+						-- pulling a healthy stream backwards during normal playback.
+						ControllerFunctions.seekAudio(nowPlaying.elapsed)
+					end
 				end
 				if playbackPaused then ControllerFunctions.pauseAudio()
 				elseif not audio.playing and nowPlaying.soundId ~= "" then ControllerFunctions.playAudio() end
