@@ -4749,10 +4749,40 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local mobileStateRenderQueued = false
+	-- State snapshots also carry a continuously advancing playback clock.
+	-- That clock is already interpolated locally by the HUD/progress display;
+	-- rebuilding the entire mobile tab tree for elapsed-only updates causes
+	-- visible content flashes. Compare snapshots while ignoring that one
+	-- volatile field, but retain every other state change for live tab refresh.
+	local function mobileRenderStateChanged(previous: any, nextState: any): boolean
+		local function equivalent(a: any, b: any, path: string, depth: number): boolean
+			if a == b then return true end
+			if typeof(a) ~= typeof(b) then return false end
+			if typeof(a) ~= "table" then return false end
+			if depth >= 10 then return false end
+			for key, value in pairs(a) do
+				local childPath = if path == "" then tostring(key) else path .. "." .. tostring(key)
+				if childPath ~= "nowPlaying.elapsed" then
+					if b[key] == nil and value ~= nil then return false end
+					if not equivalent(value, b[key], childPath, depth + 1) then return false end
+				end
+			end
+			for key, value in pairs(b) do
+				local childPath = if path == "" then tostring(key) else path .. "." .. tostring(key)
+				if childPath ~= "nowPlaying.elapsed" and a[key] == nil and value ~= nil then
+					return false
+				end
+			end
+			return true
+		end
+		return not equivalent(previous, nextState, "", 0)
+	end
+
 	local function applyState(newState: any)
 		if destroyed or typeof(newState) ~= "table" then return end
 		local cleanState = sanitizeStateValue(newState, 0, {})
 		if typeof(cleanState) ~= "table" then return end
+		local previousState = state
 		state = cleanState
 		syncElapsed()
 		updateHud()
@@ -4767,9 +4797,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- hidden mobile content only wastes frames and can expose partial redraws.
 		if not expanded then return end
 		if currentDevice == "Mobile" then
-			-- Coalesce bursty server snapshots on touch devices. Rebuilding every
-			-- card immediately clears and recreates the visible content tree, which
-			-- can appear as a partial panel flicker on slower mobile render frames.
+			-- Do not rebuild the mobile content tree for playback-clock-only
+			-- snapshots. The progress HUD already interpolates elapsed locally.
+			if not mobileRenderStateChanged(previousState, cleanState) then return end
+			-- Coalesce meaningful server updates so several changes in one burst
+			-- produce only one content rebuild on slower mobile render frames.
 			if mobileStateRenderQueued then return end
 			mobileStateRenderQueued = true
 			local requestedTab = activeTab
