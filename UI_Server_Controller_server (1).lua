@@ -3121,14 +3121,14 @@ task.spawn(function()
 	end
 end)
 
--- MessagingService is the primary fast invalidation path. Periodic snapshots are
--- a repair fallback. A server with no synchronized current track is recovering
--- from startup/service unavailability, so retry it quickly instead of waiting
--- through the normal low-frequency reconciliation interval.
+-- MessagingService is the primary fast invalidation path. Periodic snapshots
+-- repair missed notifications so a server cannot remain on a different song for
+-- a full minute or more. Keep the interval at roughly three reads per minute per
+-- server to limit shared DataStore traffic; empty startup playback retries faster.
 task.spawn(function()
 	while script.Parent do
 		local recoveringPlayback = globalQueueMode and nowPlaying.trackId == ""
-		task.wait(if recoveringPlayback then 5 + math.random(0, 5) else 90 + math.random(0, 30))
+		task.wait(if recoveringPlayback then 5 + math.random(0, 5) else 20 + math.random(0, 5))
 		if globalQueueMode then
 			local synchronized = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
 			if synchronized and nowPlaying.trackId == "" then
