@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local GuiService = game:GetService("GuiService")
 local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
@@ -164,10 +165,19 @@ local function open(name: string)
 		local act=button(body,"CREATE CLONE",C.gold,UDim2.new(.08,0,.52,0),UDim2.new(.84,0,0,52))
 		act.Activated:Connect(function() invoke("Clone") end)
 	end
+	if UserInputService.PreferredInput == Enum.PreferredInput.Gamepad or GuiService:IsTenFootInterface() then
+		task.defer(function()
+			if not panel.Visible then return end
+			local firstControl=body:FindFirstChildWhichIsA("TextButton",true)
+			GuiService.SelectedObject=firstControl or close
+		end)
+	end
 end
 local function closePanel()
 	panel.Visible=false
 	playerGui:SetAttribute("UtilityActionPanelOpen",false)
+	local selected=GuiService.SelectedObject
+	if selected and selected:IsDescendantOf(gui) then GuiService.SelectedObject=nil end
 end
 close.Activated:Connect(closePanel)
 playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(function()
