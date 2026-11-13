@@ -2688,11 +2688,15 @@ ControllerFunctions.pickAutoTrack = function(): Track?
 		lastAutoGenre = chosen.genreId
 		return chosen
 	end
-	-- Recent-history/queue constraints may exclude every track; fall back only
-	-- to a verified playable catalog entry, never to a placeholder or nil ID.
+	-- If recent-history constraints exclude every track, do not select the
+	-- current track as a fallback. Waiting for a valid successor is safer than
+	-- creating an immediate repeat in the shared queue.
 	for _, id in ipairs(ALL_TRACK_IDS) do
 		local track = TRACK_BY_ID[id]
-		if isPlayableTrack(track) and not ControllerFunctions.isTrackBlocked(id) then return track end
+		if isPlayableTrack(track) and id ~= nowPlaying.trackId
+			and not ControllerFunctions.isTrackBlocked(id) then
+			return track
+		end
 	end
 	return nil
 end
