@@ -6971,12 +6971,12 @@ task.spawn(function()
 		-- Require a short stable stop, then attempt one in-place resume from the
 		-- captured playhead before allowing the queue watchdog to advance.
 		local audio = ControllerFunctions.getAudioSnapshot()
-		if playbackPaused or nowPlaying.trackId == "" or nowPlaying.soundId == ""
+		if playbackPaused or audioReloadInProgress or nowPlaying.trackId == "" or nowPlaying.soundId == ""
 			or audio.playing == true then
 			ControllerFunctions.stoppedAudioGeneration = -1
 			ControllerFunctions.stoppedAudioSince = 0
 			ControllerFunctions.audioRecoveryAttemptedGeneration = -1
-		elseif not shouldAdvance and nowPlaying.elapsed >= 15 then
+		elseif not audioReloadInProgress and not shouldAdvance and nowPlaying.elapsed >= 15 then
 			local now = os.clock()
 			if ControllerFunctions.stoppedAudioGeneration ~= currentGeneration then
 				ControllerFunctions.stoppedAudioGeneration = currentGeneration
