@@ -373,7 +373,16 @@ local function refreshInventory(mode: string?)
 				refreshInventory(mode)
 				return
 			end
-			if tool.Parent == currentCharacter then humanoid:UnequipTools() else humanoid:EquipTool(tool) end
+			if tool.Parent == currentCharacter then
+				local currentBackpack=player:FindFirstChildOfClass("Backpack")
+				if not currentBackpack then
+					showMessage("Your Backpack is not ready yet.")
+					return
+				end
+				tool.Parent=currentBackpack
+			else
+				humanoid:EquipTool(tool)
+			end
 			task.defer(function() refreshInventory(mode) end)
 		end)
 	end
