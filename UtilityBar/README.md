@@ -35,7 +35,7 @@ For actions other than Tiki Tide Settings, the bar fires the local BindableEvent
 
 `PlayerGui.UtilityBarAction:Fire(actionName)`
 
-Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone`, `Aura`, `Inventory`, `Accessories`, and `ToolShop`. The Tool Shop panel listens directly for `ToolShop`; Inventory remains the only equip/unequip surface. Legacy `Tools` requests are routed to the unified Inventory view.
+Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone`, `Aura`, `Inventory`, `Accessories`, and `ToolShop`. The Tool Shop panel listens directly for `ToolShop`; Inventory remains the only owned-Tool equip/unequip surface. Legacy `Tools` requests are routed to the unified Inventory view.
 
 ### Implemented: Inventory, Tools, and Accessories
 
@@ -50,19 +50,18 @@ This refreshes the player's current Roblox account avatar; it is not an outfit c
 
 ### Implemented: Mount, Size, Clone, and Aura
 
-The `UtilityBarExtendedActions.server.lua` script owns these actions through the allowlisted `UtilityBarRemotes.ExecuteUtility` RemoteFunction. The client sends only an action name; the server validates the action, applies a per-player cooldown, and operates only on the requesting player's character.
+The `UtilityBarExtendedActions.server.lua` script owns these actions through the allowlisted `UtilityBarRemotes.ExecuteUtility` RemoteFunction. The client sends an allowlisted action name and, where required, a bounded size value or fixed aura preset/target pair; the server validates each request, applies a per-player cooldown, and operates only on the requesting player's character.
 
-- **Mount:** equips or unequips a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
+- **Mount:** opens its own panel and equips or unequips only a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
 - **Size:** opens its own control panel with a 0.50×–5.00× adjustable slider and a 1.00× reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
 - **Clone:** opens its own single-tab panel with a Create Clone action. The server creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
-- **Mount:** opens its own single-tab panel with an Equip / Unequip action for the tagged or named mount Tool.
 - **Aura:** opens three style tabs (Teal Glow, Royal Gold, Tiki Tide) and three target tabs (Character, Tools, Accessories). Apply uses server-owned Highlights; Clear Aura removes the active effect. Newly equipped Tools and Accessories receive the selected aura while it remains active.
 
 Mount requires an existing mount Tool; this update does not invent or import a third-party mount model. The extended actions are separate from ClubMusic and do not issue music, queue, catalog, or DJ requests.
 
 ### Security and lifecycle
 
-- The server accepts only the four explicit action names; clients cannot supply target players, asset IDs, scale values, or arbitrary instances.
+- The server accepts only the five explicit action names (`Mount`, `Size`, `Clone`, `Aura`, `ClearAura`); clients cannot supply target players, asset IDs, or arbitrary instances, and size values are clamped server-side.
 - Requests are throttled per player on the server.
 - Size values are clamped to 0.50×–5.00× and based on each character's captured baseline.
 - Clone scripts are removed and its parts cannot collide, touch, or be queried; clones expire automatically and are cleaned up when their owner leaves.
@@ -89,7 +88,7 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 ### Tool Shop and Coins foundation
 
-- **Tool Shop** is a separate ninth utility-bar tab. It does not replace or modify Inventory. Inventory remains the only place for equipping and unequipping owned Tools.
+- **Tool Shop** is a separate utility-bar tab. It does not replace or modify Inventory. Inventory remains the only place for equipping and unequipping owned Tools.
 - The shop intentionally displays three **COMING SOON** placeholder slots. No Tool assets, item names, prices, or purchase buttons have been invented or configured.
 - `ToolShop.server.lua` creates `leaderstats.Coins` when it does not already exist as an IntValue and persists the balance in the `TikiTideCoins_v1` DataStore. The starting balance is deliberately `0` in the script's `STARTING_COINS` setting; change it only when the game's launch economy is decided.
 - Enable **Game Settings → Security → Enable Studio Access to API Services** for Studio DataStore testing. Published experiences need DataStore access enabled. Test persistence in a separate test place before release.
