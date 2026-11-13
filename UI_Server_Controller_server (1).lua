@@ -1464,8 +1464,23 @@ ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, strin
 		or not string.match(soundId, "^rbxassetid://%d+$") then
 		return false, "The current track has no valid audio asset."
 	end
-	local snapshot = ControllerFunctions.getAudioSnapshot()
-	if snapshot.asset ~= soundId then
+	-- Read only the two properties restart actually needs. A full snapshot also
+	-- queries readiness, duration, and playhead, adding work to a latency-sensitive
+	-- button path without changing the restart decision.
+	local source = activeAudioSource
+	local sourceAsset = ""
+	local sourcePlaying = false
+	local stateOk = pcall(function()
+		if source.kind == "Backend" and source.backend then
+			sourceAsset = source.backend:GetAsset()
+			sourcePlaying = source.backend:IsPlaying()
+		elseif source.instance and source.instance:IsA("Sound") then
+			sourceAsset = source.instance.SoundId
+			sourcePlaying = source.instance.IsPlaying
+		end
+	end)
+	if not stateOk then return false, "The current audio source state could not be read safely." end
+	if sourceAsset ~= soundId then
 		ControllerFunctions.startServerMusic(soundId)
 		return true, nil
 	end
@@ -1477,7 +1492,7 @@ ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, strin
 	if not seekOk or seekResult == false then
 		return false, tostring(seekError or seekResult or "The current audio source could not be reset.")
 	end
-	if snapshot.playing ~= true then
+	if sourcePlaying ~= true then
 		local playOk, playResult, playError = pcall(ControllerFunctions.playAudio)
 		if not playOk or playResult == false then
 			return false, tostring(playError or playResult or "The current audio source could not be restarted.")
@@ -5033,7 +5048,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		-- Resume reuses the saved value; neither path needs a second full audio
 		-- snapshot read before the latency-sensitive control is applied.
 		local position = math.clamp(tonumber(nowPlaying.elapsed) or 0, 0, nowPlaying.duration)
-		playbackPaused = desiredPaused
 		local audioOk, audioError = pcall(function()
 			local controlOk, controlResult, capturedPosition
 			if desiredPaused then
@@ -5046,7 +5060,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			end
 			if controlOk == false or controlResult == false then error("The audio source rejected the pause/resume command.") end
 		end)
-		if audioOk then nowPlaying.elapsed = position end
+		if audioOk then
+			nowPlaying.elapsed = position
+			playbackPaused = desiredPaused
+		end
 		if not audioOk then
 			playbackPaused = not desiredPaused
 			notify(player, "Audio control could not be applied: " .. tostring(audioError), "warn")
