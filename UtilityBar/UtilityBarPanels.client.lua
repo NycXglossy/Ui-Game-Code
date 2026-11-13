@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -129,7 +130,12 @@ local function open(name: string)
 		local value=1.0
 		local valueLabel=make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,4),Size=UDim2.new(1,0,0,34),Font=Enum.Font.GothamBold,Text="1.00×",TextColor3=C.gold,TextSize=22},body) :: TextLabel
 		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,38),Size=UDim2.new(1,0,0,22),Font=Enum.Font.GothamMedium,Text="Character scale · 0.50× to 5.00×",TextColor3=C.muted,TextSize=11},body)
-		local track=make("Frame",{Position=UDim2.new(.08,0,0,91),Size=UDim2.new(.84,0,0,10),BackgroundColor3=C.hover,BorderSizePixel=0},body) :: Frame
+		local camera=workspace.CurrentCamera
+		local shortTouch=UserInputService.TouchEnabled and camera~=nil and camera.ViewportSize.Y<420
+		local trackY=if shortTouch then 70 else 91
+		local applyY=if shortTouch then 110 else 136
+		local resetY=if shortTouch then 164 else 190
+		local track=make("Frame",{Position=UDim2.new(.08,0,0,trackY),Size=UDim2.new(.84,0,0,10),BackgroundColor3=C.hover,BorderSizePixel=0},body) :: Frame
 		rounded(track,8)
 		local fill=make("Frame",{Size=UDim2.new((1-.5)/4.5,0,1,0),BackgroundColor3=C.teal,BorderSizePixel=0},track) :: Frame
 		rounded(fill,8)
@@ -145,9 +151,9 @@ local function open(name: string)
 		track.InputBegan:Connect(function(input) if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then dragging=true; setFromX(input.Position.X) end end)
 		connectPanel(UserInputService.InputChanged, function(input) if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then setFromX(input.Position.X) end end)
 		connectPanel(UserInputService.InputEnded, function(input) if dragging and (input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch) then dragging=false end end)
-		local apply=button(body,"APPLY SIZE",C.teal,UDim2.new(.08,0,0,136),UDim2.new(.84,0,0,46))
+		local apply=button(body,"APPLY SIZE",C.teal,UDim2.new(.08,0,0,applyY),UDim2.new(.84,0,0,46))
 		apply.Activated:Connect(function() invoke("Size",value) end)
-		local reset=button(body,"RESET TO 100%",C.gold,UDim2.new(.08,0,0,190),UDim2.new(.84,0,0,38))
+		local reset=button(body,"RESET TO 100%",C.gold,UDim2.new(.08,0,0,resetY),UDim2.new(.84,0,0,38))
 		reset.Activated:Connect(function() value=1; valueLabel.Text="1.00×"; local resetAlpha=(1-.5)/4.5; fill.Size=UDim2.new(resetAlpha,0,1,0); knob.Position=UDim2.new(resetAlpha,0,.5,0); invoke("Size",1) end)
 	elseif name=="Mount" then
 		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.05,0,.12,0),Size=UDim2.new(.9,0,0,60),Font=Enum.Font.GothamMedium,Text="Equip or unequip your available mount. A Mount Tool must be installed in your inventory.",TextWrapped=true,TextColor3=C.muted,TextSize=12},body)
@@ -164,10 +170,24 @@ local function closePanel()
 	playerGui:SetAttribute("UtilityActionPanelOpen",false)
 end
 close.Activated:Connect(closePanel)
+playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(function()
+	if playerGui:GetAttribute("ClubMusicMenuExpanded") == true then closePanel() end
+end)
+playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(function()
+	if playerGui:GetAttribute("TikiTideSettingsOpen") == true then closePanel() end
+end)
+local BACK_ACTION = "UtilityControlPanels_Back"
+ContextActionService:BindActionAtPriority(BACK_ACTION, function(_, inputState)
+	if inputState ~= Enum.UserInputState.Begin or not panel.Visible then return Enum.ContextActionResult.Pass end
+	if UserInputService:GetFocusedTextBox() then return Enum.ContextActionResult.Pass end
+	closePanel()
+	return Enum.ContextActionResult.Sink
+end, false, 2900, Enum.KeyCode.ButtonB, Enum.KeyCode.Escape)
 actionEvent.Event:Connect(function(actionName: string)
 	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" then open(actionName) end
 end)
 gui.Destroying:Connect(function()
+	ContextActionService:UnbindAction(BACK_ACTION)
 	if panelCameraConnection then panelCameraConnection:Disconnect(); panelCameraConnection=nil end
 	playerGui:SetAttribute("UtilityActionPanelOpen",false)
 end)
