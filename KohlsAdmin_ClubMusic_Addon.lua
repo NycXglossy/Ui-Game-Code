@@ -179,13 +179,26 @@ return function(_K: any)
 		end
 
 		local successMessage = if typeof(message) == "string" then message else "ClubMusic action submitted."
-		-- Read-only commands have no ClubMusic state-change Notice, so display
-		-- their result through Kohl's Admin's supported informational toast API.
-		if operation == "Status" or operation == "Queue" or operation == "OperationalCatalogRefresh"
-			or operation == "RequestMute" or operation == "ClearUserQueue" or operation == "EmergencyLock"
-			or operation == "TrackBlock" or operation == "ForceStop" or operation == "ModerationHistory"
-			or operation == "DJSessionStatus" or operation == "DJSessionStart"
-			or operation == "DJSessionHandoff" or operation == "DJSessionEnd" then
+		-- These commands return their useful result through the bridge rather than
+		-- the normal ClubMusic state-change Notice. Always surface that result to
+		-- the invoking staff member, including security and operational snapshots.
+		local DISPLAY_RESULT_OPERATIONS: {[string]: boolean} = {
+			Status = true, Queue = true, ModerationHistory = true,
+			SecurityStatus = true, SecurityIncidents = true, SecurityIncidentOpen = true,
+			SecurityIncidentResolve = true, SecurityPolicy = true, SecurityPolicySet = true,
+			OperationalCatalogRefresh = true, OperationalHealth = true,
+			OperationalDiagnostics = true, OperationalServices = true,
+			OperationalErrors = true, OperationalMetrics = true,
+			OperationalSecurityLog = true, OperationalServers = true,
+			OperationalRateLimit = true, OperationalConfig = true,
+			OperationalRecovery = true, OperationalReconcile = true,
+			OperationalMaintenance = true,
+			RequestMute = true, ClearUserQueue = true, EmergencyLock = true,
+			TrackBlock = true, ForceStop = true,
+			DJSessionStatus = true, DJSessionStart = true,
+			DJSessionHandoff = true, DJSessionEnd = true,
+		}
+		if DISPLAY_RESULT_OPERATIONS[operation] == true then
 			local notifyOk, notifyError = pcall(function()
 				_K.Remote.Notify:Fire(caller, {
 					From = caller.UserId,
