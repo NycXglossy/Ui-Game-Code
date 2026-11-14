@@ -623,7 +623,10 @@ local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGrou
 local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
 local activeAudioSource: any = { kind = "Sound", instance = musicSound }
 local audioSourceRevision = 0
-local modernAudioMigrationAttempted = false
+local modernAudioMigrationSucceeded = false
+local modernAudioMigrationInProgress = false
+local modernAudioMigrationNextAttemptAt = 0
+local modernAudioMigrationFailureCount = 0
 -- Forward-declared state is shared with the early-created crossfade factory.
 local queue: any = {}
 local queueManager: any = nil
@@ -1069,17 +1072,34 @@ ControllerFunctions.bindActiveAudioPlayingSignal()
 -- default; if preparation or handoff fails, adoptAudioBackend cleans the
 -- candidate and the canonical Sound continues without interruption.
 ControllerFunctions.tryModernAudioBackendMigration = function()
-	if not CONFIG.UseModernAudioBackend or modernAudioMigrationAttempted then return false end
-	modernAudioMigrationAttempted = true
+	if not CONFIG.UseModernAudioBackend or modernAudioMigrationSucceeded or modernAudioMigrationInProgress then return false end
+	if os.clock() < modernAudioMigrationNextAttemptAt then return false end
+	modernAudioMigrationInProgress = true
+
+	local function finish(success: boolean, message: string?): boolean
+		modernAudioMigrationInProgress = false
+		if success then
+			modernAudioMigrationSucceeded = true
+			modernAudioMigrationFailureCount = 0
+			modernAudioMigrationNextAttemptAt = 0
+			return true
+		end
+		modernAudioMigrationFailureCount += 1
+		-- A transient module/load/readiness failure must not permanently strand
+		-- this server on legacy Sound. Retry on a later track with bounded backoff.
+		local delaySeconds = math.min(60, 5 * (2 ^ math.min(modernAudioMigrationFailureCount - 1, 4)))
+		modernAudioMigrationNextAttemptAt = os.clock() + delaySeconds
+		if message then warn("[ClubMusic][AudioBackend] " .. message .. " Legacy Sound remains active; retrying in " .. tostring(delaySeconds) .. "s.") end
+		return false
+	end
+
 	local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
 	if not backendModule or not backendModule:IsA("ModuleScript") then
-		warn("[ClubMusic][AudioBackend] Modern backend is enabled but its ModuleScript is missing; legacy Sound remains active.")
-		return false
+		return finish(false, "Modern backend ModuleScript is missing.")
 	end
 	local requireOk, BackendClass = pcall(require, backendModule)
 	if not requireOk or typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
-		warn("[ClubMusic][AudioBackend] Modern backend could not be loaded; legacy Sound remains active.")
-		return false
+		return finish(false, "Modern backend module could not be loaded.")
 	end
 	local createOk, candidate = pcall(BackendClass.new, {
 		Name = "ClubMusicMainAudioBackend",
@@ -1088,16 +1108,14 @@ ControllerFunctions.tryModernAudioBackendMigration = function()
 		InitialGain = 0,
 	})
 	if not createOk or typeof(candidate) ~= "table" then
-		warn("[ClubMusic][AudioBackend] Modern backend could not be constructed; legacy Sound remains active.")
-		return false
+		return finish(false, "Modern backend could not be constructed.")
 	end
 	local adopted, message = ControllerFunctions.adoptAudioBackend(candidate)
 	if not adopted then
-		warn("[ClubMusic][AudioBackend] Safe handoff was rejected; legacy Sound remains active: " .. tostring(message))
-		return false
+		return finish(false, "Safe handoff was rejected: " .. tostring(message))
 	end
 	print("[ClubMusic][AudioBackend] Modern AudioPlayer is now the controller-owned main source.")
-	return true
+	return finish(true, nil)
 end
 
 -- One controller-owned cancellation seam for a future dual-deck transition.
