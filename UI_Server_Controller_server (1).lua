@@ -1930,6 +1930,10 @@ end
 local globalActionBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalActionBurst, CONFIG.GlobalActionRefillPerSecond)
 local globalAudioBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalAudioBurst, CONFIG.GlobalAudioRefillPerSecond)
 local globalStateQueryBucket = ControllerFunctions.newTokenBucket(30, 15)
+-- Read-only catalog browsing gets an isolated budget so GetState traffic or
+-- temporary global security-service pressure cannot starve catalog visibility.
+-- This does not authorize mutations; all writes still pass their security gates.
+local globalCatalogQueryBucket = ControllerFunctions.newTokenBucket(30, 15)
 local globalDataStoreBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalDataStoreBurst, CONFIG.GlobalDataStoreRefillPerSecond)
 local perPlayerActionBuckets: {[number]: TokenBucket} = {}
 
@@ -5547,7 +5551,7 @@ end
 catalogFunction.OnServerInvoke = function(player: Player, query: any, genreId: any, offset: any, limit: any)
 	if player.Parent ~= Players then return nil end
 	local now = os.clock()
-	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
+	if not ControllerFunctions.consumeToken(globalCatalogQueryBucket, now, 1) then return nil end
 	-- Catalog browsing is a read-only lookup over the built-in in-memory
 	-- catalog plus the local custom-track cache. Keep it available during a
 	-- transient global security-service outage; the per-server token bucket
