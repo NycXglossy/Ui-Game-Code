@@ -1773,6 +1773,7 @@ type Profile = {
 	unlockedSlots: number,
 	activeSlot: number,
 	showCustomTitle: boolean,
+	rewardedPassTier: number,
 	glowsticks: number,
 	skipTokens: number,
 	neonTrail: boolean,
@@ -2061,7 +2062,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	PlaylistCreate = 2, PlaylistDelete = 1, PlaylistAddTrack = 0.5, PlaylistRemoveTrack = 0.5, PlaylistMoveTrack = 0.5,
 	DJPlayPlaylist = 2, DJStopPlaylist = 1,
 	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
-	ModBlockUser = 0.5, ModSetVip = 0.5, ModPurgeUser = 0.5,
+	ModBlockUser = 0.5, ModSetPassTier = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, BuyTitleTag = 1, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
 	SaveTitleSlot = CONFIG.SaveTitleCooldownSeconds, SelectTitleSlot = 0.3,
 	ClearTitleSlot = 0.5, SetTitleVisible = 0.3,
@@ -2093,7 +2094,6 @@ local rankCache: {[number]: {rank: string, level: number}} = {}
 local vipPass: {[number]: boolean} = {}
 local vvipPass: {[number]: boolean} = {}
 local tikiTidePass: {[number]: boolean} = {}
-local tempVip: {[number]: boolean} = {}
 local blockedUsers: {[number]: boolean} = {}
 local skipVotes: {[number]: boolean} = {}
 local requestsLocked = false
@@ -2146,13 +2146,14 @@ end
 
 ControllerFunctions.passTier = function(player: Player): number
 	local userId = player.UserId
-	-- Staff permissions are separate from paid membership tiers. Staff do not
-	-- automatically receive VIP/VVIP/Tiki Tide perks; grant temporary VIP explicitly
-	-- through the staff control when needed.
-	if tikiTidePass[userId] == true then return 3 end
-	if vvipPass[userId] == true then return 2 end
-	if vipPass[userId] == true or tempVip[userId] == true then return 1 end
-	return 0
+	-- The configured OWNER receives every membership tier. Other staff permissions
+	-- remain separate. Group members receive VIP, while owner-issued rank-up rewards
+	-- persist on the player's profile and can raise them through VVIP and Tiki Tide.
+	if ControllerFunctions.getLevel(player) >= 4 then return 3 end
+	local profile = profiles[userId]
+	local groupTier = if vipPass[userId] == true then 1 else 0
+	local rewardedTier = if profile then math.clamp(profile.rewardedPassTier, 0, 3) else 0
+	return math.max(groupTier, rewardedTier)
 end
 
 ControllerFunctions.isVip = function(player: Player): boolean
@@ -2194,10 +2195,16 @@ end
 
 ControllerFunctions.refreshVip = function(player: Player)
 	local userId = player.UserId
-	vipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VipGamePassId)
-	vvipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VvipGamePassId)
-	tikiTidePass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.TikiTidePassId)
-	-- Group-based VIP is temporarily disabled while the membership rules are revised.
+	-- Membership in the configured Roblox group grants the base VIP tier.
+	-- Failed group lookups fail closed; the next rank/VIP refresh can retry.
+	local ok, groupRank = false, 0
+	if CONFIG.GroupId > 0 then
+		ok, groupRank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
+	end
+	vipPass[userId] = ok and typeof(groupRank) == "number" and groupRank > 0
+	-- VVIP and Tiki Tide are awarded through the owner's free rank-up system.
+	vvipPass[userId] = false
+	tikiTidePass[userId] = false
 end
 
 ControllerFunctions.requestLimitFor = function(player: Player): number
@@ -2350,6 +2357,7 @@ ControllerFunctions.defaultProfile = function(): Profile
 		unlockedSlots = 1,
 		activeSlot = 1,
 		showCustomTitle = true,
+		rewardedPassTier = 0,
 		glowsticks = 0,
 		skipTokens = 0,
 		neonTrail = false,
@@ -2409,6 +2417,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 		profile.claimedToday = data.claimedToday == true
 		profile.equippedTag = if typeof(data.equippedTag) == "string" and TAGS[data.equippedTag] == true then data.equippedTag else nil
 		profile.showCustomTitle = data.showCustomTitle ~= false
+		profile.rewardedPassTier = math.clamp(math.floor(tonumber(data.rewardedPassTier) or 0), 0, 3)
 		profile.glowsticks = math.max(0, math.floor(tonumber(data.glowsticks) or 0))
 		profile.skipTokens = math.max(0, math.floor(tonumber(data.skipTokens) or 0))
 		profile.neonTrail = data.neonTrail == true
@@ -2562,6 +2571,7 @@ ControllerFunctions.saveProfile = function(player: Player)
 		unlockedSlots = profile.unlockedSlots,
 		activeSlot = profile.activeSlot,
 		showCustomTitle = profile.showCustomTitle,
+		rewardedPassTier = profile.rewardedPassTier,
 		glowsticks = profile.glowsticks,
 		skipTokens = profile.skipTokens,
 		neonTrail = profile.neonTrail,
@@ -3713,7 +3723,9 @@ ControllerFunctions.snapshotFor = function(player: Player)
 				displayName = other.DisplayName,
 				rank = ControllerFunctions.getRank(other),
 				vip = ControllerFunctions.isVip(other),
-				tempVip = tempVip[other.UserId] == true,
+				passTier = ControllerFunctions.passTier(other),
+				rewardedPassTier = if profiles[other.UserId] then profiles[other.UserId].rewardedPassTier else 0,
+				groupMember = vipPass[other.UserId] == true,
 				blocked = blockedUsers[other.UserId] == true,
 				requests = requestCounts[other.UserId] or 0,
 				canMod = ControllerFunctions.canModerate(player, other),
@@ -5398,14 +5410,24 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		return
 	end
 
-	if action == "ModSetVip" then
-		if not ControllerFunctions.isAdmin(player) then return end
+	if action == "ModSetPassTier" then
+		-- Only the actual configured OWNER may issue free membership rank-up rewards.
+		if ControllerFunctions.getLevel(player) < 4 then return end
 		local target = ControllerFunctions.findTarget(player, payload.userId)
-		if not target or typeof(payload.vip) ~= "boolean" then return end
-		tempVip[target.UserId] = if payload.vip then true else nil
+		local requestedTier = payload.passTier
+		if not target or typeof(requestedTier) ~= "number" or requestedTier % 1 ~= 0
+			or requestedTier < 0 or requestedTier > 3 then return end
+		local profile = profiles[target.UserId]
+		if not profile then
+			notify(player, "That player's profile is not ready; no membership reward was changed.", "warn")
+			return
+		end
+		profile.rewardedPassTier = requestedTier
 		ControllerFunctions.applyVipAttribute(target)
-		notify(target, if payload.vip then "You were given VIP by staff!" else "Your staff-granted VIP was removed.", "info")
-		notify(player, (if payload.vip then "VIP granted to " else "VIP removed from ") .. target.DisplayName .. ".", "ok")
+		ControllerFunctions.scheduleProfileSave(target)
+		local tierName = ({"GUEST", "VIP", "VVIP", "TIKI TIDE"})[requestedTier + 1]
+		notify(target, if requestedTier > 0 then "Your free membership rank was raised to " .. tierName .. "!" else "Your owner-awarded membership rank was reset.", "info")
+		notify(player, target.DisplayName .. " membership reward set to " .. tierName .. ".", "ok")
 		publishState(nil)
 		return
 	end
@@ -6966,7 +6988,6 @@ Players.PlayerRemoving:Connect(function(player)
 	vipPass[userId] = nil
 	vvipPass[userId] = nil
 	tikiTidePass[userId] = nil
-	tempVip[userId] = nil
 	blockedUsers[userId] = nil
 	local voteManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.SkipVote
 	if voteManager then
