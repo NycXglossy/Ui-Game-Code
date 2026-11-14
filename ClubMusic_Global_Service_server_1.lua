@@ -470,6 +470,15 @@ bindFunction("IsGloballyBanned", function(userId: any)
 	return data.globalBan == true, true, data.reason
 end)
 
+-- Join-time moderation uses one authoritative durable read for both ban and
+-- request-block state. This avoids two sequential DataStore lookups per player.
+bindFunction("GetModerationState", function(userId: any)
+	if not SERVICE_ENABLED then return false, false end
+	local data = getModeration(userId)
+	if data.lookupFailed then return false, false end
+	return true, data.globalBan == true, data.requestBlocked == true, data.reason
+end)
+
 bindFunction("SetGlobalBan", function(userId: any, banned: any, actorUserId: any, reason: any)
 	if not SERVICE_ENABLED or typeof(banned) ~= "boolean" or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
 	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
