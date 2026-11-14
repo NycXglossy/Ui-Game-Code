@@ -3035,7 +3035,11 @@ ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
 			and restartRevision <= previousRestartRevision
 			and typeof(current) == "table" and current.id == pendingPreparedEntry.id
 		if preservePreparedCrossfade then ControllerFunctions.pendingCrossfadeGlobalCommitted = true end
-		if (nowPlaying.trackId ~= current.trackId or globalAudioSyncPending) and not preservePreparedCrossfade then
+		-- A pending audio seek is not a track change. Re-applying setNowPlaying
+		-- while waiting for a ready audio source resets elapsed to zero on every
+		-- snapshot, making an almost-finished song restart before snapping forward.
+		-- Only a genuinely new authoritative track may initialize playback here.
+		if nowPlaying.trackId ~= current.trackId and not preservePreparedCrossfade then
 			globalAudioSyncPending = true
 			local entry: QueueEntry = {
 				id = tostring(current.id), trackId = current.trackId, title = tostring(current.title),
