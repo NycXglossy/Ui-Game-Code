@@ -71,6 +71,9 @@ local SHOP = {
 	{name="Custom Glowsticks",desc="Dual-wield glowsticks synced to stage lights.",price=75,rarity="Common",kind="Product",id=0},
 	{name="Tiki Mask",desc="Hand-carved mask with glowing ember eyes.",price=250,rarity="Rare",kind="Product",id=0},
 	{name="Neon Aura Effect",desc="A magenta-cyan aura that pulses on every beat.",price=600,rarity="Epic",kind="Product",id=0},
+	{name="VIP Backstage Pass",desc="Backstage lounge, priority song requests, 4 queue slots and 3s request cooldown.",price=1500,rarity="Legendary",kind="GamePass",passKey="vip",id=0},
+	{name="VVIP Ocean Crown Pass",desc="Everything in VIP plus 6 queue slots, 2s cooldown and higher request priority.",price=2500,rarity="Mythic",kind="GamePass",passKey="vvip",id=0},
+	{name="Tiki Tide Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="tikiTide",id=0},
 	{name="Neon Flower Lei",desc="Glowing hibiscus lei with petal trails.",price=150,rarity="Rare",kind="Product",id=0},
 	{name="LED Party Shades",desc="Visualizer lenses that react to the current track.",price=320,rarity="Epic",kind="Product",id=0},
 }
@@ -4477,6 +4480,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local perks: any = if typeof(state.vipPerks) == "table" then state.vipPerks else {}
 		local passPerks: any = if typeof(state.passPerks) == "table" then state.passPerks else {}
 		local tier = tonumber(state.passTier) or 0
+		local vipId = tonumber(state.vipGamePassId) or 0
+		local vvipId = tonumber(state.vvipGamePassId) or 0
+		local tikiTidePassId = tonumber(state.tikiTideGamePassId) or 0
 		local passCard = card(244)
 		label(passCard, "ISLAND MEMBERSHIP", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.Gold, 14, true)
 		label(passCard, "Current tier: " .. nz(state.passName, if tier >= 3 then "TIKI TIDE" elseif tier == 2 then "VVIP" elseif tier == 1 then "VIP" else "GUEST"),
@@ -4500,7 +4506,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			UDim2.fromOffset(12, 110), UDim2.new(1, -24, 0, 22), C.Gold, 10, true)
 		label(passCard, string.format("Guest baseline: %d slots and %ds cooldown. Higher passes include lower-tier benefits.",
 			baseSlots, baseCooldown), UDim2.fromOffset(12, 136), UDim2.new(1, -24, 0, 28), C.Muted, 9, false)
-		local accessNote = label(passCard, "GROUP MEMBERS receive VIP. The OWNER can award free VVIP and Tiki Tide rank-ups from Moderation.",
+		local accessNote = label(passCard, "GROUP MEMBERS receive VIP automatically. Paid VIP, VVIP and Tiki Tide passes remain available; the OWNER can also award free tier upgrades from Moderation.",
 			UDim2.fromOffset(12, 180), UDim2.new(1, -24, 0, 42), C.Cyan, 9, false)
 		accessNote.TextWrapped = true
 	end
