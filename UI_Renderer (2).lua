@@ -182,7 +182,8 @@ local function detectDevice(viewport: Vector2): string
 end
 
 -- Developer Product IDs for the two paid title slots (0 = not configured; the server can override via state).
-local TITLE_SLOT_PRODUCTS: {[number]: number} = { [2] = 0, [3] = 0 }
+local TITLE_SLOT_PRODUCTS: {[number]: number} = { [2] = 3731392651, [3] = 3731394060 }
+local XP_BOOST_PRODUCTS: {[string]: number} = { twoX = 3731386650, fourX = 3731387153 }
 local TITLE_SLOT_PRICES: {[number]: number} = { [2] = 99, [3] = 199 }
 
 local TITLE_FIXED = {
@@ -3688,9 +3689,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			else "No global boost is currently active.",
 			UDim2.fromOffset(12,36), UDim2.new(1,-24,0,18), C.Muted, 10, false)
 
-		local ids: any = if typeof(state.xpBoostProductIds) == "table" then state.xpBoostProductIds else {}
-		local twoId = tonumber(ids.twoX) or 0
-		local fourId = tonumber(ids.fourX) or 0
+		-- Use verified Developer Product IDs locally; stale replicated state
+		-- must not redirect a purchase prompt to a placeholder/foreign product.
+		local twoId = XP_BOOST_PRODUCTS.twoX
+		local fourId = XP_BOOST_PRODUCTS.fourX
 		local twoCard = card(86)
 		label(twoCard, "2x XP • 15 MINUTES", UDim2.fromOffset(12,8), UDim2.new(1,-120,0,22), C.Cyan, 12, true)
 		label(twoCard, "Adds 15 minutes to the shared 2x timer.", UDim2.fromOffset(12,34), UDim2.new(1,-120,0,30), C.Muted, 9, false)
@@ -3861,7 +3863,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			return
 		end
 		local products: any = if typeof(ts.products) == "table" then ts.products else {}
-		local productId = tonumber(products[slot] or products[tostring(slot)]) or TITLE_SLOT_PRODUCTS[slot] or 0
+		local productId = TITLE_SLOT_PRODUCTS[slot] or 0
 		if productId <= 0 then
 			notify("Configure this slot's Developer Product ID first.", C.Red)
 			return
