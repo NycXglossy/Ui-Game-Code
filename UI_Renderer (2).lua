@@ -3521,6 +3521,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		label(summary, "LIVE PLAYER ROSTER", UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 18), C.Gold, 11, true)
 		label(summary, string.format("%d online   •   %d blocked   •   %d manageable", #roster, blockedCount, manageable), UDim2.fromOffset(14, 29), UDim2.new(1, -28, 0, 17), C.White, 11, false)
+		local ownerAwardEligible = false
+		for _, entry: any in ipairs(roster) do
+			if entry.canAwardPassTier == true then ownerAwardEligible = true; break end
+		end
+		if level >= 4 and not ownerAwardEligible then
+			local testHint = card(48)
+			label(testHint, "OWNER AWARD TEST: Start a 2-player Studio server. Award buttons are hidden on your own row; they appear on other players. StudioStaff is enabled for Studio testing.", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 1, -10), C.Cyan, 9, false)
+		end
 		local search = make("TextBox", {Name="RosterSearch", Position=UDim2.fromOffset(12,52), Size=UDim2.new(1,-24,0,24), BackgroundColor3=Color3.fromRGB(13,16,24), TextColor3=C.White, PlaceholderColor3=C.Muted, PlaceholderText="Search display name, username or ID", Text="", TextSize=10, Font=FONT, ClearTextOnFocus=false, TextXAlignment=Enum.TextXAlignment.Left}, summary)
 		corner(search, 8)
 		local searchStroke = stroke(search, C.SurfaceLight, 1)
