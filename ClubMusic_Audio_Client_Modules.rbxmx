@@ -33,14 +33,30 @@ end
 
 function Preferences:SetVolume(value: number)
 	if self.destroyed or not finite(value) then return false, "Invalid local volume." end
+	local previous = self.volume
 	self.volume = math.clamp(value, 0, 1)
-	return self:Apply()
+	local applied, message = self:Apply()
+	if not applied then
+		self.volume = previous
+		-- Best-effort rollback keeps the client output aligned with the saved
+		-- preference if a local AudioPlayer graph rejects the new gain.
+		self:Apply()
+		return false, message
+	end
+	return true, nil
 end
 
 function Preferences:SetMuted(value: boolean)
 	if self.destroyed or typeof(value) ~= "boolean" then return false, "Invalid mute setting." end
+	local previous = self.muted
 	self.muted = value
-	return self:Apply()
+	local applied, message = self:Apply()
+	if not applied then
+		self.muted = previous
+		self:Apply()
+		return false, message
+	end
+	return true, nil
 end
 
 function Preferences:SetProfile(value: string)
@@ -68,15 +84,23 @@ function Preferences:SetProfile(value: string)
 end
 
 function Preferences:Apply()
-	if self.destroyed then return false, "Player preferences are unavailable." end
+	if self.destroyed or typeof(self.context) ~= "table"
+		or typeof(self.context.SetLocalGain) ~= "function" then
+		return false, "Player preferences are unavailable."
+	end
 	local gain = if self.muted then 0 else self.volume
-	local ok, result = pcall(self.context.SetLocalGain, gain)
+	if not finite(gain) then return false, "Invalid local gain." end
+	local ok, result = pcall(self.context.SetLocalGain, math.clamp(gain, 0, 1))
 	if not ok or result == false then return false, "Local volume could not be applied." end
 	return true, nil
 end
 
 function Preferences:GetState()
-	return { volume = self.volume, muted = self.muted, profile = self.profile }
+	return {
+		volume = math.clamp(self.volume, 0, 1),
+		muted = self.muted == true,
+		profile = self.profile,
+	}
 end
 
 function Preferences:Cleanup()
