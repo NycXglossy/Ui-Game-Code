@@ -14,14 +14,16 @@ local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Send bounded prompt outcomes to server-side staff diagnostics. These are
--- client-reported telemetry only; Developer Product receipts remain authoritative.
+-- Send bounded prompt requests/outcomes to server-side staff diagnostics.
+-- Both are client telemetry only; Developer Product receipts remain authoritative.
+local purchaseDiagnosticRemote: RemoteEvent? = nil
 if not MarketplaceService:GetAttribute("ClubMusicPurchaseDiagnosticsConnected") then
 	MarketplaceService:SetAttribute("ClubMusicPurchaseDiagnosticsConnected", true)
 	local purchaseRemotes = ReplicatedStorage:WaitForChild("ClubMusicRemotes", 15)
-	local purchaseDiagnosticRemote = if purchaseRemotes then purchaseRemotes:FindFirstChild("PurchaseDiagnostic") else nil
+	local remote = if purchaseRemotes then purchaseRemotes:FindFirstChild("PurchaseDiagnostic") else nil
+	purchaseDiagnosticRemote = if remote and remote:IsA("RemoteEvent") then remote else nil
 	local function reportPrompt(promptType: string, itemId: number, wasPurchased: boolean)
-		if purchaseDiagnosticRemote and purchaseDiagnosticRemote:IsA("RemoteEvent") then
+		if purchaseDiagnosticRemote then
 			purchaseDiagnosticRemote:FireServer(promptType, itemId, wasPurchased)
 		end
 	end
@@ -39,6 +41,12 @@ if not MarketplaceService:GetAttribute("ClubMusicPurchaseDiagnosticsConnected") 
 			reportPrompt("GamePass", passId, wasPurchased)
 		end
 	end)
+end
+
+local function reportPromptRequest(promptType: string, itemId: number, source: string)
+	if purchaseDiagnosticRemote then
+		purchaseDiagnosticRemote:FireServer(promptType, itemId, "PromptRequested", source)
+	end
 end
 
 local Renderer = {}
@@ -3667,6 +3675,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		label(twoCard, "Adds 15 minutes to the shared 2x timer.", UDim2.fromOffset(12,34), UDim2.new(1,-120,0,30), C.Muted, 9, false)
 		actionButton(twoCard, "BUY", UDim2.new(1,-104,0.5,-16), UDim2.fromOffset(92,32), function()
 			if twoId <= 0 then notify("Configure CONFIG.XPBoost2xProductId first.", C.Red); return end
+			reportPromptRequest("DeveloperProduct", twoId, "XPBoost2x")
 			MarketplaceService:PromptProductPurchase(player, twoId)
 		end, C.Cyan)
 		local fourCard = card(86)
@@ -3674,6 +3683,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		label(fourCard, "Adds 30 minutes to the shared 4x timer.", UDim2.fromOffset(12,34), UDim2.new(1,-120,0,30), C.Muted, 9, false)
 		actionButton(fourCard, "BUY", UDim2.new(1,-104,0.5,-16), UDim2.fromOffset(92,32), function()
 			if fourId <= 0 then notify("Configure CONFIG.XPBoost4xProductId first.", C.Red); return end
+			reportPromptRequest("DeveloperProduct", fourId, "XPBoost4x")
 			MarketplaceService:PromptProductPurchase(player, fourId)
 		end, C.Gold)
 		local note = card(54)
@@ -3698,7 +3708,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				actionButton(donationCard, "TIP", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
 					local productId = tonumber(item.productId) or 0
 					if productId <= 0 then notify("Configure this Developer Product ID first.", C.Red); return end
-					MarketplaceService:PromptProductPurchase(player, productId)
+					reportPromptRequest("DeveloperProduct", productId, "DonationTip")
+					reportPromptRequest("DeveloperProduct", productId, "TitleSlot:" .. tostring(slot))
+		MarketplaceService:PromptProductPurchase(player, productId)
 				end, C.Magenta)
 			end
 		end
@@ -3727,8 +3739,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
 					if itemId <= 0 then notify("This item is not configured for purchase yet.", C.Red); return end
 					if item.kind == "GamePass" then
+						reportPromptRequest("GamePass", itemId, "IslandShopGamePass:" .. item.name)
 						MarketplaceService:PromptGamePassPurchase(player, itemId)
 					else
+						reportPromptRequest("DeveloperProduct", itemId, "IslandShopProduct:" .. item.name)
 						MarketplaceService:PromptProductPurchase(player, itemId)
 					end
 				end, C.Purple)
