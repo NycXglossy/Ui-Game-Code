@@ -133,9 +133,16 @@ local SHOP = {
 	{name="Neon Flower Lei",desc="Glowing hibiscus lei with petal trails.",price=150,rarity="Rare",kind="Product",id=0},
 	{name="LED Party Shades",desc="Visualizer lenses that react to the current track.",price=320,rarity="Epic",kind="Product",id=0},
 }
--- Tip Jar tiers are intentionally empty until real Developer Product IDs are configured.
--- Keeping this table defined prevents an unconfigured shop from breaking menu rendering.
-local DONATIONS: {any} = {}
+-- Donation products are configured with live Creator Dashboard Developer Product IDs.
+local DONATIONS: {any} = {
+	{ label = "Coconut", perk = "A little tropical love", amount = 10, productId = 3731488823 },
+	{ label = "Pineapple", perk = "A burst of island sunshine", amount = 50, productId = 3731489572 },
+	{ label = "Tiki Torch", perk = "Light up the island", amount = 100, productId = 3731490154 },
+	{ label = "Volcano", perk = "Unleash the island's fiery spirit", amount = 500, productId = 3731490513 },
+	{ label = "Island Legend", perk = "A legendary show of support", amount = 1000, productId = 3731490937 },
+	{ label = "Island Royalty", perk = "A royal contribution to paradise", amount = 5000, productId = 3731491257 },
+	{ label = "Sultan's Legacy", perk = "The ultimate island contribution", amount = 10000, productId = 3731491679 },
+}
 local REWARDS = {
 	{day=1,label="50 Coins"},{day=2,label="2x Glowsticks"},{day=3,label="100 Tickets"},
 	{day=4,label="Song Skip Token"},{day=5,label="250 Coins"},{day=6,label="Neon Trail"},{day=7,label="Exclusive Title Tag"},
