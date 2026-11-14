@@ -572,7 +572,7 @@ end
 local ALLOWED_ACTIONS: {[string]: boolean} = {
 	ReloadSong = true, ToggleFavorite = true, RequestTrack = true, VoteSkip = true,
 	RequestAudioAsset = true, CatalogAddAudio = true, CatalogRemoveTrack = true, DJSkip = true, DJToggleLock = true, DJClearQueue = true,
-	DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ModBlockUser = true, ModSetVip = true,
+	DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ModBlockUser = true, ModSetPassTier = true,
 	ModPurgeUser = true, ClaimDailyReward = true, EquipTitleTag = true, BuyTitleTag = true,
 	SaveTitleSlot = true, SetTitleVisible = true, SelectTitleSlot = true,
 	ClearTitleSlot = true,
@@ -584,7 +584,7 @@ local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	SaveCustomTitle = true,
 	-- Wrappers that UI_Network exposes; act() prefers these over raw Network.Send.
 	ReloadSong = true, DJClearQueue = true, DJToggleLock = true,
-	ModBlockUser = true, ModSetVip = true, ModPurgeUser = true,
+	ModBlockUser = true, ModSetPassTier = true, ModPurgeUser = true,
 	SelectTitleSlot = true, ClearTitleSlot = true, SetTitleVisible = true,
 }
 local ACTION_MIN_INTERVAL: {[string]: number} = {
@@ -3533,30 +3533,58 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local rosterCards: {Frame} = {}
 		for _, p: any in ipairs(roster) do
 			local showButtons = level >= 2 and p.canMod == true
-			local pcard = card(if showButtons then 112 else 68)
+			local isOwner = level >= 4 and p.canMod == true
+			local pcard = card(if isOwner then 146 elseif showButtons then 112 else 68)
 			table.insert(rosterCards, pcard)
 			local displayName = nz(p.displayName, "Player")
 			local username = nz(p.name, "?")
 			local userId = tonumber(p.userId) or 0
+			local currentTier = math.clamp(math.floor(tonumber(p.passTier) or 0), 0, 3)
+			local rewardedTier = math.clamp(math.floor(tonumber(p.rewardedPassTier) or 0), 0, 3)
+			local tierNames = {"GUEST", "VIP", "VVIP", "TIKI TIDE"}
 			pcard:SetAttribute("RosterSearchKey", string.lower(displayName .. " " .. username .. " " .. tostring(userId)))
 			label(pcard, displayName, UDim2.fromOffset(13,7), UDim2.new(1,-26,0,20), C.White, 13, true)
 			label(pcard, "@" .. username .. "   •   ID " .. tostring(userId), UDim2.fromOffset(13,27), UDim2.new(1,-26,0,15), C.Muted, 9, false)
-			local bits = {nz(p.rank, "GUEST")}
-			if p.vip == true then table.insert(bits, if p.tempVip == true then "TEMP VIP" else "VIP") end
+			local bits = {nz(p.rank, "GUEST"), tierNames[currentTier + 1]}
+			if p.groupMember == true then table.insert(bits, "GROUP MEMBER") end
+			if rewardedTier > 0 then table.insert(bits, "OWNER REWARD") end
 			table.insert(bits, tostring(tonumber(p.requests) or 0) .. " queued")
 			if p.blocked == true then table.insert(bits, "REQUESTS BLOCKED") end
 			label(pcard, table.concat(bits, "   •   "), UDim2.fromOffset(13,45), UDim2.new(1,-26,0,17), if p.blocked == true then C.Red else C.Gold, 9, false)
 			if showButtons then
 				local isBlocked = p.blocked == true
-				local isTempVip = p.tempVip == true
 				local buttonY = 76
-				local buttonWidth = UDim2.new(1/3,-16,0,27)
-				local blockButton = actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0,12,0,buttonY), buttonWidth, function() act("ModBlockUser", {userId=userId, blocked=not isBlocked}, userId, not isBlocked) end, if isBlocked then C.Green else C.Red)
-				local vipButton = actionButton(pcard, if isTempVip then "REMOVE VIP" else "GIVE VIP", UDim2.new(1/3,6,0,buttonY), buttonWidth, function() act("ModSetVip", {userId=userId, vip=not isTempVip}, userId, not isTempVip) end, C.Purple)
-				local purgeButton = actionButton(pcard, "PURGE QUEUE", UDim2.new(2/3,0,0,buttonY), buttonWidth, function() act("ModPurgeUser", {userId=userId}, userId) end, C.Orange)
-				blockButton.TextSize = 9
-				vipButton.TextSize = 9
-				purgeButton.TextSize = 9
+				if isOwner then
+					local baseTier = if p.groupMember == true then 1 else 0
+					local nextTier = math.clamp(math.max(rewardedTier, baseTier) + 1, 1, 3)
+					local nextName = tierNames[nextTier + 1]
+					local blockButton = actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0,12,0,buttonY), UDim2.new(1/3,-16,0,27), function()
+						act("ModBlockUser", {userId=userId, blocked=not isBlocked}, userId, not isBlocked)
+					end, if isBlocked then C.Green else C.Red)
+					local rankButton = actionButton(pcard, if nextTier > currentTier then "RANK UP → " .. nextName else "MAX TIER", UDim2.new(1/3,6,0,buttonY), UDim2.new(1/3,-16,0,27), function()
+						if nextTier <= currentTier then return end
+						act("ModSetPassTier", {userId=userId, passTier=nextTier}, userId, nextTier)
+					end, C.Purple)
+					local purgeButton = actionButton(pcard, "PURGE", UDim2.new(2/3,0,0,buttonY), UDim2.new(1/3,-12,0,27), function()
+						act("ModPurgeUser", {userId=userId}, userId)
+					end, C.Orange)
+					blockButton.TextSize = 9; rankButton.TextSize = 9; purgeButton.TextSize = 9
+					if rewardedTier > 0 then
+						local resetButton = actionButton(pcard, "RESET OWNER REWARD  •  KEEP GROUP VIP", UDim2.fromOffset(12,108), UDim2.new(1,-24,0,27), function()
+							act("ModSetPassTier", {userId=userId, passTier=0}, userId, 0)
+						end, C.SurfaceLight)
+						resetButton.TextSize = 9
+					end
+				else
+					local buttonWidth = UDim2.new(0.5,-16,0,27)
+					local blockButton = actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0,12,0,buttonY), buttonWidth, function()
+						act("ModBlockUser", {userId=userId, blocked=not isBlocked}, userId, not isBlocked)
+					end, if isBlocked then C.Green else C.Red)
+					local purgeButton = actionButton(pcard, "PURGE QUEUE", UDim2.new(0.5,4,0,buttonY), buttonWidth, function()
+						act("ModPurgeUser", {userId=userId}, userId)
+					end, C.Orange)
+					blockButton.TextSize = 9; purgeButton.TextSize = 9
+				end
 			end
 		end
 		search:GetPropertyChangedSignal("Text"):Connect(function()
@@ -4478,21 +4506,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			UDim2.fromOffset(12, 110), UDim2.new(1, -24, 0, 22), C.Gold, 10, true)
 		label(passCard, string.format("Guest baseline: %d slots and %ds cooldown. Higher passes include lower-tier benefits.",
 			baseSlots, baseCooldown), UDim2.fromOffset(12, 136), UDim2.new(1, -24, 0, 28), C.Muted, 9, false)
-		if tier < 1 and vipId > 0 then
-			actionButton(passCard, "GET VIP", UDim2.new(0, 12, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
-				MarketplaceService:PromptGamePassPurchase(player, vipId)
-			end, C.Magenta)
-		end
-		if tier < 2 and vvipId > 0 then
-			actionButton(passCard, "GET VVIP", UDim2.new(0.345, 0, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
-				MarketplaceService:PromptGamePassPurchase(player, vvipId)
-			end, C.Cyan)
-		end
-		if tier < 3 and tikiTidePassId > 0 then
-			actionButton(passCard, "GET TIKI TIDE", UDim2.new(0.69, 0, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
-				MarketplaceService:PromptGamePassPurchase(player, tikiTidePassId)
-			end, C.Gold)
-		end
+		local accessNote = label(passCard, "GROUP MEMBERS receive VIP. The OWNER can award free VVIP and Tiki Tide rank-ups from Moderation.",
+			UDim2.fromOffset(12, 180), UDim2.new(1, -24, 0, 42), C.Cyan, 9, false)
+		accessNote.TextWrapped = true
 	end
 
 	local renderers: {[string]: () -> ()} = {
