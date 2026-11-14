@@ -3532,8 +3532,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		local rosterCards: {Frame} = {}
 		for _, p: any in ipairs(roster) do
-			local showButtons = level >= 2 and p.canMod == true
-			local isOwner = level >= 4 and p.canMod == true
+			local canAwardPassTier = p.canAwardPassTier == true
+			local showButtons = (level >= 2 and p.canMod == true) or canAwardPassTier
+			local isOwner = canAwardPassTier
 			local pcard = card(if isOwner then 146 elseif showButtons then 112 else 68)
 			table.insert(rosterCards, pcard)
 			local displayName = nz(p.displayName, "Player")
