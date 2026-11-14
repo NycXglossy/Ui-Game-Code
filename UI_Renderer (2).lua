@@ -4898,22 +4898,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- A closed menu is rendered from the latest state when opened; rebuilding
 		-- hidden mobile content only wastes frames and can expose partial redraws.
 		if not expanded then return end
-		-- Desktop snapshots also carry the continuously advancing playback
-		-- clock. Avoid rebuilding the visible laptop/desktop tab tree when only
-		-- nowPlaying.elapsed changed; the HUD/progress display already interpolates
-		-- that value locally. Meaningful state changes still refresh the page.
-		if currentDevice ~= "Mobile" and not mobileRenderStateChanged(previousState, cleanState) then
-			return
-		end
-		if currentDevice == "Mobile" then
-			-- Keep the mounted mobile tab tree stable while the menu is open.
-			-- Even coalesced snapshot-driven clear/rebuild cycles can produce a
-			-- brief visible flash on touch devices. State and the compact HUD are
-			-- still updated above; the active page refreshes on the next tab
-			-- selection or when the menu is reopened.
-			return
-		end
-		renderTab()
+		-- Keep the mounted page tree stable on every device while the menu is
+		-- open. Snapshot-driven clear/rebuild cycles can flash on desktop and
+		-- laptop too, especially when several server fields update together.
+		-- The authoritative state and HUD are updated above; the page is rebuilt
+		-- on the next tab selection or when the menu is reopened.
+		return
 	end
 
 	applyStateFn = applyState
