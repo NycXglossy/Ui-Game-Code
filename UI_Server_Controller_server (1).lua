@@ -181,6 +181,60 @@ local stateFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction",
 local catalogFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
 local playlistFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
 
+-- Bounded, server-local purchase telemetry. Client prompt outcomes are explicitly
+-- marked as unverified telemetry; only ProcessReceipt entries are server-authoritative.
+local purchaseDiagnosticRemote = ControllerFunctions.getOrCreate(remotes, "RemoteEvent", "PurchaseDiagnostic") :: RemoteEvent
+local purchaseDiagnosticEntries: {any} = {}
+local purchaseDiagnosticRate: {[number]: {windowAt: number, count: number}} = {}
+local PURCHASE_DIAGNOSTIC_CAPACITY = 30
+local function recordPurchaseDiagnostic(source: string, userId: number, itemId: number, outcome: string, detail: string?)
+	table.insert(purchaseDiagnosticEntries, {
+		at = os.time(),
+		source = source,
+		userId = userId,
+		itemId = itemId,
+		outcome = string.sub(outcome, 1, 48),
+		detail = string.sub(tostring(detail or ""), 1, 140),
+	})
+	while #purchaseDiagnosticEntries > PURCHASE_DIAGNOSTIC_CAPACITY do
+		table.remove(purchaseDiagnosticEntries, 1)
+	end
+end
+
+local function isConfiguredPurchaseId(itemId: number): boolean
+	if itemId == CONFIG.VipGamePassId or itemId == CONFIG.VvipGamePassId or itemId == CONFIG.TikiTidePassId
+		or itemId == CONFIG.XPBoost2xProductId or itemId == CONFIG.XPBoost4xProductId then
+		return true
+	end
+	for _, productId in pairs(CONFIG.TitleSlotProductIds) do
+		if itemId == productId then return true end
+	end
+	return false
+end
+
+purchaseDiagnosticRemote.OnServerEvent:Connect(function(player: Player, promptType: any, itemId: any, wasPurchased: any)
+	if typeof(player) ~= "Instance" or player.Parent ~= Players
+		or (promptType ~= "GamePass" and promptType ~= "DeveloperProduct")
+		or typeof(itemId) ~= "number" or itemId <= 0 or itemId % 1 ~= 0
+		or typeof(wasPurchased) ~= "boolean" or not isConfiguredPurchaseId(itemId) then
+		return
+	end
+	local now = os.clock()
+	local rate = purchaseDiagnosticRate[player.UserId]
+	if not rate or now - rate.windowAt >= 60 then
+		rate = {windowAt = now, count = 0}
+		purchaseDiagnosticRate[player.UserId] = rate
+	end
+	if rate.count >= 8 then return end
+	rate.count += 1
+	recordPurchaseDiagnostic("ClientPromptUnverified", player.UserId, itemId,
+		if wasPurchased then "PromptReportedPurchased" else "PromptClosedWithoutPurchase",
+		promptType .. " prompt callback; client telemetry is not proof of a completed transaction")
+end)
+Players.PlayerRemoving:Connect(function(player: Player)
+	purchaseDiagnosticRate[player.UserId] = nil
+end)
+
 local ServerStorage = game:GetService("ServerStorage")
 -- Keep the established lowercase alias for existing storage-module loaders.
 local serverStorage = ServerStorage
@@ -4220,6 +4274,9 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	local receiptId = tostring(receiptInfo.PurchaseId)
 	print(string.format("[ClubMusic][PurchaseServer] ProcessReceiptReached | UserId=%s | ProductId=%s | PurchaseId=%s | PlaceId=%d | GameId=%d",
 		tostring(userId), tostring(productId), string.sub(receiptId, 1, 32), game.PlaceId, game.GameId))
+	if typeof(userId) == "number" and typeof(productId) == "number" then
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
+	end
 	if typeof(userId) ~= "number" or typeof(productId) ~= "number"
 		or receiptId == "" or #receiptId > 128 then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
@@ -4231,6 +4288,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	local productData = PRODUCT_MAP[productId]
 	if not productData then
 		warn(string.format("[ClubMusic] Unregistered Developer Product ID %d (receipt %s).", productId, receiptId))
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "RejectedUnregisteredProduct", "Receipt ID is not in PRODUCT_MAP; purchase remains ungranted")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
@@ -4250,6 +4308,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 			)
 			if not activateOk or activated ~= true then
 				warn("[ClubMusic] Global XP boost activation failed; receipt will be retried.")
+				recordPurchaseDiagnostic("ServerReceipt", userId, productId, "XPBoostActivationFailed", "Global XP service rejected or failed activation; Roblox receipt will retry")
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
 			if typeof(expiry) == "number" and (effectiveMultiplier == 1 or effectiveMultiplier == 2 or effectiveMultiplier == 4) then
@@ -4268,6 +4327,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	local ok, alreadyProcessed, err = ControllerFunctions.persistReceipt(userId, receiptId, productData)
 	if not ok then
 		warn("[ClubMusic] Receipt persistence failed for " .. receiptId .. ": " .. tostring(err))
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptPersistenceFailed", tostring(err))
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	-- A receipt already in the durable ledger was granted by an earlier callback/server.
@@ -4280,6 +4340,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	if USE_STUDIO_MEMORY_PROFILES then ControllerFunctions.applyReceiptToMemory(profile, productData) end
 	receiptMemoryApplied[receiptId] = nil
 	processedReceipts[receiptId] = true
+	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Receipt persistence completed and reward application proceeded")
 	player:SetAttribute("Tickets", profile.tickets)
 	player:SetAttribute("Coins", profile.coins)
 	player:SetAttribute("Glowsticks", profile.glowsticks)
@@ -6150,6 +6211,20 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			tostring(health.recoveryState or "Unknown"), string.sub(tostring(health.detail or health.localDetail or ""), 1, 500)
 		), 1, 1100)
 	end
+	if operation == "PurchaseDiagnostics" then
+		local lines = {"Recent ClubMusic purchase events (latest server-local records):"}
+		if #purchaseDiagnosticEntries == 0 then
+			table.insert(lines, "No purchase prompt or receipt events have been recorded in this server yet.")
+		else
+			for index = math.max(1, #purchaseDiagnosticEntries - 11), #purchaseDiagnosticEntries do
+				local item = purchaseDiagnosticEntries[index]
+				table.insert(lines, string.format("%s | %s | UserId %d | ID %d | %s%s",
+					os.date("!%H:%M:%S UTC", item.at), item.source, item.userId, item.itemId,
+					item.outcome, if item.detail ~= "" then " | " .. item.detail else ""))
+			end
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1700)
+	end
 	if operation == "OperationalDiagnostics" then
 		local ok, snapshot = ControllerFunctions.adminBridgeGlobalCall("GetGlobalDiagnostics")
 		if not ok or typeof(snapshot) ~= "table" then return false, tostring(snapshot or "Diagnostic snapshot is unavailable.") end
@@ -6166,8 +6241,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(services.watchdog and services.watchdog.state or "Unavailable"),
 			"Error history: " .. tostring(snapshot.errorHistoryAvailable == true),
+			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s); use ;cmpurchases for details",
 		}
-		return true, string.sub(table.concat(lines, "\n"), 1, 1300)
+		return true, string.sub(table.concat(lines, "\n"), 1, 1500)
 	end
 	if operation == "OperationalServices" then
 		local ok, services = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
