@@ -1656,7 +1656,7 @@ if not receiptHashOk then
 	error("[ClubMusic] ClubMusic_ReceiptHash failed to load: " .. tostring(receiptHashResult))
 end
 local ReceiptHash = receiptHashResult
-local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI") or ServerStorage:WaitForChild("ClubMusicGlobalAPI", 15)
+local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 ControllerFunctions.globalInvoke = function(name: string, ...: any): any
 	-- Re-resolve on every call so the bridge recovers if its separate Script starts late.
 	if not globalApi or globalApi.Parent ~= ServerStorage or not globalApi:IsA("Folder") then
@@ -6461,30 +6461,30 @@ ControllerFunctions.onJoin = function(player: Player)
 		-- Keep requests closed until the authoritative lock can be read, then retry.
 		requestsLocked = true
 	end
-	local banCallOk, globallyBanned, banLookupOk = ControllerFunctions.globalInvoke("IsGloballyBanned", player.UserId)
-	if banCallOk and banLookupOk == true and globallyBanned == true then
-		player:Kick("You are globally banned from this experience.")
-		return
-	end
-	local blockCallOk, globallyBlocked, blockLookupOk = ControllerFunctions.globalInvoke("IsRequestBlocked", player.UserId)
-	if blockCallOk and blockLookupOk == true then
+	-- Fetch ban and request-block status together to avoid serial durable reads.
+	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked =
+		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+	if moderationCallOk and moderationLookupOk == true then
+		if globallyBanned == true then
+			player:Kick("You are globally banned from this experience.")
+			return
+		end
 		blockedUsers[player.UserId] = if globallyBlocked == true then true else nil
 	elseif globalModerationRequired then
-		-- Unknown moderation state remains restricted until a successful read.
+		-- Unknown remains restricted; a failed read never grants requests or kicks.
 		blockedUsers[player.UserId] = true
 	end
-	local retryBan = globalModerationRequired and (not globalServiceReady or not banCallOk or banLookupOk ~= true)
-	local retryBlock = globalModerationRequired and (not globalServiceReady or not blockCallOk or blockLookupOk ~= true)
+	local retryModeration = globalModerationRequired and
+		(not globalServiceReady or not moderationCallOk or moderationLookupOk ~= true)
 	local retryLock = globalModerationRequired and (not globalServiceReady or not lockCallOk or lockLookupOk ~= true or typeof(globalLock) ~= "boolean")
-	if retryBan or retryBlock then player:SetAttribute("GlobalModerationPending", true) end
-	if retryBan or retryBlock or retryLock then
+	if retryModeration then player:SetAttribute("GlobalModerationPending", true) end
+	if retryModeration or retryLock then
 		task.spawn(function()
 			local serviceResolved = globalServiceReady
-			local banResolved = not retryBan
-			local blockResolved = not retryBlock
+			local moderationResolved = not retryModeration
 			local lockResolved = not retryLock
 			local attempt = 0
-			while player.Parent == Players and not (serviceResolved and banResolved and blockResolved and lockResolved) do
+			while player.Parent == Players and not (serviceResolved and moderationResolved and lockResolved) do
 				attempt += 1
 				-- The initial join checks already ran immediately. If a backend was still
 				-- loading, retry quickly instead of imposing a five-second blind lock;
@@ -6496,20 +6496,15 @@ ControllerFunctions.onJoin = function(player: Player)
 					local callOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
 					serviceResolved = callOk and enabled == true
 				end
-				if not banResolved then
-					local callOk, banned, lookupOk = ControllerFunctions.globalInvoke("IsGloballyBanned", player.UserId)
+				if not moderationResolved then
+					local callOk, lookupOk, banned, blocked =
+						ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
 					if callOk and lookupOk == true then
-						banResolved = true
+						moderationResolved = true
 						if banned == true then
 							player:Kick("You are globally banned from this experience.")
 							return
 						end
-					end
-				end
-				if not blockResolved then
-					local callOk, blocked, lookupOk = ControllerFunctions.globalInvoke("IsRequestBlocked", player.UserId)
-					if callOk and lookupOk == true then
-						blockResolved = true
 						blockedUsers[player.UserId] = if blocked == true then true else nil
 					end
 				end
@@ -6521,7 +6516,7 @@ ControllerFunctions.onJoin = function(player: Player)
 						publishState(nil)
 					end
 				end
-				if banResolved and blockResolved and lockResolved and serviceResolved then
+				if moderationResolved and lockResolved and serviceResolved then
 					player:SetAttribute("GlobalModerationPending", false)
 					publishState(nil)
 					return
