@@ -3709,8 +3709,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					local productId = tonumber(item.productId) or 0
 					if productId <= 0 then notify("Configure this Developer Product ID first.", C.Red); return end
 					reportPromptRequest("DeveloperProduct", productId, "DonationTip")
-					reportPromptRequest("DeveloperProduct", productId, "TitleSlot:" .. tostring(slot))
-		MarketplaceService:PromptProductPurchase(player, productId)
+					MarketplaceService:PromptProductPurchase(player, productId)
 				end, C.Magenta)
 			end
 		end
@@ -3846,6 +3845,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			notify("Configure this slot's Developer Product ID first.", C.Red)
 			return
 		end
+		reportPromptRequest("DeveloperProduct", productId, "TitleSlot:" .. tostring(slot))
 		MarketplaceService:PromptProductPurchase(player, productId)
 	end
 
