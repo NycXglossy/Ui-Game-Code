@@ -105,8 +105,8 @@ local CONFIG = {
 	ProfileSaveQueueDelaySeconds = 0.25,
 	XPPerMinute = 10,
 	XPPerLevel = 100,
-	XPBoost2xProductId = 0,
-	XPBoost4xProductId = 0,
+	XPBoost2xProductId = 3731386650,
+	XPBoost4xProductId = 3731387153,
 	GlobalDataStoreBurst = 30,
 	GlobalDataStoreRefillPerSecond = 3,
 	RestrictAudioToAllowlist = false,           -- true = only IDs listed below can be requested.
