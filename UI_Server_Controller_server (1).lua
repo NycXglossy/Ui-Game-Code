@@ -43,7 +43,7 @@ local CONFIG = {
 	VvipGamePassId = 0,      -- Configure your VVIP Game Pass ID.
 	-- Tiki Tide entitlement and settings identifiers use the TikiTide naming convention.
 	TikiTidePassId = 0,-- Configure the Tiki Tide Game Pass ID.
-	VipGroupRank = 0,        -- Group rank that counts as VIP (0 = disabled; needs GroupId).
+	VipGroupRank = 0,        -- Temporarily disabled: group rank does not grant VIP.
 	VipPriority = true,      -- Pass holders receive tiered request priority.
 
 	MaxRequestsPerPlayer = 2,
@@ -2146,9 +2146,9 @@ end
 
 ControllerFunctions.passTier = function(player: Player): number
 	local userId = player.UserId
-	-- Staff receive the complete club membership tier by default. This is
-	-- derived from the server-verified staff rank, never from client attributes.
-	if ControllerFunctions.getLevel(player) >= 1 then return 3 end
+	-- Staff permissions are separate from paid membership tiers. Staff do not
+	-- automatically receive VIP/VVIP/Tiki Tide perks; grant temporary VIP explicitly
+	-- through the staff control when needed.
 	if tikiTidePass[userId] == true then return 3 end
 	if vvipPass[userId] == true then return 2 end
 	if vipPass[userId] == true or tempVip[userId] == true then return 1 end
@@ -2197,10 +2197,7 @@ ControllerFunctions.refreshVip = function(player: Player)
 	vipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VipGamePassId)
 	vvipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VvipGamePassId)
 	tikiTidePass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.TikiTidePassId)
-	if not vipPass[userId] and CONFIG.VipGroupRank > 0 and CONFIG.GroupId > 0 then
-		local ok, rank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
-		if ok and typeof(rank) == "number" and rank >= CONFIG.VipGroupRank then vipPass[userId] = true end
-	end
+	-- Group-based VIP is temporarily disabled while the membership rules are revised.
 end
 
 ControllerFunctions.requestLimitFor = function(player: Player): number
