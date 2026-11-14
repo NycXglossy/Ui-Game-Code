@@ -7042,13 +7042,16 @@ task.spawn(function()
 				then (nextEntry.soundId or CONFIG.SoundIds[nextEntry.trackId] or "") else ""
 			local validNextAsset = typeof(nextAsset) == "string" and #nextAsset <= 64
 				and string.match(nextAsset, "^rbxassetid://%d+$") ~= nil
+			-- Start preparation any time before the track ends. The coordinator itself waits
+			-- until the fade window; a strict duration-plus-one gate can miss the window
+			-- when the one-second playback clock lands exactly on its boundary.
 			-- Before preparing a shared transition, reconcile this server's queue
 			-- head and playback revision against the authoritative global snapshot.
 			-- A stale local mirror must never choose a different incoming song.
 			if globalQueueMode and crossfade and not crossfade.destroyed and not crossfade.active
 				and crossfadeAttemptedGeneration ~= currentGeneration
 				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
-				and remaining > (CONFIG.CrossfadeDurationSeconds + 1) then
+				and remaining > 0 then
 				local snapshotFresh = syncGlobalQueueSnapshot ~= nil and syncGlobalQueueSnapshot()
 				if snapshotFresh then
 					currentGeneration = playbackGeneration
@@ -7068,7 +7071,7 @@ task.spawn(function()
 			if crossfade and not crossfade.destroyed and not crossfade.active
 				and crossfadeAttemptedGeneration ~= currentGeneration
 				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
-				and remaining > (CONFIG.CrossfadeDurationSeconds + 1)
+				and remaining > 0
 				and typeof(nextEntry) == "table" and validNextAsset
 				and ControllerFunctions.getAudioSnapshot().playing == true then
 				crossfadeAttemptedGeneration = currentGeneration
