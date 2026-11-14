@@ -692,10 +692,14 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 			nextEntry = fallback
 		end
 		if not nextEntry then return false, "No valid next track is available." end
-		-- Final authoritative guard: never commit the currently playing track as
-		-- its own successor, even if a stale queue or fallback picker supplied it.
+		-- Final authoritative guards: never commit the currently playing track
+		-- as its own successor, and never accept a stale Auto DJ fallback that
+		-- another server has already played since this server built its candidate.
 		if state.current and state.current.trackId == nextEntry.trackId then
 			return false, "The next track matches the current track; refusing an immediate repeat."
+		end
+		if nextEntry.source == "auto" and recentBeforeAdvance[nextEntry.trackId] then
+			return false, "The automatic fallback track was recently played; select another track."
 		end
 		state.current = cloneEntry(nextEntry)
 		local recentTrackIds = {}
