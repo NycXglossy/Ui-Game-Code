@@ -113,7 +113,7 @@ local CONFIG = {
 	AllowedAudioAssetIds = {} :: {number},
 
 	-- Title slots: slot 1 is free, slots 2 and 3 are Developer Products. 0 = not configured.
-	TitleSlotProductIds = { [2] = 0, [3] = 0 } :: {[number]: number},
+	TitleSlotProductIds = { [2] = 3731392651, [3] = 3731394060 } :: {[number]: number},
 	TitleSlotPrices = { [2] = 99, [3] = 199 } :: {[number]: number}, -- Display only; set to match the products.
 }
 
