@@ -4403,13 +4403,17 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	local now = os.clock()
 	local userId = player.UserId
 	if not ControllerFunctions.consumeActionBudget(userId, now) then return false, "ClubMusic action rate limit reached. Try again shortly." end
-	local globalBudgetOk, globalAllowed = ControllerFunctions.globalInvoke("ConsumeActionBudget", userId, action, 1)
-	if RunService:IsStudio() then
-		if globalBudgetOk and globalAllowed == false then return false, "ClubMusic shared action budget is exhausted." end
-	else
-		-- Live servers require the global security service; never bypass aggregate
-		-- budgets because the bridge or shared MemoryStore is unavailable.
-		if not globalBudgetOk or globalAllowed ~= true then return false, "ClubMusic security budget is unavailable. Try again shortly." end
+	-- Reload is a server-local audio recovery control, not a shared mutation.
+	-- Its per-player and per-server local token buckets above already bound use;
+	-- do not let an unrelated global MemoryStore/action-budget outage disable it.
+	if action ~= "ReloadSong" then
+		local globalBudgetOk, globalAllowed = ControllerFunctions.globalInvoke("ConsumeActionBudget", userId, action, 1)
+		if RunService:IsStudio() then
+			if globalBudgetOk and globalAllowed == false then return false, "ClubMusic shared action budget is exhausted." end
+		else
+			-- Live shared actions still require the authoritative aggregate budget.
+			if not globalBudgetOk or globalAllowed ~= true then return false, "ClubMusic security budget is unavailable. Try again shortly." end
+		end
 	end
 	-- Check every cooldown before recording timestamps. A rejected action must not
 	-- consume the cross-action interval and block an unrelated command immediately after it.
