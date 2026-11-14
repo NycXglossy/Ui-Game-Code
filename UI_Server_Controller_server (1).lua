@@ -3733,6 +3733,9 @@ ControllerFunctions.snapshotFor = function(player: Player)
 				blocked = blockedUsers[other.UserId] == true,
 				requests = requestCounts[other.UserId] or 0,
 				canMod = ControllerFunctions.canModerate(player, other),
+				-- Explicit server-derived flag for the free tier award controls.
+				-- Owners may award any other player; self-awards remain prohibited.
+				canAwardPassTier = ControllerFunctions.getLevel(player) >= 4 and other.UserId ~= player.UserId,
 			})
 		end
 		snapshot.players = roster
