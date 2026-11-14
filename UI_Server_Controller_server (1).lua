@@ -6417,51 +6417,66 @@ ControllerFunctions.onJoin = function(player: Player)
 	if lockCallOk and lockLookupOk == true and typeof(globalLock) == "boolean" then
 		requestsLocked = globalLock
 	elseif globalModerationRequired then
-		-- Do not silently open requests when the authoritative global lock cannot be read.
+		-- Keep requests closed until the authoritative lock can be read, then retry.
 		requestsLocked = true
 	end
 	local banCallOk, globallyBanned, banLookupOk = ControllerFunctions.globalInvoke("IsGloballyBanned", player.UserId)
 	if banCallOk and banLookupOk == true and globallyBanned == true then
 		player:Kick("You are globally banned from this experience.")
 		return
-	elseif globalModerationRequired and (not banCallOk or banLookupOk ~= true) then
-		-- A transient moderation-store failure is not evidence that this player is
-		-- banned. Keep the player connected, restrict request actions while the
-		-- result is unknown, and retry the authoritative lookup in the background.
-		player:SetAttribute("GlobalModerationPending", true)
+	end
+	local blockCallOk, globallyBlocked, blockLookupOk = ControllerFunctions.globalInvoke("IsRequestBlocked", player.UserId)
+	if blockCallOk and blockLookupOk == true then
+		blockedUsers[player.UserId] = if globallyBlocked == true then true else nil
+	elseif globalModerationRequired then
+		-- Unknown moderation state remains restricted until a successful read.
 		blockedUsers[player.UserId] = true
+	end
+	local retryBan = globalModerationRequired and (not banCallOk or banLookupOk ~= true)
+	local retryBlock = globalModerationRequired and (not blockCallOk or blockLookupOk ~= true)
+	local retryLock = globalModerationRequired and (not lockCallOk or lockLookupOk ~= true or typeof(globalLock) ~= "boolean")
+	if retryBan or retryBlock then player:SetAttribute("GlobalModerationPending", true) end
+	if retryBan or retryBlock or retryLock then
 		task.spawn(function()
-			for attempt = 1, 6 do
+			local banResolved = not retryBan
+			local blockResolved = not retryBlock
+			local lockResolved = not retryLock
+			for attempt = 1, 12 do
 				task.wait(5)
 				if player.Parent ~= Players then return end
-				local retryCallOk, retryBanned, retryLookupOk = ControllerFunctions.globalInvoke("IsGloballyBanned", player.UserId)
-				if retryCallOk and retryLookupOk == true then
-					player:SetAttribute("GlobalModerationPending", false)
-					if retryBanned == true then
-						player:Kick("You are globally banned from this experience.")
-						return
-					end
-					local retryBlockCallOk, retryBlocked, retryBlockLookupOk = ControllerFunctions.globalInvoke("IsRequestBlocked", player.UserId)
-					if retryBlockCallOk and retryBlockLookupOk == true then
-						if retryBlocked == true then
-							blockedUsers[player.UserId] = true
-						else
-							blockedUsers[player.UserId] = nil
+				if not banResolved then
+					local callOk, banned, lookupOk = ControllerFunctions.globalInvoke("IsGloballyBanned", player.UserId)
+					if callOk and lookupOk == true then
+						banResolved = true
+						if banned == true then
+							player:Kick("You are globally banned from this experience.")
+							return
 						end
 					end
+				end
+				if not blockResolved then
+					local callOk, blocked, lookupOk = ControllerFunctions.globalInvoke("IsRequestBlocked", player.UserId)
+					if callOk and lookupOk == true then
+						blockResolved = true
+						blockedUsers[player.UserId] = if blocked == true then true else nil
+					end
+				end
+				if not lockResolved then
+					local callOk, locked, lookupOk = ControllerFunctions.globalInvoke("GetGlobalRequestLock")
+					if callOk and lookupOk == true and typeof(locked) == "boolean" then
+						lockResolved = true
+						requestsLocked = locked
+						publishState(nil)
+					end
+				end
+				if banResolved and blockResolved and lockResolved then
+					player:SetAttribute("GlobalModerationPending", false)
+					publishState(nil)
 					return
 				end
 			end
-			-- Keep request actions restricted if moderation remains unverified.
-			-- Do not convert an infrastructure outage into an automatic player kick.
+			-- Unresolved checks remain restricted; transient storage failures never kick.
 		end)
-	end
-	local blockCallOk, globallyBlocked, blockLookupOk = ControllerFunctions.globalInvoke("IsRequestBlocked", player.UserId)
-	if blockCallOk and blockLookupOk == true and globallyBlocked == true then
-		blockedUsers[player.UserId] = true
-	elseif globalModerationRequired and (not blockCallOk or blockLookupOk ~= true) then
-		-- Keep the player connected, but fail closed for the request feature.
-		blockedUsers[player.UserId] = true
 	end
 	ControllerFunctions.refreshRank(player)
 	ControllerFunctions.refreshVip(player)
