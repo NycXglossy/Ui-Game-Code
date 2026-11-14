@@ -1,6 +1,6 @@
 # ClubMusic Audio Module Installation Packages
 
-Branch: `audit/hardened-clubmusic-2026-11-08`
+Branch: `feature/sultan-settings-2026-11-10`
 
 ## Package files
 - `ClubMusic_Audio_Server_Modules.rbxmx`: five separate server ModuleScripts.
@@ -16,11 +16,13 @@ Branch: `audit/hardened-clubmusic-2026-11-08`
 7. Save a backup copy of the place before testing.
 
 ## Important
-This package installs the modules as separate ModuleScripts. It does not enable the modern shared playback backend or complete the controller/client wiring. Keep `ServerMusicSound`, `MusicGroup`, and the existing playback path unchanged. Do not require or activate crossfade, spatial routing, DJ handoffs, quality profiles, or local preferences until the controller integration and Studio/multiplayer validation are completed.
+This package installs the modules as separate ModuleScripts. On the current integration branch, the server controller discovers `ClubMusicAudioBackend` and `ClubMusicAudioCrossfadeManager` in `ServerStorage.ClubMusicAudioModules` (or directly under `ServerStorage`). When both are present, it initializes the controller-owned crossfade coordinator; automatic queued-track transitions can then use an AudioPlayer incoming deck while the established legacy Sound remains the main playback source.
 
-The server folder must stay in ServerStorage. Do not put server-only modules in ReplicatedStorage. Only `ClubMusicPlayerPreferences` is intended for client-side use.
+The main playback migration is still opt-in: `UseModernAudioBackend = false` keeps the canonical track source on the legacy Sound. Do not enable it until the full Studio validation checklist passes. The crossfade manager does not own a separate queue or playback timeline; the server controller remains authoritative for track selection, timing, and queue commits.
 
-No Roblox Studio runtime or multiplayer test is represented by this package.
+Keep `ServerMusicSound`, `MusicGroup`, and the existing playback path in place during validation. The server folder must stay in ServerStorage. Do not put server-only modules in ReplicatedStorage. Only `ClubMusicPlayerPreferences` is intended for client-side use.
+
+This package and its source files are not a substitute for Roblox Studio runtime or multiplayer testing.
 
 
 ## Alternative: Command Bar installer (when RBXMX import is unavailable)
