@@ -38,13 +38,8 @@ local CONFIG = {
 	-- Set to false to test the normal guest experience in Studio.
 	StudioStaff = true,
 
-	-- VIP: any ONE of these grants VIP. Staff are always VIP. Staff can also grant temporary VIP in the DJ booth.
-	VipGamePassId = 0,       -- Configure your VIP Game Pass ID.
-	VvipGamePassId = 0,      -- Configure your VVIP Game Pass ID.
-	-- Tiki Tide entitlement and settings identifiers use the TikiTide naming convention.
-	TikiTidePassId = 0,-- Configure the Tiki Tide Game Pass ID.
-	VipGroupRank = 0,        -- Temporarily disabled: group rank does not grant VIP.
-	VipPriority = true,      -- Pass holders receive tiered request priority.
+	-- Group membership grants VIP; the owner can award higher tiers through the free rank-up controls.
+	VipPriority = true,      -- VIP and higher membership tiers receive queue priority.
 
 	MaxRequestsPerPlayer = 2,
 	VipMaxRequestsPerPlayer = 4,
@@ -2092,8 +2087,6 @@ end
 -- Session-only moderation / VIP / vote state
 local rankCache: {[number]: {rank: string, level: number}} = {}
 local vipPass: {[number]: boolean} = {}
-local vvipPass: {[number]: boolean} = {}
-local tikiTidePass: {[number]: boolean} = {}
 local blockedUsers: {[number]: boolean} = {}
 local skipVotes: {[number]: boolean} = {}
 local requestsLocked = false
@@ -2185,14 +2178,6 @@ end
 
 -- Ownership is always checked by the server. Failed marketplace lookups fail closed
 -- for the affected pass and are retried by the periodic refresh.
-ControllerFunctions.ownsGamePass = function(userId: number, passId: number): boolean
-	if passId <= 0 then return false end
-	local ok, owns = pcall(function()
-		return MarketplaceService:UserOwnsGamePassAsync(userId, passId)
-	end)
-	return ok and owns == true
-end
-
 ControllerFunctions.refreshVip = function(player: Player)
 	local userId = player.UserId
 	-- Membership in the configured Roblox group grants the base VIP tier.
@@ -2203,8 +2188,6 @@ ControllerFunctions.refreshVip = function(player: Player)
 	end
 	vipPass[userId] = ok and typeof(groupRank) == "number" and groupRank > 0
 	-- VVIP and Tiki Tide are awarded through the owner's free rank-up system.
-	vvipPass[userId] = false
-	tikiTidePass[userId] = false
 end
 
 ControllerFunctions.requestLimitFor = function(player: Player): number
@@ -3668,9 +3651,6 @@ ControllerFunctions.snapshotFor = function(player: Player)
 			baseCooldown = CONFIG.RequestCooldownSeconds,
 			priority = CONFIG.VipPriority,
 		},
-		vipGamePassId = CONFIG.VipGamePassId,
-		vvipGamePassId = CONFIG.VvipGamePassId,
-		tikiTideGamePassId = CONFIG.TikiTidePassId,
 		passTier = ControllerFunctions.passTier(player),
 		passName = if ControllerFunctions.hasTikiTideAccess(player) then "TIKI TIDE" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
 		passPerks = {
@@ -6986,8 +6966,6 @@ Players.PlayerRemoving:Connect(function(player)
 	pendingAudio[userId] = nil
 	rankCache[userId] = nil
 	vipPass[userId] = nil
-	vvipPass[userId] = nil
-	tikiTidePass[userId] = nil
 	blockedUsers[userId] = nil
 	local voteManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.SkipVote
 	if voteManager then
@@ -7005,23 +6983,6 @@ end)
 for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(ControllerFunctions.onJoin, player)
 end
-
--- Purchasing any pass mid-session refreshes server-verified tier ownership immediately.
-MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, purchased: boolean)
-	if not purchased then return end
-	local recognized = passId == CONFIG.VipGamePassId
-		or passId == CONFIG.VvipGamePassId
-		or passId == CONFIG.TikiTidePassId
-	if not recognized then return end
-	task.spawn(function()
-		ControllerFunctions.refreshVip(player)
-		ControllerFunctions.applyVipAttribute(player)
-		ControllerFunctions.syncTitleTagUnlocks(player)
-		local tierName = if ControllerFunctions.hasTikiTideAccess(player) then "Tiki Tide" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
-		notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
-		publishState(nil)
-	end)
-end)
 
 -- Track time spent in this experience for the Party Animal collection unlock.
 -- Progress is server-owned, persisted, and never accepted from a client.
