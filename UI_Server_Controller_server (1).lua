@@ -29,7 +29,7 @@ local SoundService = game:GetService("SoundService")
 local HttpService = game:GetService("HttpService")
 
 local CONFIG = {
-	GroupId = 0, -- Set to the Roblox group ID for rank/group features.
+	GroupId = 500470662, -- Roblox group used for rank/group features.
 	RankThresholds = { Owner = 255, CoOwner = 254, Admin = 200, GroupDJ = 100 },
 
 	-- Extra staff without needing a group (treated as OWNER).
