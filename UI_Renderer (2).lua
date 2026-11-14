@@ -7,6 +7,18 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local MarketplaceService = game:GetService("MarketplaceService")
+-- Purchase outcome diagnostics only; no UI or purchase behavior is changed.
+if not MarketplaceService:GetAttribute("ClubMusicPurchaseDiagnosticsConnected") then
+	MarketplaceService:SetAttribute("ClubMusicPurchaseDiagnosticsConnected", true)
+	MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId: number, productId: number, wasPurchased: boolean)
+		print(string.format("[ClubMusic][PurchaseClient] DeveloperProductPromptFinished | UserId=%d | ProductId=%d | Purchased=%s | PlaceId=%d | GameId=%d",
+			userId, productId, tostring(wasPurchased), game.PlaceId, game.GameId))
+	end)
+	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, wasPurchased: boolean)
+		print(string.format("[ClubMusic][PurchaseClient] GamePassPromptFinished | UserId=%d | PassId=%d | Purchased=%s | PlaceId=%d | GameId=%d",
+			player.UserId, passId, tostring(wasPurchased), game.PlaceId, game.GameId))
+	end)
+end
 local GroupService = game:GetService("GroupService")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
