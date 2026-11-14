@@ -7090,6 +7090,29 @@ task.spawn(function()
 		-- Require a short stable stop, then attempt one in-place resume from the
 		-- captured playhead before allowing the queue watchdog to advance.
 		local audio = ControllerFunctions.getAudioSnapshot()
+		-- Retry a joining/newly-transitioned server's first global alignment as soon
+		-- as its legacy Sound reports loaded. Do not wait for the slower queue
+		-- snapshot poll; a failed early seek must not leave this deck behind.
+		if globalQueueMode and globalAudioSyncPending and not playbackPaused
+			and not audioReloadInProgress and audio.ready and audio.asset == nowPlaying.soundId
+			and nowPlaying.soundId ~= "" then
+			local crossfadeManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
+			if not (crossfadeManager and crossfadeManager.active == true) then
+				local targetPosition = nowPlaying.elapsed
+				if ControllerFunctions.globalPlaybackEndTime > 0 then
+					local remainingGlobal = math.max(0, ControllerFunctions.globalPlaybackEndTime
+						- game:GetService("Workspace"):GetServerTimeNow())
+					targetPosition = math.clamp(nowPlaying.duration - remainingGlobal, 0, nowPlaying.duration)
+				end
+				local alignCallOk, alignOk = pcall(function()
+					return ControllerFunctions.seekAudio(targetPosition)
+				end)
+				if alignCallOk and alignOk ~= false then
+					globalAudioSyncPending = false
+					audio = ControllerFunctions.getAudioSnapshot()
+				end
+			end
+		end
 		if playbackPaused or audioReloadInProgress or nowPlaying.trackId == "" or nowPlaying.soundId == ""
 			or audio.playing == true then
 			ControllerFunctions.stoppedAudioGeneration = -1
