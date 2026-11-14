@@ -239,7 +239,11 @@ local function getModeration(userId: number): {[string]: any}
 	-- Bound durable reads across all servers. If the shared limiter itself is
 	-- unavailable, report a lookup failure so callers can fail closed.
 	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-	if not budgetShared or not budgetAllowed then
+	-- consumeShared already applies a conservative per-server fallback when
+	-- MemoryStore is unavailable. Only an exhausted limiter should block the
+	-- durable read; a MemoryStore outage alone must not manufacture an unknown
+	-- moderation result when DataStore is still reachable.
+	if not budgetAllowed then
 		return {lookupFailed = true}
 	end
 	local ok, data = pcall(function() return moderationStore:GetAsync(key) end)
@@ -1626,9 +1630,16 @@ task.spawn(function()
 			for _, player in ipairs(Players:GetPlayers()) do
 				local data = getModeration(player.UserId)
 				if data.lookupFailed then
-					player:Kick("Global moderation is temporarily unavailable. Please rejoin shortly.")
+					-- Unknown is not the same as banned. Keep moderation-sensitive
+					-- actions closed while the authoritative record is unavailable,
+					-- but never kick a player solely because a backend read failed.
+					player:SetAttribute("GlobalModerationPending", true)
 				else
-					if data.globalBan == true then player:Kick("You are globally banned from this experience.") end
+					if data.globalBan == true then
+						player:Kick("You are globally banned from this experience.")
+					else
+						player:SetAttribute("GlobalModerationPending", false)
+					end
 					globalEventBindable:Fire({kind = "Moderation", userId = player.UserId, field = "requestBlocked", value = data.requestBlocked == true})
 				end
 				task.wait(1.1)
