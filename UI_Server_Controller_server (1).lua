@@ -1966,11 +1966,15 @@ ControllerFunctions.consumeToken = function(bucket: TokenBucket, now: number, co
 end
 
 ControllerFunctions.waitForDataStoreBudget = function(maxWaitSeconds: number): boolean
+	-- Prefer the shared cross-server limiter when healthy, but never make profile
+	-- availability depend on the global bridge/MemoryStore being reachable.
+	-- The local token bucket remains an enforced conservative fallback whenever
+	-- the shared limiter is unavailable or temporarily rejects its own request.
 	local sharedStoreCallOk, sharedStoreAllowed = ControllerFunctions.globalInvoke("ConsumeDataStoreBudget")
-	if RunService:IsStudio() then
-		if sharedStoreCallOk and sharedStoreAllowed == false then return false end
-	else
-		if not sharedStoreCallOk or sharedStoreAllowed ~= true then return false end
+	local sharedLimiterHealthy = sharedStoreCallOk and sharedStoreAllowed == true
+	if not sharedLimiterHealthy then
+		-- Deliberately degrade to the bounded per-server budget below. This is
+		-- rate-limited, not an unrestricted DataStore bypass.
 	end
 	local startedAt = os.clock()
 	while true do
