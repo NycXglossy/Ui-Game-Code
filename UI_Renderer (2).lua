@@ -7,24 +7,39 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local MarketplaceService = game:GetService("MarketplaceService")
--- Purchase outcome diagnostics only; no UI or purchase behavior is changed.
-if not MarketplaceService:GetAttribute("ClubMusicPurchaseDiagnosticsConnected") then
-	MarketplaceService:SetAttribute("ClubMusicPurchaseDiagnosticsConnected", true)
-	MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId: number, productId: number, wasPurchased: boolean)
-		print(string.format("[ClubMusic][PurchaseClient] DeveloperProductPromptFinished | UserId=%d | ProductId=%d | Purchased=%s | PlaceId=%d | GameId=%d",
-			userId, productId, tostring(wasPurchased), game.PlaceId, game.GameId))
-	end)
-	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, wasPurchased: boolean)
-		print(string.format("[ClubMusic][PurchaseClient] GamePassPromptFinished | UserId=%d | PassId=%d | Purchased=%s | PlaceId=%d | GameId=%d",
-			player.UserId, passId, tostring(wasPurchased), game.PlaceId, game.GameId))
-	end)
-end
 local GroupService = game:GetService("GroupService")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Send bounded prompt outcomes to server-side staff diagnostics. These are
+-- client-reported telemetry only; Developer Product receipts remain authoritative.
+if not MarketplaceService:GetAttribute("ClubMusicPurchaseDiagnosticsConnected") then
+	MarketplaceService:SetAttribute("ClubMusicPurchaseDiagnosticsConnected", true)
+	local purchaseRemotes = ReplicatedStorage:WaitForChild("ClubMusicRemotes", 15)
+	local purchaseDiagnosticRemote = if purchaseRemotes then purchaseRemotes:FindFirstChild("PurchaseDiagnostic") else nil
+	local function reportPrompt(promptType: string, itemId: number, wasPurchased: boolean)
+		if purchaseDiagnosticRemote and purchaseDiagnosticRemote:IsA("RemoteEvent") then
+			purchaseDiagnosticRemote:FireServer(promptType, itemId, wasPurchased)
+		end
+	end
+	MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId: number, productId: number, wasPurchased: boolean)
+		print(string.format("[ClubMusic][PurchaseClient] DeveloperProductPromptFinished | UserId=%d | ProductId=%d | Purchased=%s | PlaceId=%d | GameId=%d",
+			userId, productId, tostring(wasPurchased), game.PlaceId, game.GameId))
+		if userId == Players.LocalPlayer.UserId then
+			reportPrompt("DeveloperProduct", productId, wasPurchased)
+		end
+	end)
+	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, wasPurchased: boolean)
+		print(string.format("[ClubMusic][PurchaseClient] GamePassPromptFinished | UserId=%d | PassId=%d | Purchased=%s | PlaceId=%d | GameId=%d",
+			player.UserId, passId, tostring(wasPurchased), game.PlaceId, game.GameId))
+		if player == Players.LocalPlayer then
+			reportPrompt("GamePass", passId, wasPurchased)
+		end
+	end)
+end
 
 local Renderer = {}
 -- One live main-menu renderer per Player. Repeated Mount calls must reuse the
