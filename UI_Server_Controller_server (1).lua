@@ -5548,12 +5548,10 @@ catalogFunction.OnServerInvoke = function(player: Player, query: any, genreId: a
 	if player.Parent ~= Players then return nil end
 	local now = os.clock()
 	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
-	local sharedStateCallOk, sharedStateAllowed = ControllerFunctions.globalInvoke("ConsumeStateBudget", player.UserId)
-	if RunService:IsStudio() then
-		if sharedStateCallOk and sharedStateAllowed == false then return nil end
-	else
-		if not sharedStateCallOk or sharedStateAllowed ~= true then return nil end
-	end
+	-- Catalog browsing is a read-only lookup over the built-in in-memory
+	-- catalog plus the local custom-track cache. Keep it available during a
+	-- transient global security-service outage; the per-server token bucket
+	-- above and per-player cooldown below still bound request volume.
 	local previous = lastCatalogInvoke[player.UserId] or 0
 	if previous > 0 and now - previous < 0.75 then return nil end
 	lastCatalogInvoke[player.UserId] = now
