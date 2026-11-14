@@ -201,24 +201,48 @@ local function recordPurchaseDiagnostic(source: string, userId: number, itemId: 
 	end
 end
 
-purchaseDiagnosticRemote.OnServerEvent:Connect(function(player: Player, promptType: any, itemId: any, wasPurchased: any)
+local function classifyConfiguredPurchaseId(promptType: string, itemId: number): string
+	if promptType == "GamePass" then
+		if itemId == CONFIG.VipGamePassId or itemId == CONFIG.VvipGamePassId or itemId == CONFIG.TikiTidePassId then
+			return "ConfiguredClubMusicGamePass"
+		end
+	elseif itemId == CONFIG.XPBoost2xProductId or itemId == CONFIG.XPBoost4xProductId
+		or itemId == CONFIG.TitleSlotProductIds[2] or itemId == CONFIG.TitleSlotProductIds[3] then
+		return "ConfiguredClubMusicDeveloperProduct"
+	end
+	return "UnrecognizedByClubMusicConfig"
+end
+
+purchaseDiagnosticRemote.OnServerEvent:Connect(function(player: Player, promptType: any, itemId: any, eventKind: any, payload: any)
 	if typeof(player) ~= "Instance" or player.Parent ~= Players
 		or (promptType ~= "GamePass" and promptType ~= "DeveloperProduct")
-		or typeof(itemId) ~= "number" or itemId <= 0 or itemId % 1 ~= 0
-		or typeof(wasPurchased) ~= "boolean" then
+		or typeof(itemId) ~= "number" or itemId <= 0 or itemId % 1 ~= 0 then
 		return
 	end
+	local isLegacyCallback = typeof(eventKind) == "boolean"
+	local isPromptRequest = eventKind == "PromptRequested" and typeof(payload) == "string"
+	local isPromptFinished = eventKind == "PromptFinished" and typeof(payload) == "boolean"
+	if not isLegacyCallback and not isPromptRequest and not isPromptFinished then return end
+
 	local now = os.clock()
 	local rate = purchaseDiagnosticRate[player.UserId]
 	if not rate or now - rate.windowAt >= 60 then
 		rate = {windowAt = now, count = 0}
 		purchaseDiagnosticRate[player.UserId] = rate
 	end
-	if rate.count >= 8 then return end
+	if rate.count >= 12 then return end
 	rate.count += 1
-	recordPurchaseDiagnostic("ClientPromptUnverified", player.UserId, itemId,
-		if wasPurchased then "PromptReportedPurchased" else "PromptClosedWithoutPurchase",
-		promptType .. " prompt callback; client telemetry is not proof of a completed transaction")
+
+	local idClass = classifyConfiguredPurchaseId(promptType, itemId)
+	if isPromptRequest then
+		recordPurchaseDiagnostic("ClientPromptRequestUnverified", player.UserId, itemId, "PromptRequested",
+			promptType .. " | source=" .. string.sub(payload, 1, 48) .. " | " .. idClass .. "; request telemetry only")
+	else
+		local wasPurchased = if isLegacyCallback then eventKind else payload
+		recordPurchaseDiagnostic("ClientPromptUnverified", player.UserId, itemId,
+			if wasPurchased then "PromptReportedPurchased" else "PromptClosedWithoutPurchase",
+			promptType .. " prompt callback | " .. idClass .. "; client telemetry is not proof of a completed transaction")
+	end
 end)
 Players.PlayerRemoving:Connect(function(player: Player)
 	purchaseDiagnosticRate[player.UserId] = nil
