@@ -207,7 +207,10 @@ local function classifyConfiguredPurchaseId(promptType: string, itemId: number):
 			return "ConfiguredClubMusicGamePass"
 		end
 	elseif itemId == CONFIG.XPBoost2xProductId or itemId == CONFIG.XPBoost4xProductId
-		or itemId == CONFIG.TitleSlotProductIds[2] or itemId == CONFIG.TitleSlotProductIds[3] then
+		or itemId == CONFIG.TitleSlotProductIds[2] or itemId == CONFIG.TitleSlotProductIds[3]
+		or itemId == 3731488823 or itemId == 3731489572 or itemId == 3731490154
+		or itemId == 3731490513 or itemId == 3731490937 or itemId == 3731491257
+		or itemId == 3731491679 then
 		return "ConfiguredClubMusicDeveloperProduct"
 	end
 	return "UnrecognizedByClubMusicConfig"
