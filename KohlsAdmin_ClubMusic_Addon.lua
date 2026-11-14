@@ -111,6 +111,7 @@ return function(_K: any)
 		OperationalErrors = true, OperationalMetrics = true, OperationalSecurityLog = true,
 		OperationalServers = true, OperationalRateLimit = true, OperationalConfig = true,
 		OperationalRecovery = true, OperationalReconcile = true,
+		PurchaseDiagnostics = true,
 	}
 	game:GetService("Players").PlayerRemoving:Connect(function(player: Player)
 		lastInspectionAt[player.UserId] = nil
@@ -192,6 +193,7 @@ return function(_K: any)
 			OperationalSecurityLog = true, OperationalServers = true,
 			OperationalRateLimit = true, OperationalConfig = true,
 			OperationalRecovery = true, OperationalReconcile = true,
+			PurchaseDiagnostics = true,
 			OperationalMaintenance = true,
 			RequestMute = true, ClearUserQueue = true, EmergencyLock = true,
 			TrackBlock = true, ForceStop = true,
@@ -275,6 +277,7 @@ return function(_K: any)
 	-- Read-only operational diagnostics and controlled maintenance tools.
 	register("clubmusic-health", "Show local and cross-server ClubMusic health.", "Administration", "OperationalHealth", {"cmhealth", "cmaudiohealth"})
 	register("clubmusic-diagnostics", "Show a safe ClubMusic diagnostic snapshot.", "Administration", "OperationalDiagnostics", {"cmdiagnostics"})
+	register("clubmusic-purchasediagnostics", "Show recent purchase prompt and receipt diagnostics.", "Administration", "PurchaseDiagnostics", {"cmpurchases"})
 	register("clubmusic-services", "List ClubMusic operational and security service states.", "Administration", "OperationalServices", {"cmservices", "cmglobalstatus"})
 	register("clubmusic-errors", "Show recent ClubMusic error IDs and subsystem metadata.", "Administration", "OperationalErrors", {"cmerrors"})
 	register("clubmusic-metrics", "Show ClubMusic queue, playback, and service metrics.", "Administration", "OperationalMetrics", {"cmmetrics"})
