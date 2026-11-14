@@ -201,14 +201,11 @@ return function(_K: any)
 	end
 
 	local function register(name: string, description: string, group: string, operation: string, aliases: {string}?, argumentDefinitions: {any}?)
-		-- Keep command definitions on the server only. Kohl's Admin's server-side
-		-- parser remains authoritative, while clients receive no ClubMusic admin
-		-- command names, descriptions, aliases, or argument schemas to inspect.
-		-- The configured Kohl's Admin command group and ClubMusic's own rank checks
-		-- still authorize every execution on the server.
-		if _K.IsServer ~= true then
-			return
-		end
+		-- This is a shared addon: register the same definitions on both sides so
+		-- Kohl's Admin can populate client autocomplete, validation, and Commands UI.
+		-- The run callback is dispatched and revalidated on the server. The server-only
+		-- BindableFunction plus ClubMusic's independent staff/admin checks remain the
+		-- authorization boundary; client registration does not grant command access.
 		_K.Registry.registerCommand(_K, {
 			name = name,
 			aliases = aliases,
