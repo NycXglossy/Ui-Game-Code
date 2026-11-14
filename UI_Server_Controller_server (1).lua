@@ -4277,6 +4277,9 @@ end
 -- Returns a reason string when this player may NOT queue this track right now, otherwise nil.
 -- Used by Creator Hub audio requests, which re-check after yielding for the asset lookup.
 ControllerFunctions.requestBlockReason = function(player: Player, trackId: string, now: number): string?
+	if player:GetAttribute("GlobalModerationPending") == true then
+		return "Global moderation is temporarily checking your account. Song requests are paused until verification completes."
+	end
 	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
 	if ControllerFunctions.isTrackBlocked(trackId) then return "That track has been blocked by ClubMusic staff." end
 	if requestsLocked and ControllerFunctions.getLevel(player) < 1 then return "Requests are locked by staff right now." end
@@ -6415,10 +6418,9 @@ end
 ControllerFunctions.onJoin = function(player: Player)
 	local enabledCallOk, globalServiceEnabled = ControllerFunctions.globalInvoke("IsEnabled")
 	local globalModerationRequired = not RunService:IsStudio()
-	if globalModerationRequired and (not enabledCallOk or globalServiceEnabled ~= true) then
-		player:Kick("The experience security service is temporarily unavailable. Please rejoin shortly.")
-		return
-	end
+	local globalServiceReady = enabledCallOk and globalServiceEnabled == true
+	-- A service-readiness failure is not a ban. Keep moderation-sensitive actions
+	-- closed and retry authoritative checks instead of kicking legitimate players.
 	local lockCallOk, globalLock, lockLookupOk = ControllerFunctions.globalInvoke("GetGlobalRequestLock")
 	if lockCallOk and lockLookupOk == true and typeof(globalLock) == "boolean" then
 		requestsLocked = globalLock
@@ -6438,18 +6440,25 @@ ControllerFunctions.onJoin = function(player: Player)
 		-- Unknown moderation state remains restricted until a successful read.
 		blockedUsers[player.UserId] = true
 	end
-	local retryBan = globalModerationRequired and (not banCallOk or banLookupOk ~= true)
-	local retryBlock = globalModerationRequired and (not blockCallOk or blockLookupOk ~= true)
-	local retryLock = globalModerationRequired and (not lockCallOk or lockLookupOk ~= true or typeof(globalLock) ~= "boolean")
+	local retryBan = globalModerationRequired and (not globalServiceReady or not banCallOk or banLookupOk ~= true)
+	local retryBlock = globalModerationRequired and (not globalServiceReady or not blockCallOk or blockLookupOk ~= true)
+	local retryLock = globalModerationRequired and (not globalServiceReady or not lockCallOk or lockLookupOk ~= true or typeof(globalLock) ~= "boolean")
 	if retryBan or retryBlock then player:SetAttribute("GlobalModerationPending", true) end
 	if retryBan or retryBlock or retryLock then
 		task.spawn(function()
+			local serviceResolved = globalServiceReady
 			local banResolved = not retryBan
 			local blockResolved = not retryBlock
 			local lockResolved = not retryLock
-			for attempt = 1, 12 do
-				task.wait(5)
+			local attempt = 0
+			while player.Parent == Players and not (serviceResolved and banResolved and blockResolved and lockResolved) do
+				attempt += 1
+				task.wait(math.min(30, 5 + math.floor(attempt / 3) * 5))
 				if player.Parent ~= Players then return end
+				if not serviceResolved then
+					local callOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
+					serviceResolved = callOk and enabled == true
+				end
 				if not banResolved then
 					local callOk, banned, lookupOk = ControllerFunctions.globalInvoke("IsGloballyBanned", player.UserId)
 					if callOk and lookupOk == true then
@@ -6475,13 +6484,14 @@ ControllerFunctions.onJoin = function(player: Player)
 						publishState(nil)
 					end
 				end
-				if banResolved and blockResolved and lockResolved then
+				if banResolved and blockResolved and lockResolved and serviceResolved then
 					player:SetAttribute("GlobalModerationPending", false)
 					publishState(nil)
 					return
 				end
 			end
-			-- Unresolved checks remain restricted; transient storage failures never kick.
+			-- If the player leaves, the loop exits. Unknown moderation state never
+			-- grants requests or triggers a kick; checks continue with bounded backoff.
 		end)
 	end
 	ControllerFunctions.refreshRank(player)
