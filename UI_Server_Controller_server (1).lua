@@ -40,9 +40,9 @@ local CONFIG = {
 
 	-- Paid Game Passes remain available alongside group VIP and owner-issued free rewards.
 	-- Set each ID to its matching Roblox Game Pass before publishing; 0 disables that purchase tier.
-	VipGamePassId = 0,
-	VvipGamePassId = 0,
-	TikiTidePassId = 0,
+	VipGamePassId = 2089785323,
+	VvipGamePassId = 2089263330,
+	TikiTidePassId = 2087955353,
 	VipPriority = true,      -- VIP and higher membership tiers receive queue priority.
 
 	MaxRequestsPerPlayer = 2,
