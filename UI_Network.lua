@@ -363,18 +363,24 @@ function Network.GetMusicCatalog(query: string?, genreId: string?, offset: numbe
 	local safeGenre = if typeof(genreId) == "string" then string.sub(genreId, 1, 24) else ""
 	local safeOffset = if typeof(offset) == "number" then math.clamp(math.floor(offset), 0, 10000) else 0
 	local safeLimit = if typeof(limit) == "number" then math.clamp(math.floor(limit), 1, 50) else 30
-	local ok, result = pcall(function()
-		return remote:InvokeServer(safeQuery, safeGenre, safeOffset, safeLimit)
-	end)
-	if not ok then
-		warn("[ClubMusic Network] GetMusicCatalog failed: " .. tostring(result))
-		return nil
+	-- The server applies a per-player catalog cooldown. Retry a transient
+	-- nil/error response after that window instead of immediately showing the
+	-- generic unavailable state for a request that was merely rate-limited.
+	local lastError: any = nil
+	for attempt = 1, 3 do
+		local ok, result = pcall(function()
+			return remote:InvokeServer(safeQuery, safeGenre, safeOffset, safeLimit)
+		end)
+		if ok and typeof(result) == "table" and typeof(result.items) == "table"
+			and typeof(result.total) == "number" and typeof(result.offset) == "number" then
+			return safeClone(result)
+		end
+		lastError = if ok then "Server returned no valid catalog page." else result
+		if attempt < 3 then task.wait(0.85) end
+		if destroyed or remote.Parent == nil then return nil end
 	end
-	if typeof(result) ~= "table" or typeof(result.items) ~= "table"
-		or typeof(result.total) ~= "number" or typeof(result.offset) ~= "number" then
-		return nil
-	end
-	return safeClone(result)
+	warn("[ClubMusic Network] GetMusicCatalog failed after 3 attempts: " .. tostring(lastError))
+	return nil
 end
 
 function Network.GetMusicPlaylists()
@@ -486,8 +492,8 @@ function Network.VoteSkip()
 	Network.Send("VoteSkip", {})
 end
 
-function Network.ReloadSong()
-	Network.Send("ReloadSong", {})
+function Network.ReloadSong(): boolean
+	return Network.Send("ReloadSong", {})
 end
 
 function Network.DJSkip()

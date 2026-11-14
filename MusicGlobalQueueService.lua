@@ -39,6 +39,8 @@ local MAX_TEXT = 100
 local MAX_SOUND_ID = 64
 local MAX_DURATION = 3600
 local MAX_SAFE_INTEGER = 9007199254740991
+local MAX_RECENT_OPERATION_IDS = 128
+local MAX_TRANSACTION_ATTEMPTS = 3
 
 export type QueueEntry = {
 	id: string,
@@ -78,6 +80,9 @@ type State = {
 	catalogChangeKind: string?,
 	updatedAt: number,
 	updatedBy: number,
+	recentTrackIds: {string},
+	recentOperationIds: {string},
+
 }
 
 local cachedSnapshot: State? = nil
@@ -176,6 +181,9 @@ local function defaultState(): State
 		catalogChangeKind = nil,
 		updatedAt = os.time(),
 		updatedBy = 0,
+		recentTrackIds = {},
+		recentOperationIds = {},
+
 	}
 end
 
@@ -185,7 +193,28 @@ local function sanitizeState(raw: any): State
 	state.revision = if finite(raw.revision) then math.clamp(math.floor(raw.revision), 0, MAX_SAFE_INTEGER) else 0
 	state.updatedAt = if finite(raw.updatedAt) then math.max(0, math.floor(raw.updatedAt)) else os.time()
 	state.updatedBy = if finite(raw.updatedBy) then math.max(0, math.floor(raw.updatedBy)) else 0
+	if typeof(raw.recentOperationIds) == "table" then
+		local startIndex = math.max(1, #raw.recentOperationIds - MAX_RECENT_OPERATION_IDS + 1)
+		for index = startIndex, #raw.recentOperationIds do
+			local operationId = raw.recentOperationIds[index]
+			if typeof(operationId) == "string" and #operationId <= 64 then
+				table.insert(state.recentOperationIds, operationId)
+			end
+		end
+	end
 	state.autoQueueHold = raw.autoQueueHold == true
+	if typeof(raw.recentTrackIds) == "table" then
+		local seenRecent: {[string]: boolean} = {}
+		local startIndex = math.max(1, #raw.recentTrackIds - 5)
+		for index = startIndex, #raw.recentTrackIds do
+			local trackId = raw.recentTrackIds[index]
+			if typeof(trackId) == "string" and #trackId > 0 and #trackId <= 32
+				and string.match(trackId, "^[%w%-_]+$") and not seenRecent[trackId] then
+				table.insert(state.recentTrackIds, trackId)
+				seenRecent[trackId] = true
+			end
+		end
+	end
 	state.catalogRevision = if finite(raw.catalogRevision)
 		then math.clamp(math.floor(raw.catalogRevision), 0, MAX_SAFE_INTEGER) else 0
 	-- Accept the earlier in-branch reservation field during rollout so an
@@ -204,11 +233,14 @@ local function sanitizeState(raw: any): State
 	if typeof(raw.queue) == "table" then
 		local seenIds: {[string]: boolean} = {}
 		local seenTracks: {[string]: boolean} = {}
+		local recentSet: {[string]: boolean} = {}
+		for _, trackId in ipairs(state.recentTrackIds) do recentSet[trackId] = true end
 		for _, rawEntry in ipairs(raw.queue) do
 			if #state.queue >= MAX_QUEUE then break end
 			local entry = sanitizeEntry(rawEntry)
 			if entry and not seenIds[entry.id] and not seenTracks[entry.trackId]
-				and (not state.current or state.current.trackId ~= entry.trackId) then
+				and (not state.current or state.current.trackId ~= entry.trackId)
+				and not (entry.source == "auto" and recentSet[entry.trackId]) then
 				table.insert(state.queue, entry)
 				seenIds[entry.id] = true
 				seenTracks[entry.trackId] = true
@@ -253,7 +285,22 @@ local function detached(state: State): State
 	result.playback = table.clone(state.playback)
 	result.rotation = table.clone(state.rotation)
 	result.rotation.trackIds = table.clone(state.rotation.trackIds)
+	result.recentTrackIds = table.clone(state.recentTrackIds)
+	result.recentOperationIds = table.clone(state.recentOperationIds)
 	return result
+end
+
+local function isTransientDataStoreError(errorMessage: any): boolean
+	local message = string.lower(tostring(errorMessage or ""))
+	return string.find(message, "http 500", 1, true) ~= nil
+		or string.find(message, "http 502", 1, true) ~= nil
+		or string.find(message, "http 503", 1, true) ~= nil
+		or string.find(message, "http 504", 1, true) ~= nil
+		or string.find(message, "internalservererror", 1, true) ~= nil
+		or string.find(message, "throttl", 1, true) ~= nil
+		or string.find(message, "too many requests", 1, true) ~= nil
+		or string.find(message, "timed out", 1, true) ~= nil
+		or string.find(message, "temporarily unavailable", 1, true) ~= nil
 end
 
 local function transact(mutator: (State) -> (boolean, string?)): (boolean, State?, string?)
@@ -262,36 +309,76 @@ local function transact(mutator: (State) -> (boolean, string?)): (boolean, State
 		warn("[ClubMusic Global Queue] " .. tostring(storeInitializationError or storeError))
 		return false, nil, storeError
 	end
+	-- Keep one operation identity across retries. If Roblox committed an
+	-- UpdateAsync but returned an HTTP error, the next attempt recognizes the
+	-- receipt and reports success without applying the mutation twice.
+	local operationId = HttpService:GenerateGUID(false)
 	local accepted = false
 	local reason = "Shared queue update was rejected."
-	local ok, result = withStoreOperation(Enum.DataStoreRequestType.UpdateAsync, function()
-		return store:UpdateAsync(KEY, function(old)
-			accepted = false
-			reason = "Shared queue update was rejected."
-			local state = sanitizeState(old)
-			-- Keep a detached pre-mutation value so a rejected transaction on a
-			-- brand-new key cannot accidentally persist partial callback mutations.
-			local original = detached(state)
-			-- DataStore revisions are used as monotonic concurrency markers. Refuse
-			-- writes at the exact-integer ceiling rather than silently losing precision.
-			if state.revision >= MAX_SAFE_INTEGER then
-				reason = "Global queue revision limit reached; writes are paused for safe recovery."
+	local ok, result = false, nil
+	for attempt = 1, MAX_TRANSACTION_ATTEMPTS do
+		ok, result = withStoreOperation(Enum.DataStoreRequestType.UpdateAsync, function()
+			return store:UpdateAsync(KEY, function(old)
+				accepted = false
+				reason = "Shared queue update was rejected."
+				local state = sanitizeState(old)
+				local original = detached(state)
+				-- A prior attempt may have committed even if its response failed.
+				for _, committedId in ipairs(state.recentOperationIds) do
+					if committedId == operationId then
+						accepted = true
+						reason = ""
+						return old or original
+					end
+				end
+				if state.revision >= MAX_SAFE_INTEGER then
+					reason = "Global queue revision limit reached; writes are paused for safe recovery."
+					return old or original
+				end
+				local changed, message = mutator(state)
+				if changed then
+					state.revision += 1
+					state.updatedAt = os.time()
+					table.insert(state.recentOperationIds, operationId)
+					while #state.recentOperationIds > MAX_RECENT_OPERATION_IDS do
+						table.remove(state.recentOperationIds, 1)
+					end
+					accepted = true
+					reason = ""
+					return state
+				end
+				reason = message or reason
 				return old or original
-			end
-			local changed, message = mutator(state)
-			if changed then
-				state.revision += 1
-				state.updatedAt = os.time()
-				accepted = true
-				reason = ""
-				return state
-			end
-			reason = message or reason
-			return old or original
+			end)
 		end)
-	end)
+		if ok or not isTransientDataStoreError(result) or attempt >= MAX_TRANSACTION_ATTEMPTS then
+			break
+		end
+		-- Exponential backoff: 0.25s, then 0.5s. The retry reuses operationId.
+		task.wait(0.25 * (2 ^ (attempt - 1)))
+	end
 	if not ok then
-		warn("[ClubMusic Global Queue] DataStore transaction failed: " .. tostring(result))
+		-- Make one read-back attempt before reporting failure. A receipt proves
+		-- that an earlier attempt committed even if every write response failed.
+		local verifyOk, verifyRaw = withStoreOperation(Enum.DataStoreRequestType.GetAsync, function()
+			return store:GetAsync(KEY)
+		end)
+		if verifyOk and typeof(verifyRaw) == "table" then
+			local verified = sanitizeState(verifyRaw)
+			for _, committedId in ipairs(verified.recentOperationIds) do
+				if committedId == operationId then
+					local verifiedSnapshot = detached(verified)
+					cachedSnapshot = verifiedSnapshot
+					cachedSnapshotAt = os.clock()
+					return true, detached(verifiedSnapshot), nil
+				end
+			end
+		end
+		-- An earlier attempt may still have committed; invalidate any local read
+		-- cache so the next reconciliation does not reuse a pre-transaction snapshot.
+		cachedSnapshot = nil
+		cachedSnapshotAt = 0
+		warn("[ClubMusic Global Queue] DataStore transaction failed after safe retries and receipt verification: " .. tostring(result))
 		return false, nil, "Global queue storage is unavailable. No local-only change was applied."
 	end
 	local snapshot: State? = nil
@@ -423,6 +510,8 @@ function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any
 			seenIds[queued.id] = true
 			seenTracks[queued.trackId] = true
 		end
+		local recentSet: {[string]: boolean} = {}
+		for _, trackId in ipairs(state.recentTrackIds) do recentSet[trackId] = true end
 		local added = 0
 		for _, entry in ipairs(entries) do
 			if #state.queue >= target or #state.queue >= hardLimit then break end
@@ -431,6 +520,9 @@ function MusicGlobalQueueService:EnqueueBatch(rawEntries: any, maxQueueSize: any
 			end
 			if seenIds[entry.id] or seenTracks[entry.trackId] then
 				return false, "Automatic queue batch contains a duplicate or already-playing track."
+			end
+			if entry.source == "auto" and recentSet[entry.trackId] then
+				return false, "Automatic queue batch contains a recently played track; refill must be rebuilt."
 			end
 			if entry.source == "playlist" then
 				if not state.rotation.enabled then return false, "Playlist rotation is not active globally." end
@@ -578,6 +670,13 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 				return false, "The prepared next queue entry is no longer first."
 			end
 		end
+		local recentBeforeAdvance: {[string]: boolean} = {}
+		for _, trackId in ipairs(state.recentTrackIds) do recentBeforeAdvance[trackId] = true end
+		-- Discard stale Auto DJ entries prepared before the shared history advanced.
+		while state.queue[1] and state.queue[1].source == "auto"
+			and recentBeforeAdvance[state.queue[1].trackId] do
+			table.remove(state.queue, 1)
+		end
 		local nextEntry = table.remove(state.queue, 1)
 		if not nextEntry then
 			if state.rotation.enabled then
@@ -593,7 +692,32 @@ function MusicGlobalQueueService:Advance(expectedTrackRevision: any, fallbackEnt
 			nextEntry = fallback
 		end
 		if not nextEntry then return false, "No valid next track is available." end
+		-- Final authoritative guards: never commit the currently playing track
+		-- as its own successor, and never accept a stale Auto DJ fallback that
+		-- another server has already played since this server built its candidate.
+		if state.current and state.current.trackId == nextEntry.trackId then
+			return false, "The next track matches the current track; refusing an immediate repeat."
+		end
+		if nextEntry.source == "auto" and recentBeforeAdvance[nextEntry.trackId] then
+			return false, "The automatic fallback track was recently played; select another track."
+		end
 		state.current = cloneEntry(nextEntry)
+		local recentTrackIds = {}
+		for _, trackId in ipairs(state.recentTrackIds) do
+			if trackId ~= nextEntry.trackId then table.insert(recentTrackIds, trackId) end
+		end
+		table.insert(recentTrackIds, nextEntry.trackId)
+		while #recentTrackIds > 6 do table.remove(recentTrackIds, 1) end
+		state.recentTrackIds = recentTrackIds
+		local recentNow: {[string]: boolean} = {}
+		for _, trackId in ipairs(recentTrackIds) do recentNow[trackId] = true end
+		local retainedQueue = {}
+		for _, queued in ipairs(state.queue) do
+			if queued.source ~= "auto" or not recentNow[queued.trackId] then
+				table.insert(retainedQueue, queued)
+			end
+		end
+		state.queue = retainedQueue
 		state.playback.paused = false
 		state.playback.position = 0
 		state.playback.anchorTime = Workspace:GetServerTimeNow()

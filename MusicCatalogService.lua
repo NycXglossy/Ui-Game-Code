@@ -18,6 +18,7 @@ export type Track = {
 	assetId: number?,
 	soundId: string?,
 	artworkAssetId: number?,
+	placeholder: boolean?,
 }
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -39,6 +40,8 @@ type Genre = {
 }
 
 local GENRES: {Genre} = {
+	-- Retain established genre keys so previously saved custom-track records
+	-- remain valid after the built-in catalog migration.
 	{id = "hiphop", name = "Hip Hop / Rap"},
 	{id = "rnb", name = "R&B / Soul"},
 	{id = "rock", name = "Rock"},
@@ -48,54 +51,34 @@ local GENRES: {Genre} = {
 	{id = "country", name = "Country"},
 	{id = "pop", name = "Pop"},
 	{id = "exclusive", name = "Club Exclusives"},
+	{id = "rockstar", name = "Rockstar Music"},
 	{id = "other", name = "Other"},
 }
 
 -- Keep IDs stable: player favorites, queue entries, and the existing UI refer
 -- to these IDs. Add approved songs here; never accept client-supplied metadata.
 local CATALOG: {Track} = {
-	{id="hh-0",genreId="hiphop",title="Palm Tree Freestyle",artist="Lil Coconut",duration=184,genre="Hip Hop / Rap"},
-	{id="hh-1",genreId="hiphop",title="Tide Money",artist="MC Lagoon",duration=201,genre="Hip Hop / Rap"},
-	{id="hh-2",genreId="hiphop",title="Boardwalk Bounce",artist="Kid Kahuna",duration=176,genre="Hip Hop / Rap"},
-	{id="hh-3",genreId="hiphop",title="Sandcastle Kings",artist="Reef Gang",duration=213,genre="Hip Hop / Rap"},
-	{id="hh-4",genreId="hiphop",title="Midnight Luau",artist="Big Pineapple",duration=195,genre="Hip Hop / Rap"},
-	{id="hh-5",genreId="hiphop",title="Wave Check",artist="Yung Tsunami",duration=168,genre="Hip Hop / Rap"},
-	{id="rnb-0",genreId="rnb",title="Golden Hour Love",artist="Coral Rose",duration=224,genre="R&B / Soul"},
-	{id="rnb-1",genreId="rnb",title="Slow Tide",artist="Marina Soul",duration=241,genre="R&B / Soul"},
-	{id="rnb-2",genreId="rnb",title="Tiki Torch Serenade",artist="D'Angelo Bay",duration=232,genre="R&B / Soul"},
-	{id="rnb-3",genreId="rnb",title="Velvet Shoreline",artist="Honey Kai",duration=207,genre="R&B / Soul"},
-	{id="rnb-4",genreId="rnb",title="Lantern Light",artist="Nalu & The Keys",duration=219,genre="R&B / Soul"},
-	{id="rk-0",genreId="rock",title="Volcano Riff",artist="The Lava Kings",duration=238,genre="Rock"},
-	{id="rk-1",genreId="rock",title="Surf's Up Anthem",artist="Riptide Rebels",duration=199,genre="Rock"},
-	{id="rk-2",genreId="rock",title="Driftwood Highway",artist="Saltwater Saints",duration=262,genre="Rock"},
-	{id="rk-3",genreId="rock",title="Thunder on the Bay",artist="Coral Crush",duration=221,genre="Rock"},
-	{id="kp-0",genreId="kpop",title="SUMMER GLITCH",artist="NEONWAVE",duration=192,genre="K-Pop"},
-	{id="kp-1",genreId="kpop",title="Pink Horizon",artist="STARR1SE",duration=205,genre="K-Pop"},
-	{id="kp-2",genreId="kpop",title="Island Signal",artist="LUMI-9",duration=187,genre="K-Pop"},
-	{id="kp-3",genreId="kpop",title="Heartbeat Lagoon",artist="KORAL",duration=199,genre="K-Pop"},
-	{id="kp-4",genreId="kpop",title="Firework Kiss",artist="AURA X",duration=181,genre="K-Pop"},
-	{id="lt-0",genreId="latin",title="Playa Caliente",artist="DJ Mango",duration=214,genre="Latin Music"},
-	{id="lt-1",genreId="latin",title="Bailando en la Arena",artist="Sol y Mar",duration=228,genre="Latin Music"},
-	{id="lt-2",genreId="latin",title="Noche Tropical",artist="La Ola",duration=203,genre="Latin Music"},
-	{id="lt-3",genreId="latin",title="Fuego Lento",artist="Rey Coco",duration=197,genre="Latin Music"},
-	{id="edm-0",genreId="edm",title="Sunset Overdrive",artist="Aqualux",duration=246,genre="EDM"},
-	{id="edm-1",genreId="edm",title="Neon Coastline",artist="VOLTA",duration=233,genre="EDM"},
-	{id="edm-2",genreId="edm",title="Tidal Drop",artist="Prism Reef",duration=258,genre="EDM"},
-	{id="edm-3",genreId="edm",title="Laser Lagoon",artist="Kairo",duration=219,genre="EDM"},
-	{id="edm-4",genreId="edm",title="Afterglow Rave",artist="SKYE.EXE",duration=271,genre="EDM"},
-	{id="edm-5",genreId="edm",title="Bassquake Beach",artist="Subduction",duration=205,genre="EDM"},
-	{id="ct-0",genreId="country",title="Beach Truck Blues",artist="Dusty Shores",duration=212,genre="Country"},
-	{id="ct-1",genreId="country",title="Sunburnt Sweetheart",artist="Cody Cove",duration=198,genre="Country"},
-	{id="ct-2",genreId="country",title="Barefoot Rodeo",artist="The Palm Ranch",duration=205,genre="Country"},
-	{id="pop-0",genreId="pop",title="Electric Paradise",artist="Mia Lumen",duration=189,genre="Pop"},
-	{id="pop-1",genreId="pop",title="Coconut Crush",artist="Jade Rivers",duration=176,genre="Pop"},
-	{id="pop-2",genreId="pop",title="Ocean Eyes Tonight",artist="Leo Starr",duration=201,genre="Pop"},
-	{id="pop-3",genreId="pop",title="Glow Up Summer",artist="Nova Bay",duration=183,genre="Pop"},
-	{id="pop-4",genreId="pop",title="Postcard Heart",artist="Kenna Blue",duration=194,genre="Pop"},
-	{id="ex-0",genreId="exclusive",title="Sunset Stage Anthem",artist="Club Resident",duration=262,genre="Club Exclusives"},
-	{id="ex-1",genreId="exclusive",title="Tiki Torch Theory",artist="Club Resident ft. VOLTA",duration=238,genre="Club Exclusives"},
-	{id="ex-2",genreId="exclusive",title="Low-Poly Paradise",artist="Pixel Palms",duration=224,genre="Club Exclusives"},
-	{id="ex-3",genreId="exclusive",title="Mainstage Moonrise",artist="The Owners",duration=289,genre="Club Exclusives"},
+	{id="temp-hiphop",genreId="hiphop",title="Coming Soon — Hip Hop / Rap",artist="Temporary placeholder • audio pending",duration=1,genre="Hip Hop / Rap",placeholder=true},
+	{id="temp-rnb",genreId="rnb",title="Coming Soon — R&B / Soul",artist="Temporary placeholder • audio pending",duration=1,genre="R&B / Soul",placeholder=true},
+	{id="temp-rock",genreId="rock",title="Coming Soon — Rock",artist="Temporary placeholder • audio pending",duration=1,genre="Rock",placeholder=true},
+	{id="temp-kpop",genreId="kpop",title="Coming Soon — K-Pop",artist="Temporary placeholder • audio pending",duration=1,genre="K-Pop",placeholder=true},
+	{id="temp-latin",genreId="latin",title="Coming Soon — Latin Music",artist="Temporary placeholder • audio pending",duration=1,genre="Latin Music",placeholder=true},
+	{id="temp-edm",genreId="edm",title="Coming Soon — EDM",artist="Temporary placeholder • audio pending",duration=1,genre="EDM",placeholder=true},
+	{id="temp-country",genreId="country",title="Coming Soon — Country",artist="Temporary placeholder • audio pending",duration=1,genre="Country",placeholder=true},
+	{id="temp-pop",genreId="pop",title="Coming Soon — Pop",artist="Temporary placeholder • audio pending",duration=1,genre="Pop",placeholder=true},
+	{id="custom-100919684616729",genreId="exclusive",title="CROWN OF THE NIGHT",artist="DJ Doom",duration=415,genre="Club Exclusives",assetId=100919684616729,soundId="rbxassetid://100919684616729"},
+	{id="custom-99973341792058",genreId="exclusive",title="Midnight Lucid",artist="DJ Doom",duration=252,genre="Club Exclusives",assetId=99973341792058,soundId="rbxassetid://99973341792058"},
+	{id="custom-137104933242988",genreId="exclusive",title="Empire of Stone",artist="DJ Doom",duration=248,genre="Club Exclusives",assetId=137104933242988,soundId="rbxassetid://137104933242988"},
+	{id="custom-84266261446965",genreId="exclusive",title="Anvil_of_Ruin",artist="DJ Doom",duration=190,genre="Club Exclusives",assetId=84266261446965,soundId="rbxassetid://84266261446965"},
+	{id="custom-85420661204078",genreId="exclusive",title="Code in the Smoke",artist="DJ Doom",duration=184,genre="Club Exclusives",assetId=85420661204078,soundId="rbxassetid://85420661204078"},
+	{id="custom-134987433423089",genreId="exclusive",title="Rich Lifestyle",artist="DJ Doom",duration=212,genre="Club Exclusives",assetId=134987433423089,soundId="rbxassetid://134987433423089"},
+	{id="custom-92952858514774",genreId="exclusive",title="Metallic Chaos Within Magic Theory",artist="DJ Doom",duration=333,genre="Club Exclusives",assetId=92952858514774,soundId="rbxassetid://92952858514774"},
+	{id="custom-117388170134707",genreId="exclusive",title="Steel Collision",artist="DJ Doom",duration=184,genre="Club Exclusives",assetId=117388170134707,soundId="rbxassetid://117388170134707"},
+	{id="custom-86468432953052",genreId="exclusive",title="Fallen Star Blues",artist="DJ Doom",duration=230,genre="Club Exclusives",assetId=86468432953052,soundId="rbxassetid://86468432953052"},
+	{id="custom-126526272193872",genreId="exclusive",title="Winter Between Us",artist="DJ Doom",duration=214,genre="Club Exclusives",assetId=126526272193872,soundId="rbxassetid://126526272193872"},
+	{id="custom-96399574470852",genreId="exclusive",title="Terminal Frequency",artist="DJ Doom",duration=200,genre="Club Exclusives",assetId=96399574470852,soundId="rbxassetid://96399574470852"},
+	{id="temp-rockstar",genreId="rockstar",title="Coming Soon — Rockstar Music",artist="Temporary placeholder • audio pending",duration=1,genre="Rockstar Music",placeholder=true},
+	{id="temp-other",genreId="other",title="Coming Soon — Other",artist="Temporary placeholder • audio pending",duration=1,genre="Other",placeholder=true},
 }
 
 local TRACK_BY_ID: {[string]: Track} = {}
@@ -129,6 +112,7 @@ local function copyTrack(track: Track): Track
 		assetId = track.assetId,
 		soundId = track.soundId,
 		artworkAssetId = track.artworkAssetId,
+		placeholder = track.placeholder,
 	}
 end
 

@@ -94,8 +94,10 @@ local xpReceiptStore: any = nil
 local MAX_PURCHASE_ID_LENGTH = 128
 
 if SERVICE_ENABLED then
+	-- Durable DataStore handles are required for global queue authority.
+	-- MemoryStore is an optimization for shared rate limits, not a prerequisite
+	-- for playback; queue calls can use the conservative per-server limiter.
 	local storesOk, storesError = pcall(function()
-		budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
 		moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 		globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
 		globalConfigStore = DataStoreService:GetDataStore("ClubMusic_GlobalConfig_v1")
@@ -103,8 +105,19 @@ if SERVICE_ENABLED then
 	end)
 	if not storesOk then
 		SERVICE_ENABLED = false
-		warn("[ClubMusic Global] Cross-server storage initialization failed; global features are disabled safely: "
+		warn("[ClubMusic Global] DataStore handle initialization failed; global features are disabled safely: "
 			.. tostring(storesError))
+	else
+		local budgetOk, budgetResult = pcall(function()
+			return MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
+		end)
+		if budgetOk then
+			budgetMap = budgetResult
+		else
+			budgetMap = nil
+			warn("[ClubMusic Global] MemoryStore budget unavailable; global queue will use conservative local rate limits: "
+				.. tostring(budgetResult))
+		end
 	end
 end
 
@@ -226,7 +239,11 @@ local function getModeration(userId: number): {[string]: any}
 	-- Bound durable reads across all servers. If the shared limiter itself is
 	-- unavailable, report a lookup failure so callers can fail closed.
 	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-	if not budgetShared or not budgetAllowed then
+	-- consumeShared already applies a conservative per-server fallback when
+	-- MemoryStore is unavailable. Only an exhausted limiter should block the
+	-- durable read; a MemoryStore outage alone must not manufacture an unknown
+	-- moderation result when DataStore is still reachable.
+	if not budgetAllowed then
 		return {lookupFailed = true}
 	end
 	local ok, data = pcall(function() return moderationStore:GetAsync(key) end)
@@ -453,6 +470,15 @@ bindFunction("IsGloballyBanned", function(userId: any)
 	return data.globalBan == true, true, data.reason
 end)
 
+-- Join-time moderation uses one authoritative durable read for both ban and
+-- request-block state. This avoids two sequential DataStore lookups per player.
+bindFunction("GetModerationState", function(userId: any)
+	if not SERVICE_ENABLED then return false, false end
+	local data = getModeration(userId)
+	if data.lookupFailed then return false, false end
+	return true, data.globalBan == true, data.requestBlocked == true, data.reason
+end)
+
 bindFunction("SetGlobalBan", function(userId: any, banned: any, actorUserId: any, reason: any)
 	if not SERVICE_ENABLED or typeof(banned) ~= "boolean" or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
 	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
@@ -545,8 +571,11 @@ end)
 bindFunction("PublishDJCommand", publishDJCommand)
 
 local function allowGlobalQueueStoreOperation(): boolean
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	return shared and allowed
+	-- When MemoryStore is down, consumeShared already applies a conservative
+	-- per-server fallback bucket. Keep the DataStore-backed global queue online
+	-- instead of treating a budget-service outage as a queue-storage outage.
+	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	return allowed == true
 end
 
 -- Global queue API: every mutation is atomic in the shared DataStore.
@@ -625,7 +654,18 @@ bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallback
 	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
 	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry, catalogRevision, expectedNextEntryId)
 	if ok then
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
+		-- Carry the compact committed track metadata in the invalidation message.
+		-- Peer servers can update title/duration immediately without waiting for
+		-- an additional DataStore snapshot round trip.
+		local current = state.current
+		local playback = state.playback
+		local trackHint = if typeof(current) == "table" and typeof(playback) == "table" then {
+			id = current.id, trackId = current.trackId, title = current.title, artist = current.artist,
+			genre = current.genre, duration = current.duration, requestedBy = current.requestedBy,
+			userId = current.userId, source = current.source, vip = current.vip,
+			soundId = current.soundId, trackRevision = playback.trackRevision,
+		} else nil
+		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision, trackHint = trackHint})
 		-- A committed next-track transition is the resume path after ForceStop.
 		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
 		if budgetShared and budgetAllowed then
@@ -933,7 +973,14 @@ if healthModule and globalRecoveryService then
 	end)
 	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
 		globalHealthService = instance
-		globalHealthService:Start()
+		-- The first health pass otherwise runs before Messaging subscriptions and
+		-- the recovery service have completed their initial probes.
+		task.delay(4, function()
+			if globalHealthService == instance then
+				local startOk, startError = pcall(function() instance:Start() end)
+				if not startOk then warn("[ClubMusic Global Health] Delayed startup failed: " .. tostring(startError)) end
+			end
+		end)
 	else
 		warn("[ClubMusic Global] Could not initialize Global Health Service: " .. tostring(instance))
 	end
@@ -1028,16 +1075,36 @@ globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Serv
 	getChecks = function()
 		local health = if globalHealthService then globalHealthService:GetStatus() else nil
 		local recovery = if globalRecoveryService then globalRecoveryService:GetStatus() else nil
+		local registry = if globalRegistryService then globalRegistryService:GetStatus() else nil
+		local sync = getGlobalSyncStatus()
 		return {
-			LocalHealth = health ~= nil and health.localState == "Healthy",
+			LocalHealth = if health == nil then {pending = true, detail = "Local health monitor has not completed its first check."}
+				else health.localState == "Healthy",
 			QueueModule = queueModule.Parent == ServerStorage and queueModule:IsA("ModuleScript"),
-			Recovery = recovery ~= nil and (recovery.state == "Healthy" or recovery.state == "Disabled"),
-			Registry = globalRegistryService ~= nil and globalRegistryService:GetStatus().state == "Healthy",
+			Recovery = if recovery == nil or recovery.state == "Starting" then
+				{pending = true, detail = if recovery then recovery.detail else "Recovery service has not started."}
+				else recovery.state == "Healthy" or recovery.state == "Disabled",
+			Registry = if registry == nil or registry.state == "Starting" then
+				{pending = true, detail = "Server registry is waiting for its first MemoryStore heartbeat."}
+				else registry.state == "Healthy" or registry.state == "Disabled",
+			SyncHeartbeat = if sync.state == "Starting" or sync.state == "Unverified" then
+				{pending = true, detail = sync.detail}
+				else sync.state == "Healthy" or sync.state == "Disabled",
 		}
 	end,
 	reportError = reportOperationalError,
 }, {"Start", "GetStatus", "Check"})
-if globalWatchdogService then globalWatchdogService:Start() end
+if globalWatchdogService then
+	local watchdog = globalWatchdogService
+	-- Registry and recovery are intentionally asynchronous. Do not classify their
+	-- initial Starting state as a fault during the service bootstrap window.
+	task.delay(10, function()
+		if globalWatchdogService == watchdog then
+			local startOk, startError = pcall(function() watchdog:Start() end)
+			if not startOk then warn("[ClubMusic Global Watchdog] Delayed startup failed: " .. tostring(startError)) end
+		end
+	end)
+end
 
 -- Security services remain independent; authorization denies by default until a trusted resolver exists.
 globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {
@@ -1442,7 +1509,34 @@ local function onQueueChanged(message)
 	if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
 		MusicGlobalQueueService:InvalidateSnapshot()
 	end
-	globalEventBindable:Fire({kind = "QueueChanged", revision = math.floor(data.revision), senderJob = data.senderJob})
+	local trackHint = nil
+	if typeof(data.trackHint) == "table" then
+		local hint = data.trackHint
+		local validTrack = typeof(hint.trackId) == "string" and #hint.trackId > 0 and #hint.trackId <= 64
+			and string.match(hint.trackId, "^[%w%-_]+$") ~= nil
+			and typeof(hint.title) == "string" and #hint.title <= 160
+			and typeof(hint.artist) == "string" and #hint.artist <= 100
+			and finiteNumber(hint.duration) and hint.duration >= 1 and hint.duration <= 86400
+			and finiteNumber(hint.trackRevision) and hint.trackRevision >= 0 and hint.trackRevision % 1 == 0
+		if validTrack then
+			trackHint = {
+				id = if typeof(hint.id) == "string" then string.sub(hint.id, 1, 64) else "",
+				trackId = hint.trackId, title = hint.title, artist = hint.artist,
+				genre = if typeof(hint.genre) == "string" then string.sub(hint.genre, 1, 40) else "Unknown",
+				duration = hint.duration,
+				requestedBy = if typeof(hint.requestedBy) == "string" then string.sub(hint.requestedBy, 1, 80) else "Auto DJ",
+				userId = if finiteNumber(hint.userId) then math.max(0, math.floor(hint.userId)) else 0,
+				source = if typeof(hint.source) == "string" then string.sub(hint.source, 1, 24) else "auto",
+				vip = hint.vip == true,
+				soundId = if typeof(hint.soundId) == "string" then string.sub(hint.soundId, 1, 64) else "",
+				trackRevision = math.floor(hint.trackRevision),
+			}
+		end
+	end
+	globalEventBindable:Fire({
+		kind = "QueueChanged", revision = math.floor(data.revision),
+		senderJob = data.senderJob, trackHint = trackHint,
+	})
 end
 
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
@@ -1545,9 +1639,16 @@ task.spawn(function()
 			for _, player in ipairs(Players:GetPlayers()) do
 				local data = getModeration(player.UserId)
 				if data.lookupFailed then
-					player:Kick("Global moderation is temporarily unavailable. Please rejoin shortly.")
+					-- Unknown is not the same as banned. Keep moderation-sensitive
+					-- actions closed while the authoritative record is unavailable,
+					-- but never kick a player solely because a backend read failed.
+					player:SetAttribute("GlobalModerationPending", true)
 				else
-					if data.globalBan == true then player:Kick("You are globally banned from this experience.") end
+					if data.globalBan == true then
+						player:Kick("You are globally banned from this experience.")
+					else
+						player:SetAttribute("GlobalModerationPending", false)
+					end
 					globalEventBindable:Fire({kind = "Moderation", userId = player.UserId, field = "requestBlocked", value = data.requestBlocked == true})
 				end
 				task.wait(1.1)

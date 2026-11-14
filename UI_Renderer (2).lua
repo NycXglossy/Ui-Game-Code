@@ -15,6 +15,9 @@ local SoundService = game:GetService("SoundService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Renderer = {}
+-- One live main-menu renderer per Player. Repeated Mount calls must reuse the
+-- existing UI instead of destroying and recreating its ScreenGui (visible flicker).
+local activeMounts: {[Player]: any} = {}
 
 local C = {
 	Base = Color3.fromRGB(13, 16, 24),
@@ -35,56 +38,48 @@ local BOLD = Enum.Font.GothamBold
 local ITALIC = Enum.Font.SourceSansItalic
 
 local GENRES = {
-	{id="hiphop", name="Hip Hop / Rap", tagline="Heavy bass, big bars", color=Color3.fromRGB(192,38,211), tracks={
-		{"hh-0","Palm Tree Freestyle","Lil Coconut",184},{"hh-1","Tide Money","MC Lagoon",201},{"hh-2","Boardwalk Bounce","Kid Kahuna",176},{"hh-3","Sandcastle Kings","Reef Gang",213},{"hh-4","Midnight Luau","Big Pineapple",195},{"hh-5","Wave Check","Yung Tsunami",168}}},
-	{id="rnb", name="R&B / Soul", tagline="Smooth sunset grooves", color=Color3.fromRGB(244,63,94), tracks={
-		{"rnb-0","Golden Hour Love","Coral Rose",224},{"rnb-1","Slow Tide","Marina Soul",241},{"rnb-2","Tiki Torch Serenade","D'Angelo Bay",232},{"rnb-3","Velvet Shoreline","Honey Kai",207},{"rnb-4","Lantern Light","Nalu & The Keys",219}}},
-	{id="rock", name="Rock", tagline="Amps up to eleven", color=Color3.fromRGB(234,88,12), tracks={
-		{"rk-0","Volcano Riff","The Lava Kings",238},{"rk-1","Surf's Up Anthem","Riptide Rebels",199},{"rk-2","Driftwood Highway","Saltwater Saints",262},{"rk-3","Thunder on the Bay","Coral Crush",221}}},
-	{id="kpop", name="K-Pop", tagline="Choreo-ready hits", color=Color3.fromRGB(236,72,153), tracks={
-		{"kp-0","SUMMER GLITCH","NEONWAVE",192},{"kp-1","Pink Horizon","STARR1SE",205},{"kp-2","Island Signal","LUMI-9",187},{"kp-3","Heartbeat Lagoon","KORAL",199},{"kp-4","Firework Kiss","AURA X",181}}},
-	{id="latin", name="Latin Music", tagline="Reggaeton & salsa heat", color=Color3.fromRGB(245,158,11), tracks={
-		{"lt-0","Playa Caliente","DJ Mango",214},{"lt-1","Bailando en la Arena","Sol y Mar",228},{"lt-2","Noche Tropical","La Ola",203},{"lt-3","Fuego Lento","Rey Coco",197}}},
-	{id="edm", name="EDM", tagline="Drops over the ocean", color=Color3.fromRGB(34,211,238), tracks={
-		{"edm-0","Sunset Overdrive","Aqualux",246},{"edm-1","Neon Coastline","VOLTA",233},{"edm-2","Tidal Drop","Prism Reef",258},{"edm-3","Laser Lagoon","Kairo",219},{"edm-4","Afterglow Rave","SKYE.EXE",271},{"edm-5","Bassquake Beach","Subduction",205}}},
-	{id="country", name="Country", tagline="Boots in the sand", color=Color3.fromRGB(234,179,8), tracks={
-		{"ct-0","Beach Truck Blues","Dusty Shores",212},{"ct-1","Sunburnt Sweetheart","Cody Cove",198},{"ct-2","Barefoot Rodeo","The Palm Ranch",205}}},
-	{id="pop", name="Pop", tagline="Sing-along anthems", color=Color3.fromRGB(139,92,246), tracks={
-		{"pop-0","Electric Paradise","Mia Lumen",189},{"pop-1","Coconut Crush","Jade Rivers",176},{"pop-2","Ocean Eyes Tonight","Leo Starr",201},{"pop-3","Glow Up Summer","Nova Bay",183},{"pop-4","Postcard Heart","Kenna Blue",194}}},
-	{id="exclusive", name="Club Exclusives", tagline="Only at Sunset Stage", color=Color3.fromRGB(255,46,147), tracks={
-		{"ex-0","Sunset Stage Anthem","Club Resident",262},{"ex-1","Tiki Torch Theory","Club Resident ft. VOLTA",238},{"ex-2","Low-Poly Paradise","Pixel Palms",224},{"ex-3","Mainstage Moonrise","The Owners",289}}},
+	{id="rockstar", name="Rockstar Music", tagline="New tracks coming soon", color=Color3.fromRGB(226,194,132), tracks={
+		{"temp-rockstar","Coming Soon — Rockstar Music","New music is on the way",1},
+	}},
 	{id="other", name="Other", tagline="More sounds beyond the main genres", color=Color3.fromRGB(119,196,203), tracks={}},
 }
 
+-- Renderer-side indexes are built from the same static genre catalog used by
+-- the browser. Server catalog updates can extend these maps later, but queue
+-- rendering must never depend on an optional update arriving first.
+local ALL_TRACKS: {any} = {}
 local TRACK_INDEX: {[string]: any} = {}
 local TRACK_GENRE: {[string]: any} = {}
 local TRACK_ARTWORK: {[string]: number} = {}
-local ALL_TRACKS: {any} = {}
+
 for _, genre in ipairs(GENRES) do
 	for _, track in ipairs(genre.tracks) do
-		TRACK_INDEX[track[1] :: string] = track
-		TRACK_GENRE[track[1] :: string] = genre
-		table.insert(ALL_TRACKS, track)
+		local trackId = tostring(track[1] or "")
+		if trackId ~= "" then
+			TRACK_INDEX[trackId] = track
+			TRACK_GENRE[trackId] = {
+				id = genre.id,
+				name = genre.name,
+				color = genre.color,
+			}
+			table.insert(ALL_TRACKS, track)
+		end
 	end
 end
 
-local DONATIONS = {
-	{amount=10,label="Coconut",perk="Shoutout in chat",productId=0},
-	{amount=50,label="Pineapple",perk="Firework burst",productId=0},
-	{amount=100,label="Tiki Torch",perk="Stage confetti",productId=0},
-	{amount=500,label="Volcano",perk="Lava light show",productId=0},
-	{amount=1000,label="Island Legend",perk="Name on the big screen",productId=0},
-}
 local SHOP = {
 	{name="Custom Glowsticks",desc="Dual-wield glowsticks synced to stage lights.",price=75,rarity="Common",kind="Product",id=0},
 	{name="Tiki Mask",desc="Hand-carved mask with glowing ember eyes.",price=250,rarity="Rare",kind="Product",id=0},
 	{name="Neon Aura Effect",desc="A magenta-cyan aura that pulses on every beat.",price=600,rarity="Epic",kind="Product",id=0},
 	{name="VIP Backstage Pass",desc="Backstage lounge, priority song requests, 4 queue slots and 3s request cooldown.",price=1500,rarity="Legendary",kind="GamePass",passKey="vip",id=0},
 	{name="VVIP Ocean Crown Pass",desc="Everything in VIP plus 6 queue slots, 2s cooldown and higher request priority.",price=2500,rarity="Mythic",kind="GamePass",passKey="vvip",id=0},
-	{name="Tiki Tide Sultan Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="sultan",id=0},
+	{name="Tiki Tide Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="tikiTide",id=0},
 	{name="Neon Flower Lei",desc="Glowing hibiscus lei with petal trails.",price=150,rarity="Rare",kind="Product",id=0},
 	{name="LED Party Shades",desc="Visualizer lenses that react to the current track.",price=320,rarity="Epic",kind="Product",id=0},
 }
+-- Tip Jar tiers are intentionally empty until real Developer Product IDs are configured.
+-- Keeping this table defined prevents an unconfigured shop from breaking menu rendering.
+local DONATIONS: {any} = {}
 local REWARDS = {
 	{day=1,label="50 Coins"},{day=2,label="2x Glowsticks"},{day=3,label="100 Tickets"},
 	{day=4,label="Song Skip Token"},{day=5,label="250 Coins"},{day=6,label="Neon Trail"},{day=7,label="Exclusive Title Tag"},
@@ -105,8 +100,8 @@ local TAGS = {
 -- w / h  = panel size as a fraction of the screen
 -- min/max= panel pixel limits (in unscaled UI units)
 local PROFILES: {[string]: any} = {
-	Desktop = { base = 0.88, refX = 1280, refY = 720, minF = 0.80, w = 0.62, h = 0.74,
-		min = Vector2.new(320, 300), max = Vector2.new(820, 640), toggle = 48, togglePos = UDim2.new(1, -14, 0.55, 0), hudTop = 8 },
+	Desktop = { base = 1.00, refX = 1280, refY = 720, minF = 0.80, w = 0.68, h = 0.80,
+		min = Vector2.new(360, 340), max = Vector2.new(1100, 820), toggle = 48, togglePos = UDim2.new(1, -14, 0.55, 0), hudTop = 8 },
 	Tablet = { base = 0.92, refX = 1024, refY = 600, minF = 0.85, w = 0.72, h = 0.80,
 		min = Vector2.new(320, 280), max = Vector2.new(820, 640), toggle = 52, togglePos = UDim2.new(1, -14, 0.5, 0), hudTop = 8 },
 	Mobile = { base = 0.90, refX = 640, refY = 340, minF = 0.90, w = 0.94, h = 0.90,
@@ -577,7 +572,7 @@ end
 local ALLOWED_ACTIONS: {[string]: boolean} = {
 	ReloadSong = true, ToggleFavorite = true, RequestTrack = true, VoteSkip = true,
 	RequestAudioAsset = true, CatalogAddAudio = true, CatalogRemoveTrack = true, DJSkip = true, DJToggleLock = true, DJClearQueue = true,
-	DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ModBlockUser = true, ModSetVip = true,
+	DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ModBlockUser = true, ModSetPassTier = true,
 	ModPurgeUser = true, ClaimDailyReward = true, EquipTitleTag = true, BuyTitleTag = true,
 	SaveTitleSlot = true, SetTitleVisible = true, SelectTitleSlot = true,
 	ClearTitleSlot = true,
@@ -589,7 +584,7 @@ local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	SaveCustomTitle = true,
 	-- Wrappers that UI_Network exposes; act() prefers these over raw Network.Send.
 	ReloadSong = true, DJClearQueue = true, DJToggleLock = true,
-	ModBlockUser = true, ModSetVip = true, ModPurgeUser = true,
+	ModBlockUser = true, ModSetPassTier = true, ModPurgeUser = true,
 	SelectTitleSlot = true, ClearTitleSlot = true, SetTitleVisible = true,
 }
 local ACTION_MIN_INTERVAL: {[string]: number} = {
@@ -628,6 +623,15 @@ end
 function Renderer.Mount(player: Player, Network: {[string]: any})
 	assert(player and player:IsA("Player"), "Renderer.Mount expected a Player")
 	assert(typeof(Network) == "table", "Renderer.Mount expected the UI_Network table")
+
+	local existingMount = activeMounts[player]
+	if typeof(existingMount) == "table" then
+		local existingGui = existingMount.Gui
+		if typeof(existingGui) == "Instance" and existingGui.Parent then
+			return existingMount
+		end
+		activeMounts[player] = nil
+	end
 
 	local playerGui = player:WaitForChild("PlayerGui")
 	local connections: {RBXScriptConnection} = {}
@@ -752,10 +756,25 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		refs.timeLabel.Text = formatTime(elapsed) .. " / " .. formatTime(refs.duration)
 	end
 
-	local oldGui = playerGui:FindFirstChild("FirebeachMusicFestivalClubUI")
-	if oldGui then oldGui:Destroy() end
+	-- Never destroy a live main menu just because Mount was called again.
+	-- A second renderer module instance can have a separate Lua module cache,
+	-- so the per-module activeMounts guard above is not sufficient by itself.
+	local existingMainGui = playerGui:FindFirstChild("FirebeachMusicFestivalClubUI")
+	if existingMainGui and existingMainGui:IsA("ScreenGui") then
+		local adoptedMount = {
+			Gui = existingMainGui,
+			Notify = function() end,
+			Open = function() end,
+			Close = function() end,
+			Destroy = function() end,
+		}
+		activeMounts[player] = adoptedMount
+		return adoptedMount
+	end
+
+	-- Remove only the obsolete legacy root; never touch unrelated interfaces.
 	local legacyGui = playerGui:FindFirstChild("SunsetStageClubUI")
-	if legacyGui then legacyGui:Destroy() end
+	if legacyGui and legacyGui:IsA("ScreenGui") then legacyGui:Destroy() end
 
 	local gui = make("ScreenGui", {
 		Name = "FirebeachMusicFestivalClubUI",
@@ -798,57 +817,61 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return thisToast
 	end
 
-	local function send(action: string, payload: any?)
-		if destroyed then return end
+	local function send(action: string, payload: any?): boolean
+		if destroyed then return false end
 		if typeof(action) ~= "string" or not ALLOWED_ACTIONS[action] then
 			warn("[ClubMusic UI] Blocked unknown client action.")
-			return
+			return false
 		end
 		if payload ~= nil and typeof(payload) ~= "table" then
 			warn("[ClubMusic UI] Blocked malformed action payload: " .. action)
-			return
+			return false
 		end
 		local now = os.clock()
 		local interval = ACTION_MIN_INTERVAL[action] or 0.10
-		if now - (lastActionAt[action] or 0) < interval then return end
+		if now - (lastActionAt[action] or 0) < interval then return false end
 		lastActionAt[action] = now
 		if typeof(Network.Send) ~= "function" then
 			notify("Network action unavailable: " .. action, C.Red)
-			return
+			return false
 		end
 		local ok, result = pcall(Network.Send, action, payload or {})
 		if not ok then
 			warn("[ClubMusic UI] Send failed: " .. tostring(result))
 			notify("Could not send request.", C.Red)
+			return false
 		end
+		return result == true
 	end
 
-	local function callNetwork(method: string, ...)
-		if destroyed then return end
+	local function callNetwork(method: string, ...): boolean
+		if destroyed then return false end
 		if typeof(method) ~= "string" or not ALLOWED_NETWORK_METHODS[method] then
 			warn("[ClubMusic UI] Blocked unknown network method.")
-			return
+			return false
 		end
 		local fn = Network[method]
-		-- Missing optional wrappers fall back to Network.Send at the call site.
-		if typeof(fn) ~= "function" then return end
+		if typeof(fn) ~= "function" then return false end
 		local now = os.clock()
 		local interval = ACTION_MIN_INTERVAL[method] or 0.10
-		if now - (lastActionAt[method] or 0) < interval then return end
+		if now - (lastActionAt[method] or 0) < interval then return false end
 		lastActionAt[method] = now
-		local ok, err = pcall(fn, ...)
+		local ok, result = pcall(fn, ...)
 		if not ok then
-			warn("[ClubMusic UI] " .. method .. ": " .. tostring(err))
+			warn("[ClubMusic UI] " .. method .. ": " .. tostring(result))
 			notify("Action failed.", C.Red)
+			return false
 		end
+		return result ~= false
 	end
 
+	-- Premium floating launcher: coordinated with the dark, gold and cyan ClubMusic surfaces.
 	local toggleButton = make("TextButton", {
 		Name = "OpenButton",
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -18, 0.55, 0),
 		Size = UDim2.fromOffset(54, 54),
-		BackgroundColor3 = C.Magenta,
+		BackgroundColor3 = C.Surface,
 		Text = "",
 		TextColor3 = C.White,
 		TextSize = 28,
@@ -856,10 +879,24 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		AutoButtonColor = true,
 		ZIndex = 10,
 	}, gui) :: TextButton
-	corner(toggleButton, 18)
-	buildNativeIcon(toggleButton, "music", C.White, 11)
-	local toggleOutline = stroke(toggleButton, C.Cyan, 2)
-	bindFocusFeedback(toggleButton, toggleOutline, C.Magenta)
+	corner(toggleButton, 17)
+	make("UIGradient", {
+		Rotation = 135,
+		Color = ColorSequence.new(C.SurfaceLight, C.Surface),
+	}, toggleButton)
+	local toggleOutline = stroke(toggleButton, C.Gold, 1.6)
+	toggleOutline.Transparency = 0.12
+	buildNativeIcon(toggleButton, "music", C.Gold, 11)
+	bindFocusFeedback(toggleButton, toggleOutline, C.SurfaceLight)
+	make("Frame", {
+		Name = "LauncherAccent",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -5),
+		Size = UDim2.fromOffset(15, 2),
+		BackgroundColor3 = C.Cyan,
+		BorderSizePixel = 0,
+		ZIndex = 12,
+	}, toggleButton)
 
 	-- Top bar HUD: a compact companion to the full festival panel, with matching surfaces and accents.
 	local hud = make("TextButton", {
@@ -884,26 +921,56 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			or normalizedName == "clubmusiccompacthud"
 	end
 
+	local function syncLauncherVisibility()
+		-- Keep the floating full-UI launcher hidden behind every companion panel.
+		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
+		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
+		toggleButton.Visible = not expanded and not tikiTideSettingsOpen and not inventoryOpen
+	end
+
 	local function setCompactHudVisibility(visible: boolean)
-		-- Hide every known compact ClubMusic bar, including stale copies created
-		-- by an older renderer. Never toggle the active bar on while expanded.
+		-- Keep the compact HUD hidden while any full-size companion panel is open.
+		playerGui:SetAttribute("ClubMusicMenuExpanded", expanded)
+		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
+		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
 		for _, descendant in ipairs(playerGui:GetDescendants()) do
 			if descendant ~= hud and isCompactClubHud(descendant) then
 				(descendant :: GuiObject).Visible = false
 			end
 		end
-		hud.Visible = visible and not expanded
+		hud.Visible = visible and not expanded and not tikiTideSettingsOpen and not inventoryOpen
+		syncLauncherVisibility()
 	end
 
-	-- Catch duplicate bars created by another renderer copy after this menu opens.
+	local function syncExternalPanelHudVisibility()
+		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
+		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
+		if inventoryOpen or tikiTideSettingsOpen or expanded then
+			for _, descendant in ipairs(playerGui:GetDescendants()) do
+				if descendant ~= hud and isCompactClubHud(descendant) then
+					(descendant :: GuiObject).Visible = false
+				end
+			end
+		end
+		hud.Visible = not expanded and not tikiTideSettingsOpen and not inventoryOpen
+		syncLauncherVisibility()
+	end
+
+	-- Coordinate compact-HUD visibility with Tiki Tide Settings and the
+	-- independent Utility Bar inventory without rebuilding either interface.
+	table.insert(connections, playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(syncExternalPanelHudVisibility))
+	table.insert(connections, playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(syncExternalPanelHudVisibility))
+	syncExternalPanelHudVisibility()
+	-- Catch duplicate bars created by another renderer copy while a panel is open.
 	table.insert(connections, playerGui.DescendantAdded:Connect(function(descendant)
-		if expanded and isCompactClubHud(descendant) then
+		if (expanded or playerGui:GetAttribute("UtilityInventoryOpen") == true
+			or playerGui:GetAttribute("TikiTideSettingsOpen") == true) and isCompactClubHud(descendant) then
 			(descendant :: GuiObject).Visible = false
 		end
 	end))
 
-	corner(hud, 18)
-	local hudOutline = stroke(hud, C.Gold, 1.5)
+	corner(hud, 15)
+	local hudOutline = stroke(hud, C.Gold, 1.1)
 	hudOutline.Transparency = 0.22
 	bindFocusFeedback(hud, hudOutline, C.Surface)
 	make("UIGradient", {
@@ -913,7 +980,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			ColorSequenceKeypoint.new(1, C.Surface),
 		}),
 	}, hud)
-	local hudConstraint = make("UISizeConstraint", { MinSize = Vector2.new(260, 64), MaxSize = Vector2.new(760, 68) }, hud)
+	local hudConstraint = make("UISizeConstraint", { MinSize = Vector2.new(260, 56), MaxSize = Vector2.new(760, 68) }, hud)
 	local hudScale = make("UIScale", { Scale = 1 }, hud)
 	local hudBars: {any} = {}
 	local hudBarHolder = make("Frame", {
@@ -1067,6 +1134,19 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	}, gui) :: Frame
 	corner(panel, 22)
 	stroke(panel, C.Gold, 1.5)
+
+	-- This renderer owns the expanded menu's visibility. If another local UI
+	-- lifecycle briefly disables the ScreenGui or hides either surface, restore
+	-- it while the menu is open instead of allowing a one-second blank/flicker.
+	local function enforceExpandedVisibility()
+		if destroyed or not expanded then return end
+		if not gui.Enabled then gui.Enabled = true end
+		if not shade.Visible then shade.Visible = true end
+		if not panel.Visible then panel.Visible = true end
+	end
+	table.insert(connections, gui:GetPropertyChangedSignal("Enabled"):Connect(enforceExpandedVisibility))
+	table.insert(connections, shade:GetPropertyChangedSignal("Visible"):Connect(enforceExpandedVisibility))
+	table.insert(connections, panel:GetPropertyChangedSignal("Visible"):Connect(enforceExpandedVisibility))
 
 	local sizeConstraint = make("UISizeConstraint", {
 		MinSize = Vector2.new(320, 360),
@@ -1529,12 +1609,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end)
 		return button
 	end
-	local function act(method: string, payload: {[string]: any}, ...)
+	local function act(method: string, payload: {[string]: any}, ...): boolean
 		if typeof(Network[method]) == "function" then
-			callNetwork(method, ...)
-		else
-			send(method, payload)
+			return callNetwork(method, ...)
 		end
+		return send(method, payload)
 	end
 
 	local function requestsDisabled(): (boolean, string)
@@ -1570,12 +1649,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			return
 		end
 		lastReload = os.clock()
-		act("ReloadSong", {})
+		local sent = act("ReloadSong", {})
+		if not sent then
+			notify("Reload request could not be sent. Please wait a moment and try again.", C.Red)
+			return
+		end
 		if typeof(Network.GetState) == "function" and applyStateFn then
 			local ok, fresh = pcall(Network.GetState)
 			if ok and typeof(fresh) == "table" then applyStateFn(fresh) end
 		end
-		notify("Reloading song…", C.Cyan)
+		notify("Reload request sent. Waiting for the server…", C.Cyan)
 	end
 
 	local currentTrackId: any
@@ -1875,6 +1958,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		label(frame, tostring(track[2]), UDim2.fromOffset(textX, if compact then 4 else 8), UDim2.new(1, titleInset, 0, 22), C.White, 13, true)
 		label(frame, tostring(track[3]) .. "  •  " .. formatTime(tonumber(track[4]) or 0), UDim2.fromOffset(textX, if compact then 25 else 32), UDim2.new(1, artistInset, 0, 18), C.Muted, 11, false)
+
+		-- Temporary catalog entries are informational only: never offer favorites or requests.
+		if string.sub(id, 1, 5) == "temp-" then
+			label(frame, "COMING SOON", UDim2.new(1, if compact then -112 else -124, 0, if compact then 49 else 18), UDim2.fromOffset(if compact then 104 else 116, 30), C.Gold, 10, true)
+			return frame
+		end
 
 		local favorites: any = state.favorites
 		local isFavorite = typeof(favorites) == "table" and favorites[id] == true
@@ -3444,30 +3533,58 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local rosterCards: {Frame} = {}
 		for _, p: any in ipairs(roster) do
 			local showButtons = level >= 2 and p.canMod == true
-			local pcard = card(if showButtons then 112 else 68)
+			local isOwner = level >= 4 and p.canMod == true
+			local pcard = card(if isOwner then 146 elseif showButtons then 112 else 68)
 			table.insert(rosterCards, pcard)
 			local displayName = nz(p.displayName, "Player")
 			local username = nz(p.name, "?")
 			local userId = tonumber(p.userId) or 0
+			local currentTier = math.clamp(math.floor(tonumber(p.passTier) or 0), 0, 3)
+			local rewardedTier = math.clamp(math.floor(tonumber(p.rewardedPassTier) or 0), 0, 3)
+			local tierNames = {"GUEST", "VIP", "VVIP", "TIKI TIDE"}
 			pcard:SetAttribute("RosterSearchKey", string.lower(displayName .. " " .. username .. " " .. tostring(userId)))
 			label(pcard, displayName, UDim2.fromOffset(13,7), UDim2.new(1,-26,0,20), C.White, 13, true)
 			label(pcard, "@" .. username .. "   •   ID " .. tostring(userId), UDim2.fromOffset(13,27), UDim2.new(1,-26,0,15), C.Muted, 9, false)
-			local bits = {nz(p.rank, "GUEST")}
-			if p.vip == true then table.insert(bits, if p.tempVip == true then "TEMP VIP" else "VIP") end
+			local bits = {nz(p.rank, "GUEST"), tierNames[currentTier + 1]}
+			if p.groupMember == true then table.insert(bits, "GROUP MEMBER") end
+			if rewardedTier > 0 then table.insert(bits, "OWNER REWARD") end
 			table.insert(bits, tostring(tonumber(p.requests) or 0) .. " queued")
 			if p.blocked == true then table.insert(bits, "REQUESTS BLOCKED") end
 			label(pcard, table.concat(bits, "   •   "), UDim2.fromOffset(13,45), UDim2.new(1,-26,0,17), if p.blocked == true then C.Red else C.Gold, 9, false)
 			if showButtons then
 				local isBlocked = p.blocked == true
-				local isTempVip = p.tempVip == true
 				local buttonY = 76
-				local buttonWidth = UDim2.new(1/3,-16,0,27)
-				local blockButton = actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0,12,0,buttonY), buttonWidth, function() act("ModBlockUser", {userId=userId, blocked=not isBlocked}, userId, not isBlocked) end, if isBlocked then C.Green else C.Red)
-				local vipButton = actionButton(pcard, if isTempVip then "REMOVE VIP" else "GIVE VIP", UDim2.new(1/3,6,0,buttonY), buttonWidth, function() act("ModSetVip", {userId=userId, vip=not isTempVip}, userId, not isTempVip) end, C.Purple)
-				local purgeButton = actionButton(pcard, "PURGE QUEUE", UDim2.new(2/3,0,0,buttonY), buttonWidth, function() act("ModPurgeUser", {userId=userId}, userId) end, C.Orange)
-				blockButton.TextSize = 9
-				vipButton.TextSize = 9
-				purgeButton.TextSize = 9
+				if isOwner then
+					local baseTier = if p.groupMember == true then 1 else 0
+					local nextTier = math.clamp(math.max(rewardedTier, baseTier) + 1, 1, 3)
+					local nextName = tierNames[nextTier + 1]
+					local blockButton = actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0,12,0,buttonY), UDim2.new(1/3,-16,0,27), function()
+						act("ModBlockUser", {userId=userId, blocked=not isBlocked}, userId, not isBlocked)
+					end, if isBlocked then C.Green else C.Red)
+					local rankButton = actionButton(pcard, if nextTier > currentTier then "RANK UP → " .. nextName else "MAX TIER", UDim2.new(1/3,6,0,buttonY), UDim2.new(1/3,-16,0,27), function()
+						if nextTier <= currentTier then return end
+						act("ModSetPassTier", {userId=userId, passTier=nextTier}, userId, nextTier)
+					end, C.Purple)
+					local purgeButton = actionButton(pcard, "PURGE", UDim2.new(2/3,0,0,buttonY), UDim2.new(1/3,-12,0,27), function()
+						act("ModPurgeUser", {userId=userId}, userId)
+					end, C.Orange)
+					blockButton.TextSize = 9; rankButton.TextSize = 9; purgeButton.TextSize = 9
+					if rewardedTier > 0 then
+						local resetButton = actionButton(pcard, "RESET OWNER REWARD  •  KEEP GROUP VIP", UDim2.fromOffset(12,108), UDim2.new(1,-24,0,27), function()
+							act("ModSetPassTier", {userId=userId, passTier=0}, userId, 0)
+						end, C.SurfaceLight)
+						resetButton.TextSize = 9
+					end
+				else
+					local buttonWidth = UDim2.new(0.5,-16,0,27)
+					local blockButton = actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0,12,0,buttonY), buttonWidth, function()
+						act("ModBlockUser", {userId=userId, blocked=not isBlocked}, userId, not isBlocked)
+					end, if isBlocked then C.Green else C.Red)
+					local purgeButton = actionButton(pcard, "PURGE QUEUE", UDim2.new(0.5,4,0,buttonY), buttonWidth, function()
+						act("ModPurgeUser", {userId=userId}, userId)
+					end, C.Orange)
+					blockButton.TextSize = 9; purgeButton.TextSize = 9
+				end
 			end
 		end
 		search:GetPropertyChangedSignal("Text"):Connect(function()
@@ -3533,14 +3650,21 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local info = card(68)
 		label(info, "Tips help keep the island lights on.", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.White, 13, true)
 		label(info, "Choose a contribution below. Purchases require configured Developer Product IDs.", UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 28), C.Muted, 10, false)
-		for _, item in ipairs(DONATIONS) do
-			local donationCard = card(76)
-			label(donationCard, item.label .. "  •  " .. tostring(item.amount) .. " Robux", UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
-			label(donationCard, item.perk, UDim2.fromOffset(12, 34), UDim2.new(1, -130, 0, 20), C.Muted, 10, false)
-			actionButton(donationCard, "TIP", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
-				if item.productId <= 0 then notify("Configure this Developer Product ID first.", C.Red); return end
-				MarketplaceService:PromptProductPurchase(player, item.productId)
-			end, C.Magenta)
+		if #DONATIONS == 0 then
+			local pendingCard = card(54)
+			label(pendingCard, "Tip options are being prepared. No purchase products are configured yet.",
+				UDim2.fromOffset(12, 8), UDim2.new(1, -24, 1, -16), C.Muted, 10, false)
+		else
+			for _, item in ipairs(DONATIONS) do
+				local donationCard = card(76)
+				label(donationCard, item.label .. "  •  " .. tostring(item.amount) .. " Robux", UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
+				label(donationCard, item.perk, UDim2.fromOffset(12, 34), UDim2.new(1, -130, 0, 20), C.Muted, 10, false)
+				actionButton(donationCard, "TIP", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
+					local productId = tonumber(item.productId) or 0
+					if productId <= 0 then notify("Configure this Developer Product ID first.", C.Red); return end
+					MarketplaceService:PromptProductPurchase(player, productId)
+				end, C.Magenta)
+			end
 		end
 	end
 
@@ -3552,25 +3676,31 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			label(shopCard, item.desc, UDim2.fromOffset(12, 32), UDim2.new(1, -130, 0, 30), C.Muted, 10, false)
 			label(shopCard, if item.kind == "GamePass" then item.rarity .. " • Roblox Game Pass" else item.rarity .. " • " .. tostring(item.price) .. " coins",
 				UDim2.fromOffset(12, 64), UDim2.new(1, -130, 0, 16), C.Gold, 9, true)
-			actionButton(shopCard, "GET", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
-				local itemId = item.id
-				if item.kind == "GamePass" and itemId <= 0 then
-					local passKey = item.passKey or "vip"
-					if passKey == "sultan" then
-						itemId = tonumber(state.sultanGamePassId) or 0
-					elseif passKey == "vvip" then
-						itemId = tonumber(state.vvipGamePassId) or 0
-					else
-						itemId = tonumber(state.vipGamePassId) or 0
-					end
-				end
-				if itemId <= 0 then notify("This item is not configured for purchase yet.", C.Red); return end
-				if item.kind == "GamePass" then
-					MarketplaceService:PromptGamePassPurchase(player, itemId)
+			local itemId = tonumber(item.id) or 0
+			if item.kind == "GamePass" and itemId <= 0 then
+				local passKey = item.passKey or "vip"
+				if passKey == "tikiTide" then
+					itemId = tonumber(state.tikiTideGamePassId) or 0
+				elseif passKey == "vvip" then
+					itemId = tonumber(state.vvipGamePassId) or 0
 				else
-					MarketplaceService:PromptProductPurchase(player, itemId)
+					itemId = tonumber(state.vipGamePassId) or 0
 				end
-			end, C.Purple)
+			end
+			local purchaseButton = actionButton(shopCard, if itemId > 0 then "GET" else "COMING SOON",
+				UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
+					if itemId <= 0 then notify("This item is not configured for purchase yet.", C.Red); return end
+					if item.kind == "GamePass" then
+						MarketplaceService:PromptGamePassPurchase(player, itemId)
+					else
+						MarketplaceService:PromptProductPurchase(player, itemId)
+					end
+				end, C.Purple)
+			if itemId <= 0 then
+				purchaseButton.Active = false
+				purchaseButton.AutoButtonColor = false
+				purchaseButton.BackgroundTransparency = 0.25
+			end
 		end
 	end
 
@@ -3847,10 +3977,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function renderTitleEditor()
 		if state.customTitleUnlocked ~= true then
-			sectionLabel("CUSTOM TITLE  •  SULTAN EXCLUSIVE")
+			sectionLabel("CUSTOM TITLE  •  TIKI TIDE EXCLUSIVE")
 			local locked = card(112)
-			label(locked, "🔒  TIKI TIDE SULTAN REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
-			label(locked, "Unlock the Tiki Tide Sultan pass to create, style, and display your own overhead title.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
+			label(locked, "🔒  TIKI TIDE ACCESS REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
+			label(locked, "Unlock the Tiki Tide pass to create, style, and display your own overhead title.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
 			return
 		end
 		local unlocked, _, slotOf = titleSlotInfo()
@@ -4207,10 +4337,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function renderTitleManage()
 		if state.customTitleUnlocked ~= true then
-			sectionLabel("MANAGE TITLES  •  SULTAN EXCLUSIVE")
+			sectionLabel("MANAGE TITLES  •  TIKI TIDE EXCLUSIVE")
 			local locked = card(112)
-			label(locked, "🔒  TIKI TIDE SULTAN REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
-			label(locked, "Custom title slots and overhead title controls are exclusive to Tiki Tide Sultan members.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
+			label(locked, "🔒  TIKI TIDE ACCESS REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
+			label(locked, "Custom title slots and overhead title controls are exclusive to Tiki Tide members.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
 			return
 		end
 		local unlocked, active, slotOf, ts = titleSlotInfo()
@@ -4352,16 +4482,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local tier = tonumber(state.passTier) or 0
 		local vipId = tonumber(state.vipGamePassId) or 0
 		local vvipId = tonumber(state.vvipGamePassId) or 0
-		local sultanId = tonumber(state.sultanGamePassId) or 0
+		local tikiTidePassId = tonumber(state.tikiTideGamePassId) or 0
 		local passCard = card(244)
 		label(passCard, "ISLAND MEMBERSHIP", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.Gold, 14, true)
-		label(passCard, "Current tier: " .. nz(state.passName, if tier >= 3 then "TIKI TIDE SULTAN" elseif tier == 2 then "VVIP" elseif tier == 1 then "VIP" else "GUEST"),
+		label(passCard, "Current tier: " .. nz(state.passName, if tier >= 3 then "TIKI TIDE" elseif tier == 2 then "VVIP" elseif tier == 1 then "VIP" else "GUEST"),
 			UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 20), C.White, 11, true)
 		local baseSlots = tonumber(perks.baseSlots) or 2
 		local baseCooldown = tonumber(perks.baseCooldown) or 8
 		local vip = if typeof(passPerks.vip) == "table" then passPerks.vip else {}
 		local vvip = if typeof(passPerks.vvip) == "table" then passPerks.vvip else {}
-		local sultan = if typeof(passPerks.sultan) == "table" then passPerks.sultan else {}
+		local tikiTide = if typeof(passPerks.tikiTide) == "table" then passPerks.tikiTide else {}
 		label(passCard, string.format("VIP  •  %d slots  •  %ds cooldown  •  priority requests",
 			type(vip.slots) == "number" and vip.slots or (tonumber(perks.slots) or 4),
 			type(vip.cooldown) == "number" and vip.cooldown or (tonumber(perks.cooldown) or 3)),
@@ -4370,27 +4500,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			type(vvip.slots) == "number" and vvip.slots or 6,
 			type(vvip.cooldown) == "number" and vvip.cooldown or 2),
 			UDim2.fromOffset(12, 84), UDim2.new(1, -24, 0, 22), C.Cyan, 10, false)
-		label(passCard, string.format("TIKI TIDE SULTAN  •  %d slots  •  %ds cooldown  •  highest priority",
-			type(sultan.slots) == "number" and sultan.slots or 8,
-			type(sultan.cooldown) == "number" and sultan.cooldown or 1),
+		label(passCard, string.format("TIKI TIDE  •  %d slots  •  %ds cooldown  •  highest priority",
+			type(tikiTide.slots) == "number" and tikiTide.slots or 8,
+			type(tikiTide.cooldown) == "number" and tikiTide.cooldown or 1),
 			UDim2.fromOffset(12, 110), UDim2.new(1, -24, 0, 22), C.Gold, 10, true)
 		label(passCard, string.format("Guest baseline: %d slots and %ds cooldown. Higher passes include lower-tier benefits.",
 			baseSlots, baseCooldown), UDim2.fromOffset(12, 136), UDim2.new(1, -24, 0, 28), C.Muted, 9, false)
-		if tier < 1 and vipId > 0 then
-			actionButton(passCard, "GET VIP", UDim2.new(0, 12, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
-				MarketplaceService:PromptGamePassPurchase(player, vipId)
-			end, C.Magenta)
-		end
-		if tier < 2 and vvipId > 0 then
-			actionButton(passCard, "GET VVIP", UDim2.new(0.345, 0, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
-				MarketplaceService:PromptGamePassPurchase(player, vvipId)
-			end, C.Cyan)
-		end
-		if tier < 3 and sultanId > 0 then
-			actionButton(passCard, "GET SULTAN", UDim2.new(0.69, 0, 1, -38), UDim2.new(0.31, -8, 0, 28), function()
-				MarketplaceService:PromptGamePassPurchase(player, sultanId)
-			end, C.Gold)
-		end
+		local accessNote = label(passCard, "GROUP MEMBERS receive VIP automatically. Paid VIP, VVIP and Tiki Tide passes remain available; the OWNER can also award free tier upgrades from Moderation.",
+			UDim2.fromOffset(12, 180), UDim2.new(1, -24, 0, 42), C.Cyan, 9, false)
+		accessNote.TextWrapped = true
 	end
 
 	local renderers: {[string]: () -> ()} = {
@@ -4652,27 +4770,78 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end)
 	end
 
+	local mobileStateRenderQueued = false
+	-- State snapshots also carry a continuously advancing playback clock.
+	-- That clock is already interpolated locally by the HUD/progress display;
+	-- rebuilding the entire mobile tab tree for elapsed-only updates causes
+	-- visible content flashes. Compare snapshots while ignoring that one
+	-- volatile field, but retain every other state change for live tab refresh.
+	local function mobileRenderStateChanged(previous: any, nextState: any): boolean
+		local function equivalent(a: any, b: any, path: string, depth: number): boolean
+			if a == b then return true end
+			if typeof(a) ~= typeof(b) then return false end
+			if typeof(a) ~= "table" then return false end
+			if depth >= 10 then return false end
+			for key, value in pairs(a) do
+				local childPath = if path == "" then tostring(key) else path .. "." .. tostring(key)
+				if childPath ~= "nowPlaying.elapsed" then
+					if b[key] == nil and value ~= nil then return false end
+					if not equivalent(value, b[key], childPath, depth + 1) then return false end
+				end
+			end
+			for key, value in pairs(b) do
+				local childPath = if path == "" then tostring(key) else path .. "." .. tostring(key)
+				if childPath ~= "nowPlaying.elapsed" and a[key] == nil and value ~= nil then
+					return false
+				end
+			end
+			return true
+		end
+		return not equivalent(previous, nextState, "", 0)
+	end
+
 	local function applyState(newState: any)
 		if destroyed or typeof(newState) ~= "table" then return end
 		local cleanState = sanitizeStateValue(newState, 0, {})
 		if typeof(cleanState) ~= "table" then return end
+		local previousState = state
 		state = cleanState
 		syncElapsed()
 		updateHud()
-		if not destroyed then renderTab() end
+		-- Playback/state snapshots arrive regularly. The catalog pages own their
+		-- own paginated requests and must not be destroyed/recreated for unrelated
+		-- playback updates; doing so restarts the catalog request and looks like
+		-- the entire music library is constantly refreshing.
+		if destroyed or activeTab == "Music" or activeTab == "All Tracks" or activeTab == "Audio ID" then
+			return
+		end
+		-- A closed menu is rendered from the latest state when opened; rebuilding
+		-- hidden mobile content only wastes frames and can expose partial redraws.
+		if not expanded then return end
+		if currentDevice == "Mobile" then
+			-- Keep the mounted mobile tab tree stable while the menu is open.
+			-- Even coalesced snapshot-driven clear/rebuild cycles can produce a
+			-- brief visible flash on touch devices. State and the compact HUD are
+			-- still updated above; the active page refreshes on the next tab
+			-- selection or when the menu is reopened.
+			return
+		end
+		renderTab()
 	end
 
 	applyStateFn = applyState
 
 	local function open()
 		if destroyed or expanded then return end
+		-- Claim the expanded state before revealing the panel. This prevents a
+		-- one-frame launcher/HUD flash while the main menu is being opened.
 		expanded = true
 		setCompactHudVisibility(false)
-		shade.Visible = true
 		panel.Size = panelTarget
+		renderTab()
+		shade.Visible = true
 		panel.Visible = true
 		toggleButton.Visible = false
-		renderTab()
 		if UserInputService.GamepadEnabled then
 			task.defer(function()
 				if expanded and navButtons[activeTab] and navButtons[activeTab].Visible then
@@ -4685,12 +4854,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function close()
 		if destroyed or not expanded then return end
 		stopPreview()
+		-- Release visibility ownership and hide both surfaces in the same
+		-- synchronous turn before restoring the compact HUD.
 		expanded = false
-		setCompactHudVisibility(true)
 		shade.Visible = false
 		panel.Visible = false
-		toggleButton.Visible = true
-		if UserInputService.GamepadEnabled then GuiService.SelectedObject = toggleButton end
+		setCompactHudVisibility(true)
+		syncLauncherVisibility()
+		if UserInputService.GamepadEnabled and toggleButton.Visible then GuiService.SelectedObject = toggleButton end
 	end
 
 	toggleButton.Activated:Connect(open)
@@ -4780,9 +4951,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 
 		hudScale.Scale = layoutScale
-		hudConstraint.MaxSize = Vector2.new(math.clamp(viewport.X - 20, 260, 760), 68)
+		local mobileHud = currentDevice == "Mobile"
+		local compactHudHeight = if mobileHud then 60 else 68
+		-- Match the mobile Utility Bar's 64%-viewport width (220px minimum,
+		-- 520px maximum) so both compact surfaces share the same footprint.
+		local compactHudPixelWidth = if mobileHud
+			then math.max(220, math.min(520, math.floor(viewport.X * 0.64)))
+			else math.clamp(math.floor(viewport.X * 0.96), 260, 760)
+		hudConstraint.MinSize = Vector2.new(if mobileHud then math.min(220, compactHudPixelWidth) else 260, if mobileHud then 56 else 64)
+		hudConstraint.MaxSize = Vector2.new(compactHudPixelWidth, compactHudHeight)
 		local compactHud = viewport.X < 430
-		hud.Size = UDim2.new(0.96 / layoutScale, 0, 0, 68)
+		hud.Size = UDim2.new((compactHudPixelWidth / math.max(1, viewport.X)) / layoutScale, 0, 0, compactHudHeight)
 		hudEyebrow.TextSize = if compactHud then 7 else 8
 		hudTitle.TextSize = if compactHud then 11 else 14
 		hudArtist.TextSize = if compactHud then 8 else 10
@@ -4794,7 +4973,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		hudTime.Size = UDim2.fromOffset(if compactHud then 78 else 104, 16)
 		hudStatus.Size = UDim2.fromOffset(if compactHud then 78 else 104, 15)
 		hud.Position = UDim2.new(0.5, 0, 0, profile.hudTop)
-		hudBottom = profile.hudTop + math.floor(68 * layoutScale) + 8
+		hudBottom = profile.hudTop + math.floor(compactHudHeight * layoutScale) + 8
 		if expanded then applyMenuTypography() end
 	end
 
@@ -4929,7 +5108,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	renderTab()
 
-	local mounted = {
+	local mounted: any = nil
+	mounted = {
 		Gui = gui,
 		Notify = notify,
 		Open = open,
@@ -4937,6 +5117,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Destroy = function()
 			if destroyed then return end
 			destroyed = true
+			if activeMounts[player] == mounted then activeMounts[player] = nil end
 			lookupSerial += 1
 			stopPreview()
 			if playerAudioPreferences then
@@ -4956,6 +5137,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	gui.Destroying:Connect(function()
 		if not destroyed then
 			destroyed = true
+			if activeMounts[player] == mounted then activeMounts[player] = nil end
 			lookupSerial += 1
 			stopPreview()
 			if playerAudioPreferences then
@@ -4969,6 +5151,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 	end)
 
+	activeMounts[player] = mounted
 	return mounted
 end
 

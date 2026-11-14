@@ -78,6 +78,7 @@ function Backend.new(config: Config?)
 		destroyed = false,
 		paused = false,
 		pausedAt = 0,
+		currentAsset = "",
 	}, Backend)
 end
 
@@ -90,77 +91,214 @@ function Backend:SetAsset(asset: string): (boolean, string?)
 	if typeof(asset) ~= "string" or #asset > 64 or not string.match(asset, "^rbxassetid://%d+$") then
 		return false, "Invalid audio asset ID."
 	end
-	self:Stop()
+	local stopped, stopError = self:Stop()
+	if not stopped then return false, stopError or "The current audio could not be stopped safely." end
+	local previousAsset = self.currentAsset
 	local ok, err = pcall(function()
 		self.player.Asset = asset
 	end)
-	if not ok then return false, tostring(err) end
+	if not ok then
+		-- Keep the previous asset selected if replacement fails. Playback remains
+		-- stopped; the controller can explicitly retry or resume it.
+		if previousAsset ~= "" then
+			pcall(function() self.player.Asset = previousAsset end)
+		end
+		return false, tostring(err)
+	end
+	self.currentAsset = asset
+	self.paused = false
+	self.pausedAt = 0
 	return true, nil
 end
 
 function Backend:IsReady(): boolean
-	return self:IsAvailable() and self.player.IsReady
+	if not self:IsAvailable() then return false end
+	local ok, ready = pcall(function() return self.player.IsReady end)
+	return ok and ready == true
+end
+
+-- Readiness is a multi-property condition for safe handoff: the asset must be
+-- selected, the decoder must be ready, and duration must be finite and positive.
+function Backend:GetReadinessSnapshot(): {ready: boolean, length: number, asset: string}
+	if not self:IsAvailable() then
+		return { ready = false, length = 0, asset = "" }
+	end
+	local ok, ready, length, asset = pcall(function()
+		return self.player.IsReady, self.player.TimeLength, self.player.Asset
+	end)
+	if not ok then return { ready = false, length = 0, asset = self.currentAsset } end
+	local validLength = if finite(length) then math.max(0, length) else 0
+	local validAsset = if typeof(asset) == "string" then asset else ""
+	-- A decoder can briefly report IsReady for a previous selection while a
+	-- replacement asset is loading. Never expose that stale readiness as usable.
+	local assetMatchesSelection = self.currentAsset ~= "" and validAsset == self.currentAsset
+	return {
+		ready = ready == true and validLength > 0 and assetMatchesSelection,
+		length = validLength,
+		asset = validAsset,
+	}
 end
 
 function Backend:GetTimePosition(): number
 	if not self:IsAvailable() then return 0 end
-	return math.max(0, self.player.TimePosition)
+	local ok, position = pcall(function() return self.player.TimePosition end)
+	return if ok and finite(position) then math.max(0, position) else 0
 end
 
 function Backend:GetTimeLength(): number
-	if not self:IsAvailable() or not self.player.IsReady then return 0 end
-	return math.max(0, self.player.TimeLength)
+	if not self:IsReady() then return 0 end
+	local ok, length = pcall(function() return self.player.TimeLength end)
+	return if ok and finite(length) then math.max(0, length) else 0
 end
 
 function Backend:IsPlaying(): boolean
-	return self:IsAvailable() and self.player.IsPlaying and not self.paused
+	if not self:IsAvailable() or self.paused then return false end
+	local ok, playing = pcall(function() return self.player.IsPlaying end)
+	return ok and playing == true
 end
 
 function Backend:Play(asset: string?, position: number?): (boolean, string?)
+	if position ~= nil and (not finite(position) or position < 0) then
+		return false, "Invalid playback position."
+	end
 	if asset ~= nil then
 		local ok, err = self:SetAsset(asset)
 		if not ok then return false, err end
 	end
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
-	if position ~= nil then
-		if not finite(position) or position < 0 then return false, "Invalid playback position." end
-		self.player.TimePosition = position
+	local wasPaused = self.paused
+	local previousPausedAt = self.pausedAt
+	local ok, err = pcall(function()
+		if position ~= nil then self.player.TimePosition = position end
+		self.player:Play()
+	end)
+	if not ok then
+		-- Play can fail after the engine has partially changed state. Prefer
+		-- the engine's observable state over leaving a false paused snapshot.
+		local stateOk, isPlaying = pcall(function() return self.player.IsPlaying end)
+		if stateOk and isPlaying == true then
+			self.paused = false
+			self.pausedAt = 0
+		else
+			self.paused = wasPaused
+			self.pausedAt = previousPausedAt
+		end
+		return false, tostring(err)
 	end
 	self.paused = false
 	self.pausedAt = 0
-	local ok, err = pcall(function() self.player:Play() end)
-	if not ok then return false, tostring(err) end
 	return true, nil
+end
+
+function Backend:GetAsset(): string
+	if not self:IsAvailable() then return "" end
+	if self.currentAsset ~= "" then return self.currentAsset end
+	local ok, asset = pcall(function() return self.player.Asset end)
+	return if ok and typeof(asset) == "string" then asset else ""
+end
+
+-- Re-select the current asset and restart it from a known position. The caller
+-- owns readiness waits and decides when a recovered source may be committed.
+function Backend:Reload(position: number?): (boolean, string?)
+	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
+	local asset = self:GetAsset()
+	if asset == "" then return false, "No audio asset is selected for reload." end
+	local wasPaused = self.paused
+	local target = if position == nil then (if wasPaused then self.pausedAt else self:GetTimePosition()) else position
+	if not finite(target) or target < 0 then return false, "Invalid reload position." end
+
+	-- Force a fresh decoder selection even when the requested asset ID matches.
+	local resetOk, resetError = pcall(function()
+		self.player:Stop()
+		self.player.Asset = ""
+	end)
+	if not resetOk then return false, tostring(resetError) end
+	self.currentAsset = ""
+	self.paused = false
+	self.pausedAt = 0
+	task.wait()
+	local selected, selectError = self:SetAsset(asset)
+	if not selected then return false, selectError end
+
+	local deadline = os.clock() + 8
+	local ready = false
+	repeat
+		task.wait(0.1)
+		local readiness = self:GetReadinessSnapshot()
+		ready = readiness.ready == true and readiness.asset == asset and readiness.length > 0
+	until ready or os.clock() >= deadline
+	if not ready then return false, "The AudioPlayer decoder did not become ready within 8 seconds." end
+
+	local seeked, seekError = self:Seek(target)
+	if not seeked then return false, seekError end
+	if wasPaused then
+		self.pausedAt = self:GetTimePosition()
+		self.paused = true
+		return true, nil
+	end
+	return self:Play()
 end
 
 -- AudioPlayer has no Sound-style Pause method. Preserve the playhead and stop;
 -- Resume restores the saved position and starts the same asset again.
-function Backend:Pause(): (boolean, string?)
-	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
-	if not self.player.IsPlaying then return true, nil end
-	self.pausedAt = self.player.TimePosition
-	self.paused = true
+function Backend:Pause(): (boolean, string?, number?)
+	if not self:IsAvailable() then return false, "Audio backend is unavailable.", nil end
+	if self.paused then return true, nil, self.pausedAt end
+	local playingOk, playing = pcall(function() return self.player.IsPlaying end)
+	if not playingOk then return false, "Audio playback state could not be read for pause.", nil end
+	if not playing then
+		local positionOk, position = pcall(function() return self.player.TimePosition end)
+		if not positionOk or not finite(position) or position < 0 then
+			return false, "Audio playhead could not be captured for pause.", nil
+		end
+		self.pausedAt = position
+		self.paused = true
+		return true, nil, position
+	end
+	local positionOk, position = pcall(function() return self.player.TimePosition end)
+	if not positionOk or not finite(position) or position < 0 then
+		return false, "Audio playhead could not be captured for pause.", nil
+	end
 	local ok, err = pcall(function() self.player:Stop() end)
-	if not ok then self.paused = false; return false, tostring(err) end
-	return true, nil
+	if not ok then return false, tostring(err), nil end
+	self.pausedAt = position
+	self.paused = true
+	return true, nil, position
 end
 
 function Backend:Resume(): (boolean, string?)
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
 	if not self.paused then return true, nil end
-	self.player.TimePosition = math.max(0, self.pausedAt)
+	if not self:IsReady() then return false, "Audio asset is not ready to resume." end
+	local position = math.max(0, self.pausedAt)
+	local ok, err = pcall(function()
+		self.player.TimePosition = position
+		self.player:Play()
+	end)
+	if not ok then
+		-- Retain the saved pause point unless the engine actually began playing.
+		-- This makes a retry safe after a transient property/API failure.
+		local stateOk, isPlaying = pcall(function() return self.player.IsPlaying end)
+		if stateOk and isPlaying == true then
+			self.paused = false
+			self.pausedAt = 0
+		end
+		return false, tostring(err)
+	end
 	self.paused = false
-	local ok, err = pcall(function() self.player:Play() end)
-	if not ok then self.paused = true; return false, tostring(err) end
+	self.pausedAt = 0
 	return true, nil
 end
 
 function Backend:Stop(): (boolean, string?)
 	if not self:IsAvailable() then return false, "Audio backend is unavailable." end
-	self.paused = false
-	self.pausedAt = 0
+	-- Keep the logical pause snapshot intact unless the engine confirms Stop.
+	-- A transient Stop failure must not silently turn a paused deck into a
+	-- playing-state deck or discard the position needed by Resume.
 	local ok, err = pcall(function() self.player:Stop() end)
 	if not ok then return false, tostring(err) end
+	self.paused = false
+	self.pausedAt = 0
 	return true, nil
 end
 
@@ -168,11 +306,32 @@ function Backend:Seek(position: number): (boolean, string?)
 	if not self:IsAvailable() or not finite(position) or position < 0 then
 		return false, "Invalid seek request."
 	end
-	local ok, err = pcall(function()
-		self.player.TimePosition = position
-		if self.paused then self.pausedAt = position end
-	end)
-	if not ok then return false, tostring(err) end
+	local target = position
+	if self:IsReady() then
+		local lengthOk, length = pcall(function() return self.player.TimeLength end)
+		if lengthOk and finite(length) and length > 0 then
+			if target > length then return false, "Seek position exceeds the loaded track duration." end
+		end
+	end
+	local previousPausedAt = self.pausedAt
+	local ok, err = pcall(function() self.player.TimePosition = target end)
+	-- Some engine/property failures can occur after a partial playhead update.
+	-- Read back the actual position so a paused snapshot never advertises a
+	-- stale point when the AudioPlayer did move before reporting the error.
+	local readOk, actualPosition = pcall(function() return self.player.TimePosition end)
+	if readOk and finite(actualPosition) and actualPosition >= 0 and self.paused then
+		self.pausedAt = actualPosition
+	end
+	if not ok then
+		if not readOk or not finite(actualPosition) or actualPosition < 0 then
+			self.pausedAt = previousPausedAt
+		end
+		return false, tostring(err)
+	end
+	if not readOk or not finite(actualPosition) or actualPosition < 0 then
+		if self.paused then self.pausedAt = previousPausedAt end
+		return false, "The seek position could not be verified."
+	end
 	return true, nil
 end
 
