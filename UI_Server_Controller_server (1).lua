@@ -4218,6 +4218,8 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	local userId = receiptInfo.PlayerId
 	local productId = receiptInfo.ProductId
 	local receiptId = tostring(receiptInfo.PurchaseId)
+	print(string.format("[ClubMusic][PurchaseServer] ProcessReceiptReached | UserId=%s | ProductId=%s | PurchaseId=%s | PlaceId=%d | GameId=%d",
+		tostring(userId), tostring(productId), string.sub(receiptId, 1, 32), game.PlaceId, game.GameId))
 	if typeof(userId) ~= "number" or typeof(productId) ~= "number"
 		or receiptId == "" or #receiptId > 128 then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
