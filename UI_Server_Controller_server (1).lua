@@ -3297,6 +3297,21 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 				return false, tostring(message or (if callOk then "The shared queue rejected the transition." else "The shared queue service is unavailable."))
 			end
 			local didAdvance, failureReason = attemptGlobalAdvance()
+			if not didAdvance and failureReason == "The automatic fallback track was recently played; select another track." then
+				-- Another server advanced shared recent history after this server
+				-- selected its fallback. Refresh authoritative history and retry
+				-- once with a newly selected candidate; never relax repeat guards.
+				if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot() then
+					local refreshedPlaylistTrack = ControllerFunctions.nextPlaylistTrack()
+					local refreshedAutoTrack = if refreshedPlaylistTrack then nil else ControllerFunctions.pickAutoTrack()
+					if refreshedPlaylistTrack or refreshedAutoTrack then
+						fallback = if refreshedPlaylistTrack
+							then ControllerFunctions.makeEntry(refreshedPlaylistTrack, "playlist", nil)
+							else ControllerFunctions.makeEntry(refreshedAutoTrack :: Track, "auto", nil)
+						didAdvance, failureReason = attemptGlobalAdvance()
+					end
+				end
+			end
 			if not didAdvance and failureReason == "Catalog changed on another server; refresh and retry." then
 				-- The reservation/revision may have committed after the preflight
 				-- snapshot. Reconcile the catalog, then retry once with the refreshed
