@@ -117,6 +117,45 @@ local CONFIG = {
 	TitleSlotPrices = { [2] = 99, [3] = 199 } :: {[number]: number}, -- Display only; set to match the products.
 }
 
+
+-- Marketplace diagnostics: inspect configured paid IDs without blocking server startup.
+-- This reports Roblox's catalog metadata; it does not alter purchases or receipts.
+task.spawn(function()
+	local configured = {
+		{ label = "VIP Game Pass", id = CONFIG.VipGamePassId, infoType = Enum.InfoType.GamePass },
+		{ label = "VVIP Game Pass", id = CONFIG.VvipGamePassId, infoType = Enum.InfoType.GamePass },
+		{ label = "Tiki Tide Game Pass", id = CONFIG.TikiTidePassId, infoType = Enum.InfoType.GamePass },
+		{ label = "2x XP Developer Product", id = CONFIG.XPBoost2xProductId, infoType = Enum.InfoType.Product },
+		{ label = "4x XP Developer Product", id = CONFIG.XPBoost4xProductId, infoType = Enum.InfoType.Product },
+		{ label = "Title Slot 2 Developer Product", id = CONFIG.TitleSlotProductIds[2], infoType = Enum.InfoType.Product },
+		{ label = "Title Slot 3 Developer Product", id = CONFIG.TitleSlotProductIds[3], infoType = Enum.InfoType.Product },
+	}
+	for _, entry in ipairs(configured) do
+		if typeof(entry.id) ~= "number" or entry.id <= 0 then
+			warn(string.format("[ClubMusic][MarketplaceCheck] %s has an invalid/unconfigured ID.", entry.label))
+			continue
+		end
+		local ok, info = pcall(function()
+			return MarketplaceService:GetProductInfo(entry.id, entry.infoType)
+		end)
+		if not ok or typeof(info) ~= "table" then
+			warn(string.format("[ClubMusic][MarketplaceCheck] LOOKUP_FAILED | %s | ID=%d | Error=%s",
+				entry.label, entry.id, string.sub(tostring(info), 1, 220)))
+			continue
+		end
+		local creator = if typeof(info.Creator) == "table" then info.Creator else {}
+		local creatorType = tostring(creator.CreatorType or "unknown")
+		local creatorId = tostring(creator.CreatorTargetId or creator.Id or "unknown")
+		local saleStatus = if info.IsForSale == true then "ON_SALE" elseif info.IsForSale == false then "NOT_FOR_SALE" else "UNKNOWN"
+		local price = tostring(info.PriceInRobux or info.Price or "not-returned")
+		local name = tostring(info.Name or info.ProductName or "unnamed")
+		print(string.format(
+			"[ClubMusic][MarketplaceCheck] LOOKUP_OK | %s | ID=%d | Name=%s | CreatorType=%s | CreatorId=%s | Sale=%s | Price=%s | ExpectedGroup=%d",
+			entry.label, entry.id, name, creatorType, creatorId, saleStatus, price, CONFIG.GroupId
+		))
+	end
+end)
+
 -- Publish the remote contract before loading storage modules so clients can
 -- wait safely even when catalog initialization is delayed.
 -- The catalog is server-owned. The controller remains the only authority
