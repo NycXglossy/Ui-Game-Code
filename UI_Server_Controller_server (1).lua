@@ -3929,11 +3929,13 @@ end
 -- A zero ID is intentionally ignored so unconfigured products cannot collide.
 local PRODUCT_IDS = {
 	-- Donations / Tips
-	Coconut = 0,
-	Pineapple = 0,
-	TikiTorch = 0,
-	Volcano = 0,
-	IslandLegend = 0,
+	Coconut = 3731488823,
+	Pineapple = 3731489572,
+	TikiTorch = 3731490154,
+	Volcano = 3731490513,
+	IslandLegend = 3731490937,
+	IslandRoyalty = 3731491257,
+	SultansLegacy = 3731491679,
 
 	-- Shop Items
 	Glowsticks = 0,
@@ -3985,6 +3987,12 @@ ControllerFunctions.registerProduct(PRODUCT_IDS.Volcano, {
 })
 ControllerFunctions.registerProduct(PRODUCT_IDS.IslandLegend, {
 	type = "Donation", perk = "Island Legend", amount = 1000,
+})
+ControllerFunctions.registerProduct(PRODUCT_IDS.IslandRoyalty, {
+	type = "Donation", perk = "Island Royalty", amount = 5000,
+})
+ControllerFunctions.registerProduct(PRODUCT_IDS.SultansLegacy, {
+	type = "Donation", perk = "Sultan's Legacy", amount = 10000,
 })
 
 -- Shop Items
@@ -4372,7 +4380,9 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		elseif perk == "Pineapple" then ControllerFunctions.broadcast(string.format("🎆 %s launched a Pineapple Firework burst!", player.DisplayName), "ok")
 		elseif perk == "Tiki Torch" then ControllerFunctions.broadcast(string.format("🎊 %s filled the dancefloor with Stage Confetti!", player.DisplayName), "ok")
 		elseif perk == "Volcano" then ControllerFunctions.broadcast(string.format("🔥 %s activated the Volcano Light Show!", player.DisplayName), "warn")
-		elseif perk == "Island Legend" then ControllerFunctions.broadcast(string.format("👑 LEGENDARY: %s is displayed on the Big Stage Screens!", player.DisplayName), "info") end
+		elseif perk == "Island Legend" then ControllerFunctions.broadcast(string.format("👑 LEGENDARY: %s is displayed on the Big Stage Screens!", player.DisplayName), "info")
+		elseif perk == "Island Royalty" then ControllerFunctions.broadcast(string.format("👑 ROYAL CELEBRATION: %s has supported the island with an extraordinary gift!", player.DisplayName), "info")
+		elseif perk == "Sultan's Legacy" then ControllerFunctions.broadcast(string.format("✨ SULTAN'S LEGACY: %s has made the ultimate island contribution!", player.DisplayName), "ok") end
 	elseif productData.type == "Item" then
 		notify(player, string.format("Purchase Successful: %s acquired!", productData.name or "Item"), "ok")
 	elseif productData.type == "TitleSlot" then
