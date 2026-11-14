@@ -6468,7 +6468,11 @@ ControllerFunctions.onJoin = function(player: Player)
 			local attempt = 0
 			while player.Parent == Players and not (serviceResolved and banResolved and blockResolved and lockResolved) do
 				attempt += 1
-				task.wait(math.min(30, 5 + math.floor(attempt / 3) * 5))
+				-- The initial join checks already ran immediately. If a backend was still
+				-- loading, retry quickly instead of imposing a five-second blind lock;
+				-- increase the interval only when the service continues to fail.
+				local retryDelay = if attempt == 1 then 1 else math.min(15, 2 ^ math.min(attempt - 1, 4))
+				task.wait(retryDelay)
 				if player.Parent ~= Players then return end
 				if not serviceResolved then
 					local callOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
