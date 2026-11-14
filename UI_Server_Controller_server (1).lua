@@ -6234,9 +6234,14 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(services.watchdog and services.watchdog.state or "Unavailable"),
 			"Error history: " .. tostring(snapshot.errorHistoryAvailable == true),
-			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s); use ;cmpurchases for details",
+			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s):",
 		}
-		return true, string.sub(table.concat(lines, "\n"), 1, 1500)
+		for index = math.max(1, #purchaseDiagnosticEntries - 3), #purchaseDiagnosticEntries do
+			local item = purchaseDiagnosticEntries[index]
+			table.insert(lines, string.format("Purchase %s | ID %d | %s | %s",
+				item.source, item.itemId, item.outcome, string.sub(item.detail, 1, 90)))
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1700)
 	end
 	if operation == "OperationalServices" then
 		local ok, services = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
