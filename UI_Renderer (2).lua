@@ -17,6 +17,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- Send bounded prompt requests/outcomes to server-side staff diagnostics.
 -- Both are client telemetry only; Developer Product receipts remain authoritative.
 local purchaseDiagnosticRemote: RemoteEvent? = nil
+-- Only associate MarketplaceService completion callbacks with prompts this
+-- renderer actually initiated. The MarketplaceService event is global and
+-- otherwise reports unrelated Game Pass prompts from other experience scripts.
+local pendingClubMusicPrompts: {[string]: number} = {}
+local function promptKey(promptType: string, itemId: number): string
+	return promptType .. ":" .. tostring(itemId)
+end
 if not MarketplaceService:GetAttribute("ClubMusicPurchaseDiagnosticsConnected") then
 	MarketplaceService:SetAttribute("ClubMusicPurchaseDiagnosticsConnected", true)
 	local purchaseRemotes = ReplicatedStorage:WaitForChild("ClubMusicRemotes", 15)
@@ -28,22 +35,36 @@ if not MarketplaceService:GetAttribute("ClubMusicPurchaseDiagnosticsConnected") 
 		end
 	end
 	MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId: number, productId: number, wasPurchased: boolean)
+		if userId ~= Players.LocalPlayer.UserId then return end
+		local key = promptKey("DeveloperProduct", productId)
+		if not pendingClubMusicPrompts[key] then return end
+		pendingClubMusicPrompts[key] = nil
 		print(string.format("[ClubMusic][PurchaseClient] DeveloperProductPromptFinished | UserId=%d | ProductId=%d | Purchased=%s | PlaceId=%d | GameId=%d",
 			userId, productId, tostring(wasPurchased), game.PlaceId, game.GameId))
-		if userId == Players.LocalPlayer.UserId then
-			reportPrompt("DeveloperProduct", productId, wasPurchased)
-		end
+		reportPrompt("DeveloperProduct", productId, wasPurchased)
 	end)
 	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, wasPurchased: boolean)
+		if player ~= Players.LocalPlayer then return end
+		local key = promptKey("GamePass", passId)
+		if not pendingClubMusicPrompts[key] then return end
+		pendingClubMusicPrompts[key] = nil
 		print(string.format("[ClubMusic][PurchaseClient] GamePassPromptFinished | UserId=%d | PassId=%d | Purchased=%s | PlaceId=%d | GameId=%d",
 			player.UserId, passId, tostring(wasPurchased), game.PlaceId, game.GameId))
-		if player == Players.LocalPlayer then
-			reportPrompt("GamePass", passId, wasPurchased)
-		end
+		reportPrompt("GamePass", passId, wasPurchased)
 	end)
 end
 
 local function reportPromptRequest(promptType: string, itemId: number, source: string)
+	local key = promptKey(promptType, itemId)
+	pendingClubMusicPrompts[key] = os.clock()
+	-- Expire abandoned prompts so a later unrelated prompt with the same ID
+	-- cannot be attributed to ClubMusic.
+	task.delay(120, function()
+		local requestedAt = pendingClubMusicPrompts[key]
+		if requestedAt and os.clock() - requestedAt >= 120 then
+			pendingClubMusicPrompts[key] = nil
+		end
+	end)
 	if purchaseDiagnosticRemote then
 		purchaseDiagnosticRemote:FireServer(promptType, itemId, "PromptRequested", source)
 	end
