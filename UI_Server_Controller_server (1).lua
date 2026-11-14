@@ -201,22 +201,11 @@ local function recordPurchaseDiagnostic(source: string, userId: number, itemId: 
 	end
 end
 
-local function isConfiguredPurchaseId(itemId: number): boolean
-	if itemId == CONFIG.VipGamePassId or itemId == CONFIG.VvipGamePassId or itemId == CONFIG.TikiTidePassId
-		or itemId == CONFIG.XPBoost2xProductId or itemId == CONFIG.XPBoost4xProductId then
-		return true
-	end
-	for _, productId in pairs(CONFIG.TitleSlotProductIds) do
-		if itemId == productId then return true end
-	end
-	return false
-end
-
 purchaseDiagnosticRemote.OnServerEvent:Connect(function(player: Player, promptType: any, itemId: any, wasPurchased: any)
 	if typeof(player) ~= "Instance" or player.Parent ~= Players
 		or (promptType ~= "GamePass" and promptType ~= "DeveloperProduct")
 		or typeof(itemId) ~= "number" or itemId <= 0 or itemId % 1 ~= 0
-		or typeof(wasPurchased) ~= "boolean" or not isConfiguredPurchaseId(itemId) then
+		or typeof(wasPurchased) ~= "boolean" then
 		return
 	end
 	local now = os.clock()
@@ -4284,7 +4273,10 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	if processedReceipts[receiptId] then return Enum.ProductPurchaseDecision.PurchaseGranted end
 	local player = Players:GetPlayerByUserId(userId)
 	local profile = profiles[userId]
-	if not player or not profile then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	if not player or not profile then
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "AwaitingPlayerProfile", "Player or loaded profile is not available; Roblox receipt will retry")
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
 	local productData = PRODUCT_MAP[productId]
 	if not productData then
 		warn(string.format("[ClubMusic] Unregistered Developer Product ID %d (receipt %s).", productId, receiptId))
@@ -4320,6 +4312,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		-- The global per-PurchaseId journal is authoritative for XP boosts.
 		-- Do not write XP receipts into the legacy profile receipt map.
 		processedReceipts[receiptId] = true
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Global XP boost activation completed")
 		notify(player, string.format("%dx global XP boost activated!", productData.multiplier), "ok")
 		publishState(nil)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
