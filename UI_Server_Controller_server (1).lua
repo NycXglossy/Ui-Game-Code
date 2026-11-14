@@ -1452,8 +1452,16 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	end
 	local setOk, setError = ControllerFunctions.setAudioAsset(soundId)
 	if setOk == false then warn("[ClubMusic] Server audio asset could not be assigned: " .. tostring(setError)); return end
-	local seekOk, seekError = ControllerFunctions.seekAudio(0)
-	if seekOk == false then warn("[ClubMusic] Server audio position could not be reset: " .. tostring(seekError)); return end
+	-- A newly assigned SoundId may not be loaded yet. TimePosition can reject
+	-- an early seek on that first frame; that must not abort playback entirely.
+	-- Start the asset at its default position and let the global sync path perform
+	-- its one-time authoritative seek as soon as the source reports ready.
+	local seekCallOk, seekOk, seekError = pcall(function()
+		return ControllerFunctions.seekAudio(0)
+	end)
+	if not seekCallOk or seekOk == false then
+		warn("[ClubMusic] Initial audio position reset is waiting for readiness; playback will still start: " .. tostring(if seekCallOk then seekError else seekOk))
+	end
 	local trackId = tostring(nowPlaying.trackId or "")
 	local trim = getTrackVolumeTrim(trackId)
 	local volumeOk = pcall(function()
