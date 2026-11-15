@@ -805,6 +805,9 @@ ControllerFunctions.bindActiveAudioPlayingSignal = function()
 		activeAudioPlayingConnection = nil
 	end
 	local source = activeAudioSource
+	-- Publish the authoritative source type so clients apply SoundGroup volume
+	-- only while the guarded legacy Sound fallback is actually active.
+	SoundService:SetAttribute("ClubMusicAudioSourceKind", if source.kind == "Backend" then "AudioPlayer" else "Sound")
 	local signalInstance = if source.kind == "Backend" and source.backend
 		then source.backend:GetPlayer() else source.instance
 	if typeof(signalInstance) == "Instance" then
