@@ -946,9 +946,47 @@ local OPTIONAL_GLOBAL_MODULE_ALIASES: {[string]: {string}} = {
 	},
 }
 
+local SECURITY_MODULE_EXPORTS: {[string]: string} = {
+	ClubMusic_Global_Authorization_Service = "Authorization",
+	ClubMusic_Global_RateLimit_Service = "RateLimit",
+	ClubMusic_Global_Message_Validation_Service = "MessageValidation",
+	ClubMusic_Global_Idempotency_Service = "Idempotency",
+	ClubMusic_Global_Security_Monitor_Service = "SecurityMonitor",
+	ClubMusic_Global_Security_Policy_Service = "SecurityPolicy",
+	ClubMusic_Global_Audit_Service = "Audit",
+	ClubMusic_Global_Incident_Response_Service = "IncidentResponse",
+}
+local cachedSecurityBundle: any = nil
+local securityBundleLoadAttempted = false
+
 local function loadOptionalGlobalModule(moduleName: string): any?
-	-- Support both canonical names and the established ServerStorage instance names.
-	-- Search recursively so optional modules may remain grouped in folders.
+	-- Security implementations are bundled into one ModuleScript while each
+	-- exported service retains its original constructor and public method contract.
+	local securityExport = SECURITY_MODULE_EXPORTS[moduleName]
+	if securityExport then
+		if not securityBundleLoadAttempted then
+			securityBundleLoadAttempted = true
+			local bundleModule = ServerStorage:FindFirstChild("ClubMusic_Global_Security_Service")
+				or ServerStorage:FindFirstChild("ClubMusic_Global_Security_Service", true)
+			if bundleModule and bundleModule:IsA("ModuleScript") then
+				local bundleOk, bundle = pcall(require, bundleModule)
+				if bundleOk and typeof(bundle) == "table" then
+					cachedSecurityBundle = bundle
+				else
+					warn("[ClubMusic Global] Consolidated security bundle failed to load: " .. tostring(bundle))
+				end
+			else
+				warn("[ClubMusic Global] Consolidated security ModuleScript is missing under ServerStorage.")
+			end
+		end
+		local exported = if cachedSecurityBundle then cachedSecurityBundle[securityExport] else nil
+		if typeof(exported) ~= "table" or type(exported.new) ~= "function" then
+			warn("[ClubMusic Global] Consolidated security export is unavailable: " .. moduleName)
+			return nil
+		end
+		return exported
+	end
+	-- Support canonical names and established instance-name aliases for non-security modules.
 	local candidates = OPTIONAL_GLOBAL_MODULE_ALIASES[moduleName] or {moduleName}
 	local module: Instance? = nil
 	local resolvedName = moduleName
