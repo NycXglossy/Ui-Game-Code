@@ -1004,8 +1004,8 @@ end
 
 -- Replace the canonical source only after a prepared backend is ready and can
 -- start silently. On any failure, restore the previous source and playhead.
--- This seam is intentionally not called during startup; Studio cutover testing
--- is still required before any production enablement.
+-- The controller invokes this after the first valid track starts; the legacy
+-- Sound remains available only as a guarded bootstrap/emergency fallback.
 ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, string?)
 	if typeof(candidate) ~= "table" then return false, "A prepared audio backend is required." end
 	for _, methodName in ipairs({ "IsReady", "GetReadinessSnapshot", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetAsset", "SetGain", "SetPlaybackSpeed", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
@@ -1190,9 +1190,9 @@ end
 
 ControllerFunctions.bindActiveAudioPlayingSignal()
 
--- Optional one-time migration after the first valid track starts. Disabled by
--- default; if preparation or handoff fails, adoptAudioBackend cleans the
--- candidate and the canonical Sound continues without interruption.
+-- Enabled one-time migration after the first valid track starts. If preparation
+-- or handoff fails, adoptAudioBackend cleans the candidate and the guarded
+-- bootstrap Sound continues until a later bounded retry succeeds.
 ControllerFunctions.tryModernAudioBackendMigration = function()
 	if not CONFIG.UseModernAudioBackend or modernAudioMigrationSucceeded or modernAudioMigrationInProgress then return false end
 	if os.clock() < modernAudioMigrationNextAttemptAt then return false end
