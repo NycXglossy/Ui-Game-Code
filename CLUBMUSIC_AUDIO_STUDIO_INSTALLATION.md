@@ -18,11 +18,19 @@ Branch: `feature/sultan-settings-2026-11-10`
 ## Important
 This package installs the modules as separate ModuleScripts. On the current integration branch, the server controller discovers `ClubMusicAudioBackend` and `ClubMusicAudioCrossfadeManager` in `ServerStorage.ClubMusicAudioModules` (or directly under `ServerStorage`). When both are present, it initializes the controller-owned crossfade coordinator; automatic queued-track transitions can then use an AudioPlayer incoming deck while the established legacy Sound remains the main playback source.
 
-The main playback migration is enabled: `UseModernAudioBackend = true` makes the controller attempt to adopt the modern AudioPlayer as its canonical source. The reported Studio log `[ClubMusic][AudioBackend] Modern AudioPlayer is now the controller-owned main source.` confirms that the guarded handoff completed. The controller still retains the legacy Sound path as a bounded fallback/recovery route. Keep `ServerMusicSound` and its compatibility wiring until fallback failure recovery has been deliberately tested and retired. The crossfade manager does not own a separate queue or playback timeline; the server controller remains authoritative for track selection, timing, and queue commits.
+The main playback migration is enabled: `UseModernAudioBackend = true` makes the controller adopt the modern AudioPlayer as its canonical source. The reported Studio log `[ClubMusic][AudioBackend] Modern AudioPlayer is now the controller-owned main source.` confirms that the guarded handoff completed.
 
-Keep `ServerMusicSound` as the guarded recovery source and `MusicGroup` for per-player volume preferences. The modern backend is now the primary source, but these compatibility objects are not obsolete while recovery and client gain paths still reference them. The server folder must stay in ServerStorage. Do not put server-only modules in ReplicatedStorage. Only `ClubMusicPlayerPreferences` is intended for client-side use.
+### Modern server recovery
 
-This package and its source files are not a substitute for Roblox Studio runtime or multiplayer testing.
+The controller first attempts an in-place AudioPlayer decoder reload. If that fails, it now constructs a replacement modern backend, reloads the same asset, restores playback speed, playhead, pause state, and transition gain, verifies playback, and only then swaps ownership. Queue ownership and the authoritative global playback clock are not changed. The old backend is cleaned up only after the replacement is committed. The legacy `ServerMusicSound` remains temporarily for startup handoff and emergency compatibility if the modern backend cannot initialize; it is no longer the intended recovery path after modern ownership has been established.
+
+### Per-player modern output
+
+The server backend now ends at its replicated `MusicFader`; it no longer creates a shared `AudioDeviceOutput`. The client `ClubMusicPlayerPreferences` module detects the main and crossfade backend folders and adds a private `AudioFader` plus `AudioDeviceOutput` with `Player = LocalPlayer` for each deck. This preserves server-controlled crossfade gain while applying personal volume independently for each listener. The renderer's volume slider updates those local faders. `MusicGroup` is retained only as a local compatibility volume control while the legacy Sound bootstrap/fallback remains.
+
+The crossfade manager does not own a separate queue or playback timeline; the server controller remains authoritative for track selection, timing, and queue commits. Keep the server modules in ServerStorage and the client preferences module in ReplicatedStorage. Do not put server-only modules in ReplicatedStorage.
+
+After installing these package revisions, replace the matching server controller and UI_Renderer scripts from the same branch before testing. The server backend now intentionally has no shared device output, so installing only the updated server module without the updated client routing module and renderer will leave modern music inaudible. Test two clients at different volume levels, mute one client, trigger a crossfade, and force a modern reload/rebuild before publishing. This package and its source files are not a substitute for Roblox Studio runtime or multiplayer testing.
 
 
 ## Alternative: Command Bar installer (when RBXMX import is unavailable)
