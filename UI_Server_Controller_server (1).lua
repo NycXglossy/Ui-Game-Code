@@ -6339,14 +6339,23 @@ local GLOBAL_PERMISSION_LEVELS = {
 	IncidentResponse = 3,
 }
 authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): boolean
+	print("[ClubMusic][Authorization] Resolver entered; actor=" .. tostring(actorUserId)
+		.. "; permission=" .. tostring(permission))
 	if typeof(actorUserId) ~= "number" or actorUserId < 1 or actorUserId % 1 ~= 0
 		or typeof(permission) ~= "string" then
+		warn("[ClubMusic][Authorization] Resolver rejected malformed actor or permission.")
 		return false
 	end
 	local requiredLevel = GLOBAL_PERMISSION_LEVELS[permission]
-	if not requiredLevel then return false end
+	if not requiredLevel then
+		warn("[ClubMusic][Authorization] Resolver rejected unknown permission=" .. permission)
+		return false
+	end
 	local player = Players:GetPlayerByUserId(math.floor(actorUserId))
-	if not player or player.Parent ~= Players then return false end
+	if not player or player.Parent ~= Players then
+		warn("[ClubMusic][Authorization] Resolver could not find active player; actor=" .. tostring(actorUserId))
+		return false
+	end
 
 	-- Prefer the server-verified rank cache, but do not let a stale/empty cache
 	-- in this resolver instance reject a player whose live group rank is valid.
