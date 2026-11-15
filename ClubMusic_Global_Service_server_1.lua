@@ -1114,9 +1114,16 @@ task.spawn(function()
 					playbackAuthorityLastError = "Playback authority module unavailable."
 					return
 				end
-				local acquired, _, acquireError = globalPlaybackAuthority:AcquireOrRenewLeadership()
+				local acquired, leaseOrLeader, acquireError = globalPlaybackAuthority:AcquireOrRenewLeadership()
 				if not acquired then
-					playbackAuthorityLastError = tostring(acquireError or "Leadership is not currently available.")
+					local message = tostring(acquireError or "Leadership is not currently available.")
+					-- A healthy peer holding the lease is the normal follower state,
+					-- not a backend outage. Surface only actual authority failures.
+					if string.find(message, "Another server currently owns global playback", 1, true) then
+						playbackAuthorityLastError = nil
+					else
+						playbackAuthorityLastError = message
+					end
 				else
 					playbackAuthorityLastError = nil
 				end
