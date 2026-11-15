@@ -7382,6 +7382,48 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		end
 		return
 	end
+	if message.kind == "PlaybackCommand" then
+		if message.senderJob == game.JobId then return end
+		local syncState = ControllerFunctions.globalPlaybackSyncState
+		if syncState.enabled ~= true or syncState.isLeader ~= true then return end
+		if message.command == "Skip" then
+			local advanced, reason = ControllerFunctions.advance()
+			if not advanced then warn("[ClubMusic] Leader rejected remote skip: " .. tostring(reason)) end
+		elseif message.command == "SetPlaybackPaused" and typeof(message.payload) == "table"
+			and typeof(message.payload.paused) == "boolean" then
+			ControllerFunctions.cancelAudioTransition("global-playback-control")
+			local desiredPaused = message.payload.paused
+			local controlOk, controlError = pcall(function()
+				local controlResult, capturedPosition
+				if desiredPaused then
+					local ok, result, position = ControllerFunctions.pauseAudio()
+					if ok == false or result == false then error("Audio source rejected pause.") end
+					capturedPosition = position
+				else
+					local ok, result = ControllerFunctions.resumeAudio()
+					if ok == false or result == false then error("Audio source rejected resume.") end
+				end
+				if ControllerFunctions.isFiniteNumber(capturedPosition) then
+					nowPlaying.elapsed = math.clamp(capturedPosition, 0, nowPlaying.duration)
+				end
+			end)
+			if controlOk then
+				playbackPaused = desiredPaused
+				ControllerFunctions.commitGlobalPlaybackSync("remote-pause-resume")
+			else
+				warn("[ClubMusic] Leader could not apply remote pause/resume: " .. tostring(controlError))
+			end
+		elseif message.command == "Restart" and nowPlaying.trackId ~= "" then
+			ControllerFunctions.cancelAudioTransition("global-restart")
+			local restarted = ControllerFunctions.restartServerMusic(nowPlaying.soundId)
+			if restarted then
+				nowPlaying.elapsed = 0
+				playbackPaused = false
+				ControllerFunctions.commitGlobalPlaybackSync("remote-restart")
+			end
+		end
+		return
+	end
 	if message.kind == "DJ" and typeof(message.command) == "string"
 		and (message.command == "Skip" or message.command == "ClearQueue" or message.command == "SetRequestLock"
 			or message.command == "SetPlaybackPaused" or message.command == "Restart" or message.command == "ForceStop") then
