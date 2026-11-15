@@ -1268,7 +1268,14 @@ globalAuthorizationService = createOperationalService("ClubMusic_Global_Authoriz
 		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
 		if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then return false end
 		local ok, allowed = pcall(function() return resolver:Invoke(actorUserId, permission) end)
-		return ok and allowed == true
+		if not ok then
+			warn("[ClubMusic][PlaybackSync Auth] Resolver Invoke failed; actor=" .. tostring(actorUserId)
+				.. "; permission=" .. tostring(permission) .. "; error=" .. string.sub(tostring(allowed), 1, 180))
+			return false
+		end
+		print("[ClubMusic][PlaybackSync Auth] Resolver returned; actor=" .. tostring(actorUserId)
+			.. "; permission=" .. tostring(permission) .. "; allowed=" .. tostring(allowed))
+		return allowed == true
 	end,
 }, {"Start", "GetStatus", "Check"})
 if globalAuthorizationService then globalAuthorizationService:Start() end
