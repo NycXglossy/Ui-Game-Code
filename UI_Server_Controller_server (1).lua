@@ -7032,8 +7032,6 @@ ControllerFunctions.onJoin = function(player: Player)
 	local globalServiceReady = enabledCallOk and globalServiceEnabled == true
 	-- A service-readiness failure is not a ban. Keep moderation-sensitive actions
 	-- closed and retry authoritative checks instead of kicking legitimate players.
-	-- Request-lock state is intentionally local to this server.
-	local lockCallOk, globalLock, lockLookupOk = true, requestsLocked, true
 	-- Fetch ban and request-block status together to avoid serial durable reads.
 	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
@@ -7049,15 +7047,13 @@ ControllerFunctions.onJoin = function(player: Player)
 	end
 	local retryModeration = globalModerationRequired and
 		(not globalServiceReady or not moderationCallOk or moderationLookupOk ~= true)
-	local retryLock = false
 	if retryModeration then player:SetAttribute("GlobalModerationPending", true) end
-	if retryModeration or retryLock then
+	if retryModeration then
 		task.spawn(function()
 			local serviceResolved = globalServiceReady
 			local moderationResolved = not retryModeration
-			local lockResolved = true
 			local attempt = 0
-			while player.Parent == Players and not (serviceResolved and moderationResolved and lockResolved) do
+			while player.Parent == Players and not (serviceResolved and moderationResolved) do
 				attempt += 1
 				-- The initial join checks already ran immediately. If a backend was still
 				-- loading, retry quickly instead of imposing a five-second blind lock;
@@ -7081,7 +7077,7 @@ ControllerFunctions.onJoin = function(player: Player)
 						blockedUsers[player.UserId] = if blocked == true then true else nil
 					end
 				end
-				if moderationResolved and lockResolved and serviceResolved then
+				if moderationResolved and serviceResolved then
 					player:SetAttribute("GlobalModerationPending", false)
 					publishState(nil)
 					return
