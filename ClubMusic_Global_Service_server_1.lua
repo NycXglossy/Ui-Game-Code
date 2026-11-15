@@ -208,25 +208,44 @@ local function fallbackBucket(key: string, capacity: number, refill: number, cos
 	return true
 end
 
+local memoryStoreCapacityLimited = false
+local memoryStoreCapacityError = nil
+
+local function isMemoryCapacityError(err: any): boolean
+ local message = string.lower(tostring(err or ""))
+ return string.find(message, "total memory", 1, true) ~= nil
+  or string.find(message, "memory limit", 1, true) ~= nil
+  or string.find(message, "memory usage", 1, true) ~= nil
+end
+
 local function consumeShared(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
-	if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
-	local now = os.time()
-	local ok, allowed = pcall(function()
-		local result = budgetMap:UpdateAsync(key, function(old)
-			local state = if typeof(old) == "table" then old else {}
-			local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
-			local updated = if finiteNumber(state.updated) then state.updated else now
-			tokens = math.min(capacity, tokens + math.max(0, now - updated) * refill)
-			local permit = tokens >= cost
-			if permit then tokens -= cost end
-			return {tokens = tokens, updated = now, allowed = permit}
-		end, CONFIG.BudgetKeyTtlSeconds)
-		return typeof(result) == "table" and result.allowed == true
-	end)
-	if ok then return allowed == true, true end
-	-- MemoryStore outage: degrade to a conservative per-server limiter, not a hard outage.
-	warn("[ClubMusic Global] MemoryStore budget unavailable; using local fallback: " .. tostring(allowed))
-	return fallbackBucket(key, math.min(capacity, CONFIG.FallbackPlayerCapacity), CONFIG.FallbackPlayerRefillPerSecond, cost), false
+ if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
+ if not memoryStoreCapacityLimited then
+  local now = os.time()
+  local ok, allowed = pcall(function()
+   local result = budgetMap:UpdateAsync(key, function(old)
+    local state = if typeof(old) == "table" then old else {}
+    local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
+    local updated = if finiteNumber(state.updated) then state.updated else now
+    tokens = math.min(capacity, tokens + math.max(0, now - updated) * refill)
+    local permit = tokens >= cost
+    if permit then tokens -= cost end
+    return {tokens = tokens, updated = now, allowed = permit}
+   end, CONFIG.BudgetKeyTtlSeconds)
+   return typeof(result) == "table" and result.allowed == true
+  end)
+  if ok then return allowed == true, true end
+  if isMemoryCapacityError(allowed) then
+   -- Stop issuing more MemoryStore writes while the allocation is full.
+   -- The per-server fallback remains bounded and does not bypass authorization.
+   memoryStoreCapacityLimited = true
+   memoryStoreCapacityError = string.sub(tostring(allowed), 1, 300)
+   warn("[ClubMusic Global] MemoryStore total memory limit reached; shared rate limiting is temporarily using bounded per-server fallback.")
+  else
+   warn("[ClubMusic Global] MemoryStore budget unavailable; using local fallback: " .. tostring(allowed))
+  end
+ end
+ return fallbackBucket(key, math.min(capacity, CONFIG.FallbackPlayerCapacity), CONFIG.FallbackPlayerRefillPerSecond, cost), false
 end
 
 local function userKey(userId: number): string?
@@ -958,7 +977,11 @@ if safeCallModule then
 	end
 end
 if globalSafeCall then
-	bindFunction("GetGlobalSafeCallStatus", function()
+	bindFunction("GetGlobalMemoryStoreStatus", function()
+	return {capacityLimited = memoryStoreCapacityLimited, lastCapacityError = memoryStoreCapacityError}
+end)
+
+bindFunction("GetGlobalSafeCallStatus", function()
 		return globalSafeCall:GetStatus()
 	end)
 	bindFunction("GetGlobalSafeCallRecent", function(limit: any)
