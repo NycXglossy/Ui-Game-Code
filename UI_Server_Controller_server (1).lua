@@ -5879,9 +5879,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJRestart" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
-		if ControllerFunctions.globalPlaybackSyncState.enabled == true and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
-			return false, "Global playback controls are currently hosted by the elected DJ server. Your server's request queue remains local."
-		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		if ControllerFunctions.globalPlaybackSyncState.enabled == true
 			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
