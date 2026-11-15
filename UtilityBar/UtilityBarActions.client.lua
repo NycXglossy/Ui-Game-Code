@@ -4,6 +4,7 @@
 -- Handles independent client-side Inventory and server-authoritative Refresh Outfit actions.
 
 local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -414,7 +415,34 @@ playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(function()
 end)
 
 local requestPending = false
+local passPromptPending = false
+local FEATURE_PASSES = {
+	Mount = {id = 2087955619, attribute = "HasIslandMountPass"},
+	Clone = {id = 2088585676, attribute = "HasIslandCompanionPass"},
+	LightingControl = {id = 2088315619, attribute = "HasStageClubLightingPass"},
+}
 actionEvent.Event:Connect(function(actionName: string)
+	local featurePass = FEATURE_PASSES[actionName]
+	if featurePass then
+		if player:GetAttribute(featurePass.attribute) == true then return end
+		if passPromptPending then
+			showMessage("A Game Pass prompt is already open.")
+			return
+		end
+		passPromptPending = true
+		showMessage("This feature requires its Game Pass.")
+		task.spawn(function()
+			local ok, err = pcall(function()
+				MarketplaceService:PromptGamePassPurchase(player, featurePass.id)
+			end)
+			if not ok then
+				warn("[UtilityBar] Game Pass prompt failed: " .. tostring(err))
+				showMessage("The Game Pass prompt could not be opened. Try again.")
+			end
+			task.delay(2, function() passPromptPending = false end)
+		end)
+		return
+	end
 	if actionName == "Inventory" or actionName == "Tools" or actionName == "Accessories" then
 		openInventory(if actionName == "Accessories" then "Accessories" else nil)
 		return
@@ -450,4 +478,4 @@ actionEvent.Event:Connect(function(actionName: string)
 	end)
 end)
 
-print("[UtilityBar] Unified Inventory (Tool equip/unequip), Accessories, and Refresh Outfit actions connected.")
+print("[UtilityBar] Inventory, Refresh Outfit, and pass-gated feature purchase prompts connected.")
