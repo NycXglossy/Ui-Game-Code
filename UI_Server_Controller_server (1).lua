@@ -2266,6 +2266,11 @@ ControllerFunctions.isAdmin = function(player: Player): boolean
 	return ControllerFunctions.getLevel(player) >= 2
 end
 
+-- The DJ Booth is reserved for the configured OWNER and CO-OWNER ranks.
+ControllerFunctions.isDJBoothController = function(player: Player): boolean
+	return ControllerFunctions.getLevel(player) >= 3
+end
+
 ControllerFunctions.passTier = function(player: Player): number
 	local userId = player.UserId
 	-- The configured OWNER receives every membership tier. Other staff permissions
@@ -4508,7 +4513,7 @@ ControllerFunctions.requestBlockReason = function(player: Player, trackId: strin
 	end
 	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
 	if ControllerFunctions.isTrackBlocked(trackId) then return "That track has been blocked by ClubMusic staff." end
-	if requestsLocked and ControllerFunctions.getLevel(player) < 1 then return "Requests are locked by staff right now." end
+	if requestsLocked and ControllerFunctions.getLevel(player) < 3 then return "DJ Control Mode is active. Normal song requests are temporarily locked." end
 	if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
 	local cooldown = ControllerFunctions.cooldownFor(player)
 	local sinceLast = now - (lastRequestAt[player.UserId] or -1000)
@@ -5070,8 +5075,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, "Your requests are disabled by staff.", "warn")
 			return
 		end
-		if requestsLocked and level < 1 then
-			notify(player, "Requests are locked by staff right now.", "warn")
+		if requestsLocked and level < 3 then
+			notify(player, "DJ Control Mode is active. Normal song requests are temporarily locked.", "warn")
 			return
 		end
 		if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then
@@ -5282,7 +5287,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	-- Staff ----------------------------------------------------------------------------
 
 	if action == "DJPlayPlaylist" then
-		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can start playlist rotation.", "warn"); return end
+		if not ControllerFunctions.isDJBoothController(player) then notify(player, "The DJ Booth is restricted to the Owner and Co-Owner.", "warn"); return end
 		if not playlistStorageReady or not MusicPlaylistService:IsReady() then
 			notify(player, "Playlist storage is unavailable.", "warn"); return
 		end
@@ -5292,14 +5297,14 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJStopPlaylist" then
-		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can stop playlist rotation.", "warn"); return end
+		if not ControllerFunctions.isDJBoothController(player) then notify(player, "The DJ Booth is restricted to the Owner and Co-Owner.", "warn"); return end
 		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playlist
 		if manager and manager:StopRotation(player) then publishState(nil) end
 		return
 	end
 
 	if action == "DJMoveUp" then
-		if not ControllerFunctions.isStaff(player) then return end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		local id = payload.queueId
 		if not ControllerFunctions.isValidString(id, 64) then return end
 		if globalQueueMode then
@@ -5315,7 +5320,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJRemove" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		local id = payload.queueId
 		if not ControllerFunctions.isValidString(id, 64) then return false, "A valid queue entry ID is required." end
 		if globalQueueMode then
@@ -5340,7 +5345,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJSkip" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		-- Kohl's Admin can dispatch the same command while an automatic or
 		-- admin-triggered transition is still yielding on shared queue work.
 		-- The active transition already owns this track change; do not call
@@ -5363,7 +5368,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJPause" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
 		playbackControlRequestId += 1
@@ -5435,7 +5440,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJRestart" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		playbackControlRequestId += 1
 		local controlRequestId = playbackControlRequestId
@@ -5489,7 +5494,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJClearQueue" then
-		if not ControllerFunctions.isAdmin(player) then return false, "ClubMusic administrator permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		ControllerFunctions.cancelAudioTransition("queue-clear")
 		if globalQueueMode then
 			local callOk, cleared, state, message = ControllerFunctions.globalInvoke("ClearGlobalQueue")
@@ -5511,7 +5516,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJToggleLock" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		local desiredLock = not requestsLocked
 		local publishCallOk, persisted = ControllerFunctions.globalInvoke("PublishDJCommand", "SetRequestLock", {locked = desiredLock}, player.UserId)
 		if not RunService:IsStudio() and (not publishCallOk or persisted ~= true) then
@@ -5522,9 +5527,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			return false, "Global lock could not be confirmed; requests remain locked here."
 		end
 		requestsLocked = desiredLock
-		ControllerFunctions.broadcast(if requestsLocked then "Song requests are now LOCKED." else "Song requests are open again.", "info")
+		ControllerFunctions.broadcast(if requestsLocked then "DJ Control Mode is ON. Normal player song requests are locked." else "DJ Control Mode is OFF. Normal song requests are open again.", "info")
 		publishState(nil)
-		return true, if requestsLocked then "Song requests locked." else "Song requests opened."
+		return true, if requestsLocked then "DJ Control Mode enabled. Normal song requests are locked." else "DJ Control Mode disabled. Normal song requests are open."
 	end
 
 	if action == "ModBlockUser" then
