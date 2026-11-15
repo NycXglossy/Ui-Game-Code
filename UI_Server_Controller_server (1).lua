@@ -5663,6 +5663,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			return false, "Global playback sync settings are restricted to the Owner and Co-Owner."
 		end
 		if typeof(payload.enabled) ~= "boolean" then return false, "Choose whether global playback sync should be enabled." end
+		if payload.enabled == true and globalQueueMode then
+			return false, "Disable the existing shared global queue mode before enabling playback-only sync. The two modes cannot run together."
+		end
 		local callOk, accepted, result = ControllerFunctions.globalInvoke(
 			"SetGlobalPlaybackSyncEnabled", payload.enabled, player.UserId
 		)
