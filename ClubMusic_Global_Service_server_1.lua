@@ -1520,6 +1520,29 @@ globalEventBindable.Event:Connect(function(event)
 	end
 end)
 
+local function getMessagingStatus(): {[string]: any}
+	local active, total = 0, 0
+	for _, state in pairs(subscriptionStatus) do
+		total += 1
+		if state == "Active" then active += 1 end
+	end
+	local state = if not SERVICE_ENABLED then "Disabled"
+		elseif total == 0 or active == 0 then "Starting"
+		elseif active < total then "Degraded"
+		else "Healthy"
+	return {
+		state = state,
+		published = messagingPublishSuccess,
+		publishFailures = messagingPublishFailures,
+		received = messagingReceived,
+		rejected = messagingRejected,
+		activeSubscriptions = active,
+		totalSubscriptions = total,
+		subscriptions = table.clone(subscriptionStatus),
+		lastError = messagingLastError,
+	}
+end
+
 bindFunction("GetGlobalMetrics", function()
 	if not globalDiagnosticsService then return false, nil end
 	return true, globalDiagnosticsService:GetMetrics()
@@ -1835,29 +1858,6 @@ local function onPlaybackChanged(message)
 		end
 		globalEventBindable:Fire({kind = "PlaybackSyncModeChanged", enabled = data.enabled, senderJob = data.senderJob})
 	end
-end
-
-local function getMessagingStatus(): {[string]: any}
-	local active, total = 0, 0
-	for _, state in pairs(subscriptionStatus) do
-		total += 1
-		if state == "Active" then active += 1 end
-	end
-	local state = if not SERVICE_ENABLED then "Disabled"
-		elseif total == 0 or active == 0 then "Starting"
-		elseif active < total then "Degraded"
-		else "Healthy"
-	return {
-		state = state,
-		published = messagingPublishSuccess,
-		publishFailures = messagingPublishFailures,
-		received = messagingReceived,
-		rejected = messagingRejected,
-		activeSubscriptions = active,
-		totalSubscriptions = total,
-		subscriptions = table.clone(subscriptionStatus),
-		lastError = messagingLastError,
-	}
 end
 
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
