@@ -1035,6 +1035,7 @@ if globalConfigService then globalConfigService:Start() end
 local playbackAuthorityModule = loadOptionalGlobalModule("MusicGlobalPlaybackAuthority")
 local globalPlaybackAuthority: any = nil
 local playbackSyncEnabled = false
+local playbackAuthorityLastError: string? = nil
 if playbackAuthorityModule and SERVICE_ENABLED then
 	local createOk, instance = pcall(function()
 		return playbackAuthorityModule.new({
@@ -1062,6 +1063,7 @@ end
 bindFunction("GetGlobalPlaybackSyncStatus", function()
 	local status = if globalPlaybackAuthority then globalPlaybackAuthority:GetStatus() else {enabled = false, error = "Playback authority module unavailable."}
 	status.syncEnabled = playbackSyncEnabled
+	status.lastServiceError = playbackAuthorityLastError
 	status.localQueueIsolated = true
 	return true, status
 end)
@@ -1095,20 +1097,47 @@ end)
 -- Each server observes the shared opt-in flag. Only the current lease holder
 -- renews leadership; no local queue data is ever sent to this authority.
 task.spawn(function()
+	local retryDelay = 8
 	while SERVICE_ENABLED do
-		if globalConfigService then
+		local cycleOk, cycleError = pcall(function()
+			if not globalConfigService then
+				playbackAuthorityLastError = "Shared config service unavailable."
+				return
+			end
 			local enabled = globalConfigService:Get("playbackSyncEnabled") == true
 			if enabled ~= playbackSyncEnabled then
 				playbackSyncEnabled = enabled
 				if not enabled and globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
 			end
-			if playbackSyncEnabled and globalPlaybackAuthority then
-				globalPlaybackAuthority:AcquireOrRenewLeadership()
+			if playbackSyncEnabled then
+				if not globalPlaybackAuthority then
+					playbackAuthorityLastError = "Playback authority module unavailable."
+					return
+				end
+				local acquired, _, acquireError = globalPlaybackAuthority:AcquireOrRenewLeadership()
+				if not acquired then
+					playbackAuthorityLastError = tostring(acquireError or "Leadership is not currently available.")
+				else
+					playbackAuthorityLastError = nil
+				end
 			end
+		end)
+		if not cycleOk then
+			playbackAuthorityLastError = tostring(cycleError)
+			warn("[ClubMusic Global] Playback authority reconciliation failed safely: " .. playbackAuthorityLastError)
+			task.wait(retryDelay)
+			retryDelay = math.min(30, retryDelay * 2)
+		else
+			retryDelay = 8
+			task.wait(8)
 		end
-		task.wait(8)
 	end
-	if globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
+	if globalPlaybackAuthority then
+		local releaseOk, releaseResult = pcall(globalPlaybackAuthority.ReleaseLeadership, globalPlaybackAuthority)
+		if not releaseOk or releaseResult ~= true then
+			warn("[ClubMusic Global] Playback leadership release failed; lease will expire naturally.")
+		end
+	end
 end)
 
 
