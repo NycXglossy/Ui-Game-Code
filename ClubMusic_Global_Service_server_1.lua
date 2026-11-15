@@ -1262,11 +1262,17 @@ end
 globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {
 	isResolverAvailable = function()
 		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-		return resolver ~= nil and resolver:IsA("BindableFunction") and resolver.Parent == ServerStorage
+		local available = resolver ~= nil and resolver:IsA("BindableFunction") and resolver.Parent == ServerStorage
+		print("[ClubMusic][PlaybackSync Auth] Resolver availability checked; available=" .. tostring(available)
+			.. "; class=" .. tostring(if resolver then resolver.ClassName else "missing"))
+		return available
 	end,
 	resolvePermission = function(actorUserId, permission)
 		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-		if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then return false end
+		if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then
+			warn("[ClubMusic][PlaybackSync Auth] Resolver dependency could not find the expected ServerStorage BindableFunction.")
+			return false
+		end
 		local ok, allowed = pcall(function() return resolver:Invoke(actorUserId, permission) end)
 		if not ok then
 			warn("[ClubMusic][PlaybackSync Auth] Resolver Invoke failed; actor=" .. tostring(actorUserId)
@@ -1278,11 +1284,27 @@ globalAuthorizationService = createOperationalService("ClubMusic_Global_Authoriz
 		return allowed == true
 	end,
 }, {"Start", "GetStatus", "Check"})
-if globalAuthorizationService then globalAuthorizationService:Start() end
+if globalAuthorizationService then
+	local authStartOk, authStartResult = pcall(globalAuthorizationService.Start, globalAuthorizationService)
+	print("[ClubMusic][PlaybackSync Auth] Authorization service loaded; startOk=" .. tostring(authStartOk)
+		.. "; startResult=" .. tostring(authStartResult))
+else
+	warn("[ClubMusic][PlaybackSync Auth] Authorization service is unavailable; check the optional ModuleScript under ServerStorage.")
+end
 authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
-	if not globalAuthorizationService then return false end
+	print("[ClubMusic][PlaybackSync Auth] Authorization check requested; actor=" .. tostring(actorUserId)
+		.. "; permission=" .. tostring(permission) .. "; servicePresent=" .. tostring(globalAuthorizationService ~= nil))
+	if not globalAuthorizationService then
+		warn("[ClubMusic][PlaybackSync Auth] Authorization check denied because the service instance is missing.")
+		return false
+	end
 	local ok, allowed = pcall(globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission)
-	return ok and allowed == true
+	if not ok then
+		warn("[ClubMusic][PlaybackSync Auth] Authorization Check threw an error: " .. string.sub(tostring(allowed), 1, 180))
+		return false
+	end
+	print("[ClubMusic][PlaybackSync Auth] Authorization Check returned; allowed=" .. tostring(allowed))
+	return allowed == true
 end
 
 globalSecurityPolicyService = createOperationalService("ClubMusic_Global_Security_Policy_Service", {
