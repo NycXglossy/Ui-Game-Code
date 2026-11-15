@@ -88,7 +88,8 @@ Implemented:
 - Only the elected leader may advance the track, and it advances from its own server-local queue.
 - Skip, pause/resume, and restart requests from non-leader servers are authorized by the existing global DJ permission check and forwarded as playback-only command events.
 - Playback-only command events are validated on the Playback topic and are handled only by the elected leader.
-- These commands bypass the legacy durable `playbackControl` record, preventing old periodic reconciliation from replaying stale restart/pause commands.
+- These commands use a validated Playback-topic command envelope and bypass the legacy durable `playbackControl` record, preventing old periodic reconciliation from replaying stale restart/pause commands.
+- Queue clear, DJ request-lock mode, and player request moderation remain server-local while playback-only sync is active; no local queue data or queue-control decisions are broadcast.
 - Legacy global-queue mode and its queue APIs remain unchanged; legacy playback-control reconciliation is ignored while playback-only sync is active.
 - The controller observes the service's lease status instead of creating duplicate MemoryStore lease writes. The controller reconciliation loop runs every eight seconds; MessagingService events provide faster invalidation.
 
