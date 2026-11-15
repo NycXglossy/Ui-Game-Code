@@ -1084,7 +1084,23 @@ bindFunction("CommitGlobalPlaybackSnapshot", function(snapshot: any, expectedRev
 end)
 
 bindFunction("SetGlobalPlaybackSyncEnabled", function(enabled: any, actorUserId: any)
-	if typeof(enabled) ~= "boolean" or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false, "Not authorized or invalid setting." end
+	if typeof(enabled) ~= "boolean" then
+		warn("[ClubMusic][PlaybackSync Auth] Rejected: enabled value is not boolean.")
+		return false, "Invalid playback sync setting."
+	end
+	if not finiteNumber(actorUserId) or actorUserId < 1 or actorUserId % 1 ~= 0 then
+		warn("[ClubMusic][PlaybackSync Auth] Rejected: actorUserId is invalid; type=" .. typeof(actorUserId))
+		return false, "Invalid authorization actor."
+	end
+	local authorized = authorizeGlobalActor(actorUserId, "GlobalConfig")
+	if not authorized then
+		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
+		local resolverState = if not resolver then "missing" elseif not resolver:IsA("BindableFunction") then "wrong-class:" .. resolver.ClassName else "present"
+		warn("[ClubMusic][PlaybackSync Auth] Permission denied; actor=" .. tostring(actorUserId)
+			.. "; permission=GlobalConfig; resolver=" .. resolverState
+			.. "; playerOnThisServer=" .. tostring(Players:GetPlayerByUserId(math.floor(actorUserId)) ~= nil))
+		return false, "Global playback sync authorization failed. Check the server Output for PlaybackSync Auth diagnostics."
+	end
 	if not globalConfigService then return false, "Shared config service unavailable." end
 	-- Playback-only sync owns Now Playing across servers but must never coexist
 	-- with the legacy shared request queue. Disable legacy queue mode persistently
