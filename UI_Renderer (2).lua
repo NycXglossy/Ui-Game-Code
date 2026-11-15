@@ -3580,7 +3580,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				UDim2.fromOffset(12, 70), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
 			actionButton(syncCard, if syncEnabled then "DISABLE GLOBAL SYNC" else "ENABLE GLOBAL SYNC",
 				UDim2.new(1, -166, 0, 7), UDim2.fromOffset(154, 28), function()
-					act("DJToggleGlobalPlaybackSync", {enabled = not syncEnabled})
+					local requestedEnabled = not syncEnabled
+					print("[ClubMusic][PlaybackSync UI] Toggle clicked; requestedEnabled=" .. tostring(requestedEnabled))
+					local sent = act("DJToggleGlobalPlaybackSync", {enabled = requestedEnabled})
+					if not sent then
+						warn("[ClubMusic][PlaybackSync UI] Toggle request was not sent by the client network layer.")
+						notify("Global playback toggle could not be sent. Check the client Output.", C.Red)
+					end
 				end, if syncEnabled then C.Orange else C.Green)
 		else
 			local note = card(48)
