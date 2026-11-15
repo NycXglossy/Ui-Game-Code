@@ -66,7 +66,6 @@ local IS_STUDIO = RunService:IsStudio()
 local SERVICE_ENABLED = CONFIG.Enabled and (not IS_STUDIO or CONFIG.EnableInStudio)
 local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false)
 local globalRegistryService: any = nil
-local globalEventLogService: any = nil
 local globalWatchdogService: any = nil
 local globalConfigService: any = nil
 local globalStateReconciliationService: any = nil
@@ -943,11 +942,7 @@ local function reportOperationalError(subsystem: string, operation: string, err:
 end
 
 local OPTIONAL_GLOBAL_MODULE_ALIASES: {[string]: {string}} = {
-	ClubMusic_Global_Event_Log_Service = {
-		"ClubMusic_Global_Event_Log_Service",
-		"ClubMusic_Global_Event_Logging_Service",
-	},
-	ClubMusic_Global_RateLimit_Service = {
+		ClubMusic_Global_RateLimit_Service = {
 		"ClubMusic_Global_RateLimit_Service",
 		"ClubMusic_Global_Ratelimit_Service",
 	},
@@ -1275,9 +1270,6 @@ metricsDependencies.isEnabled = function()
 	return SERVICE_ENABLED and globalConfigService ~= nil and globalConfigService:Get("metricsEnabled") == true
 end
 
-globalEventLogService = createOperationalService("ClubMusic_Global_Event_Log_Service", auditDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
-if globalEventLogService then globalEventLogService:Start() end
-
 globalMetricsService = createOperationalService("ClubMusic_Global_Metrics_Service", metricsDependencies, {"Start", "GetStatus", "GetAggregate", "Record", "ObserveLatency"})
 if globalMetricsService then globalMetricsService:Start() end
 
@@ -1295,7 +1287,6 @@ globalMaintenanceService = if globalConfigService then createOperationalService(
 	configService = globalConfigService,
 	publish = function(payload)
 		globalEventBindable:Fire(payload)
-		if globalEventLogService then globalEventLogService:Record("Maintenance", "Maintenance state changed", "Warning") end
 		if globalAuditService then globalAuditService:Record("Maintenance", 0, "global", if payload.enabled then "enabled" else "disabled") end
 	end,
 }, {"Start", "GetStatus", "Set"}) else nil
@@ -1466,7 +1457,6 @@ globalSecurityPolicyService = createOperationalService("ClubMusic_Global_Securit
 	authorize = authorizeGlobalActor,
 	onChange = function(key, value, revision, actor)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", actor, key, "policy-update") end
-		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecurityPolicyChanged", key, "Info") end
 	end,
 }, {"Start", "GetStatus", "Get", "GetAll", "Set"})
 if globalSecurityPolicyService then globalSecurityPolicyService:Start() end
@@ -1476,7 +1466,6 @@ globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Securi
 	getThreshold = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("suspiciousSignalThreshold") else 8 end,
 	onAlert = function(signal, count)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", 0, signal, "threshold-reached:" .. tostring(count)) end
-		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecuritySignal", signal, "Warning") end
 	end,
 }, {"Start", "GetStatus", "Record"})
 if globalSecurityMonitorService then globalSecurityMonitorService:Start() end
@@ -1504,31 +1493,13 @@ globalIncidentResponseService = createOperationalService("ClubMusic_Global_Incid
 	guid = function() return HttpService:GenerateGUID(false) end,
 	onChange = function(action, incident)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", incident.actorUserId, incident.kind, "incident-" .. action) end
-		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecurityIncident", incident.kind .. ":" .. incident.id, action) end
 	end,
 }, {"Start", "GetStatus", "Open", "Resolve", "GetRecent"})
 if globalIncidentResponseService then globalIncidentResponseService:Start() end
 
--- Route the shared ErrorHandler's new, deduplicated records into the existing
--- operational event log. Only metadata is forwarded; messages and tracebacks
--- remain in the bounded local diagnostic history and server Output.
-if globalErrorHandler and type(globalErrorHandler.SetReporter) == "function" then
-	local reporterOk, reporterResult = pcall(globalErrorHandler.SetReporter, function(record)
-		if typeof(record) ~= "table" or not globalEventLogService then return end
-		local subsystem = if typeof(record.subsystem) == "string" then string.sub(record.subsystem, 1, 64) else "Unknown"
-		local operation = if typeof(record.operation) == "string" then string.sub(record.operation, 1, 96) else "Unknown"
-		local errorId = if typeof(record.id) == "string" then string.sub(record.id, 1, 32) else "Unknown"
-		pcall(globalEventLogService.Record, globalEventLogService, "OperationalError", subsystem .. "." .. operation .. ":" .. errorId, "Error")
-	end)
-	if not reporterOk or reporterResult ~= true then
-		warn("[ClubMusic Global] Could not connect ErrorHandler telemetry reporter: " .. tostring(reporterResult))
-	end
-end
-
 globalEventBindable.Event:Connect(function(event)
 	if typeof(event) ~= "table" then return end
 	local kind = tostring(event.kind or "Unknown")
-	if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, kind, "Global event received", "Info") end
 	if globalMetricsService then pcall(globalMetricsService.Record, globalMetricsService, "event:" .. kind, 1) end
 	if globalAuditService then
 		if kind == "DJ" then
@@ -1558,14 +1529,9 @@ bindFunction("GetGlobalAudit", function(limit: any)
 	if not globalAuditService then return false, {} end
 	return globalAuditService:GetRecent(limit)
 end)
-bindFunction("GetGlobalEventLog", function(limit: any)
-	if not globalEventLogService then return false, {} end
-	return globalEventLogService:GetRecent(limit)
-end)
 bindFunction("GetGlobalOperationalStatus", function()
 	local status = {
 		Registry = if globalRegistryService then globalRegistryService:GetStatus() else {state = "Unavailable"},
-		EventLog = if globalEventLogService then globalEventLogService:GetStatus() else {state = "Unavailable"},
 		Watchdog = if globalWatchdogService then globalWatchdogService:GetStatus() else {state = "Unavailable"},
 		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
 		Reconciliation = if globalStateReconciliationService then globalStateReconciliationService:GetStatus() else {state = "Unavailable"},
