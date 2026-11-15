@@ -49,7 +49,7 @@ This refreshes the player's current Roblox account avatar; it is not an outfit c
 
 ### Implemented: Mount, Size, Clone, and Aura
 
-The `UtilityBarExtendedActions.server.lua` script owns these actions through the allowlisted `UtilityBarRemotes.ExecuteUtility` RemoteFunction. The client sends an allowlisted action name and, where required, a bounded size value or fixed aura preset/target pair; the server validates each request, applies a per-player cooldown, and operates only on the requesting player's character.
+The `UtilityBarExtendedActions.server.lua` script owns Mount, Size, Clone Companion, Aura, and Lighting Control through the allowlisted `UtilityBarRemotes.ExecuteUtility` RemoteFunction. The server validates each request, checks pass entitlements for paid features, applies a per-player cooldown, and limits lighting changes to explicitly tagged stage/club fixtures.
 
 - **Mount:** requires Game Pass `2087955619`, then opens its own panel and equips or unequips only a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
 - **Size:** opens its own control panel with a 0.50×–5.00× adjustable slider and a 1.00× reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
@@ -60,7 +60,7 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 ### Security and lifecycle
 
-- The server accepts only the five explicit action names (`Mount`, `Size`, `Clone`, `Aura`, `ClearAura`); clients cannot supply target players, asset IDs, or arbitrary instances, and size values are clamped server-side.
+- The server accepts only the explicit action names (`Mount`, `Size`, `Clone`, `Aura`, `ClearAura`, and `LightingControl`); clients cannot supply target players, asset IDs, or arbitrary instances, and size values are clamped server-side.
 - Requests are throttled per player on the server.
 - Size values are clamped to 0.50×–5.00× and based on each character's captured baseline.
 - Clone scripts are removed and its parts cannot collide, touch, or be queried; clones expire automatically and are cleaned up when their owner leaves.
@@ -73,17 +73,17 @@ The repository-side integration audit and static contract checks are complete. T
 
 - [ ] Install all four client LocalScripts and all three server Scripts once; verify nine buttons appear in the bottom utility rail. Open Inventory and verify Backpack/equipped Tools can be equipped and unequipped from the same list.
 - [ ] Open Tool Shop; verify its separate panel appears, the coin balance loads from the server, and three Coming Soon placeholders display without purchase controls.
-- [ ] Verify Mount, Clone, Size and Aura each open their own separate control panel; verify Aura has three style tabs and three target tabs (Character, Tools, Accessories), and Size has a working 0.50×–5.00× slider with a 1.00× reset.
+- [ ] Verify Mount, Clone Companion, Lighting Control, Size and Aura open their separate panels only for players who own the matching passes; verify the lighting presets affect only tagged stage/club fixtures.
 - [ ] Open the full ClubMusic menu; verify the utility rail hides and returns on close.
 - [ ] Open Tiki Tide Settings; verify the rail hides and returns on close.
 - [ ] Test touch, mouse, keyboard, and D-pad / thumbstick navigation.
 - [ ] Test narrow mobile viewport and landscape rotation; verify horizontal scrolling works without clipping and the Inventory, control-panel, and Tool Shop surfaces remain within the touch viewport.
 - [ ] Confirm utility clicks fire the documented local event and do not issue music requests.
 - [ ] Install both server Scripts and verify Refresh Outfit updates only the requesting player's avatar.
-- [ ] Verify Mount equips only a tagged/named mount Tool and reports clearly when none is installed.
+- [ ] Verify the Mount pass gate, then confirm Mount equips only a tagged/named mount Tool and reports clearly when none is installed.
 - [ ] Verify Size cycles on R15, restores the captured baseline, and safely rejects R6.
-- [ ] Verify Clone is non-interactive, expires after 12 seconds, and is cleaned up on leave.
-- [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
+- [ ] Verify the Island Companion pass gate, then confirm Clone Companion is non-interactive, expires after 12 seconds, and is cleaned up on leave.
+- [ ] Verify Lighting Control requires its pass and its presets/restore action affect only StageClubLight-tagged fixtures.\n- [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
 - [ ] Verify repeated refresh requests are throttled and failed avatar lookups show a safe message.
 
 
