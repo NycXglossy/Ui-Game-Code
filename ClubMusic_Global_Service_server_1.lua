@@ -242,6 +242,12 @@ local function consumeShared(key: string, capacity: number, refill: number, cost
     if playerId then
      local record = if typeof(old) == "table" then table.clone(old) else {}
      local buckets = if typeof(record.buckets) == "table" then table.clone(record.buckets) else {}
+     for name, saved in pairs(buckets) do
+      if typeof(saved) ~= "table" or not finiteNumber(saved.updated)
+       or now - saved.updated > CONFIG.BudgetKeyTtlSeconds then
+       buckets[name] = nil
+      end
+     end
      local state = if typeof(buckets[bucketName]) == "table" then buckets[bucketName] else {}
      local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
      local updated = if finiteNumber(state.updated) then state.updated else now
