@@ -230,7 +230,10 @@ local function consumeShared(key: string, capacity: number, refill: number, cost
  -- Consolidate the three per-player limiter records (user/state/audio) into
  -- one expiring MemoryStore item per player. This lowers key cardinality
  -- without merging their independent token buckets or changing their limits.
- local bucketName, playerId = string.match(key, "^(user|state|audio):(%d+)$")
+ local bucketName, playerId = string.match(key, "^(%a+):(%d+)$")
+ if bucketName ~= "user" and bucketName ~= "state" and bucketName ~= "audio" then
+  bucketName, playerId = nil, nil
+ end
  local storageKey = if playerId then "player:" .. playerId else key
  if not memoryStoreCapacityLimited then
   local now = os.time()
