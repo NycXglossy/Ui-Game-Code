@@ -55,6 +55,13 @@ function Service:Set(key,value,actor)
  if not ok then self.lastError=tostring(result); return false,"Shared configuration unavailable." end
  self.values=validate(result.values); self.revision=result.revision; self.state="Healthy"; return true,self:GetStatus()
 end
+-- MessagingService carries committed mode changes to other servers. Update the
+-- local cache immediately so the reconciliation loop cannot restore a stale value.
+function Service:SetLocal(key,value)
+ if type(key)~="string" or not validValue(key,value) then return false end
+ self.values[key]=value
+ return true
+end
 function Service:Get(key) return self.values[key] end
 function Service:GetStatus() return {state=if not self.d.isEnabled() then "Disabled" else self.state,revision=self.revision,values=table.clone(self.values),lastError=self.lastError} end
 function Service:Start() if self.running then return false end; self.running=true; task.spawn(function() while self.running do self:Refresh(); task.wait(30) end end); return true end
