@@ -1654,6 +1654,93 @@ ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, strin
 	return true, nil
 end
 
+-- Rebuild a failed modern deck without falling back to legacy Sound playback.
+-- The queue and authoritative track clock remain untouched; only the audio graph
+-- is replaced after the new AudioPlayer is loaded, positioned, and verified.
+local function rebuildModernAudioBackend(source: any, asset: string, position: number,
+	expectedTrackId: string, expectedTransitionToken: number): (boolean, string?)
+	if typeof(source) ~= "table" or source.kind ~= "Backend" or typeof(source.backend) ~= "table" then
+		return false, "Modern audio recovery requires the controller-owned AudioPlayer backend."
+	end
+	local expectedRevision = audioSourceRevision
+	local wasPaused = playbackPaused == true
+	local gainOk, outgoingGain = ControllerFunctions.getAudioGain(source)
+	if not gainOk then
+		outgoingGain = 1
+	end
+	local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
+	if not backendModule or not backendModule:IsA("ModuleScript") then
+		return false, "Modern audio recovery module is unavailable."
+	end
+	local requireOk, BackendClass = pcall(require, backendModule)
+	if not requireOk or typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
+		return false, "Modern audio recovery module could not be loaded."
+	end
+	local createOk, candidate = pcall(BackendClass.new, {
+		Name = "ClubMusicMainAudioBackendRecovery",
+		Parent = SoundService,
+		Volume = getTrackVolumeTrim(expectedTrackId),
+		InitialGain = 0,
+	})
+	if not createOk or typeof(candidate) ~= "table" then
+		return false, "A replacement modern AudioPlayer graph could not be created."
+	end
+	local function abandon(message: string): (boolean, string?)
+		pcall(function() candidate:Stop() end)
+		pcall(function() candidate:Cleanup() end)
+		return false, message
+	end
+	local selected, selectError = candidate:SetAsset(asset)
+	if selected ~= true then return abandon(tostring(selectError or "Replacement AudioPlayer rejected the current asset.")) end
+	local speed = TRACK_PLAYBACK_SPEED_OVERRIDES[expectedTrackId] or 1
+	local speedSet, speedError = candidate:SetPlaybackSpeed(speed)
+	if speedSet ~= true then return abandon(tostring(speedError or "Replacement AudioPlayer rejected playback speed.")) end
+
+	local deadline = os.clock() + 8
+	local readiness = nil
+	repeat
+		task.wait(0.1)
+		local readOk, state = pcall(function() return candidate:GetReadinessSnapshot() end)
+		if readOk and typeof(state) == "table" and state.ready == true
+			and state.asset == asset and ControllerFunctions.isFiniteNumber(state.length) and state.length > 0 then
+			readiness = state
+			break
+		end
+	until os.clock() >= deadline
+	if not readiness then return abandon("Replacement AudioPlayer did not become ready within 8 seconds.") end
+
+	local target = math.clamp(position, 0, math.max(0, readiness.length - 0.5))
+	local seeked, seekError = candidate:Seek(target)
+	if seeked ~= true then return abandon(tostring(seekError or "Replacement AudioPlayer could not restore the playhead.")) end
+	if wasPaused then
+		local paused, pauseError = candidate:Pause()
+		if paused ~= true then return abandon(tostring(pauseError or "Replacement AudioPlayer could not preserve pause state.")) end
+	else
+		local started, startError = candidate:Play()
+		if started ~= true then return abandon(tostring(startError or "Replacement AudioPlayer could not start.")) end
+		local startDeadline = os.clock() + 2
+		repeat
+			task.wait(0.05)
+		until candidate:IsPlaying() or os.clock() >= startDeadline
+		if not candidate:IsPlaying() then return abandon("Replacement AudioPlayer did not enter the playing state.") end
+	end
+	local gainSet, gainError = candidate:SetGain(math.clamp(outgoingGain, 0, 1))
+	if gainSet ~= true then return abandon(tostring(gainError or "Replacement AudioPlayer could not restore output gain.")) end
+
+	if activeAudioSource ~= source or audioSourceRevision ~= expectedRevision
+		or tostring(nowPlaying.trackId or "") ~= expectedTrackId
+		or audioTransitionTrackToken ~= expectedTransitionToken
+		or playbackPaused ~= wasPaused then
+		return abandon("Playback changed while modern audio recovery was preparing.")
+	end
+
+	activeAudioSource = { kind = "Backend", backend = candidate }
+	ControllerFunctions.bindActiveAudioPlayingSignal()
+	pcall(function() source.backend:Cleanup() end)
+	print("[ClubMusic][AudioBackend] Recovered playback with a replacement modern AudioPlayer.")
+	return true, nil
+end
+
 -- Recover the current server-local audio source without changing queue ownership,
 -- track identity, or the authoritative playback clock. This is deliberately blocked
 -- during a crossfade so a manual recovery cannot interrupt a deck handoff.
@@ -1672,12 +1759,12 @@ local function performReloadServerMusic(): (boolean, string?)
 
 	local source = activeAudioSource
 	local snapshot = ControllerFunctions.getAudioSnapshot()
-	if typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
+	if (typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable") and source.kind ~= "Backend" then
 		return false, "The active audio source is unavailable."
 	end
 	local duration = math.max(1, tonumber(nowPlaying.duration) or 1)
-	local position = if ControllerFunctions.isFiniteNumber(snapshot.position)
-		then snapshot.position else nowPlaying.elapsed
+	local position = if typeof(snapshot) == "table" and ControllerFunctions.isFiniteNumber(snapshot.position)
+		then snapshot.position else math.max(0, tonumber(nowPlaying.elapsed) or 0)
 	position = math.clamp(position, 0, math.max(0, duration - 0.5))
 	local expectedTrackId = tostring(nowPlaying.trackId or "")
 	local expectedTransitionToken = audioTransitionTrackToken
@@ -1689,7 +1776,11 @@ local function performReloadServerMusic(): (boolean, string?)
 			return source.backend:Reload(position)
 		end)
 		if not reloadCallOk or reloaded ~= true then
-			return false, tostring(reloadError or reloaded or "The modern audio decoder could not be reloaded.")
+			local recovered, recoveryError = rebuildModernAudioBackend(
+				source, asset, position, expectedTrackId, expectedTransitionToken
+			)
+			if recovered then return true, nil end
+			return false, tostring(recoveryError or reloadError or reloaded or "The modern audio decoder could not be recovered.")
 		end
 	elseif source.kind == "Sound" and source.instance and source.instance:IsA("Sound") then
 		local sound = source.instance
