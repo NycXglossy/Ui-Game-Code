@@ -416,7 +416,7 @@ end)
 
 local requestPending = false
 local passPromptPending = false
-local FEATURE_PASSES = {
+local FEATURE_PASSES: {[string]: {id: number, attribute: string}} = {
 	Mount = {id = 2087955619, attribute = "HasIslandMountPass"},
 	Clone = {id = 2088585676, attribute = "HasIslandCompanionPass"},
 	LightingControl = {id = 2088315619, attribute = "HasStageClubLightingPass"},
@@ -439,7 +439,7 @@ actionEvent.Event:Connect(function(actionName: string)
 				warn("[UtilityBar] Game Pass prompt failed: " .. tostring(err))
 				showMessage("The Game Pass prompt could not be opened. Try again.")
 			end
-			task.delay(2, function() passPromptPending = false end)
+			task.delay(15, function() passPromptPending = false end)
 		end)
 		return
 	end
@@ -476,6 +476,10 @@ actionEvent.Event:Connect(function(actionName: string)
 			showMessage(if typeof(resultMessage) == "string" then resultMessage else "Avatar refresh was not completed.")
 		end
 	end)
+end)
+
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(promptPlayer: Player)
+	if promptPlayer == player then passPromptPending = false end
 end)
 
 print("[UtilityBar] Inventory, Refresh Outfit, and pass-gated feature purchase prompts connected.")
