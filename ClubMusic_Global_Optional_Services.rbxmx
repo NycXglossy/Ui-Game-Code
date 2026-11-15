@@ -280,6 +280,7 @@ end
 function PlaybackAuthority.new(dependencies: {[string]: any})
 	assert(typeof(dependencies) == "table", "PlaybackAuthority dependencies are required")
 	return setmetatable({
+		safeCall = dependencies.safeCall,
 		dataStoreService = dependencies.dataStoreService,
 		memoryStoreService = dependencies.memoryStoreService,
 		jobId = tostring(dependencies.jobId or ""),
@@ -296,9 +297,16 @@ function PlaybackAuthority.new(dependencies: {[string]: any})
 	}, PlaybackAuthority)
 end
 
+function PlaybackAuthority:_safeCall(operation: string, callback: (...any) -> ...any, ...: any): ...any
+	if self.safeCall and type(self.safeCall.Run) == "function" then
+		return self.safeCall:Run("PlaybackAuthority", operation, callback, ...)
+	end
+	return pcall(callback, ...)
+end
+
 function PlaybackAuthority:Start(): (boolean, string?)
 	if self.started then return true, nil end
-	local ok, result = pcall(function()
+	local ok, result = self:_safeCall("DataStoreAndMemoryStore.Initialize", function()
 		self.store = self.dataStoreService:GetDataStore("ClubMusic_GlobalPlaybackOnly_v1")
 		self.leaseMap = self.memoryStoreService:GetHashMap("ClubMusic_GlobalPlaybackLeader_v1")
 	end)
@@ -309,7 +317,7 @@ end
 
 function PlaybackAuthority:GetLeader(): (boolean, {[string]: any}?, string?)
 	if not self.started or not self.leaseMap then return false, nil, "Playback authority is not started." end
-	local ok, value = pcall(function() return self.leaseMap:GetAsync(LEASE_KEY) end)
+	local ok, value = self:_safeCall("MemoryStore.GetLeaderLease", function() return self.leaseMap:GetAsync(LEASE_KEY) end)
 	if not ok then return false, nil, tostring(value) end
 	if typeof(value) ~= "table" or not finite(value.expiresAt) or value.expiresAt <= os.time()
 		or typeof(value.jobId) ~= "string" or typeof(value.token) ~= "string" then
@@ -323,7 +331,7 @@ function PlaybackAuthority:AcquireOrRenewLeadership(): (boolean, {[string]: any}
 	local now = os.time()
 	local proposedToken = self.leaseToken or self.guid()
 	local alreadyFencedLeader = self.leadershipReady == true and self.leaseToken == proposedToken and self.leaderGeneration ~= nil
-	local ok, value = pcall(function()
+	local ok, value = self:_safeCall("MemoryStore.AcquireOrRenewLease", function()
 		return self.leaseMap:UpdateAsync(LEASE_KEY, function(old)
 			if typeof(old) == "table" and finite(old.expiresAt) and old.expiresAt > now then
 				if old.jobId == self.jobId and old.token == self.leaseToken then
@@ -358,7 +366,7 @@ function PlaybackAuthority:AcquireOrRenewLeadership(): (boolean, {[string]: any}
 		end
 		claimed = snapshot
 	else
-		local claimOk, claimResult = pcall(function()
+		local claimOk, claimResult = self:_safeCall("DataStore.ClaimLeaderFence", function()
 			return self.store:UpdateAsync(SNAPSHOT_KEY, function(old)
 				local state = sanitizeSnapshot(old)
 				state.leaderGeneration += 1
@@ -391,7 +399,7 @@ end
 function PlaybackAuthority:ReleaseLeadership(): boolean
 	local token = self.leaseToken
 	if not token or not self.leaseMap then return true end
-	local ok = pcall(function()
+	local ok = self:_safeCall("MemoryStore.ReleaseLeadership", function()
 		self.leaseMap:UpdateAsync(LEASE_KEY, function(old)
 			if typeof(old) == "table" and old.jobId == self.jobId and old.token == token then return nil end
 			return old
@@ -403,7 +411,7 @@ end
 
 function PlaybackAuthority:GetSnapshot(): (boolean, {[string]: any}?, string?)
 	if not self.started or not self.store then return false, nil, "Playback authority is not started." end
-	local ok, raw = pcall(function() return self.store:GetAsync(SNAPSHOT_KEY) end)
+	local ok, raw = self:_safeCall("DataStore.GetPlaybackSnapshot", function() return self.store:GetAsync(SNAPSHOT_KEY) end)
 	if not ok then return false, nil, tostring(raw) end
 	return true, sanitizeSnapshot(raw), nil
 end
@@ -425,7 +433,7 @@ function PlaybackAuthority:CommitPlayback(raw: any, expectedRevision: any): (boo
 	end
 	local token = self.leaseToken
 	local accepted = false
-	local ok, result = pcall(function()
+	local ok, result = self:_safeCall("DataStore.CommitPlayback", function()
 		return self.store:UpdateAsync(SNAPSHOT_KEY, function(old)
 			accepted = false
 			local state = sanitizeSnapshot(old)
@@ -448,7 +456,7 @@ function PlaybackAuthority:CommitPlayback(raw: any, expectedRevision: any): (boo
 	if not ok then return false, nil, tostring(result) end
 	local snapshot = sanitizeSnapshot(result)
 	if not accepted then return false, snapshot, "Playback revision changed or this leader was fenced out." end
-	if typeof(self.publish) == "function" then pcall(self.publish, {kind = "PlaybackChanged", revision = snapshot.revision, trackRevision = snapshot.trackRevision}) end
+	if typeof(self.publish) == "function" then self:_safeCall("Messaging.PublishPlaybackChanged", self.publish, {kind = "PlaybackChanged", revision = snapshot.revision, trackRevision = snapshot.trackRevision}) end
 	return true, snapshot, nil
 end
 
@@ -493,6 +501,103 @@ end
 function Service:Start() return true end
 function Service:Stop() end
 return Service
+]]></ProtectedString>
+      </Properties>
+    </Item>
+    <Item class="ModuleScript" referent="RBX5">
+      <Properties>
+        <string name="Name">ClubMusic_Global_SafeCall_Service</string>
+        <ProtectedString name="Source"><![CDATA[--!strict
+-- Centralized protected-call diagnostics for ClubMusic global services.
+-- This module observes failures only; it never changes authorization or recovery policy.
+local SafeCall = {}
+SafeCall.__index = SafeCall
+
+local MAX_RECORDS = 50
+local MAX_TEXT = 240
+local WARN_COOLDOWN = 30
+
+local function clean(value: any): string
+	local text = tostring(value or "")
+	text = string.gsub(text, "[%c]", " ")
+	return string.sub(text, 1, MAX_TEXT)
+end
+
+function SafeCall.new(dependencies: {[string]: any}?)
+	local d = if typeof(dependencies) == "table" then dependencies else {}
+	return setmetatable({
+		serviceName = clean(d.serviceName or "ClubMusicGlobal"),
+		records = {},
+		counts = {calls = 0, failures = 0, recovered = 0},
+		lastSuccess = nil,
+		lastFailure = nil,
+		lastWarnings = {},
+	}, SafeCall)
+end
+
+function SafeCall:Run(serviceName: string, operation: string, callback: (...any) -> ...any, ...: any): ...any
+	self.counts.calls += 1
+	local packed = table.pack(pcall(callback, ...))
+	local ok = packed[1] == true
+	local now = os.time()
+	local service = clean(serviceName ~= "" and serviceName or self.serviceName)
+	local op = clean(operation)
+	if ok then
+		self.lastSuccess = {service = service, operation = op, at = now}
+		return table.unpack(packed, 1, packed.n)
+	end
+
+	local err = clean(packed[2])
+	local trace = err
+	if debug and type(debug.traceback) == "function" then
+		local traceOk, traceResult = pcall(debug.traceback, err, 2)
+		if traceOk then trace = clean(traceResult) end
+	end
+	self.counts.failures += 1
+	self.lastFailure = {service = service, operation = op, error = err, traceback = trace, at = now}
+	local record = table.clone(self.lastFailure)
+	table.insert(self.records, 1, record)
+	while #self.records > MAX_RECORDS do table.remove(self.records) end
+
+	local signature = service .. "|" .. op .. "|" .. err
+	local lastWarn = self.lastWarnings[signature] or 0
+	if now - lastWarn >= WARN_COOLDOWN then
+		self.lastWarnings[signature] = now
+		warn("[ClubMusic][SafeCall] Operation failed; service=" .. service
+			.. "; operation=" .. op .. "; error=" .. err)
+	end
+	return false, err, trace
+end
+
+function SafeCall:RecordRecovery(serviceName: string, operation: string)
+	self.counts.recovered += 1
+	local record = {service = clean(serviceName), operation = clean(operation), at = os.time()}
+	self.lastSuccess = record
+	print("[ClubMusic][SafeCall] Operation recovered; service=" .. record.service .. "; operation=" .. record.operation)
+end
+
+function SafeCall:GetRecent(limit: number?): {any}
+	local count = math.clamp(math.floor(tonumber(limit) or 20), 1, MAX_RECORDS)
+	local out = {}
+	for index = 1, math.min(count, #self.records) do
+		out[index] = table.clone(self.records[index])
+	end
+	return out
+end
+
+function SafeCall:GetStatus(): {[string]: any}
+	return {
+		service = self.serviceName,
+		calls = self.counts.calls,
+		failures = self.counts.failures,
+		recovered = self.counts.recovered,
+		lastSuccess = if self.lastSuccess then table.clone(self.lastSuccess) else nil,
+		lastFailure = if self.lastFailure then table.clone(self.lastFailure) else nil,
+		recentFailureCount = #self.records,
+	}
+end
+
+return SafeCall
 ]]></ProtectedString>
       </Properties>
     </Item>
