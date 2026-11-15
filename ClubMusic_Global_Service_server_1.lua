@@ -1267,7 +1267,7 @@ globalAuthorizationService = createOperationalService("ClubMusic_Global_Authoriz
 			.. "; class=" .. tostring(if resolver then resolver.ClassName else "missing"))
 		return available
 	end,
-	resolvePermission = function(actorUserId, permission)
+	globalAuthorizationServiceResolver = function(actorUserId, permission)
 		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
 		if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then
 			warn("[ClubMusic][PlaybackSync Auth] Resolver dependency could not find the expected ServerStorage BindableFunction.")
@@ -1284,13 +1284,50 @@ globalAuthorizationService = createOperationalService("ClubMusic_Global_Authoriz
 		return allowed == true
 	end,
 }, {"Start", "GetStatus", "Check"})
-if globalAuthorizationService then
-	local authStartOk, authStartResult = pcall(globalAuthorizationService.Start, globalAuthorizationService)
-	print("[ClubMusic][PlaybackSync Auth] Authorization service loaded; startOk=" .. tostring(authStartOk)
-		.. "; startResult=" .. tostring(authStartResult))
-else
-	warn("[ClubMusic][PlaybackSync Auth] Authorization service is unavailable; check the optional ModuleScript under ServerStorage.")
+if not globalAuthorizationService then
+	-- Authorization is a local security boundary, not a cross-server feature.
+	-- Keep it available even when optional global services are absent or Studio
+	-- is isolated. The resolver remains mandatory and all permission checks fail
+	-- closed unless the controller confirms the actor's live Owner/Co-Owner rank.
+	local allowedPermissions = {
+		GlobalDJ = true,
+		GlobalModeration = true,
+		GlobalAnnouncement = true,
+		GlobalConfig = true,
+		SecurityPolicy = true,
+		IncidentResponse = true,
+	}
+	globalAuthorizationService = {
+		checks = 0,
+		denied = 0,
+		Start = function(self)
+			return true
+		end,
+		Check = function(self, actorUserId, permission)
+			if not finiteNumber(actorUserId) or actorUserId < 1 or actorUserId % 1 ~= 0
+				or not allowedPermissions[permission] then
+				self.denied += 1
+				return false, "Invalid actor or permission."
+			end
+			local ok, allowed = pcall(function()
+				return globalAuthorizationServiceResolver(actorUserId, permission)
+			end)
+			self.checks += 1
+			if not ok or allowed ~= true then
+				self.denied += 1
+				return false, "Permission denied."
+			end
+			return true
+		end,
+		GetStatus = function(self)
+			return {state = "Fallback", checks = self.checks, denied = self.denied, default = "Deny"}
+		end,
+	}
+	warn("[ClubMusic][PlaybackSync Auth] Optional authorization ModuleScript unavailable; using built-in fail-closed adapter.")
 end
+local authStartOk, authStartResult = pcall(globalAuthorizationService.Start, globalAuthorizationService)
+print("[ClubMusic][PlaybackSync Auth] Authorization service loaded; startOk=" .. tostring(authStartOk)
+	.. "; startResult=" .. tostring(authStartResult))
 authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
 	print("[ClubMusic][PlaybackSync Auth] Authorization check requested; actor=" .. tostring(actorUserId)
 		.. "; permission=" .. tostring(permission) .. "; servicePresent=" .. tostring(globalAuthorizationService ~= nil))
