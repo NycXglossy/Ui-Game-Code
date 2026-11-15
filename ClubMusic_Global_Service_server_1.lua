@@ -65,8 +65,13 @@ local CONFIG = {
 local IS_STUDIO = RunService:IsStudio()
 local SERVICE_ENABLED = CONFIG.Enabled and (not IS_STUDIO or CONFIG.EnableInStudio)
 local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false)
-local globalRegistryService: any = nil
 local globalDiagnosticsService: any = nil
+local subscriptionStatus: {[string]: string} = {}
+local messagingPublishSuccess = 0
+local messagingPublishFailures = 0
+local messagingReceived = 0
+local messagingRejected = 0
+local messagingLastError: string? = nil
 local globalConfigService: any = nil
 local globalStateReconciliationService: any = nil
 local globalMaintenanceService: any = nil
@@ -301,6 +306,8 @@ local function getModeration(userId: number): {[string]: any}
 	return if typeof(data) == "table" then data else {}
 end
 
+local publishTopic: (string, {[string]: any}) -> boolean
+
 local function updateModeration(userId: number, field: string, value: any, actorUserId: number, reason: string?): boolean
 	local key = userKey(userId)
 	if not key or (field ~= "globalBan" and field ~= "requestBlocked") then return false end
@@ -332,8 +339,8 @@ local function updateModeration(userId: number, field: string, value: any, actor
 		kind = "Moderation", userId = userId, field = field, value = value,
 		actorUserId = actorUserId, reason = reason, at = os.time(),
 	}
-	local publishOk, publishErr = pcall(function() MessagingService:PublishAsync(CONFIG.Topics.Moderation, message) end)
-	if not publishOk then warn("[ClubMusic Global] Moderation publish failed; periodic reconciliation remains active: " .. tostring(publishErr)) end
+	local published = publishTopic(CONFIG.Topics.Moderation, message)
+	if not published then warn("[ClubMusic Global] Moderation publish failed; periodic reconciliation remains active.") end
 	if globalAuditService then
 		pcall(globalAuditService.Record, globalAuditService, "Moderation", actorUserId,
 			tostring(userId), field .. "=" .. tostring(value) .. (if reason then " | " .. reason else ""))
@@ -342,14 +349,21 @@ local function updateModeration(userId: number, field: string, value: any, actor
 	return true
 end
 
-local function publishTopic(topic: string, payload: {[string]: any}): boolean
+publishTopic = function(topic: string, payload: {[string]: any}): boolean
 	if not SERVICE_ENABLED then return false end
 	payload.version = 1
 	payload.senderJob = JOB_ID
 	payload.id = HttpService:GenerateGUID(false)
 	payload.at = os.time()
 	local ok, err = pcall(function() MessagingService:PublishAsync(topic, payload) end)
-	if not ok then warn("[ClubMusic Global] Publish failed: " .. tostring(err)); return false end
+	if not ok then
+		messagingPublishFailures += 1
+		messagingLastError = string.sub(tostring(err), 1, 240)
+		warn("[ClubMusic Global] Publish failed on topic " .. topic .. ": " .. tostring(err))
+		return false
+	end
+	messagingPublishSuccess += 1
+	messagingLastError = nil
 	if globalDiagnosticsService then pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "publish:" .. tostring(payload.kind or "unknown"), 1) end
 	if globalAuditService then
 		if payload.kind == "DJ" then
@@ -842,7 +856,7 @@ local globalRecoveryService: any = nil
 local SYNC_HEARTBEAT_INTERVAL_SECONDS = 60
 local SYNC_HEARTBEAT_TIMEOUT_SECONDS = 180
 local syncHeartbeatTopic = CONFIG.Topics.Queue
-local subscriptionStatus: {[string]: string} = {[syncHeartbeatTopic] = "Starting"}
+subscriptionStatus[syncHeartbeatTopic] = "Starting"
 local peerHeartbeats: {[string]: {seenAt: number, reportedAt: number}} = {}
 local hasSeenSyncPeer = false
 local lastQueueNotificationAt = 0
@@ -1298,10 +1312,6 @@ task.spawn(function()
 end)
 
 
--- Cross-server server listing is disabled in minimal-storage mode.
--- This avoids one expiring SortedMap entry per live server.
-globalRegistryService = nil
-
 local auditDependencies = table.clone(sharedDependencies)
 auditDependencies.isEnabled = function()
 	return SERVICE_ENABLED and globalConfigService ~= nil and globalConfigService:Get("auditEnabled") == true
@@ -1510,10 +1520,6 @@ globalEventBindable.Event:Connect(function(event)
 	end
 end)
 
-bindFunction("GetGlobalServers", function(limit: any)
-	if not globalRegistryService then return false, {}, "Registry unavailable." end
-	return globalRegistryService:GetServers(limit)
-end)
 bindFunction("GetGlobalMetrics", function()
 	if not globalDiagnosticsService then return false, nil end
 	return true, globalDiagnosticsService:GetMetrics()
@@ -1524,7 +1530,15 @@ bindFunction("GetGlobalAudit", function(limit: any)
 end)
 bindFunction("GetGlobalOperationalStatus", function()
 	local status = {
-		Registry = if globalRegistryService then globalRegistryService:GetStatus() else {state = "Unavailable"},
+		Messaging = {
+			state = if not SERVICE_ENABLED then "Disabled" elseif messagingPublishFailures > 0 and messagingPublishSuccess == 0 then "Degraded" else "Active",
+			published = messagingPublishSuccess,
+			publishFailures = messagingPublishFailures,
+			received = messagingReceived,
+			rejected = messagingRejected,
+			subscriptions = table.clone(subscriptionStatus),
+			lastError = messagingLastError,
+		},
 		Diagnostics = if globalDiagnosticsService then globalDiagnosticsService:GetStatus() else {state = "Unavailable"},
 		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
 		Reconciliation = if globalStateReconciliationService then globalStateReconciliationService:GetStatus() else {state = "Unavailable"},
@@ -1661,6 +1675,7 @@ local function validEnvelope(data: any, topic: string): boolean
 	-- If the dedicated validator is missing or failed to initialize, reject the
 	-- message and let the existing subscription/reconciliation paths recover.
 	if not globalMessageValidationService then
+		messagingRejected += 1
 		if globalSecurityMonitorService then
 			pcall(globalSecurityMonitorService.Record, globalSecurityMonitorService, "message_validator_unavailable", topic)
 		end
@@ -1668,6 +1683,7 @@ local function validEnvelope(data: any, topic: string): boolean
 	end
 	local ok, valid = pcall(globalMessageValidationService.Validate, globalMessageValidationService, topic, data)
 	if not ok or valid ~= true then
+		messagingRejected += 1
 		if globalSecurityMonitorService then
 			pcall(globalSecurityMonitorService.Record, globalSecurityMonitorService, "invalid_message", topic)
 		end
@@ -1833,8 +1849,18 @@ local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	task.spawn(function()
 		while SERVICE_ENABLED do
-			local ok, err = pcall(function() MessagingService:SubscribeAsync(topic, callback) end)
-			if ok then
+			local ok, err = pcall(function()
+				MessagingService:SubscribeAsync(topic, function(message)
+					messagingReceived += 1
+					local callbackOk, callbackError = pcall(callback, message)
+					if not callbackOk then
+						messagingRejected += 1
+						messagingLastError = string.sub(tostring(callbackError), 1, 240)
+						warn("[ClubMusic Global] Message handler failed on topic " .. topic .. ": " .. tostring(callbackError))
+					end
+				end)
+			end)
+				if ok then
 				-- Subscription stays active after SubscribeAsync returns.
 				subscriptionStatus[topic] = "Active"
 				print("[ClubMusic Global] Messaging subscription active: " .. topic)
