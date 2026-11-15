@@ -6786,6 +6786,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local watchdog = if typeof(services.watchdog) == "table" then services.watchdog else {}
 		local watchdogIssues = if typeof(watchdog.issues) == "table" then watchdog.issues else {}
 		local watchdogDetail = if #watchdogIssues > 0 then table.concat(watchdogIssues, " | ") else "none reported"
+		local registry = if typeof(services.registry) == "table" then services.registry else {}
+		local registryError = tostring(registry.lastError or "none recorded")
+		local registryHeartbeat = tonumber(registry.lastHeartbeat) or 0
 		local lines = {
 			"ClubMusic Diagnostic Snapshot:",
 			"Generated: " .. os.date("!%Y-%m-%d %H:%M:%S UTC", tonumber(snapshot.generatedAt) or os.time()),
@@ -6795,6 +6798,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(watchdog.state or "Unavailable"),
 			"Watchdog detail: " .. string.sub(watchdogDetail, 1, 450),
+			"Registry: " .. tostring(registry.state or "Unavailable"),
+			"Registry last error: " .. string.sub(registryError, 1, 450),
+			"Registry last heartbeat: " .. (if registryHeartbeat > 0 then os.date("!%Y-%m-%d %H:%M:%S UTC", registryHeartbeat) else "none"),
 			"Error history: " .. tostring(snapshot.errorHistoryAvailable == true),
 			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s):",
 		}
