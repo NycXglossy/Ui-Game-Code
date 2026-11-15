@@ -3505,9 +3505,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function renderDJ()
 		local level = perm()
 		sectionLabel("DJ BOOTH")
+		if level < 3 then
+			local restricted = card(82)
+			label(restricted, "🔒 OWNER & CO-OWNER ACCESS ONLY", UDim2.fromOffset(14, 10), UDim2.new(1, -28, 0, 22), C.Gold, 12, true)
+			label(restricted, "DJ Booth controls are reserved for the Owner and Co-Owner. Normal music requests remain available when Control Mode is off.", UDim2.fromOffset(14, 36), UDim2.new(1, -28, 0, 36), C.Muted, 10, false)
+			return
+		end
 		buildNowPlaying()
 
-		if level >= 1 then
+		if level >= 3 then
 			local controls = card(104)
 			actionButton(controls, "DJ SKIP", UDim2.fromOffset(12, 10), UDim2.new(0.5, -18, 0, 34), function()
 				act("DJSkip", {})
@@ -3522,7 +3528,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			sectionLabel("STAFF CONTROLS")
 			local staff = card(58)
 			local locked = state.locked == true
-			actionButton(staff, if locked then "UNLOCK REQUESTS" else "LOCK REQUESTS", UDim2.fromOffset(12, 12),
+			actionButton(staff, if locked then "DISABLE CONTROL MODE" else "ENABLE CONTROL MODE", UDim2.fromOffset(12, 12),
 				if level >= 2 then UDim2.new(0.5, -16, 0, 34) else UDim2.new(1, -24, 0, 34), function()
 					act("DJToggleLock", {})
 				end, if locked then C.Orange else C.Purple)
@@ -3548,13 +3554,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local rank = make("Frame", {Name="QueuePosition", Position=UDim2.fromOffset(12, 17), Size=UDim2.fromOffset(30, 30), BackgroundColor3=C.SurfaceLight, BorderSizePixel=0}, qcard)
 			corner(rank, 9)
 			local rankText = make("TextLabel", {Size=UDim2.fromScale(1, 1), BackgroundTransparency=1, Text=string.format("%02d", index), TextColor3=C.Gold, TextSize=11, Font=BOLD}, rank)
-			local textWidth = if level >= 1 then -100 else -24
+			local textWidth = if level >= 3 then -100 else -24
 			local trackName = nz(item.title, nz(item.trackId, "Unknown track"))
 			local who = if item.source == "player" then "Requested by " .. nz(item.requestedBy, "a guest") else "Auto DJ pick"
 			if item.vip == true then who ..= "  •  VIP" end
 			label(qcard, trackName, UDim2.fromOffset(52, 7), UDim2.new(1, textWidth, 0, 22), C.White, 12, true)
 			label(qcard, who .. "  •  " .. formatTime(tonumber(item.duration) or 0), UDim2.fromOffset(52, 33), UDim2.new(1, textWidth, 0, 17), C.Muted, 10, false)
-			if level >= 1 then
+			if level >= 3 then
 				local queueId = tostring(item.id)
 				if index > 1 then
 					local up = actionButton(qcard, "▲", UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
