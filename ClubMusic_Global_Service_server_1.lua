@@ -114,8 +114,7 @@ if SERVICE_ENABLED then
 		-- universe-wide allocation. Cross-server requests use bounded local limits.
 		-- Playback leadership retains its single lease key in the dedicated authority map.
 		budgetMap = nil
-		budgetMapInitializationError = "Shared MemoryStore rate-limit map disabled for minimal storage mode."
-		memoryStoreCapacityLimited = true
+		budgetMapInitializationError = "MemoryStore total memory budget disabled for minimal storage mode."
 	end
 end
 
