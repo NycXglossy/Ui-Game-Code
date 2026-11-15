@@ -6786,9 +6786,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local watchdog = if typeof(services.watchdog) == "table" then services.watchdog else {}
 		local watchdogIssues = if typeof(watchdog.issues) == "table" then watchdog.issues else {}
 		local watchdogDetail = if #watchdogIssues > 0 then table.concat(watchdogIssues, " | ") else "none reported"
-		local registry = if typeof(services.registry) == "table" then services.registry else {}
-		local registryError = tostring(registry.lastError or "none recorded")
-		local registryHeartbeat = tonumber(registry.lastHeartbeat) or 0
+		local messaging = if typeof(services.Messaging) == "table" then services.Messaging else {}
 		local memoryStore = if typeof(services.memoryStore) == "table" then services.memoryStore else {}
 		local memoryStoreError = tostring(memoryStore.lastCapacityError or "none recorded")
 		local lines = {
@@ -6800,9 +6798,12 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(watchdog.state or "Unavailable"),
 			"Watchdog detail: " .. string.sub(watchdogDetail, 1, 450),
-			"Registry: " .. tostring(registry.state or "Unavailable"),
-			"Registry last error: " .. string.sub(registryError, 1, 450),
-			"Registry last heartbeat: " .. (if registryHeartbeat > 0 then os.date("!%Y-%m-%d %H:%M:%S UTC", registryHeartbeat) else "none"),
+			"Messaging: " .. tostring(messaging.state or "Unavailable")
+				.. " | published " .. tostring(messaging.published or 0)
+				.. " | failures " .. tostring(messaging.publishFailures or 0)
+				.. " | received " .. tostring(messaging.received or 0)
+				.. " | rejected " .. tostring(messaging.rejected or 0),
+			"Messaging last error: " .. string.sub(tostring(messaging.lastError or "none recorded"), 1, 240),
 			"MemoryStore limiter fallback: " .. tostring(memoryStore.capacityLimited == true),
 			"MemoryStore capacity error: " .. string.sub(memoryStoreError, 1, 300),
 			"Error history: " .. tostring(snapshot.errorHistoryAvailable == true),
@@ -6876,22 +6877,6 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		end
 		if count == 0 then table.insert(lines, "No recent security audit events were found in the latest audit page.") end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1500)
-	end
-	if operation == "OperationalServers" then
-		local ok, servers = ControllerFunctions.adminBridgeGlobalCall("GetGlobalServers", 12)
-		if not ok or typeof(servers) ~= "table" then return false, tostring(servers or "Server registry is unavailable.") end
-		local lines = {"Registered ClubMusic servers (up to 12):"}
-		for index, item in ipairs(servers) do
-			if index > 12 then break end
-			if typeof(item) == "table" then
-				table.insert(lines, string.format("%d. Place %s | %d/%d players | health %s | heartbeat %s",
-					index, tostring(item.placeId or "?"), math.clamp(tonumber(item.players) or 0, 0, 1000),
-					math.clamp(tonumber(item.maxPlayers) or 0, 0, 1000), tostring(item.health or "Unknown"),
-					os.date("!%H:%M:%S", tonumber(item.updatedAt) or 0)))
-			end
-		end
-		if #servers == 0 then table.insert(lines, "No active registry entries were returned.") end
-		return true, string.sub(table.concat(lines, "\n"), 1, 1300)
 	end
 	if operation == "OperationalRateLimit" then
 		local ok, services = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
