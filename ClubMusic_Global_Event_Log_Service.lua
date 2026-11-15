@@ -3,10 +3,10 @@
 local Service = {}
 Service.__index = Service
 
-local DEFAULT_TTL_SECONDS = 24 * 60 * 60
-local MAX_DETAIL_LENGTH = 180
+local DEFAULT_TTL_SECONDS = 15 * 60
+local MAX_DETAIL_LENGTH = 96
 local MAX_KIND_LENGTH = 48
-local MAX_QUERY_LIMIT = 100
+local MAX_QUERY_LIMIT = 30
 
 local function isFiniteNumber(value)
 	return type(value) == "number" and value == value and value > -math.huge and value < math.huge
@@ -59,7 +59,8 @@ function Service:Record(kind, detail, severity)
 		at = os.time(),
 	}
 	local ttl = self.d.ttlSeconds
-	if not isFiniteNumber(ttl) or ttl < 60 then ttl = DEFAULT_TTL_SECONDS end
+	if not isFiniteNumber(ttl) then ttl = DEFAULT_TTL_SECONDS end
+	ttl = math.clamp(math.floor(ttl), 60, DEFAULT_TTL_SECONDS)
 	local ok, err = pcall(function()
 		self.map:SetAsync(id, value, math.floor(ttl), os.time())
 	end)
