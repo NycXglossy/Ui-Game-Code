@@ -728,36 +728,40 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local previewFader: AudioFader? = nil
 	local previewGraph: Folder? = nil
 	local playerAudioPreferences: any = nil
-	local playerMusicGroup: SoundGroup? = nil
 
-	-- Player-local gain is applied only on this client to the canonical music
-	-- SoundGroup. The server keeps MusicGroup at unity and remains playback owner.
-	-- The same preference is mirrored to the local staff-preview fader.
+	-- Modern server decks replicate their synchronized MusicFader. The client
+	-- preference module routes each deck through a private AudioFader and
+	-- AudioDeviceOutput, so this player's gain never changes another listener.
+	-- The same gain is mirrored to the local staff-preview fader.
 	local preferencesFolder = ReplicatedStorage:FindFirstChild("ClubMusicClientAudioModules")
 	local preferencesModule = preferencesFolder and preferencesFolder:FindFirstChild("ClubMusicPlayerPreferences")
-	local musicGroupCandidate = SoundService:FindFirstChild("MusicGroup")
-	if musicGroupCandidate and musicGroupCandidate:IsA("SoundGroup") then
-		playerMusicGroup = musicGroupCandidate
-	end
-	if preferencesModule and preferencesModule:IsA("ModuleScript") and playerMusicGroup then
+	if preferencesModule and preferencesModule:IsA("ModuleScript") then
 		local moduleOk, preferencesClass = pcall(require, preferencesModule)
 		if moduleOk and typeof(preferencesClass) == "table" and typeof(preferencesClass.new) == "function" then
 			local preferenceOk, preferenceInstance = pcall(preferencesClass.new, {
 				SetLocalGain = function(gain: number): boolean
-					if not playerMusicGroup or not playerMusicGroup.Parent then return false end
-					playerMusicGroup.Volume = math.clamp(gain, 0, 1)
-					if previewFader and previewFader.Parent then previewFader.Volume = math.clamp(gain, 0, 1) end
+					if previewFader and previewFader.Parent then
+						previewFader.Volume = math.clamp(gain, 0, 1)
+					end
 					return true
 				end,
 			})
 			if preferenceOk then
 				playerAudioPreferences = preferenceInstance
+				local initialOk, initialResult = pcall(function()
+					return preferenceInstance:SetVolume(volume)
+				end)
+				if not initialOk or initialResult ~= true then
+					warn("[ClubMusic UI] Initial modern audio volume could not be applied.")
+				end
 			else
 				warn("[ClubMusic UI] Player audio preferences could not initialize: " .. tostring(preferenceInstance))
 			end
 		else
 			warn("[ClubMusic UI] Player audio preference module failed to load: " .. tostring(preferencesClass))
 		end
+	else
+		warn("[ClubMusic UI] Modern player audio routing module is missing from ReplicatedStorage/ClubMusicClientAudioModules.")
 	end
 	local previewId: number? = nil
 	local renderTabFn: (() -> ())? = nil
@@ -1690,8 +1694,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return false, ""
 	end
 
-	-- Volume is strictly client-local: preferences modify this client's replicated
-	-- SoundGroup instance and the local preview fader, never a server RemoteFunction.
+	-- Volume is strictly client-local: preferences modify only this client's
+	-- modern output faders and local preview fader, never server playback gain.
 	local function applyVolume(value: number)
 		volume = math.clamp(value, 0, 1)
 		if volume > 0 then lastVolume = volume end
@@ -1701,9 +1705,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if not ok or accepted ~= true then
 				warn("[ClubMusic UI] Local volume preference could not be applied.")
 			end
-		else
-			if playerMusicGroup and playerMusicGroup.Parent then playerMusicGroup.Volume = volume end
-			if previewFader and previewFader.Parent then previewFader.Volume = volume end
+		elseif previewFader and previewFader.Parent then
+			previewFader.Volume = volume
 		end
 	end
 
