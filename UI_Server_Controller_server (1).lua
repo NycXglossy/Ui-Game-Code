@@ -1573,7 +1573,16 @@ end
 -- modern module, decoder, or playback verification fails. A monotonically
 -- increasing token prevents a late decoder completion from replacing a newer track.
 ControllerFunctions.startServerMusic = function(soundId: any)
+	local retiredSource = activeAudioSource
 	ControllerFunctions.stopServerMusic()
+	-- New-track startup owns a fresh candidate. Park the controller on the
+	-- guarded Sound fallback while that candidate loads, and retire the stopped
+	-- previous backend so the active-source contract never points at a dead deck.
+	if retiredSource.kind == "Backend" and retiredSource.backend then
+		pcall(function() retiredSource.backend:Cleanup() end)
+	end
+	activeAudioSource = { kind = "Sound", instance = musicSound }
+	ControllerFunctions.bindActiveAudioPlayingSignal()
 	modernAudioStartToken += 1
 	local startToken = modernAudioStartToken
 	local startRevision = audioSourceRevision
