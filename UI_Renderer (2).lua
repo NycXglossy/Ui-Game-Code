@@ -2492,7 +2492,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			label(row, (if genre then genre.name .. "  •  " else "") .. requestedBy .. "  •  " .. formatTime(tonumber(item.duration) or 0),
 				UDim2.fromOffset(80, 31), UDim2.new(1, -actionSpace - 90, 0, 18),
 				if item.source == "player" then C.Magenta else C.Muted, 8, false)
-			if staffLevel >= 1 and queueId ~= "" then
+			if staffLevel >= 3 and queueId ~= "" then
 				if index > 1 then
 					local move = actionButton(row, "↑", if compactStaffRow then UDim2.new(1, -88, 0, 50) else UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
 						act("DJMoveUp", {queueId = queueId}, queueId)
@@ -2513,7 +2513,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
 		local staffLevel = perm()
-		if staffLevel >= 1 then
+		if staffLevel >= 3 then
 			local playbackControls = card(88)
 			label(playbackControls, "GLOBAL PLAYBACK", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 15), C.Muted, 9, true)
 			local controlGap = 8
@@ -2544,12 +2544,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				local trackName = nz(item.title, nz(item.trackId, "Unknown track"))
 				local requestedBy = if item.source == "player" then "REQUESTED BY " .. string.upper(nz(item.requestedBy, "GUEST")) else "AUTO DJ"
 				if item.vip == true then requestedBy ..= "  •  VIP" end
-				local actionInset = if staffLevel >= 1 then 104 else 12
+				local actionInset = if staffLevel >= 3 then 104 else 12
 				label(queueCard, string.format("%02d  %s", index, trackName),
 					UDim2.fromOffset(12, 7), UDim2.new(1, -actionInset - 12, 0, 22), C.White, 11, true)
 				label(queueCard, requestedBy .. "  •  " .. formatTime(tonumber(item.duration) or 0),
 					UDim2.fromOffset(12, 34), UDim2.new(1, -actionInset - 12, 0, 16), if item.source == "player" then C.Magenta else C.Muted, 8, false)
-				if staffLevel >= 1 and queueId ~= "" then
+				if staffLevel >= 3 and queueId ~= "" then
 					if index > 1 then
 						local moveUp = actionButton(queueCard, "▲", UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
 							act("DJMoveUp", {queueId = queueId}, queueId)
