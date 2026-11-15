@@ -1750,7 +1750,9 @@ local function performReloadServerMusic(): (boolean, string?)
 		or not string.match(asset, "^rbxassetid://%d+$") then
 		return false, "There is no playable audio asset for the current track."
 	end
-	if playbackPaused then return false, "Playback is paused; resume it before reloading audio." end
+	if playbackPaused and activeAudioSource.kind ~= "Backend" then
+		return false, "Legacy playback is paused; resume it before reloading audio."
+	end
 	local managers = ControllerFunctions.ChildManagers
 	local crossfade = managers and managers.Crossfade
 	if crossfade and crossfade.active then
