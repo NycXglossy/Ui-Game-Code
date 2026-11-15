@@ -85,6 +85,9 @@ function RecoveryService:Start(): boolean
 
             local budgetOk, budgetAllowed = runSafe(self, "CheckStoreBudget", self.dependencies.allowStoreOperation)
             if not budgetOk or budgetAllowed ~= true then
+                if self.dependencies.safeCall and type(self.dependencies.safeCall.RecordFailure) == "function" then
+                    self.dependencies.safeCall:RecordFailure("GlobalRecovery", "SharedStorageBudget", if budgetOk then "Budget denied" else budgetAllowed)
+                end
                 self.status.attempts += 1
                 self:_setStatus("Degraded", "Shared storage budget is unavailable; authoritative queue verification will retry.")
                 task.wait(self.retrySeconds)
@@ -98,6 +101,9 @@ function RecoveryService:Start(): boolean
             end)
 
             if not readOk or snapshot ~= true then
+                if readOk and self.dependencies.safeCall and type(self.dependencies.safeCall.RecordFailure) == "function" then
+                    self.dependencies.safeCall:RecordFailure("GlobalRecovery", "AuthoritativeSnapshot", readError or "Snapshot read returned false")
+                end
                 self.status.attempts += 1
                 self:_setStatus("Degraded", tostring(if readOk then readError or "Shared queue snapshot read failed." else snapshot))
                 task.wait(self.retrySeconds)
