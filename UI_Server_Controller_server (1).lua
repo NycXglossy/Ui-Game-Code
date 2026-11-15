@@ -5762,64 +5762,28 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJSkip" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
-		-- Kohl's Admin can dispatch the same command while an automatic or
-		-- admin-triggered transition is still yielding on shared queue work.
-		-- The active transition already owns this track change; do not call
-		-- advance() a second time or surface its internal lock as a warning.
 		if trustedAdminCommand == true and transitionInProgress then
 			return true, "A track transition is already being processed; no second skip was sent."
 		end
-		if ControllerFunctions.globalPlaybackSyncState.enabled == true
-			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
-			local sent, accepted = ControllerFunctions.globalInvoke("PublishDJCommand", "Skip", {}, player.UserId)
-			if sent and accepted == true then
-				notify(player, "Skip request sent to the global playback leader.", "ok")
-				return true, "Skip request sent to the global playback leader."
-			end
-			return false, "The global playback leader could not be reached. Your local queue was not changed."
+		if globalQueueMode then
+			return false, "Local DJ controls are waiting for the local-queue migration; the shared queue was not changed."
 		end
 		local advanced, transitionError = ControllerFunctions.advance()
 		if not advanced then
-			local reason = tostring(transitionError or "The shared track transition could not be confirmed.")
+			local reason = tostring(transitionError or "The local track transition could not be confirmed.")
 			notify(player, reason, "warn")
 			return false, reason
 		end
-		if not globalQueueMode and ControllerFunctions.globalPlaybackSyncState.enabled ~= true then
-			ControllerFunctions.globalInvoke("PublishDJCommand", "Skip", {}, player.UserId)
-		end
-		notify(player, "Track skipped.", "ok")
-		-- advance() commits through setNowPlaying(), which already publishes the
-		-- immediate playback snapshot. Avoid rebuilding and broadcasting the
-		-- same full per-player state a second time for this skip request.
-		return true, "Track skipped."
+		notify(player, "Track skipped on this server.", "ok")
+		return true, "Track skipped on this server."
 	end
 
 	if action == "DJPause" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
-		if ControllerFunctions.globalPlaybackSyncState.enabled == true
-			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
-			local sent, accepted = ControllerFunctions.globalInvoke(
-				"PublishDJCommand", "SetPlaybackPaused", {paused = desiredPaused}, player.UserId
-			)
-			if sent and accepted == true then
-				return true, if desiredPaused then "Pause request sent to the global playback leader." else "Resume request sent to the global playback leader."
-			end
-			return false, "The global playback leader could not be reached. Playback was not changed."
-		end
 		playbackControlRequestId += 1
-		local controlRequestId = playbackControlRequestId
-		local expectedTrackRevision = globalTrackRevision
-		local expectedTrackId = nowPlaying.trackId
 		ControllerFunctions.cancelAudioTransition(if desiredPaused then "pause" else "resume")
-
-		-- Apply the control to this server's active source immediately. Durable
-		-- global persistence and cross-server notification happen after the UI/audio
-		-- response so DataStore latency cannot stall the button.
-		-- Pause captures the authoritative playhead as part of the pause call.
-		-- Resume reuses the saved value; neither path needs a second full audio
-		-- snapshot read before the latency-sensitive control is applied.
 		local position = math.clamp(tonumber(nowPlaying.elapsed) or 0, 0, nowPlaying.duration)
 		local audioOk, audioError = pcall(function()
 			local controlOk, controlResult, capturedPosition
@@ -5833,154 +5797,55 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			end
 			if controlOk == false or controlResult == false then error("The audio source rejected the pause/resume command.") end
 		end)
-		if audioOk then
-			nowPlaying.elapsed = position
-			playbackPaused = desiredPaused
-		end
 		if not audioOk then
-			playbackPaused = not desiredPaused
 			notify(player, "Audio control could not be applied: " .. tostring(audioError), "warn")
 			return false, tostring(audioError)
 		end
+		nowPlaying.elapsed = position
+		playbackPaused = desiredPaused
 		ControllerFunctions.publishPlaybackState()
-		if ControllerFunctions.commitGlobalPlaybackSync then ControllerFunctions.commitGlobalPlaybackSync("pause-resume") end
-		notify(player, if desiredPaused then "Music paused." else "Music resumed.", "ok")
-
-		if globalQueueMode then
-			task.spawn(function()
-				local callOk, changed, state, message = ControllerFunctions.globalInvoke(
-					"SetGlobalPlayback", desiredPaused, position, expectedTrackRevision, false
-				)
-				if callOk and changed == true and typeof(state) == "table" then
-					if playbackControlRequestId == controlRequestId
-						and nowPlaying.trackId == expectedTrackId and globalTrackRevision == expectedTrackRevision then
-						ControllerFunctions.applyGlobalQueueState(state)
-					end
-				elseif playbackControlRequestId == controlRequestId then
-					notify(player, tostring(message or "Playback changed locally, but global synchronization could not be confirmed."), "warn")
-					if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				end
-			end)
-		else
-			task.spawn(function()
-				local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke(
-					"PublishDJCommand", "SetPlaybackPaused",
-					{paused = desiredPaused, position = nowPlaying.elapsed}, player.UserId
-				)
-				if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then
-					lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision))
-				elseif not RunService:IsStudio() then
-					notify(player, "Playback changed here, but cross-server sync is unavailable.", "warn")
-				end
-			end)
-		end
-		return true, if desiredPaused then "Music paused." else "Music resumed."
+		notify(player, if desiredPaused then "Music paused on this server." else "Music resumed on this server.", "ok")
+		return true, if desiredPaused then "Music paused on this server." else "Music resumed on this server."
 	end
 
 	if action == "DJRestart" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
-		if ControllerFunctions.globalPlaybackSyncState.enabled == true
-			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
-			local sent, accepted = ControllerFunctions.globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
-			if sent and accepted == true then return true, "Restart request sent to the global playback leader." end
-			return false, "The global playback leader could not be reached. Playback was not changed."
-		end
 		playbackControlRequestId += 1
-		local controlRequestId = playbackControlRequestId
-		local expectedTrackRevision = globalTrackRevision
-		local expectedTrackId = nowPlaying.trackId
 		local restartAsset = nowPlaying.soundId
 		ControllerFunctions.cancelAudioTransition("restart")
-
-		-- Restart the active deck locally first; the shared restart revision is
-		-- committed asynchronously so slow storage cannot delay the button.
-		nowPlaying.elapsed = 0
-		playbackPaused = false
 		local restartOk, restartError = ControllerFunctions.restartServerMusic(restartAsset)
 		if not restartOk then
 			playbackPaused = true
 			notify(player, "Track restart could not be applied: " .. tostring(restartError), "warn")
 			return false, tostring(restartError)
 		end
+		nowPlaying.elapsed = 0
+		playbackPaused = false
 		ControllerFunctions.publishPlaybackState()
-		if ControllerFunctions.commitGlobalPlaybackSync then ControllerFunctions.commitGlobalPlaybackSync("restart") end
-		notify(player, "Current track restarted.", "ok")
-
-		if globalQueueMode then
-			task.spawn(function()
-				local callOk, restarted, state, message = ControllerFunctions.globalInvoke(
-					"SetGlobalPlayback", false, 0, expectedTrackRevision, true
-				)
-				if callOk and restarted == true and typeof(state) == "table" then
-					if playbackControlRequestId == controlRequestId
-						and nowPlaying.trackId == expectedTrackId and globalTrackRevision == expectedTrackRevision then
-						ControllerFunctions.applyGlobalQueueState(state)
-					end
-				elseif playbackControlRequestId == controlRequestId then
-					notify(player, tostring(message or "Track restarted here, but global restart could not be confirmed."), "warn")
-					if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				end
-			end)
-		else
-			task.spawn(function()
-				local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke(
-					"PublishDJCommand", "Restart", {}, player.UserId
-				)
-				if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then
-					lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision))
-					notify(player, "Restart synchronized.", "ok")
-				elseif not RunService:IsStudio() then
-					notify(player, "Track restarted here, but cross-server sync is unavailable.", "warn")
-				end
-			end)
-		end
-		return true, "Current track restarted."
+		notify(player, "Current track restarted on this server.", "ok")
+		return true, "Current track restarted on this server."
 	end
 
 	if action == "DJClearQueue" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
-		ControllerFunctions.cancelAudioTransition("queue-clear")
 		if globalQueueMode then
-			local callOk, cleared, state, message = ControllerFunctions.globalInvoke("ClearGlobalQueue")
-			if not callOk or cleared ~= true then
-				local reason = tostring(message or "The shared queue service did not confirm the clear.")
-				warn("[ClubMusic] Shared queue clear failed: " .. reason)
-				notify(player, reason, "warn")
-				return false, reason
-			end
-			if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-		else
-			queueManager:Clear(true)
-			autoQueueHold = true
-			if ControllerFunctions.globalPlaybackSyncState.enabled ~= true then
-				ControllerFunctions.globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
-			end
+			return false, "Local DJ controls are waiting for the local-queue migration; the shared queue was not changed."
 		end
-		notify(player, "Queue cleared.", "ok")
+		ControllerFunctions.cancelAudioTransition("queue-clear")
+		queueManager:Clear(true)
+		autoQueueHold = true
+		notify(player, "This server's queue was cleared.", "ok")
 		publishState(nil)
-		return true, "Queue cleared."
+		return true, "This server's queue was cleared."
 	end
 
 	if action == "DJToggleLock" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
-		local desiredLock = not requestsLocked
-		local playbackOnlyMode = ControllerFunctions.globalPlaybackSyncState.enabled == true
-		local publishCallOk, persisted = true, true
-		if not playbackOnlyMode then
-			publishCallOk, persisted = ControllerFunctions.globalInvoke("PublishDJCommand", "SetRequestLock", {locked = desiredLock}, player.UserId)
-		end
-		if not playbackOnlyMode and not RunService:IsStudio() and (not publishCallOk or persisted ~= true) then
-			-- Fail closed locally if the durable global lock cannot be confirmed.
-			requestsLocked = true
-			notify(player, "Global lock could not be confirmed. Requests remain locked on this server.", "warn")
-			publishState(nil)
-			return false, "Global lock could not be confirmed; requests remain locked here."
-		end
-		requestsLocked = desiredLock
-		ControllerFunctions.broadcast(if requestsLocked then "DJ Control Mode is ON. Normal player song requests are locked." else "DJ Control Mode is OFF. Normal song requests are open again.", "info")
+		requestsLocked = not requestsLocked
+		ControllerFunctions.broadcast(if requestsLocked then "DJ Control Mode is ON. Normal player song requests are locked on this server." else "DJ Control Mode is OFF. Normal song requests are open on this server.", "info")
 		publishState(nil)
-		return true, if requestsLocked then "DJ Control Mode enabled. Normal song requests are locked." else "DJ Control Mode disabled. Normal song requests are open."
+		return true, if requestsLocked then "DJ Control Mode enabled on this server." else "DJ Control Mode disabled on this server."
 	end
 
 	if action == "ModBlockUser" then
@@ -6561,19 +6426,6 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, string.format("Track %s is now %s globally.", trackId, if mode == "on" then "blocked" else "allowed")
 	end
 	if operation == "ForceStop" then
-		if globalQueueMode then
-			local pauseOk, paused, state, pauseMessage = ControllerFunctions.globalInvoke(
-				"SetGlobalPlayback", true, nowPlaying.elapsed, globalTrackRevision, false
-			)
-			if not pauseOk or paused ~= true or typeof(state) ~= "table" then
-				return false, tostring(pauseMessage or "The shared playback state could not be emergency-paused.")
-			end
-			ControllerFunctions.applyGlobalQueueState(state)
-		end
-		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("PublishDJCommand", "ForceStop", {}, caller.UserId)
-		if not ok or (accepted ~= true and not ControllerFunctions.isFiniteNumber(accepted)) then
-			return false, tostring(accepted or "Global force-stop could not be published.")
-		end
 		ControllerFunctions.cancelAudioTransition("admin-force-stop")
 		playbackPaused = true
 		nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
@@ -6582,10 +6434,11 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		nowPlaying.requestedBy = "Emergency stop"; nowPlaying.vip = false; nowPlaying.soundId = ""
 		ControllerFunctions.stopServerMusic()
 		ControllerFunctions.setAudioAsset("")
-		ControllerFunctions.broadcast("ClubMusic playback was emergency-stopped by staff.", "warn")
+		ControllerFunctions.broadcast("ClubMusic playback was emergency-stopped on this server by staff.", "warn")
 		publishState(nil)
-		return true, "ClubMusic playback was emergency-stopped across servers. Use ;cmskip to start the next queued track."
+		return true, "ClubMusic playback was emergency-stopped on this server. Use ;cmskip to resume."
 	end
+
 	if operation == "ModerationHistory" then
 		if typeof(argument) ~= "string" or #argument > 24 or not string.match(argument, "^%d+$") then
 			return false, "Usage: ;cmmoderationhistory <numeric UserId>"
@@ -6616,12 +6469,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, string.format("Removed %d queued ClubMusic request(s) for UserId %d.", removed, targetUserId)
 	end
 	if operation == "EmergencyLock" then
-		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("PublishDJCommand", "SetRequestLock", {locked = true}, caller.UserId)
-		if not ok or accepted ~= true then return false, tostring(accepted or "Global request lock could not be persisted.") end
 		requestsLocked = true
-		ControllerFunctions.broadcast("ClubMusic requests have been emergency-locked by staff.", "warn")
+		ControllerFunctions.broadcast("ClubMusic requests have been emergency-locked on this server by staff.", "warn")
 		publishState(nil)
-		return true, "ClubMusic requests are now locked across servers. Use ;cmlock after the incident to reopen them."
+		return true, "ClubMusic requests are now locked on this server. Use ;cmlock after the incident to reopen them."
 	end
 	if operation == "SecurityStatus" then
 		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
@@ -7181,13 +7032,8 @@ ControllerFunctions.onJoin = function(player: Player)
 	local globalServiceReady = enabledCallOk and globalServiceEnabled == true
 	-- A service-readiness failure is not a ban. Keep moderation-sensitive actions
 	-- closed and retry authoritative checks instead of kicking legitimate players.
-	local lockCallOk, globalLock, lockLookupOk = ControllerFunctions.globalInvoke("GetGlobalRequestLock")
-	if lockCallOk and lockLookupOk == true and typeof(globalLock) == "boolean" then
-		requestsLocked = globalLock
-	elseif globalModerationRequired then
-		-- Keep requests closed until the authoritative lock can be read, then retry.
-		requestsLocked = true
-	end
+	-- Request-lock state is intentionally local to this server.
+	local lockCallOk, globalLock, lockLookupOk = true, requestsLocked, true
 	-- Fetch ban and request-block status together to avoid serial durable reads.
 	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
@@ -7203,13 +7049,13 @@ ControllerFunctions.onJoin = function(player: Player)
 	end
 	local retryModeration = globalModerationRequired and
 		(not globalServiceReady or not moderationCallOk or moderationLookupOk ~= true)
-	local retryLock = globalModerationRequired and (not globalServiceReady or not lockCallOk or lockLookupOk ~= true or typeof(globalLock) ~= "boolean")
+	local retryLock = false
 	if retryModeration then player:SetAttribute("GlobalModerationPending", true) end
 	if retryModeration or retryLock then
 		task.spawn(function()
 			local serviceResolved = globalServiceReady
 			local moderationResolved = not retryModeration
-			local lockResolved = not retryLock
+			local lockResolved = true
 			local attempt = 0
 			while player.Parent == Players and not (serviceResolved and moderationResolved and lockResolved) do
 				attempt += 1
@@ -7233,14 +7079,6 @@ ControllerFunctions.onJoin = function(player: Player)
 							return
 						end
 						blockedUsers[player.UserId] = if blocked == true then true else nil
-					end
-				end
-				if not lockResolved then
-					local callOk, locked, lookupOk = ControllerFunctions.globalInvoke("GetGlobalRequestLock")
-					if callOk and lookupOk == true and typeof(locked) == "boolean" then
-						lockResolved = true
-						requestsLocked = locked
-						publishState(nil)
 					end
 				end
 				if moderationResolved and lockResolved and serviceResolved then
