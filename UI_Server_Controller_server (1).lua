@@ -5890,7 +5890,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		else
 			queueManager:Clear(true)
 			autoQueueHold = true
-			ControllerFunctions.globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
+			if ControllerFunctions.globalPlaybackSyncState.enabled ~= true then
+				ControllerFunctions.globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
+			end
 		end
 		notify(player, "Queue cleared.", "ok")
 		publishState(nil)
@@ -5900,8 +5902,12 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	if action == "DJToggleLock" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		local desiredLock = not requestsLocked
-		local publishCallOk, persisted = ControllerFunctions.globalInvoke("PublishDJCommand", "SetRequestLock", {locked = desiredLock}, player.UserId)
-		if not RunService:IsStudio() and (not publishCallOk or persisted ~= true) then
+		local playbackOnlyMode = ControllerFunctions.globalPlaybackSyncState.enabled == true
+		local publishCallOk, persisted = true, true
+		if not playbackOnlyMode then
+			publishCallOk, persisted = ControllerFunctions.globalInvoke("PublishDJCommand", "SetRequestLock", {locked = desiredLock}, player.UserId)
+		end
+		if not playbackOnlyMode and not RunService:IsStudio() and (not publishCallOk or persisted ~= true) then
 			-- Fail closed locally if the durable global lock cannot be confirmed.
 			requestsLocked = true
 			notify(player, "Global lock could not be confirmed. Requests remain locked on this server.", "warn")
