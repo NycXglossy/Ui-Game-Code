@@ -1366,7 +1366,7 @@ authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
 		warn("[ClubMusic][PlaybackSync Auth] Authorization check denied because the service instance is missing.")
 		return false
 	end
-	local ok, allowed = pcall(globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission)
+	local ok, allowed = if globalSafeCall then globalSafeCall:Run("GlobalAuthorization", "Check", globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission) else pcall(globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission)
 	if not ok then
 		warn("[ClubMusic][PlaybackSync Auth] Authorization Check threw an error: " .. string.sub(tostring(allowed), 1, 180))
 		return false
