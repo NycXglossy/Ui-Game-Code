@@ -6785,7 +6785,8 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local watchdog = if typeof(services.watchdog) == "table" then services.watchdog else {}
 		local watchdogIssues = if typeof(watchdog.issues) == "table" then watchdog.issues else {}
 		local watchdogDetail = if #watchdogIssues > 0 then table.concat(watchdogIssues, " | ") else "none reported"
-		local messaging = if typeof(services.Messaging) == "table" then services.Messaging else {}
+		local _, globalOperational = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
+		local messaging = if typeof(globalOperational) == "table" and typeof(globalOperational.Messaging) == "table" then globalOperational.Messaging else {}
 		local memoryStore = if typeof(services.memoryStore) == "table" then services.memoryStore else {}
 		local memoryStoreError = tostring(memoryStore.lastCapacityError or "none recorded")
 		local lines = {
