@@ -107,6 +107,12 @@ local CONFIG = {
 	XPPerLevel = 100,
 	XPBoost2xProductId = 3731386650,
 	XPBoost4xProductId = 3731387153,
+	-- Permanent personal XP Game Passes; these do not replace global Developer Products.
+	PersonalXP2xPassId = 2088891595,
+	PersonalXP4xPassId = 2089053637,
+	MountPassId = 2087955619,
+	CompanionPassId = 2088585676,
+	StageClubLightingPassId = 2088315619,
 	GlobalDataStoreBurst = 30,
 	GlobalDataStoreRefillPerSecond = 3,
 	RestrictAudioToAllowlist = false,           -- true = only IDs listed below can be requested.
@@ -125,6 +131,11 @@ task.spawn(function()
 		{ label = "VIP Game Pass", id = CONFIG.VipGamePassId, infoType = Enum.InfoType.GamePass },
 		{ label = "VVIP Game Pass", id = CONFIG.VvipGamePassId, infoType = Enum.InfoType.GamePass },
 		{ label = "Tiki Tide Game Pass", id = CONFIG.TikiTidePassId, infoType = Enum.InfoType.GamePass },
+		{ label = "2x Personal XP Game Pass", id = CONFIG.PersonalXP2xPassId, infoType = Enum.InfoType.GamePass },
+		{ label = "4x Personal XP Game Pass", id = CONFIG.PersonalXP4xPassId, infoType = Enum.InfoType.GamePass },
+		{ label = "Island Mount Game Pass", id = CONFIG.MountPassId, infoType = Enum.InfoType.GamePass },
+		{ label = "Island Companion Game Pass", id = CONFIG.CompanionPassId, infoType = Enum.InfoType.GamePass },
+		{ label = "Stage & Club Lighting Game Pass", id = CONFIG.StageClubLightingPassId, infoType = Enum.InfoType.GamePass },
 		{ label = "2x XP Developer Product", id = CONFIG.XPBoost2xProductId, infoType = Enum.InfoType.Product },
 		{ label = "4x XP Developer Product", id = CONFIG.XPBoost4xProductId, infoType = Enum.InfoType.Product },
 		{ label = "Title Slot 2 Developer Product", id = CONFIG.TitleSlotProductIds[2], infoType = Enum.InfoType.Product },
@@ -203,7 +214,10 @@ end
 
 local function classifyConfiguredPurchaseId(promptType: string, itemId: number): string
 	if promptType == "GamePass" then
-		if itemId == CONFIG.VipGamePassId or itemId == CONFIG.VvipGamePassId or itemId == CONFIG.TikiTidePassId then
+		if itemId == CONFIG.VipGamePassId or itemId == CONFIG.VvipGamePassId or itemId == CONFIG.TikiTidePassId
+			or itemId == CONFIG.PersonalXP2xPassId or itemId == CONFIG.PersonalXP4xPassId
+			or itemId == CONFIG.MountPassId or itemId == CONFIG.CompanionPassId
+			or itemId == CONFIG.StageClubLightingPassId then
 			return "ConfiguredClubMusicGamePass"
 		end
 	elseif itemId == CONFIG.XPBoost2xProductId or itemId == CONFIG.XPBoost4xProductId
@@ -2300,6 +2314,21 @@ ControllerFunctions.ownsGamePass = function(userId: number, passId: number): boo
 		return MarketplaceService:UserOwnsGamePassAsync(userId, passId)
 	end)
 	return ok and owns == true
+end
+
+ControllerFunctions.refreshPersonalPasses = function(player: Player)
+	local userId = player.UserId
+	local ownsPersonal2x = ControllerFunctions.ownsGamePass(userId, CONFIG.PersonalXP2xPassId)
+	local ownsPersonal4x = ControllerFunctions.ownsGamePass(userId, CONFIG.PersonalXP4xPassId)
+	local ownsMount = ControllerFunctions.ownsGamePass(userId, CONFIG.MountPassId)
+	local ownsCompanion = ControllerFunctions.ownsGamePass(userId, CONFIG.CompanionPassId)
+	local ownsStageClubLighting = ControllerFunctions.ownsGamePass(userId, CONFIG.StageClubLightingPassId)
+	player:SetAttribute("HasPersonalXP2xPass", ownsPersonal2x)
+	player:SetAttribute("HasPersonalXP4xPass", ownsPersonal4x)
+	player:SetAttribute("HasIslandMountPass", ownsMount)
+	player:SetAttribute("HasIslandCompanionPass", ownsCompanion)
+	player:SetAttribute("HasStageClubLightingPass", ownsStageClubLighting)
+	player:SetAttribute("PersonalXPMultiplier", if ownsPersonal4x then 4 elseif ownsPersonal2x then 2 else 1)
 end
 
 ControllerFunctions.refreshVip = function(player: Player)
@@ -6722,6 +6751,7 @@ ControllerFunctions.onJoin = function(player: Player)
 	end
 	ControllerFunctions.refreshRank(player)
 	ControllerFunctions.refreshVip(player)
+	ControllerFunctions.refreshPersonalPasses(player)
 	local loaded = ControllerFunctions.loadProfile(player)
 	if not loaded then
 		notify(player, "Your profile could not be loaded. Please rejoin in a moment; no default profile was saved over your data.", "warn")
@@ -7052,7 +7082,10 @@ ControllerFunctions.settlePlayerXP = function(player: Player, nowClock: number):
 		boostedTwoSeconds = math.clamp(twoExpiryClock - lastClock, 0, elapsed)
 	end
 	local weightedSeconds = elapsed + boostedFourSeconds * 3 + boostedTwoSeconds
-	local fractional = (xpFractional[userId] or 0) + weightedSeconds * (CONFIG.XPPerMinute / 60)
+	-- Permanent personal XP ownership multiplies the globally boosted award.
+	-- The client never supplies this value; it comes from server-verified pass ownership.
+	local personalMultiplier = math.clamp(tonumber(player:GetAttribute("PersonalXPMultiplier")) or 1, 1, 4)
+	local fractional = (xpFractional[userId] or 0) + weightedSeconds * personalMultiplier * (CONFIG.XPPerMinute / 60)
 	local gain = math.floor(fractional + 1e-7)
 	xpFractional[userId] = fractional - gain
 	if gain <= 0 then return false end
@@ -7168,9 +7201,13 @@ end
 -- Refresh purchased membership entitlements after a successful in-session purchase.
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, purchased: boolean)
 	if not purchased then return end
-	if passId ~= CONFIG.VipGamePassId and passId ~= CONFIG.VvipGamePassId and passId ~= CONFIG.TikiTidePassId then return end
+	local isMembershipPass = passId == CONFIG.VipGamePassId or passId == CONFIG.VvipGamePassId or passId == CONFIG.TikiTidePassId
+	local isNewFeaturePass = passId == CONFIG.PersonalXP2xPassId or passId == CONFIG.PersonalXP4xPassId
+		or passId == CONFIG.MountPassId or passId == CONFIG.CompanionPassId or passId == CONFIG.StageClubLightingPassId
+	if not isMembershipPass and not isNewFeaturePass then return end
 	task.spawn(function()
-		ControllerFunctions.refreshVip(player)
+		if isNewFeaturePass then ControllerFunctions.refreshPersonalPasses(player) end
+		if isMembershipPass then ControllerFunctions.refreshVip(player) end
 		ControllerFunctions.applyVipAttribute(player)
 		ControllerFunctions.syncTitleTagUnlocks(player)
 		local tierName = if ControllerFunctions.hasTikiTideAccess(player) then "Tiki Tide" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
