@@ -13,7 +13,6 @@ export type Config = {
 	Volume: number?,
 	PlaybackSpeed: number?,
 	InitialGain: number?,
-	OutputPlayer: Player?,
 }
 
 local function finite(value: any): boolean
@@ -35,6 +34,7 @@ function Backend.new(config: Config?)
 	local root = Instance.new("Folder")
 	root.Name = name
 	root:SetAttribute("ManagedByClubMusicAudioBackend", true)
+	root:SetAttribute("ClubMusicAudioRouteVersion", 2)
 	root.Parent = parent
 
 	local player = Instance.new("AudioPlayer")
@@ -59,22 +59,18 @@ function Backend.new(config: Config?)
 	fader.Volume = math.clamp(if finite(config.InitialGain) then config.InitialGain else 1, 0, 1)
 	fader.Parent = root
 
-	local output = Instance.new("AudioDeviceOutput")
-	output.Name = "MusicOutput"
-	if config.OutputPlayer then output.Player = config.OutputPlayer end
-	output.Parent = root
-
+	-- The server owns synchronized playback, EQ, and transition gain only.
+	-- Each client adds its own local fader and AudioDeviceOutput downstream
+	-- of this replicated MusicFader so volume remains strictly per-listener.
 	local inputWire = makeWire(root, player, equalizer)
 	local equalizerWire = makeWire(root, equalizer, fader)
-	local outputWire = makeWire(root, fader, output)
 
 	return setmetatable({
 		root = root,
 		player = player,
 		fader = fader,
 		equalizer = equalizer,
-		output = output,
-		wires = { inputWire, equalizerWire, outputWire },
+		wires = { inputWire, equalizerWire },
 		destroyed = false,
 		paused = false,
 		pausedAt = 0,
@@ -382,7 +378,6 @@ function Backend:Cleanup()
 	self.player = nil
 	self.fader = nil
 	self.equalizer = nil
-	self.output = nil
 	table.clear(self.wires)
 end
 
