@@ -173,9 +173,7 @@ function PlaybackAuthority:CommitPlayback(raw: any, expectedRevision: any): (boo
 			accepted = false
 			local state = sanitizeSnapshot(old)
 			if state.revision ~= math.floor(expectedRevision) then return old end
-			-- Fencing: once a newer leader has committed, an older token cannot write.
-			if state.leaderToken ~= "" and state.leaderToken ~= token
-				and state.leaderJobId ~= self.jobId then return old end
+			-- Revision compare-and-swap fences any concurrent/stale writer after a peer commits.
 			state.revision += 1
 			state.trackRevision = if finite(raw.trackRevision) then math.max(state.trackRevision, math.floor(raw.trackRevision)) else state.trackRevision
 			state.current = track
