@@ -10,17 +10,17 @@ end
 function Service:Record(kind,actorUserId,target,action)
  if not self.d.isEnabled() or not ALLOWED[kind] then return false end
  local actor=if type(actorUserId)=="number" and actorUserId>0 then math.floor(actorUserId) else 0
- local safeTarget=if type(target)=="string" then string.sub(target,1,64) else ""
- local safeAction=if type(action)=="string" then string.sub(action,1,64) else ""
+ local safeTarget=if type(target)=="string" then string.sub(target,1,32) else ""
+ local safeAction=if type(action)=="string" then string.sub(action,1,32) else ""
  local id=tostring(os.time())..":"..self.d.jobId..":"..tostring(self.d.guid())
  local record={kind=kind,actorUserId=actor,target=safeTarget,action=safeAction,jobId=self.d.jobId,at=os.time()}
- local ok,err=pcall(function() self.map:SetAsync(id,record,604800,os.time()) end)
+ local ok,err=pcall(function() self.map:SetAsync(id,record,21600,os.time()) end)
  if ok then self.written+=1 else self.lastError=tostring(err) end
  return ok
 end
 function Service:GetRecent(limit)
  if not self.d.isEnabled() then return false,{} end
- local ok,result=pcall(function() return self.map:GetRangeAsync(Enum.SortDirection.Descending,math.clamp(tonumber(limit) or 25,1,100)) end)
+ local ok,result=pcall(function() return self.map:GetRangeAsync(Enum.SortDirection.Descending,math.clamp(tonumber(limit) or 20,1,50)) end)
  if not ok then self.lastError=tostring(result); return false,{} end
  local out={}; for _,entry in ipairs(result) do if typeof(entry.value)=="table" then table.insert(out,table.clone(entry.value)) end end; return true,out
 end
