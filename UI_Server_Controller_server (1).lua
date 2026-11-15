@@ -5932,7 +5932,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		end
 
 		local globalWriteOk = true
-		if not RunService:IsStudio() then
+		-- In playback-only mode request moderation is scoped to this server's
+		-- local queue; do not mirror the decision into the global moderation store.
+		if not RunService:IsStudio() and ControllerFunctions.globalPlaybackSyncState.enabled ~= true then
 			local callOk, persisted = ControllerFunctions.globalInvoke("SetRequestBlocked", target.UserId, payload.blocked, player.UserId)
 			globalWriteOk = callOk and persisted == true
 		end
