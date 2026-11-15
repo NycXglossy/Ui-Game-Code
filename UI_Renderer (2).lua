@@ -644,6 +644,8 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	PlaylistCreate = true, PlaylistDelete = true, PlaylistAddTrack = true,
 	PlaylistRemoveTrack = true, PlaylistMoveTrack = true,
 	DJPlayPlaylist = true, DJStopPlaylist = true,
+	-- Owner/Co-Owner playback-sync mode toggle; server rechecks permissions.
+	DJToggleGlobalPlaybackSync = true,
 }
 local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	RequestTrack = true, ToggleFavorite = true, VoteSkip = true,
