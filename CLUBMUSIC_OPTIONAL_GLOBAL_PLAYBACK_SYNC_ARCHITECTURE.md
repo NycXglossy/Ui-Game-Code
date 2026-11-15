@@ -102,9 +102,38 @@ Implemented on the feature branch:
 - Controller state snapshots include playback-sync status; the controller broadcasts state when the observed role/readiness changes.
 - The toggle does not alter `globalQueueMode` or any queue/request data. The setting remains default-off.
 
-Still outstanding:
-- Review lease fencing under leader handoff; the current authority performs a lease check followed by snapshot revision compare-and-swap, but the check/write gap still needs stronger distributed fencing before production enablement.
-- Validate in a dedicated published test universe with multiple live servers: leader election, takeover, track transitions, pause/resume/restart/skip from a follower server, and confirmation that each server's queue remains independent.
-- Keep `playbackSyncEnabled=false` until the UI and multi-server tests are complete.
+Phase 4 implementation progress — durable leader fencing
 
-This phase is code integration only; it has not been runtime-tested in Roblox Studio or a published multi-server session.
+Implemented on the feature branch:
+- Each new leadership term claims a monotonically increasing `leaderGeneration` in the same DataStore record used for playback snapshots.
+- The claim updates the durable leader token/job and increments the snapshot revision atomically.
+- Playback commits require the snapshot's generation, leader token, and leader job to match the committing server; a prior leader cannot overwrite a newer fenced term after the new claim is committed.
+- Normal lease renewal verifies the existing durable fence instead of incrementing the generation on every renewal.
+- A new leader does not report ready until its durable fence is claimed and the MemoryStore lease is rechecked.
+
+Phase 5 implementation progress — service recovery
+
+Implemented:
+- Playback reconciliation is protected by a pcall boundary so one failed config/authority call does not terminate the background loop.
+- Failures are surfaced through playback status and warnings.
+- The loop backs off to 30 seconds during repeated failures and returns to the normal eight-second cadence after recovery.
+- Shutdown attempts a guarded lease release; if that fails, the lease expires naturally.
+- Authority readiness and leader role remain false when the durable fence cannot be verified.
+
+Phase 6 implementation progress — multi-server validation preparation
+
+Added a dedicated published-server test plan covering:
+- two/three server leader election and follower status;
+- follower-originated skip, pause/resume, restart, and track transition;
+- independent local request queues and local moderation/request-lock behavior;
+- forced leader shutdown and takeover;
+- stale leader commit rejection after a new generation is claimed;
+- temporary MemoryStore/DataStore failure and recovery;
+- sync disable/re-enable and Studio isolation.
+
+Still required before production:
+- Run the published multi-server test plan in a dedicated test universe with API services enabled.
+- Record actual results and resolve any runtime-specific failures.
+- Keep `playbackSyncEnabled=false` until those tests pass.
+
+This work is code integration and test preparation only. No Roblox Studio or published multi-server runtime tests have been executed by this update.
