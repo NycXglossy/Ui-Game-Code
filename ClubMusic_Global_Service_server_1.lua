@@ -1623,6 +1623,22 @@ local function onQueueChanged(message)
 	})
 end
 
+local function onPlaybackChanged(message)
+	local data = if typeof(message) == "table" then message.Data else nil
+	if not validEnvelope(data, "Playback") or not unseen(data.id) then return end
+	if data.kind == "PlaybackChanged" then
+		if not finiteNumber(data.revision) or data.revision < 0 then return end
+		globalEventBindable:Fire({
+			kind = "PlaybackChanged",
+			revision = math.floor(data.revision),
+			trackRevision = if finiteNumber(data.trackRevision) then math.floor(data.trackRevision) else 0,
+			senderJob = data.senderJob,
+		})
+	elseif data.kind == "PlaybackSyncModeChanged" and typeof(data.enabled) == "boolean" then
+		globalEventBindable:Fire({kind = "PlaybackSyncModeChanged", enabled = data.enabled, senderJob = data.senderJob})
+	end
+end
+
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	task.spawn(function()
@@ -1649,6 +1665,7 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
 	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
+	subscribeWithRetry(CONFIG.Topics.Playback, onPlaybackChanged)
 	task.spawn(function()
 		while SERVICE_ENABLED do
 			local published = publishTopic(CONFIG.Topics.Queue, {kind = "ServerHeartbeat", serverJob = JOB_ID})
