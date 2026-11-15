@@ -39,6 +39,7 @@ local CONFIG = {
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
 		Queue = "ClubMusic_Global_Queue_v1",
+		Playback = "ClubMusic_Global_Playback_v1",
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -1017,7 +1018,90 @@ local sharedDependencies = {
 	guid = function() return HttpService:GenerateGUID(false) end,
 }
 globalConfigService = createOperationalService("ClubMusic_Global_Config_Service", sharedDependencies, {"Start", "GetStatus", "Get", "Set"})
+
 if globalConfigService then globalConfigService:Start() end
+
+-- Playback-only authority is separate from MusicGlobalQueueService by design.
+-- The feature is opt-in and remains inactive until the shared config enables it.
+local playbackAuthorityModule = loadOptionalGlobalModule("MusicGlobalPlaybackAuthority")
+local globalPlaybackAuthority: any = nil
+local playbackSyncEnabled = false
+if playbackAuthorityModule then
+	local createOk, instance = pcall(function()
+		return playbackAuthorityModule.new({
+			dataStoreService = DataStoreService,
+			memoryStoreService = MemoryStoreService,
+			jobId = JOB_ID,
+			guid = function() return HttpService:GenerateGUID(false) end,
+			publish = function(payload)
+				publishTopic(CONFIG.Topics.Playback, payload)
+			end,
+		})
+	end)
+	if createOk and instance and type(instance.Start) == "function" then
+		local startOk, started, startError = pcall(instance.Start, instance)
+		if startOk and started == true then
+			globalPlaybackAuthority = instance
+		else
+			warn("[ClubMusic Global] Playback-only authority unavailable: " .. tostring(startError or started))
+		end
+	else
+		warn("[ClubMusic Global] Could not construct playback-only authority: " .. tostring(instance))
+	end
+end
+
+bindFunction("GetGlobalPlaybackSyncStatus", function()
+	local status = if globalPlaybackAuthority then globalPlaybackAuthority:GetStatus() else {enabled = false, error = "Playback authority module unavailable."}
+	status.syncEnabled = playbackSyncEnabled
+	status.localQueueIsolated = true
+	return true, status
+end)
+
+bindFunction("GetGlobalPlaybackSnapshot", function()
+	if not playbackSyncEnabled or not globalPlaybackAuthority then return false, nil, "Playback-only global sync is disabled or unavailable." end
+	return globalPlaybackAuthority:GetSnapshot()
+end)
+
+bindFunction("AcquireGlobalPlaybackLeadership", function()
+	if not playbackSyncEnabled or not globalPlaybackAuthority then return false, nil, "Playback-only global sync is disabled or unavailable." end
+	return globalPlaybackAuthority:AcquireOrRenewLeadership()
+end)
+
+bindFunction("CommitGlobalPlaybackSnapshot", function(snapshot: any, expectedRevision: any)
+	if not playbackSyncEnabled or not globalPlaybackAuthority then return false, nil, "Playback-only global sync is disabled or unavailable." end
+	return globalPlaybackAuthority:CommitPlayback(snapshot, expectedRevision)
+end)
+
+bindFunction("SetGlobalPlaybackSyncEnabled", function(enabled: any, actorUserId: any)
+	if typeof(enabled) ~= "boolean" or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false, "Not authorized or invalid setting." end
+	if not globalConfigService then return false, "Shared config service unavailable." end
+	local ok, result = globalConfigService:Set("playbackSyncEnabled", enabled, math.floor(actorUserId))
+	if not ok then return false, result end
+	playbackSyncEnabled = enabled
+	if not enabled and globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
+	publishTopic(CONFIG.Topics.Playback, {kind = "PlaybackSyncModeChanged", enabled = enabled})
+	return true, result
+end)
+
+-- Each server observes the shared opt-in flag. Only the current lease holder
+-- renews leadership; no local queue data is ever sent to this authority.
+task.spawn(function()
+	while SERVICE_ENABLED do
+		if globalConfigService then
+			local enabled = globalConfigService:Get("playbackSyncEnabled") == true
+			if enabled ~= playbackSyncEnabled then
+				playbackSyncEnabled = enabled
+				if not enabled and globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
+			end
+			if playbackSyncEnabled and globalPlaybackAuthority then
+				globalPlaybackAuthority:AcquireOrRenewLeadership()
+			end
+		end
+		task.wait(8)
+	end
+	if globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
+end)
+
 
 globalRegistryService = createOperationalService("ClubMusic_Global_Server_Registry", {
 	isEnabled = function() return SERVICE_ENABLED end,
