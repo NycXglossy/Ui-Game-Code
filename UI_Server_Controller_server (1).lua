@@ -2397,7 +2397,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	CatalogAddAudio = 10, CatalogRemoveTrack = 2,
 	PlaylistCreate = 2, PlaylistDelete = 1, PlaylistAddTrack = 0.5, PlaylistRemoveTrack = 0.5, PlaylistMoveTrack = 0.5,
 	DJPlayPlaylist = 2, DJStopPlaylist = 1,
-	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
+	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1, DJToggleGlobalPlaybackSync = 1,
 	ModBlockUser = 0.5, ModSetPassTier = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, BuyTitleTag = 1, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
 	SaveTitleSlot = CONFIG.SaveTitleCooldownSeconds, SelectTitleSlot = 0.3,
@@ -3324,6 +3324,7 @@ end
 ControllerFunctions.globalPlaybackSyncState = {
 	enabled = false, isLeader = false, revision = 0, trackRevision = 0,
 	lastAppliedRevision = 0, lastStatusAt = 0, lastErrorAt = 0,
+	leaderJobId = nil, authorityReady = false, statusError = nil,
 }
 ControllerFunctions.commitGlobalPlaybackSync = function(reason: string?): boolean
 	local state = ControllerFunctions.globalPlaybackSyncState
@@ -4002,9 +4003,15 @@ task.spawn(function()
 			and status.syncEnabled == true and not globalQueueMode then
 			syncState.enabled = true
 			local wasLeader = syncState.isLeader == true
+			local previousStatus = table.concat({tostring(syncState.enabled), tostring(syncState.isLeader), tostring(syncState.leaderJobId), tostring(syncState.authorityReady), tostring(syncState.statusError)}, "|")
+			syncState.leaderJobId = if typeof(status.leaderJobId) == "string" then status.leaderJobId else nil
+			syncState.authorityReady = status.enabled == true and status.error == nil
+			syncState.statusError = if typeof(status.error) == "string" then string.sub(status.error, 1, 120) else nil
 			-- The global service owns the lease-renewal loop; the controller only
 			-- observes its status to avoid duplicate MemoryStore writes per server.
 			syncState.isLeader = status.isLeader == true
+			local currentStatus = table.concat({tostring(syncState.enabled), tostring(syncState.isLeader), tostring(syncState.leaderJobId), tostring(syncState.authorityReady), tostring(syncState.statusError)}, "|")
+			if previousStatus ~= currentStatus then publishState(nil) end
 			if syncState.isLeader then
 				local snapshotOk, snapshotRead, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
 				if snapshotOk and snapshotRead == true and typeof(snapshot) == "table" then
@@ -4027,9 +4034,16 @@ task.spawn(function()
 		elseif enabledOk and enabledStatus == true and typeof(status) == "table" and status.syncEnabled ~= true then
 			syncState.enabled = false
 			syncState.isLeader = false
+			syncState.leaderJobId = nil
+			syncState.authorityReady = status.enabled == true and status.error == nil
+			syncState.statusError = if typeof(status.error) == "string" then string.sub(status.error, 1, 120) else nil
+			publishState(nil)
 		elseif not enabledOk then
 			-- A transient service failure must not cause followers to start their own track.
 			syncState.isLeader = false
+			syncState.authorityReady = false
+			syncState.statusError = "Global playback status unavailable."
+			publishState(nil)
 		end
 		task.wait(8)
 	end
@@ -4141,6 +4155,14 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		vip = vip,
 		customTitleUnlocked = ControllerFunctions.hasTikiTideAccess(player),
 		queue = safeQueue,
+		globalPlaybackSync = {
+			enabled = ControllerFunctions.globalPlaybackSyncState.enabled == true,
+			isLeader = ControllerFunctions.globalPlaybackSyncState.isLeader == true,
+			leaderJobId = ControllerFunctions.globalPlaybackSyncState.leaderJobId,
+			authorityReady = ControllerFunctions.globalPlaybackSyncState.authorityReady == true,
+			error = ControllerFunctions.globalPlaybackSyncState.statusError,
+			localQueueIsolated = true,
+		},
 		nowPlaying = {
 			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
 			genre = nowPlaying.genre, duration = nowPlaying.duration, elapsed = nowPlaying.elapsed,
@@ -5635,6 +5657,35 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	-- Staff ----------------------------------------------------------------------------
+
+	if action == "DJToggleGlobalPlaybackSync" then
+		if ControllerFunctions.getLevel(player) < 3 then
+			return false, "Global playback sync settings are restricted to the Owner and Co-Owner."
+		end
+		if typeof(payload.enabled) ~= "boolean" then return false, "Choose whether global playback sync should be enabled." end
+		local callOk, accepted, result = ControllerFunctions.globalInvoke(
+			"SetGlobalPlaybackSyncEnabled", payload.enabled, player.UserId
+		)
+		if not callOk or accepted ~= true then
+			local reason = tostring(result or accepted or "The global playback setting could not be saved.")
+			notify(player, reason, "warn")
+			return false, reason
+		end
+		local syncState = ControllerFunctions.globalPlaybackSyncState
+		syncState.enabled = payload.enabled
+		if not payload.enabled then
+			syncState.isLeader = false
+			syncState.leaderJobId = nil
+		end
+		syncState.authorityReady = true
+		syncState.statusError = nil
+		publishState(nil)
+		local message = if payload.enabled
+			then "Global playback sync enabled. Each server keeps its own request queue."
+			else "Global playback sync disabled. Each server continues with its local playback and queue."
+		notify(player, message, "ok")
+		return true, message
+	end
 
 	if action == "DJPlayPlaylist" then
 		if not ControllerFunctions.isDJBoothController(player) then notify(player, "The DJ Booth is restricted to the Owner and Co-Owner.", "warn"); return end
