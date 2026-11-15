@@ -747,7 +747,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local preferenceOk, preferenceInstance = pcall(preferencesClass.new, {
 				SetLocalGain = function(gain: number): boolean
 					local normalized = math.clamp(gain, 0, 1)
-					if playerMusicGroup and playerMusicGroup.Parent then
+					-- MusicGroup is a compatibility path only. Do not adjust it while
+					-- the modern AudioPlayer graph owns playback; that path uses private
+					-- PlayerMusicGain faders instead.
+					if SoundService:GetAttribute("ClubMusicAudioSourceKind") == "Sound"
+						and playerMusicGroup and playerMusicGroup.Parent then
 						playerMusicGroup.Volume = normalized
 					end
 					if previewFader and previewFader.Parent then
