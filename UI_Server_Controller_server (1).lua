@@ -71,8 +71,10 @@ local CONFIG = {
 	-- "Enable Studio Access to API Services" is disabled. Set true only when
 	-- you intentionally want Studio to use the live DataStore.
 	StudioUseDataStore = false,
-	-- Studio must remain isolated from published public-server playback and queue state.
-	-- The public servers still use the shared global queue through the global service.
+	-- Playback and request queues are server-local in every environment.
+	-- Keep these flags false until a deliberately designed sync-only feature is reintroduced.
+	EnableGlobalQueue = false,
+	EnableGlobalPlaybackSync = false,
 	StudioUseGlobalQueue = false,
 
 	-- Modern AudioPlayer is the primary source; retain the legacy Sound only as a guarded recovery fallback.
@@ -3921,10 +3923,13 @@ else
 	warn("[ClubMusic] Startup held: the catalog contains no playable audio tracks.")
 end
 
--- Switch to shared authority only when the separately configured global service
--- confirms it is enabled. Studio stays on its working local queue by default;
--- opt in only when Studio API access and the shared DataStore are intentionally configured.
+-- Shared queue authority is intentionally disabled. Every server starts and remains
+-- on its own local request queue; no global queue snapshot or handoff is attempted.
 task.spawn(function()
+	if not CONFIG.EnableGlobalQueue then
+		print("[ClubMusic] Local-queue mode is active in this server; shared queue authority is disabled.")
+		return
+	end
 	if RunService:IsStudio() and not CONFIG.StudioUseGlobalQueue then
 		print("[ClubMusic] Studio local-queue mode is active; shared queue handoff is disabled.")
 		return
@@ -3979,9 +3984,9 @@ task.spawn(function()
 	ControllerFunctions.topUpAuto()
 end)
 
--- Retry global authority independently while this server is on its local backup.
--- A successful snapshot rejoins the authoritative current track and position.
+-- Global queue recovery is disabled with global queue authority.
 task.spawn(function()
+	if not CONFIG.EnableGlobalQueue then return end
 	while script.Parent do
 		task.wait(20 + math.random(0, 10))
 		if not globalQueueMode then
@@ -4007,6 +4012,13 @@ end)
 -- Followers reconcile the playback snapshot; only the elected leader may advance its local queue.
 task.spawn(function()
 	local syncState = ControllerFunctions.globalPlaybackSyncState
+	if not CONFIG.EnableGlobalPlaybackSync then
+		syncState.enabled = false
+		syncState.isLeader = false
+		syncState.leaderJobId = nil
+		syncState.authorityReady = false
+		return
+	end
 	while script.Parent do
 		local enabledOk, enabledStatus, status = ControllerFunctions.globalInvoke("GetGlobalPlaybackSyncStatus")
 		if enabledOk and enabledStatus == true and typeof(status) == "table"
@@ -5669,6 +5681,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	-- Staff ----------------------------------------------------------------------------
 
 	if action == "DJToggleGlobalPlaybackSync" then
+		if not CONFIG.EnableGlobalPlaybackSync then
+			return false, "Global playback synchronization is disabled. Each server has its own playback and request queue."
+		end
 		if ControllerFunctions.getLevel(player) < 3 then
 			return false, "Global playback sync settings are restricted to the Owner and Co-Owner."
 		end
