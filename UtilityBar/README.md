@@ -25,7 +25,7 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 - Aura
 - Inventory (includes Tool equip/unequip)
 - Tool Shop (separate placeholder storefront)
-- Accessories
+- Lighting Control (requires Stage & Club Lighting Game Pass)
 
 The bar uses the ClubMusic dark-surface / muted-gold / teal visual language, fully rounded surfaces, viewport-aware sizing, horizontal scrolling on narrow screens, and controller focus navigation. It hides while the full ClubMusic menu or Tiki Tide Settings is open, then returns when those surfaces close. The Tiki Tide Settings panel uses the shared `TikiTideSettingsOpen` state attribute.
 
@@ -35,12 +35,11 @@ For actions other than Tiki Tide Settings, the bar fires the local BindableEvent
 
 `PlayerGui.UtilityBarAction:Fire(actionName)`
 
-Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone`, `Aura`, `Inventory`, `Accessories`, and `ToolShop`. The Tool Shop panel listens directly for `ToolShop`; Inventory remains the only owned-Tool equip/unequip surface. Legacy `Tools` requests are routed to the unified Inventory view.
+Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone` (Clone Companion), `Aura`, `Inventory`, `LightingControl`, and `ToolShop`. The Tool Shop panel listens directly for `ToolShop`; Inventory remains the only owned-Tool equip/unequip surface. Legacy `Tools` requests are routed to the unified Inventory view.
 
-### Implemented: Inventory, Tools, and Accessories
+### Implemented: Inventory and Tools
 
 - **Inventory:** includes every Tool in the Backpack and currently equipped Tools in one list. Selecting a Tool equips it; selecting an equipped Tool unequips it. The separate Tools launcher button has been removed so Tool management lives in one place.
-- **Accessories:** opens a dedicated list of currently equipped character Accessories. This is a view panel; Roblox character Accessories are shown as worn items and are not moved or removed by this panel.
 
 ### Implemented: Refresh Outfit
 
@@ -52,9 +51,9 @@ This refreshes the player's current Roblox account avatar; it is not an outfit c
 
 The `UtilityBarExtendedActions.server.lua` script owns these actions through the allowlisted `UtilityBarRemotes.ExecuteUtility` RemoteFunction. The client sends an allowlisted action name and, where required, a bounded size value or fixed aura preset/target pair; the server validates each request, applies a per-player cooldown, and operates only on the requesting player's character.
 
-- **Mount:** opens its own panel and equips or unequips only a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
+- **Mount:** requires Game Pass `2087955619`, then opens its own panel and equips or unequips only a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
 - **Size:** opens its own control panel with a 0.50×–5.00× adjustable slider and a 1.00× reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
-- **Clone:** opens its own single-tab panel with a Create Clone action. The server creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
+- **Clone Companion:** requires Game Pass `2088585676`, then opens its own panel and creates a temporary non-interactive character companion for 12 seconds. The server creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
 - **Aura:** opens three style tabs (Teal Glow, Royal Gold, Tiki Tide) and three target tabs (Character, Tools, Accessories). Apply uses server-owned Highlights; Clear Aura removes the active effect. Newly equipped Tools and Accessories receive the selected aura while it remains active.
 
 Mount requires an existing mount Tool; this update does not invent or import a third-party mount model. The extended actions are separate from ClubMusic and do not issue music, queue, catalog, or DJ requests.
@@ -97,3 +96,12 @@ The repository-side integration audit and static contract checks are complete. T
 - Server-side reward systems can award currency by changing the player's `leaderstats.Coins.Value` from server code. Never award Coins from a LocalScript or accept a client-supplied balance.
 - When real stock is ready, place approved Tool assets in `ServerStorage.UtilityToolShop` and define server-owned prices/descriptions. A later shop-stock phase must add purchase validation, ownership persistence, and respawn re-granting before enabling Buy buttons; this placeholder phase does not sell anything.
 - The shop RemoteFunction currently supports read-only `GetShop` requests. It exposes no client-side currency mutation or purchase operation.
+
+### Pass-gated features and Stage/Club Lighting
+
+- **Mount** is locked behind Island Mount Game Pass `2087955619`.
+- **Clone Companion** is locked behind Island Companion Game Pass `2088585676`.
+- **Lighting Control** replaces the former Accessories launcher and is locked behind Stage & Club Lighting Game Pass `2088315619`.
+- The server independently checks the entitlement attributes set by the main server controller before executing these actions; a client-side prompt or UI state never grants access.
+- Lighting Control only changes fixtures tagged with the CollectionService tag `StageClubLight`. Tag the intended club and stage PointLight, SpotLight, SurfaceLight, or Beam objects (or their containing fixture Models/Parts) in Studio. Untagged island, outdoor, and general Lighting service settings are not changed.
+- Lighting presets: Ocean, Sunset, Royal Gold, Tiki, and Restore Original Lighting. If no fixtures are tagged, the panel reports the required tag instead of changing unrelated lights.
