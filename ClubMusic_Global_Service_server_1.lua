@@ -356,6 +356,15 @@ local function publishDJCommand(command: any, payload: any, actorUserId: any): (
 	elseif command == "ForceStop" then
 		cleanPayload.forceStop = true
 	end
+	if playbackSyncEnabled and (command == "Skip" or command == "SetPlaybackPaused" or command == "Restart") then
+		-- Playback-only mode uses a transient command event. It must not write the
+		-- legacy playbackControl record, whose periodic replay would restart/pause
+		-- playback independently of the elected leader.
+		return publishTopic(CONFIG.Topics.Playback, {
+			kind = "PlaybackCommand", command = command, payload = cleanPayload,
+			actorUserId = math.floor(actorUserId),
+		})
+	end
 	if command == "SetPlaybackPaused" or command == "Restart" or command == "ForceStop" then
 		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
 		if not budgetShared or not budgetAllowed then
