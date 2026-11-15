@@ -85,6 +85,7 @@ local authorizeGlobalActor: (any, string) -> boolean
 -- In isolated Studio sessions, requiring this controller must not touch DataStore
 -- or MemoryStore APIs (the place may be unpublished and API access unavailable).
 local budgetMap: any = nil
+local budgetMapInitializationError: string? = nil
 local moderationStore: any = nil
 local globalControlStore: any = nil
 local globalConfigStore: any = nil
@@ -114,8 +115,10 @@ if SERVICE_ENABLED then
 		end)
 		if budgetOk then
 			budgetMap = budgetResult
+			budgetMapInitializationError = nil
 		else
 			budgetMap = nil
+			budgetMapInitializationError = tostring(budgetResult)
 			warn("[ClubMusic Global] MemoryStore budget unavailable; global queue will use conservative local rate limits: "
 				.. tostring(budgetResult))
 		end
@@ -220,6 +223,10 @@ end
 
 local function consumeShared(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
  if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
+ if budgetMap == nil and isMemoryCapacityError(budgetMapInitializationError) then
+  memoryStoreCapacityLimited = true
+  memoryStoreCapacityError = string.sub(tostring(budgetMapInitializationError), 1, 300)
+ end
  if not memoryStoreCapacityLimited then
   local now = os.time()
   local ok, allowed = pcall(function()
