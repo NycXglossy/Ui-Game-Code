@@ -110,18 +110,12 @@ if SERVICE_ENABLED then
 		warn("[ClubMusic Global] DataStore handle initialization failed; global features are disabled safely: "
 			.. tostring(storesError))
 	else
-		local budgetOk, budgetResult = pcall(function()
-			return MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
-		end)
-		if budgetOk then
-			budgetMap = budgetResult
-			budgetMapInitializationError = nil
-		else
-			budgetMap = nil
-			budgetMapInitializationError = tostring(budgetResult)
-			warn("[ClubMusic Global] MemoryStore budget unavailable; global queue will use conservative local rate limits: "
-				.. tostring(budgetResult))
-		end
+		-- MemoryStore rate-limit records are intentionally disabled to minimize
+		-- universe-wide allocation. Cross-server requests use bounded local limits.
+		-- Playback leadership retains its single lease key in the dedicated authority map.
+		budgetMap = nil
+		budgetMapInitializationError = "Shared MemoryStore rate-limit map disabled for minimal storage mode."
+		memoryStoreCapacityLimited = true
 	end
 end
 
@@ -1269,15 +1263,9 @@ task.spawn(function()
 end)
 
 
-globalRegistryService = createOperationalService("ClubMusic_Global_Server_Registry", {
-	isEnabled = function() return SERVICE_ENABLED end,
-	memoryStoreService = MemoryStoreService,
-	jobId = JOB_ID,
-	getHealth = function()
-		return if globalHealthService then globalHealthService:GetStatus().localState else "Unknown"
-	end,
-}, {"Start", "GetStatus", "GetServers"})
-if globalRegistryService then globalRegistryService:Start() end
+-- Cross-server server listing is disabled in minimal-storage mode.
+-- This avoids one expiring SortedMap entry per live server.
+globalRegistryService = nil
 
 local auditDependencies = table.clone(sharedDependencies)
 auditDependencies.isEnabled = function()
