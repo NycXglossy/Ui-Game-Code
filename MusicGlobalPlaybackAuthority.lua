@@ -114,6 +114,7 @@ function PlaybackAuthority:AcquireOrRenewLeadership(): (boolean, {[string]: any}
 	if not self.started or not self.leaseMap then return false, nil, "Playback authority is not started." end
 	local now = os.time()
 	local proposedToken = self.leaseToken or self.guid()
+	local alreadyFencedLeader = self.leadershipReady == true and self.leaseToken == proposedToken and self.leaderGeneration ~= nil
 	local ok, value = pcall(function()
 		return self.leaseMap:UpdateAsync(LEASE_KEY, function(old)
 			if typeof(old) == "table" and finite(old.expiresAt) and old.expiresAt > now then
@@ -133,25 +134,38 @@ function PlaybackAuthority:AcquireOrRenewLeadership(): (boolean, {[string]: any}
 	end
 	self.leaseToken = proposedToken
 	self.leaseExpiresAt = value.expiresAt
-	self.leadershipReady = false
+	self.leadershipReady = alreadyFencedLeader
 
 	-- Claim a monotonically increasing generation in the same durable record
 	-- that playback commits update. Once this claim wins, older generations
 	-- can no longer commit, even if an old server wakes after a long stall.
-	local claimOk, claimed = pcall(function()
-		return self.store:UpdateAsync(SNAPSHOT_KEY, function(old)
-			local state = sanitizeSnapshot(old)
-			state.leaderGeneration += 1
-			state.leaderJobId = self.jobId
-			state.leaderToken = proposedToken
-			state.revision += 1
-			state.updatedAt = os.time()
-			return state
+	local claimed: any = nil
+	if alreadyFencedLeader then
+		local snapshotOk, snapshot, snapshotError = self:GetSnapshot()
+		if not snapshotOk or not snapshot or snapshot.leaderToken ~= proposedToken or snapshot.leaderJobId ~= self.jobId
+			or snapshot.leaderGeneration ~= self.leaderGeneration then
+			self.leadershipReady = false
+			self.lastError = tostring(snapshotError or "Durable leadership fence no longer matches this lease.")
+			return false, nil, self.lastError
+		end
+		claimed = snapshot
+	else
+		local claimOk, claimResult = pcall(function()
+			return self.store:UpdateAsync(SNAPSHOT_KEY, function(old)
+				local state = sanitizeSnapshot(old)
+				state.leaderGeneration += 1
+				state.leaderJobId = self.jobId
+				state.leaderToken = proposedToken
+				state.revision += 1
+				state.updatedAt = os.time()
+				return state
+			end)
 		end)
-	end)
-	if not claimOk or typeof(claimed) ~= "table" then
-		self.lastError = tostring(claimed)
-		return false, nil, "Could not claim playback fencing generation: " .. tostring(claimed)
+		if not claimOk or typeof(claimResult) ~= "table" then
+			self.lastError = tostring(claimResult)
+			return false, nil, "Could not claim playback fencing generation: " .. tostring(claimResult)
+		end
+		claimed = claimResult
 	end
 	local currentOk, currentLease = self:GetLeader()
 	if not currentOk or not currentLease or currentLease.jobId ~= self.jobId or currentLease.token ~= proposedToken then
