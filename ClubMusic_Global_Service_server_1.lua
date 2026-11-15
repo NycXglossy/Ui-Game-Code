@@ -1026,7 +1026,7 @@ if globalConfigService then globalConfigService:Start() end
 local playbackAuthorityModule = loadOptionalGlobalModule("MusicGlobalPlaybackAuthority")
 local globalPlaybackAuthority: any = nil
 local playbackSyncEnabled = false
-if playbackAuthorityModule then
+if playbackAuthorityModule and SERVICE_ENABLED then
 	local createOk, instance = pcall(function()
 		return playbackAuthorityModule.new({
 			dataStoreService = DataStoreService,
