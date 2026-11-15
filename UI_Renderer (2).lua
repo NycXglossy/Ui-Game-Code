@@ -3554,6 +3554,27 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					act("DJClearQueue", {})
 				end, C.Red)
 			end
+
+			sectionLabel("CROSS-SERVER PLAYBACK")
+			local sync = if typeof(state.globalPlaybackSync) == "table" then state.globalPlaybackSync else {}
+			local syncEnabled = sync.enabled == true
+			local syncReady = sync.authorityReady == true
+			local syncCard = card(112)
+			label(syncCard, if syncEnabled then "GLOBAL PLAYBACK SYNC: ON" else "GLOBAL PLAYBACK SYNC: OFF",
+				UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 20), if syncEnabled then C.Green else C.Muted, 11, true)
+			local roleText = if not syncEnabled then "Each server plays independently."
+				elseif sync.isLeader == true then "This server is the elected playback leader."
+				else "Following the elected playback leader."
+			local readinessText = if syncReady then "Playback authority is ready."
+				else nz(sync.error, "Playback authority status is unavailable.")
+			label(syncCard, roleText, UDim2.fromOffset(12, 31), UDim2.new(1, -24, 0, 18), C.White, 10, false)
+			label(syncCard, readinessText, UDim2.fromOffset(12, 51), UDim2.new(1, -24, 0, 17), if syncReady then C.Muted else C.Orange, 9, false)
+			label(syncCard, "Current playback is shared; requests and queue order stay local to each server.",
+				UDim2.fromOffset(12, 70), UDim2.new(1, -24, 0, 17), C.Muted, 9, false)
+			actionButton(syncCard, if syncEnabled then "DISABLE GLOBAL SYNC" else "ENABLE GLOBAL SYNC",
+				UDim2.new(1, -166, 0, 7), UDim2.fromOffset(154, 28), function()
+					act("DJToggleGlobalPlaybackSync", {enabled = not syncEnabled})
+				end, if syncEnabled then C.Orange else C.Green)
 		else
 			local note = card(48)
 			label(note, "Vote to skip the current song from the Home tab.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
