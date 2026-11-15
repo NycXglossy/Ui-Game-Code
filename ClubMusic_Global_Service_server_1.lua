@@ -941,10 +941,37 @@ local function loadOptionalGlobalModule(moduleName: string): any?
 	return result
 end
 
+-- Shared SafeCall diagnostics are optional and never gate core global behavior.
+local safeCallModule = loadOptionalGlobalModule("ClubMusic_Global_SafeCall_Service")
+local globalSafeCall: any = nil
+if safeCallModule then
+	local safeOk, safeInstance = pcall(function()
+		return safeCallModule.new({serviceName = "ClubMusicGlobal"})
+	end)
+	if safeOk and typeof(safeInstance) == "table"
+		and type(safeInstance.Run) == "function"
+		and type(safeInstance.GetStatus) == "function"
+		and type(safeInstance.GetRecent) == "function" then
+		globalSafeCall = safeInstance
+	else
+		warn("[ClubMusic][SafeCall] Diagnostics helper unavailable; existing protected-call behavior remains active: " .. tostring(safeInstance))
+	end
+end
+if globalSafeCall then
+	bindFunction("GetGlobalSafeCallStatus", function()
+		return globalSafeCall:GetStatus()
+	end)
+	bindFunction("GetGlobalSafeCallRecent", function(limit: any)
+		return globalSafeCall:GetRecent(if finiteNumber(limit) then limit else 20)
+	end)
+	print("[ClubMusic][SafeCall] Diagnostics helper ready; maxRecords=50.")
+end
+
 local recoveryModule = loadOptionalGlobalModule("ClubMusic_Global_Recovery_Service")
 if recoveryModule then
 	local createOk, instance = pcall(function()
 		return recoveryModule.new({
+			safeCall = globalSafeCall,
 			isEnabled = function() return SERVICE_ENABLED end,
 			allowStoreOperation = allowGlobalQueueStoreOperation,
 			invalidateSnapshot = function()
@@ -1019,6 +1046,7 @@ local function createOperationalService(moduleName: string, dependencies: {[stri
 end
 
 local sharedDependencies = {
+	safeCall = globalSafeCall,
 	isEnabled = function() return SERVICE_ENABLED end,
 	memoryStoreService = MemoryStoreService,
 	dataStore = globalConfigStore,
@@ -1039,6 +1067,7 @@ local playbackAuthorityLastError: string? = nil
 if playbackAuthorityModule and SERVICE_ENABLED then
 	local createOk, instance = pcall(function()
 		return playbackAuthorityModule.new({
+			safeCall = globalSafeCall,
 			dataStoreService = DataStoreService,
 			memoryStoreService = MemoryStoreService,
 			jobId = JOB_ID,
