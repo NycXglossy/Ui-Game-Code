@@ -127,10 +127,20 @@ local function createClone(player: Player): (boolean, string)
 		cloneHumanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
 	end
 	clone.Parent = workspace
-	task.delay(CLONE_LIFETIME, function()
+	-- Keep the visual clone beside its owner so it behaves like a temporary
+	-- companion rather than a stationary duplicate left at the spawn point.
+	task.spawn(function()
+		local expiresAt = os.clock() + CLONE_LIFETIME
+		while clone.Parent and player.Parent == Players and player.Character == character and os.clock() < expiresAt do
+			local currentRoot = character:FindFirstChild("HumanoidRootPart")
+			if currentRoot and currentRoot:IsA("BasePart") then
+				clone:PivotTo(currentRoot.CFrame * CFrame.new(4, 0, 2))
+			end
+			task.wait(0.12)
+		end
 		if clone.Parent then clone:Destroy() end
 	end)
-	return true, "Temporary character clone created for 12 seconds."
+	return true, "Your character companion will follow beside you for 12 seconds."
 end
 
 local function clearAura(userId: number)
