@@ -640,6 +640,10 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	ModPurgeUser = true, ClaimDailyReward = true, EquipTitleTag = true, BuyTitleTag = true,
 	SaveTitleSlot = true, SetTitleVisible = true, SelectTitleSlot = true,
 	ClearTitleSlot = true,
+	-- Playlist and DJ playlist actions are server-validated in UI_Server_Controller.
+	PlaylistCreate = true, PlaylistDelete = true, PlaylistAddTrack = true,
+	PlaylistRemoveTrack = true, PlaylistMoveTrack = true,
+	DJPlayPlaylist = true, DJStopPlaylist = true,
 }
 local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	RequestTrack = true, ToggleFavorite = true, VoteSkip = true,
