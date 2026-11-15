@@ -1,7 +1,7 @@
 --!strict
 -- Shared envelope validation for cross-server messages; topic handlers still validate payload schemas.
 local Service={}; Service.__index=Service
-local KINDS={Announcements={Announcement=true},Moderation={Moderation=true},DJ={DJ=true},XPBoost={XPBoost=true},Catalog={Catalog=true},Queue={QueueChanged=true,ServerHeartbeat=true}}
+local KINDS={Announcements={Announcement=true},Moderation={Moderation=true},DJ={DJ=true},XPBoost={XPBoost=true},Catalog={Catalog=true},Queue={QueueChanged=true,ServerHeartbeat=true},Playback={PlaybackChanged=true,PlaybackSyncModeChanged=true}}
 function Service.new(d)
  assert(type(d)=="table" and type(d.getJobId)=="function","Message validation dependencies missing")
  return setmetatable({d=d,accepted=0,rejected=0},Service)
