@@ -64,6 +64,8 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	DJSkip = true,
 	DJClearQueue = true,
 	DJToggleLock = true,
+	-- Server rechecks Owner/Co-Owner authorization for playback-sync mode changes.
+	DJToggleGlobalPlaybackSync = true,
 	ModBlockUser = true,
 	ModSetVip = true,
 	ModPurgeUser = true,
@@ -100,6 +102,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	DJSkip = 0.5,
 	DJClearQueue = 1,
 	DJToggleLock = 1,
+	DJToggleGlobalPlaybackSync = 1,
 	ModBlockUser = 0.5,
 	ModSetVip = 0.5,
 	ModPurgeUser = 0.5,
