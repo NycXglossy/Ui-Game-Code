@@ -227,10 +227,30 @@ local function consumeShared(key: string, capacity: number, refill: number, cost
   memoryStoreCapacityLimited = true
   memoryStoreCapacityError = string.sub(tostring(budgetMapInitializationError), 1, 300)
  end
+ -- Consolidate the three per-player limiter records (user/state/audio) into
+ -- one expiring MemoryStore item per player. This lowers key cardinality
+ -- without merging their independent token buckets or changing their limits.
+ local bucketName, playerId = string.match(key, "^(user|state|audio):(%d+)$")
+ local storageKey = if playerId then "player:" .. playerId else key
  if not memoryStoreCapacityLimited then
   local now = os.time()
   local ok, allowed = pcall(function()
-   local result = budgetMap:UpdateAsync(key, function(old)
+   local result = budgetMap:UpdateAsync(storageKey, function(old)
+    if playerId then
+     local record = if typeof(old) == "table" then table.clone(old) else {}
+     local buckets = if typeof(record.buckets) == "table" then table.clone(record.buckets) else {}
+     local state = if typeof(buckets[bucketName]) == "table" then buckets[bucketName] else {}
+     local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
+     local updated = if finiteNumber(state.updated) then state.updated else now
+     tokens = math.min(capacity, tokens + math.max(0, now - updated) * refill)
+     local permit = tokens >= cost
+     if permit then tokens -= cost end
+     buckets[bucketName] = {tokens = tokens, updated = now}
+     record.buckets = buckets
+     record.lastUpdated = now
+     record.allowed = permit
+     return record
+    end
     local state = if typeof(old) == "table" then old else {}
     local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
     local updated = if finiteNumber(state.updated) then state.updated else now
