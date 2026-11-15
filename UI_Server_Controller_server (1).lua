@@ -3362,9 +3362,9 @@ ControllerFunctions.commitGlobalPlaybackSync = function(reason: string?): boolea
 	return false
 end
 
-ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any): boolean
+ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, allowLeader: boolean?): boolean
 	local state = ControllerFunctions.globalPlaybackSyncState
-	if state.enabled ~= true or state.isLeader == true or globalQueueMode
+	if state.enabled ~= true or (state.isLeader == true and allowLeader ~= true) or globalQueueMode
 		or typeof(snapshot) ~= "table" or not ControllerFunctions.isFiniteNumber(snapshot.revision)
 		or snapshot.revision <= (state.lastAppliedRevision or 0) then return false end
 	local current = snapshot.current
@@ -4008,7 +4008,7 @@ task.spawn(function()
 				if snapshotOk and snapshotRead == true and typeof(snapshot) == "table" then
 					if typeof(snapshot.current) == "table" then
 						if nowPlaying.trackId ~= snapshot.current.trackId then
-							ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot)
+							ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot, true)
 						end
 						syncState.revision = tonumber(snapshot.revision) or syncState.revision
 						syncState.trackRevision = tonumber(snapshot.trackRevision) or syncState.trackRevision
@@ -5717,6 +5717,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJPause" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
+		if ControllerFunctions.globalPlaybackSyncState.enabled == true and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
+			return false, "Global playback controls are currently hosted by the elected DJ server. Your server's request queue remains local."
+		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
 		playbackControlRequestId += 1
@@ -5754,6 +5757,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			return false, tostring(audioError)
 		end
 		ControllerFunctions.publishPlaybackState()
+		if ControllerFunctions.commitGlobalPlaybackSync then ControllerFunctions.commitGlobalPlaybackSync("pause-resume") end
 		notify(player, if desiredPaused then "Music paused." else "Music resumed.", "ok")
 
 		if globalQueueMode then
@@ -5789,6 +5793,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJRestart" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
+		if ControllerFunctions.globalPlaybackSyncState.enabled == true and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
+			return false, "Global playback controls are currently hosted by the elected DJ server. Your server's request queue remains local."
+		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		playbackControlRequestId += 1
 		local controlRequestId = playbackControlRequestId
@@ -5808,6 +5815,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			return false, tostring(restartError)
 		end
 		ControllerFunctions.publishPlaybackState()
+		if ControllerFunctions.commitGlobalPlaybackSync then ControllerFunctions.commitGlobalPlaybackSync("restart") end
 		notify(player, "Current track restarted.", "ok")
 
 		if globalQueueMode then
@@ -7192,7 +7200,7 @@ ControllerFunctions.applyGlobalPlaybackControl = function(command: string, paylo
 	-- The legacy playbackControl store is a separate compatibility path; applying
 	-- its delayed reconciliation events here could overwrite a newer queue pause
 	-- or restart with stale state.
-	if globalQueueMode then return false end
+	if globalQueueMode or ControllerFunctions.globalPlaybackSyncState.enabled == true then return false end
 	-- Playback revisions are monotonic integer sequence numbers. Reject malformed
 	-- fractional/unsafe values instead of silently rounding them into a valid revision.
 	if typeof(payload) ~= "table" or not ControllerFunctions.isFiniteNumber(payload.revision)
