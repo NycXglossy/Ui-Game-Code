@@ -1643,6 +1643,14 @@ local function onPlaybackChanged(message)
 			trackRevision = if finiteNumber(data.trackRevision) then math.floor(data.trackRevision) else 0,
 			senderJob = data.senderJob,
 		})
+	elseif data.kind == "PlaybackCommand" then
+		if (data.command ~= "Skip" and data.command ~= "SetPlaybackPaused" and data.command ~= "Restart")
+			or typeof(data.payload) ~= "table" then return end
+		if data.command == "SetPlaybackPaused" and typeof(data.payload.paused) ~= "boolean" then return end
+		globalEventBindable:Fire({
+			kind = "PlaybackCommand", command = data.command, payload = data.payload,
+			senderJob = data.senderJob, actorUserId = if finiteNumber(data.actorUserId) then math.floor(data.actorUserId) else 0,
+		})
 	elseif data.kind == "PlaybackSyncModeChanged" and typeof(data.enabled) == "boolean" then
 		globalEventBindable:Fire({kind = "PlaybackSyncModeChanged", enabled = data.enabled, senderJob = data.senderJob})
 	end
