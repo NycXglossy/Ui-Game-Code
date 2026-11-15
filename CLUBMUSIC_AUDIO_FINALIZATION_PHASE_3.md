@@ -6,14 +6,14 @@ Branch: `feature/sultan-settings-2026-11-10`
 
 Implemented:
 - `CONFIG.UseModernAudioBackend = true`; the user-confirmed Studio log records successful controller ownership handoff to the modern AudioPlayer.
-- Added a one-time, deferred migration attempt after the first valid track starts when the flag is explicitly enabled.
-- The controller constructs the optional AudioPlayer backend and uses the existing guarded `adoptAudioBackend` handoff.
-- Candidate preparation, asset readiness, playhead transfer, source revision checks, gain preservation, rollback, and cleanup remain inside the controller handoff.
-- Missing modules, failed readiness, or failed handoff leave the legacy Sound as the active source.
+- Track startup now constructs and prepares the modern AudioPlayer first; it waits for matching asset readiness, starts at the initial playhead, verifies `IsPlaying`, then commits source ownership and binds the source signal.
+- A per-start token and source-revision guard prevent a late decoder completion from replacing a newer track or control action.
+- The legacy Sound starts only when modern construction, readiness, playback verification, or commit preparation fails. The existing guarded migration remains available as a bounded recovery path after fallback.
+- The previous post-start migration on every first track has been removed; successful modern startup marks the modern route as active directly.
 
 Not yet release-enabled:
-- The modern source handoff has been confirmed in Studio. Keep the legacy Sound only as a temporary startup/emergency compatibility source until the modern-only route and recovery have passed multiplayer testing.
-- Do not delete `ServerMusicSound` or `MusicGroup` until the remaining compatibility paths and rollout are validated.
+- Modern-first startup is now implemented but awaits Studio validation. Keep the legacy Sound as the guarded emergency fallback until first-track startup, failure fallback, pause preservation, and multiplayer behavior pass testing.
+- Do not delete `ServerMusicSound` or `MusicGroup` until remaining Sound-based transition/recovery compatibility paths and rollout are validated.
 
 ## Update 2 — Crossfade transition integration
 
@@ -67,7 +67,7 @@ Boundary:
 Not executed from the repository connection. Required release checklist:
 
 1. With the default flag off, verify legacy Sound playback is unchanged.
-2. Enable `UseModernAudioBackend` only in a test place; verify first-track handoff, asset readiness, position continuity, pause preservation, and that only one main output is audible.
+2. Enable `UseModernAudioBackend` only in a test place; verify the first track starts directly on AudioPlayer, matching asset readiness, playback verification, pause preservation, and that only one main output is audible. Confirm a failed modern start activates the guarded Sound fallback.
 3. Force missing-module, invalid-asset, timeout, and candidate-start failures; verify the legacy bootstrap remains safe. Then force a modern decoder reload failure and verify the controller rebuilds a replacement AudioPlayer without changing queue ownership or track position.
 4. Test crossfade cancellation for skip, clear, pause, restart, source reconciliation, and server shutdown; verify outgoing gain restoration and no duplicate outputs.
 5. With two clients, independently change volume and mute; verify each listener hears only their own local gain while the server-controlled crossfade affects both equally.
@@ -79,5 +79,5 @@ Not executed from the repository connection. Required release checklist:
 
 - Source changes committed: guarded modern migration, EQ graph/profile support, spatial graph hardening, local profile validation, replacement AudioPlayer recovery, and per-player output routing.
 - Studio validation: the user confirmed the modern recovery and independent client-volume updates are functional.
-- The controller now publishes `SoundService.ClubMusicAudioSourceKind` as `AudioPlayer` or `Sound` whenever source ownership is rebound. The renderer changes `MusicGroup.Volume` only while the guarded legacy Sound fallback is authoritative; modern playback continues to use private `PlayerMusicGain` faders.
-- Keep `ServerMusicSound` and `MusicGroup` as guarded fallback compatibility objects for now. Remaining Sound-based startup, transition, and recovery branches still depend on them; retire them only after a separate modern-only startup/fallback migration and regression pass.
+- The controller publishes `SoundService.ClubMusicAudioSourceKind` as `AudioPlayer` or `Sound` whenever source ownership is rebound. The renderer changes `MusicGroup.Volume` only while the guarded legacy Sound fallback is authoritative; modern playback continues to use private `PlayerMusicGain` faders.
+- Modern-first startup is implemented in the controller but is not yet Studio-validated. `ServerMusicSound` and `MusicGroup` remain guarded emergency fallback objects; Sound-based transition and recovery compatibility branches still exist. Do not retire them until the modern-first startup and fallback regression pass.
