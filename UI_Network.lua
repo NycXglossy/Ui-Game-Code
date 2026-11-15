@@ -491,40 +491,40 @@ function Network.ToggleFavorite(trackId: string)
 	Network.Send("ToggleFavorite", {trackId = trackId})
 end
 
-function Network.VoteSkip()
-	Network.Send("VoteSkip", {})
+function Network.VoteSkip(): boolean
+	return Network.Send("VoteSkip", {})
 end
 
 function Network.ReloadSong(): boolean
 	return Network.Send("ReloadSong", {})
 end
 
-function Network.DJSkip()
-	Network.Send("DJSkip", {})
+function Network.DJSkip(): boolean
+	return Network.Send("DJSkip", {})
 end
 
-function Network.DJPause()
-	Network.Send("DJPause", {})
+function Network.DJPause(): boolean
+	return Network.Send("DJPause", {})
 end
 
-function Network.DJRestart()
-	Network.Send("DJRestart", {})
+function Network.DJRestart(): boolean
+	return Network.Send("DJRestart", {})
 end
 
-function Network.DJMoveUp(queueId: string)
-	Network.Send("DJMoveUp", {queueId = queueId})
+function Network.DJMoveUp(queueId: string): boolean
+	return Network.Send("DJMoveUp", {queueId = queueId})
 end
 
-function Network.DJRemove(queueId: string)
-	Network.Send("DJRemove", {queueId = queueId})
+function Network.DJRemove(queueId: string): boolean
+	return Network.Send("DJRemove", {queueId = queueId})
 end
 
-function Network.DJClearQueue()
-	Network.Send("DJClearQueue", {})
+function Network.DJClearQueue(): boolean
+	return Network.Send("DJClearQueue", {})
 end
 
-function Network.DJToggleLock()
-	Network.Send("DJToggleLock", {})
+function Network.DJToggleLock(): boolean
+	return Network.Send("DJToggleLock", {})
 end
 
 -- Staff-only on the server. Client-side checks here are not authorization.
