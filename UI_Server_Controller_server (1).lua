@@ -7072,8 +7072,15 @@ end
 
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
-	local ok, err = pcall(ControllerFunctions.handleAction, player, action, payload)
-	if not ok then warn("[ClubMusic] Action handler error: " .. tostring(err)) end
+	if action == "DJToggleGlobalPlaybackSync" then
+		print("[ClubMusic][PlaybackSync Server] Toggle request received from " .. player.Name .. "; enabled=" .. tostring(typeof(payload) == "table" and payload.enabled))
+	end
+	local ok, accepted, result = pcall(ControllerFunctions.handleAction, player, action, payload)
+	if not ok then
+		warn("[ClubMusic] Action handler error: " .. tostring(accepted))
+	elseif action == "DJToggleGlobalPlaybackSync" then
+		print("[ClubMusic][PlaybackSync Server] Handler result; accepted=" .. tostring(accepted) .. "; detail=" .. tostring(result))
+	end
 end)
 remotes:SetAttribute("StartupStage", "Ready")
 remotes:SetAttribute("Ready", true)
