@@ -210,7 +210,15 @@ ContextActionService:BindActionAtPriority(BACK_ACTION, function(_, inputState)
 	return Enum.ContextActionResult.Sink
 end, false, 2900, Enum.KeyCode.ButtonB, Enum.KeyCode.Escape)
 actionEvent.Event:Connect(function(actionName: string)
-	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" or actionName=="LightingControl" then open(actionName) end
+	-- Locked feature clicks are handled by UtilityBarActions.client.lua, which
+	-- opens the matching Game Pass prompt. Do not show the control panel until
+	-- the server-replicated entitlement attribute confirms ownership.
+	if actionName=="Mount" and player:GetAttribute("HasIslandMountPass") ~= true then return end
+	if actionName=="Clone" and player:GetAttribute("HasIslandCompanionPass") ~= true then return end
+	if actionName=="LightingControl" and player:GetAttribute("HasStageClubLightingPass") ~= true then return end
+	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" or actionName=="LightingControl" then
+		open(actionName)
+	end
 end)
 gui.Destroying:Connect(function()
 	ContextActionService:UnbindAction(BACK_ACTION)
