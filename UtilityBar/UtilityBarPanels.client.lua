@@ -1,6 +1,6 @@
 --!strict
 -- UtilityBarPanels.client.lua
--- Separate control panels for Mount, Size, Clone and Aura. Install beside UtilityBarActions.client.lua.
+-- Separate control panels for Mount, Clone Companion, Lighting Control, Size and Aura.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -161,9 +161,25 @@ local function open(name: string)
 		local act=button(body,"EQUIP / UNEQUIP MOUNT",C.teal,UDim2.new(.08,0,.52,0),UDim2.new(.84,0,0,52))
 		act.Activated:Connect(function() invoke("Mount") end)
 	elseif name=="Clone" then
-		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.05,0,.12,0),Size=UDim2.new(.9,0,0,60),Font=Enum.Font.GothamMedium,Text="Create a temporary, non-interactive visual copy beside your character. It disappears after 12 seconds.",TextWrapped=true,TextColor3=C.muted,TextSize=12},body)
-		local act=button(body,"CREATE CLONE",C.gold,UDim2.new(.08,0,.52,0),UDim2.new(.84,0,0,52))
+		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.05,0,.12,0),Size=UDim2.new(.9,0,0,60),Font=Enum.Font.GothamMedium,Text="Create a temporary visual companion that mirrors your character. It is non-interactive and disappears after 12 seconds.",TextWrapped=true,TextColor3=C.muted,TextSize=12},body)
+		local act=button(body,"CREATE COMPANION",C.gold,UDim2.new(.08,0,.52,0),UDim2.new(.84,0,0,52))
 		act.Activated:Connect(function() invoke("Clone") end)
+	elseif name=="LightingControl" then
+		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.05,0,0,0),Size=UDim2.new(.9,0,0,42),Font=Enum.Font.GothamMedium,Text="Change the club and stage fixture colors. Island and outdoor lighting are not affected.",TextWrapped=true,TextColor3=C.muted,TextSize=11},body)
+		local presets = {
+			{label="OCEAN",key="Ocean",tint=C.teal},
+			{label="SUNSET",key="Sunset",tint=Color3.fromRGB(255,145,82)},
+			{label="ROYAL GOLD",key="Royal",tint=C.gold},
+			{label="TIKI",key="Tiki",tint=Color3.fromRGB(110,220,160)},
+		}
+		for i,preset in ipairs(presets) do
+			local column=(i-1)%2
+			local row=math.floor((i-1)/2)
+			local control=button(body,preset.label,preset.tint,UDim2.new(.04+column*.48,0,0,54+row*54),UDim2.new(.44,0,0,44))
+			control.Activated:Connect(function() invoke("LightingControl",{preset=preset.key}) end)
+		end
+		local off=button(body,"RESTORE ORIGINAL LIGHTING",C.gold,UDim2.new(.08,0,0,166),UDim2.new(.84,0,0,40))
+		off.Activated:Connect(function() invoke("LightingControl",{preset="Off"}) end)
 	end
 	if UserInputService.PreferredInput == Enum.PreferredInput.Gamepad or GuiService:IsTenFootInterface() then
 		task.defer(function()
@@ -194,11 +210,11 @@ ContextActionService:BindActionAtPriority(BACK_ACTION, function(_, inputState)
 	return Enum.ContextActionResult.Sink
 end, false, 2900, Enum.KeyCode.ButtonB, Enum.KeyCode.Escape)
 actionEvent.Event:Connect(function(actionName: string)
-	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" then open(actionName) end
+	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" or actionName=="LightingControl" then open(actionName) end
 end)
 gui.Destroying:Connect(function()
 	ContextActionService:UnbindAction(BACK_ACTION)
 	if panelCameraConnection then panelCameraConnection:Disconnect(); panelCameraConnection=nil end
 	playerGui:SetAttribute("UtilityActionPanelOpen",false)
 end)
-print("[Utility Bar] Separate Mount, Size, Clone and three-style Aura panels ready.")
+print("[Utility Bar] Mount, Clone Companion, Lighting Control and Aura panels ready.")
