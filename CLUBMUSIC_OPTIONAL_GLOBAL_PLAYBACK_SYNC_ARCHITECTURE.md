@@ -75,3 +75,27 @@ This is the authority/service foundation only. The main UI controller has not ye
 - Queue requests and edits remain server-local in both modes.
 - If the shared playback authority is unavailable, do not silently split a currently synchronized session into competing tracks; surface degraded status and use an explicitly defined recovery/fallback path.
 - Existing global queue behavior remains intact until the playback-only path passes validation.
+
+
+## Phase 2 implementation progress — controller integration
+
+The controller now has a separate `globalPlaybackSyncState`; it does not set or reuse `globalQueueMode`.
+
+Implemented:
+- The controller observes the optional sync setting and the service-owned elected-leader status.
+- The leader commits only current-track metadata, pause state, position, and server-time anchor to the playback-only snapshot.
+- Followers apply playback snapshots and seek/play/pause their local audio source to match.
+- Only the elected leader may advance the track, and it advances from its own server-local queue.
+- Skip, pause/resume, and restart requests from non-leader servers are authorized by the existing global DJ permission check and forwarded as playback-only command events.
+- Playback-only command events are validated on the Playback topic and are handled only by the elected leader.
+- These commands bypass the legacy durable `playbackControl` record, preventing old periodic reconciliation from replaying stale restart/pause commands.
+- Legacy global-queue mode and its queue APIs remain unchanged; legacy playback-control reconciliation is ignored while playback-only sync is active.
+- The controller observes the service's lease status instead of creating duplicate MemoryStore lease writes. The controller reconciliation loop runs every eight seconds; MessagingService events provide faster invalidation.
+
+Still outstanding:
+- Add a staff-facing Tiki Tide / ClubMusic UI setting to enable or disable optional playback sync and display leader/status information.
+- Review lease fencing under leader handoff; the current authority performs a lease check followed by snapshot revision compare-and-swap, but the check/write gap still needs stronger distributed fencing before production enablement.
+- Validate in a dedicated published test universe with multiple live servers: leader election, takeover, track transitions, pause/resume/restart/skip from a follower server, and confirmation that each server's queue remains independent.
+- Keep `playbackSyncEnabled=false` until the UI and multi-server tests are complete.
+
+This phase is code integration only; it has not been runtime-tested in Roblox Studio or a published multi-server session.
