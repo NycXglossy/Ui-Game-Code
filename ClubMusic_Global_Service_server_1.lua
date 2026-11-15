@@ -1530,15 +1530,7 @@ bindFunction("GetGlobalAudit", function(limit: any)
 end)
 bindFunction("GetGlobalOperationalStatus", function()
 	local status = {
-		Messaging = {
-			state = if not SERVICE_ENABLED then "Disabled" elseif messagingPublishFailures > 0 and messagingPublishSuccess == 0 then "Degraded" else "Active",
-			published = messagingPublishSuccess,
-			publishFailures = messagingPublishFailures,
-			received = messagingReceived,
-			rejected = messagingRejected,
-			subscriptions = table.clone(subscriptionStatus),
-			lastError = messagingLastError,
-		},
+		Messaging = getMessagingStatus(),
 		Diagnostics = if globalDiagnosticsService then globalDiagnosticsService:GetStatus() else {state = "Unavailable"},
 		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
 		Reconciliation = if globalStateReconciliationService then globalStateReconciliationService:GetStatus() else {state = "Unavailable"},
@@ -1843,6 +1835,29 @@ local function onPlaybackChanged(message)
 		end
 		globalEventBindable:Fire({kind = "PlaybackSyncModeChanged", enabled = data.enabled, senderJob = data.senderJob})
 	end
+end
+
+local function getMessagingStatus(): {[string]: any}
+	local active, total = 0, 0
+	for _, state in pairs(subscriptionStatus) do
+		total += 1
+		if state == "Active" then active += 1 end
+	end
+	local state = if not SERVICE_ENABLED then "Disabled"
+		elseif total == 0 or active == 0 then "Starting"
+		elseif active < total then "Degraded"
+		else "Healthy"
+	return {
+		state = state,
+		published = messagingPublishSuccess,
+		publishFailures = messagingPublishFailures,
+		received = messagingReceived,
+		rejected = messagingRejected,
+		activeSubscriptions = active,
+		totalSubscriptions = total,
+		subscriptions = table.clone(subscriptionStatus),
+		lastError = messagingLastError,
+	}
 end
 
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
