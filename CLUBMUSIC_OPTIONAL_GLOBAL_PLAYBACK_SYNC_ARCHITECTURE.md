@@ -93,8 +93,16 @@ Implemented:
 - Legacy global-queue mode and its queue APIs remain unchanged; legacy playback-control reconciliation is ignored while playback-only sync is active.
 - The controller observes the service's lease status instead of creating duplicate MemoryStore lease writes. The controller reconciliation loop runs every eight seconds; MessagingService events provide faster invalidation.
 
+Phase 3 implementation progress — staff setting and status UI
+
+Implemented on the feature branch:
+- Added an Owner/Co-Owner-only Cross-Server Playback section in the existing ClubMusic DJ Booth staff controls.
+- The control calls the dedicated `SetGlobalPlaybackSyncEnabled` service API; the service independently re-checks `GlobalConfig` authorization.
+- The UI shows enabled/disabled state, whether this server is the elected leader or a follower, authority readiness/error, and the local-queue isolation behavior.
+- Controller state snapshots include playback-sync status; the controller broadcasts state when the observed role/readiness changes.
+- The toggle does not alter `globalQueueMode` or any queue/request data. The setting remains default-off.
+
 Still outstanding:
-- Add a staff-facing Tiki Tide / ClubMusic UI setting to enable or disable optional playback sync and display leader/status information.
 - Review lease fencing under leader handoff; the current authority performs a lease check followed by snapshot revision compare-and-swap, but the check/write gap still needs stronger distributed fencing before production enablement.
 - Validate in a dedicated published test universe with multiple live servers: leader election, takeover, track transitions, pause/resume/restart/skip from a follower server, and confirmation that each server's queue remains independent.
 - Keep `playbackSyncEnabled=false` until the UI and multi-server tests are complete.
