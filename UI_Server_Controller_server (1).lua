@@ -75,7 +75,7 @@ local CONFIG = {
 	-- The public servers still use the shared global queue through the global service.
 	StudioUseGlobalQueue = false,
 
-	-- Keep the legacy Sound as the default until the modern AudioPlayer route is validated in Studio.
+	-- Modern AudioPlayer is the primary source; retain the legacy Sound only as a guarded recovery fallback.
 	UseModernAudioBackend = true,
 	CrossfadeDurationSeconds = 4,
 	CrossfadePrepareLeadSeconds = 14,
