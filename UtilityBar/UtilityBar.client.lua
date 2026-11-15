@@ -203,13 +203,13 @@ end
 local definitions = {
 	{key = "RefreshOutfit", label = "Refresh", compactLabel = "Reset", tint = COLORS.cyan},
 	{key = "TikiTideSettings", label = "Tiki Tide", compactLabel = "Tiki", tint = COLORS.gold},
-	{key = "Mount", label = "Mount", tint = COLORS.cyan},
+	{key = "Mount", label = "Mount", tint = COLORS.cyan, passAttribute = "HasIslandMountPass"},
 	{key = "Size", label = "Size", tint = COLORS.gold},
-	{key = "Clone", label = "Clone Companion", compactLabel = "Clone", tint = COLORS.cyan},
+	{key = "Clone", label = "Clone Companion", compactLabel = "Clone", tint = COLORS.cyan, passAttribute = "HasIslandCompanionPass"},
 	{key = "Aura", label = "Aura", tint = COLORS.gold},
 	{key = "Inventory", label = "Inventory", compactLabel = "Bag", tint = COLORS.cyan},
 	{key = "ToolShop", label = "Tool Shop", compactLabel = "Shop", tint = COLORS.gold},
-	{key = "LightingControl", label = "Lighting Control", compactLabel = "Lights", tint = COLORS.cyan},
+	{key = "LightingControl", label = "Lighting Control", compactLabel = "Lights", tint = COLORS.cyan, passAttribute = "HasStageClubLightingPass"},
 }
 
 local buttons: {TextButton} = {}
@@ -248,6 +248,30 @@ for index, definition in ipairs(definitions) do
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Font = Enum.Font.GothamBold,
 	}, button)
+	local lockBadge: TextLabel? = nil
+	if definition.passAttribute then
+		lockBadge = make("TextLabel", {
+			Name = "PassLockBadge",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -3, 0, 2),
+			Size = UDim2.fromOffset(25, 10),
+			BackgroundColor3 = COLORS.background,
+			BackgroundTransparency = 0.08,
+			BorderSizePixel = 0,
+			Text = "LOCK",
+			TextColor3 = COLORS.gold,
+			TextSize = 6,
+			Font = Enum.Font.GothamBold,
+			ZIndex = 6,
+		}, button) :: TextLabel
+		round(lockBadge, 5)
+		lockBadge.Visible = player:GetAttribute(definition.passAttribute) ~= true
+		player:GetAttributeChangedSignal(definition.passAttribute):Connect(function()
+			if lockBadge and lockBadge.Parent then
+				lockBadge.Visible = player:GetAttribute(definition.passAttribute) ~= true
+			end
+		end)
+	end
 	local focus = make("UIStroke", {Name = "ControllerFocus", Color = COLORS.gold, Thickness = 2, Transparency = 1}, button) :: UIStroke
 	button.SelectionGained:Connect(function()
 		focus.Transparency = 0
@@ -317,6 +341,11 @@ local function updateSizing()
 		if icon and icon:IsA("Frame") then
 			icon.Position = UDim2.new(0.5, 0, 0, if compactTouch then 1 else (if shortScreen then 3 else 5))
 			icon.Size = UDim2.fromOffset(if compactTouch then 14 else (if desktop then 22 else (if veryNarrow then 23 else 27)), if compactTouch then 14 else (if desktop then 20 else (if shortScreen then 21 else 25)))
+		end
+		local lockBadge = button:FindFirstChild("PassLockBadge")
+		if lockBadge and lockBadge:IsA("TextLabel") then
+			lockBadge.Size = UDim2.fromOffset(if compactTouch then 17 else 25, if compactTouch then 8 else 10)
+			lockBadge.TextSize = if compactTouch then 4 else 6
 		end
 		local label = button:FindFirstChild("Label")
 		if label and label:IsA("TextLabel") then
