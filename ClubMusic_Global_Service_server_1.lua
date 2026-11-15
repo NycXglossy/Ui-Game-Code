@@ -1384,7 +1384,17 @@ authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
 		warn("[ClubMusic][PlaybackSync Auth] Authorization check denied because the service instance is missing.")
 		return false
 	end
-	local ok, allowed = if globalSafeCall then globalSafeCall:Run("GlobalAuthorization", "Check", globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission) else pcall(globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission)
+	-- Use a statement rather than a conditional expression here: the authorization
+	-- adapter and SafeCall both return multiple values, and a Luau if-expression
+	-- can collapse those returns, leaving allowed=nil even when Check returned true.
+	local ok, allowed
+	if globalSafeCall then
+		ok, allowed = globalSafeCall:Run("GlobalAuthorization", "Check",
+			globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission)
+	else
+		ok, allowed = pcall(globalAuthorizationService.Check,
+			globalAuthorizationService, actorUserId, permission)
+	end
 	if not ok then
 		warn("[ClubMusic][PlaybackSync Auth] Authorization Check threw an error: " .. string.sub(tostring(allowed), 1, 180))
 		return false
