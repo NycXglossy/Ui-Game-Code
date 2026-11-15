@@ -7208,10 +7208,14 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Playe
 	task.spawn(function()
 		if isNewFeaturePass then ControllerFunctions.refreshPersonalPasses(player) end
 		if isMembershipPass then ControllerFunctions.refreshVip(player) end
-		ControllerFunctions.applyVipAttribute(player)
-		ControllerFunctions.syncTitleTagUnlocks(player)
-		local tierName = if ControllerFunctions.hasTikiTideAccess(player) then "Tiki Tide" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
-		notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
+		if isMembershipPass then
+			ControllerFunctions.applyVipAttribute(player)
+			ControllerFunctions.syncTitleTagUnlocks(player)
+			local tierName = if ControllerFunctions.hasTikiTideAccess(player) then "Tiki Tide" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
+			notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
+		else
+			notify(player, "Your new Game Pass entitlement is active.", "ok")
+		end
 		publishState(nil)
 	end)
 end)
