@@ -1662,7 +1662,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 			local readyDeadline = os.clock() + 8
 			local ready = false
 			repeat
-				if not isCurrentStart() then error("Track changed while the modern decoder was loading.") end
+				if not isCurrentStart() then return "stale" end
 				local readiness = candidate:GetReadinessSnapshot()
 				ready = typeof(readiness) == "table"
 					and readiness.ready == true
@@ -1679,7 +1679,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 			local playDeadline = os.clock() + 2
 			local playing = false
 			repeat
-				if not isCurrentStart() then error("Track changed while modern playback was starting.") end
+				if not isCurrentStart() then return "stale" end
 				playing = candidate:IsPlaying() == true
 				if not playing then task.wait(0.05) end
 			until playing or os.clock() >= playDeadline
@@ -1693,7 +1693,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 				local paused, pauseError = candidate:Pause()
 				if paused ~= true then error(tostring(pauseError or "Modern AudioPlayer could not preserve pause state.")) end
 			end
-			if not isCurrentStart() then error("Track changed before modern startup could commit.") end
+			if not isCurrentStart() then return "stale" end
 			local gainOk, gainError = candidate:SetGain(1)
 			if gainOk ~= true then error(tostring(gainError or "Modern AudioPlayer gain could not be enabled.")) end
 
@@ -1714,7 +1714,17 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 			print("[ClubMusic][AudioBackend] Modern AudioPlayer started as the primary track source.")
 		end)
 		discardCandidate()
-		if not ok then
+		if ok and failure == "stale" then
+			-- Expected cancellation: never warn or invoke legacy recovery for an
+			-- obsolete track. If only the same track's playhead/pause revision
+			-- changed, retry with the latest controller state.
+			if modernAudioStartToken == startToken
+				and activeAudioSource.kind == "Sound"
+				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
+				and audioSourceRevision ~= startRevision then
+				task.defer(ControllerFunctions.startServerMusic, soundId)
+			end
+		elseif not ok then
 			-- A seek/pause or other controller action may legitimately revise the
 			-- active Sound while the candidate is loading. Retry the same current
 			-- track with the latest playhead/pause state instead of falling silent.
