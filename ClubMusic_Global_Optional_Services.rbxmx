@@ -260,6 +260,7 @@ local function sanitizeSnapshot(raw: any): {[string]: any}
 		anchorTime = Workspace:GetServerTimeNow(),
 		leaderJobId = "",
 		leaderToken = "",
+		leaderGeneration = 0,
 		updatedAt = os.time(),
 	}
 	if typeof(raw) ~= "table" or raw.schemaVersion ~= 1 then return state end
@@ -271,6 +272,7 @@ local function sanitizeSnapshot(raw: any): {[string]: any}
 	state.anchorTime = if finite(raw.anchorTime) then raw.anchorTime else Workspace:GetServerTimeNow()
 	state.leaderJobId = if typeof(raw.leaderJobId) == "string" then string.sub(raw.leaderJobId, 1, 128) else ""
 	state.leaderToken = if typeof(raw.leaderToken) == "string" then string.sub(raw.leaderToken, 1, 64) else ""
+	state.leaderGeneration = if finite(raw.leaderGeneration) then math.max(0, math.floor(raw.leaderGeneration)) else 0
 	state.updatedAt = if finite(raw.updatedAt) then math.max(0, math.floor(raw.updatedAt)) else os.time()
 	return state
 end
@@ -287,6 +289,9 @@ function PlaybackAuthority.new(dependencies: {[string]: any})
 		leaseMap = nil,
 		leaseToken = nil,
 		leaseExpiresAt = 0,
+		leaderGeneration = nil,
+		leadershipReady = false,
+		lastError = nil,
 		started = false,
 	}, PlaybackAuthority)
 end
@@ -336,7 +341,37 @@ function PlaybackAuthority:AcquireOrRenewLeadership(): (boolean, {[string]: any}
 	end
 	self.leaseToken = proposedToken
 	self.leaseExpiresAt = value.expiresAt
-	return true, {jobId = self.jobId, token = proposedToken, expiresAt = value.expiresAt}, nil
+	self.leadershipReady = false
+
+	-- Claim a monotonically increasing generation in the same durable record
+	-- that playback commits update. Once this claim wins, older generations
+	-- can no longer commit, even if an old server wakes after a long stall.
+	local claimOk, claimed = pcall(function()
+		return self.store:UpdateAsync(SNAPSHOT_KEY, function(old)
+			local state = sanitizeSnapshot(old)
+			state.leaderGeneration += 1
+			state.leaderJobId = self.jobId
+			state.leaderToken = proposedToken
+			state.revision += 1
+			state.updatedAt = os.time()
+			return state
+		end)
+	end)
+	if not claimOk or typeof(claimed) ~= "table" then
+		self.lastError = tostring(claimed)
+		return false, nil, "Could not claim playback fencing generation: " .. tostring(claimed)
+	end
+	local currentOk, currentLease = self:GetLeader()
+	if not currentOk or not currentLease or currentLease.jobId ~= self.jobId or currentLease.token ~= proposedToken then
+		self.leaseToken = nil
+		self.leaseExpiresAt = 0
+		self.leaderGeneration = nil
+		return false, currentLease, "Leadership lease changed during fencing claim."
+	end
+	self.leaderGeneration = math.floor(claimed.leaderGeneration or 0)
+	self.leadershipReady = self.leaderGeneration > 0
+	self.lastError = nil
+	return self.leadershipReady, {jobId = self.jobId, token = proposedToken, generation = self.leaderGeneration, expiresAt = value.expiresAt}, if self.leadershipReady then nil else "Fencing generation was not established."
 end
 
 function PlaybackAuthority:ReleaseLeadership(): boolean
@@ -348,7 +383,7 @@ function PlaybackAuthority:ReleaseLeadership(): boolean
 			return old
 		end, LEASE_TTL)
 	end)
-	if ok then self.leaseToken = nil; self.leaseExpiresAt = 0 end
+	if ok then self.leaseToken = nil; self.leaseExpiresAt = 0; self.leaderGeneration = nil; self.leadershipReady = false end
 	return ok
 end
 
@@ -360,7 +395,7 @@ function PlaybackAuthority:GetSnapshot(): (boolean, {[string]: any}?, string?)
 end
 
 function PlaybackAuthority:CommitPlayback(raw: any, expectedRevision: any): (boolean, {[string]: any}?, string?)
-	if not self.leaseToken then return false, nil, "This server does not hold the playback leader lease." end
+	if not self.leaseToken or not self.leadershipReady or not self.leaderGeneration then return false, nil, "This server has no active fenced playback leadership." end
 	if not finite(expectedRevision) or expectedRevision < 0 then return false, nil, "Invalid playback revision." end
 	if typeof(raw) ~= "table" then return false, nil, "Invalid playback snapshot." end
 	local track = sanitizeTrack(raw.current)
@@ -381,7 +416,8 @@ function PlaybackAuthority:CommitPlayback(raw: any, expectedRevision: any): (boo
 			accepted = false
 			local state = sanitizeSnapshot(old)
 			if state.revision ~= math.floor(expectedRevision) then return old end
-			-- Revision compare-and-swap fences any concurrent/stale writer after a peer commits.
+			if state.leaderGeneration ~= self.leaderGeneration or state.leaderToken ~= token or state.leaderJobId ~= self.jobId then return old end
+			-- The durable generation/token check fences every prior leader after takeover.
 			state.revision += 1
 			state.trackRevision = if finite(raw.trackRevision) then math.max(state.trackRevision, math.floor(raw.trackRevision)) else state.trackRevision
 			state.current = track
@@ -406,7 +442,10 @@ function PlaybackAuthority:GetStatus(): {[string]: any}
 	local leaderOk, leader, leaderError = self:GetLeader()
 	return {
 		enabled = self.started,
-		isLeader = self.leaseToken ~= nil and leaderOk and leader ~= nil and leader.jobId == self.jobId and leader.token == self.leaseToken,
+		isLeader = self.leadershipReady == true and self.leaseToken ~= nil and leaderOk and leader ~= nil and leader.jobId == self.jobId and leader.token == self.leaseToken,
+		leadershipReady = self.leadershipReady == true,
+		leaderGeneration = self.leaderGeneration,
+		lastError = self.lastError,
 		leaderJobId = if leader then leader.jobId else nil,
 		leaseExpiresAt = if leader then leader.expiresAt else nil,
 		error = leaderError,
