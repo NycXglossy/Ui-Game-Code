@@ -728,10 +728,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local previewFader: AudioFader? = nil
 	local previewGraph: Folder? = nil
 	local playerAudioPreferences: any = nil
+	local playerMusicGroup: SoundGroup? = nil
+	local musicGroupCandidate = SoundService:FindFirstChild("MusicGroup")
+	if musicGroupCandidate and musicGroupCandidate:IsA("SoundGroup") then
+		playerMusicGroup = musicGroupCandidate
+	end
 
 	-- Modern server decks replicate their synchronized MusicFader. The client
 	-- preference module routes each deck through a private AudioFader and
 	-- AudioDeviceOutput, so this player's gain never changes another listener.
+	-- MusicGroup is adjusted locally only as a temporary legacy-Sound fallback.
 	-- The same gain is mirrored to the local staff-preview fader.
 	local preferencesFolder = ReplicatedStorage:FindFirstChild("ClubMusicClientAudioModules")
 	local preferencesModule = preferencesFolder and preferencesFolder:FindFirstChild("ClubMusicPlayerPreferences")
@@ -740,8 +746,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if moduleOk and typeof(preferencesClass) == "table" and typeof(preferencesClass.new) == "function" then
 			local preferenceOk, preferenceInstance = pcall(preferencesClass.new, {
 				SetLocalGain = function(gain: number): boolean
+					local normalized = math.clamp(gain, 0, 1)
+					if playerMusicGroup and playerMusicGroup.Parent then
+						playerMusicGroup.Volume = normalized
+					end
 					if previewFader and previewFader.Parent then
-						previewFader.Volume = math.clamp(gain, 0, 1)
+						previewFader.Volume = normalized
 					end
 					return true
 				end,
