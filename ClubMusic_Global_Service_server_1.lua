@@ -1305,21 +1305,39 @@ local globalAuthorizationServiceResolver = function(actorUserId: any, permission
 	return allowed == true
 end
 
-globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {
-	isResolverAvailable = function()
-		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-		local available = resolver ~= nil and resolver:IsA("BindableFunction") and resolver.Parent == ServerStorage
-		print("[ClubMusic][PlaybackSync Auth] Resolver availability checked; available=" .. tostring(available)
-			.. "; class=" .. tostring(if resolver then resolver.ClassName else "missing"))
-		return available
-	end,
-	resolvePermission = globalAuthorizationServiceResolver,
-}, {"Start", "GetStatus", "Check"})
+-- Authorization is local security infrastructure, not a cross-server feature.
+-- Load the separately installed ModuleScript even when SERVICE_ENABLED is false
+-- (including isolated Studio sessions).
+local authorizationModule = loadOptionalGlobalModule("ClubMusic_Global_Authorization_Service")
+if authorizationModule then
+	local createOk, instance = pcall(function()
+		return authorizationModule.new({
+			isResolverAvailable = function()
+				local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
+				local available = resolver ~= nil and resolver:IsA("BindableFunction")
+					and resolver.Parent == ServerStorage
+				print("[ClubMusic][PlaybackSync Auth] Resolver availability checked; available="
+					.. tostring(available) .. "; class=" .. tostring(if resolver then resolver.ClassName else "missing"))
+				return available
+			end,
+			resolvePermission = globalAuthorizationServiceResolver,
+		})
+	end)
+	if createOk and typeof(instance) == "table"
+		and type(instance.Start) == "function"
+		and type(instance.GetStatus) == "function"
+		and type(instance.Check) == "function" then
+		globalAuthorizationService = instance
+	else
+		warn("[ClubMusic][PlaybackSync Auth] Separate authorization ModuleScript could not be constructed: "
+			.. tostring(instance))
+	end
+else
+	warn("[ClubMusic][PlaybackSync Auth] Separate authorization ModuleScript was not found under ServerStorage.")
+end
 if not globalAuthorizationService then
-	-- Authorization is a local security boundary, not a cross-server feature.
-	-- Keep it available even when optional global services are absent or Studio
-	-- is isolated. The resolver remains mandatory and all permission checks fail
-	-- closed unless the controller confirms the actor's live Owner/Co-Owner rank.
+	-- Keep a strict built-in fallback if the separately installed module is absent
+	-- or malformed. The trusted controller resolver remains mandatory.
 	local allowedPermissions = {
 		GlobalDJ = true,
 		GlobalModeration = true,
@@ -1354,7 +1372,7 @@ if not globalAuthorizationService then
 			return {state = "Fallback", checks = self.checks, denied = self.denied, default = "Deny"}
 		end,
 	}
-	warn("[ClubMusic][PlaybackSync Auth] Optional authorization ModuleScript unavailable; using built-in fail-closed adapter.")
+	warn("[ClubMusic][PlaybackSync Auth] Using built-in fail-closed authorization adapter.")
 end
 local authStartOk, authStartResult = pcall(globalAuthorizationService.Start, globalAuthorizationService)
 print("[ClubMusic][PlaybackSync Auth] Authorization service loaded; startOk=" .. tostring(authStartOk)
