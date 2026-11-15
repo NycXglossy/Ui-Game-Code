@@ -1300,6 +1300,8 @@ globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Serv
 				else recovery.state == "Healthy" or recovery.state == "Disabled",
 			Registry = if registry == nil or registry.state == "Starting" then
 				{pending = true, detail = "Server registry is waiting for its first MemoryStore heartbeat."}
+				elseif registry.capacityLimited == true or registry.state == "CapacityLimited" then
+					{healthy = true, detail = "Optional server listing is paused at the MemoryStore total memory limit."}
 				else registry.state == "Healthy" or registry.state == "Disabled",
 			SyncHeartbeat = if sync.state == "Starting" or sync.state == "Unverified" then
 				{pending = true, detail = sync.detail}
