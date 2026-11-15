@@ -124,14 +124,14 @@ for _, genre in ipairs(GENRES) do
 end
 
 local SHOP = {
-	{name="Custom Glowsticks",desc="Dual-wield glowsticks synced to stage lights.",price=75,rarity="Common",kind="Product",id=0},
-	{name="Tiki Mask",desc="Hand-carved mask with glowing ember eyes.",price=250,rarity="Rare",kind="Product",id=0},
-	{name="Neon Aura Effect",desc="A magenta-cyan aura that pulses on every beat.",price=600,rarity="Epic",kind="Product",id=0},
+	{name="2x Personal XP Pass",desc="Permanently doubles your personal XP. Stacks with active global XP boosts.",price=149,rarity="Rare",kind="GamePass",passKey="personalXP2x",ownedAttribute="HasPersonalXP2xPass",id=2088891595},
+	{name="4x Personal XP Pass",desc="Permanently quadruples your personal XP. Stacks with active global XP boosts.",price=399,rarity="Epic",kind="GamePass",passKey="personalXP4x",ownedAttribute="HasPersonalXP4xPass",id=2089053637},
+	{name="Island Mount Pass",desc="Unlock your permanent rideable island mount.",price=299,rarity="Legendary",kind="GamePass",passKey="mount",ownedAttribute="HasIslandMountPass",id=2087955619},
 	{name="VIP Backstage Pass",desc="Backstage lounge, priority song requests, 4 queue slots and 3s request cooldown.",price=1500,rarity="Legendary",kind="GamePass",passKey="vip",id=2089785323},
 	{name="VVIP Ocean Crown Pass",desc="Everything in VIP plus 6 queue slots, 2s cooldown and higher request priority.",price=2500,rarity="Mythic",kind="GamePass",passKey="vvip",id=2089263330},
 	{name="Tiki Tide Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="tikiTide",id=2087955353},
-	{name="Neon Flower Lei",desc="Glowing hibiscus lei with petal trails.",price=150,rarity="Rare",kind="Product",id=0},
-	{name="LED Party Shades",desc="Visualizer lenses that react to the current track.",price=320,rarity="Epic",kind="Product",id=0},
+	{name="Island Companion Pass",desc="Unlock your exclusive tropical companion and an additional companion equip slot.",price=249,rarity="Epic",kind="GamePass",passKey="companion",ownedAttribute="HasIslandCompanionPass",id=2088585676},
+	{name="Stage & Club Lighting Pass",desc="Unlock the Stage & Club Lighting Controller and customize the performance atmosphere.",price=499,rarity="Mythic",kind="GamePass",passKey="stageClubLighting",ownedAttribute="HasStageClubLightingPass",id=2088315619},
 }
 -- Donation products are configured with live Creator Dashboard Developer Product IDs.
 local DONATIONS: {any} = {
@@ -3764,7 +3764,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					itemId = tonumber(state.vipGamePassId) or 0
 				end
 			end
-			local purchaseButton = actionButton(shopCard, if itemId > 0 then "GET" else "COMING SOON",
+			local alreadyOwned = item.kind == "GamePass" and item.ownedAttribute ~= nil
+				and player:GetAttribute(item.ownedAttribute) == true
+			local purchaseButton = actionButton(shopCard, if alreadyOwned then "OWNED" elseif itemId > 0 then "GET" else "COMING SOON",
 				UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
 					if itemId <= 0 then notify("This item is not configured for purchase yet.", C.Red); return end
 					if item.kind == "GamePass" then
@@ -3775,7 +3777,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 						MarketplaceService:PromptProductPurchase(player, itemId)
 					end
 				end, C.Purple)
-			if itemId <= 0 then
+			if itemId <= 0 or alreadyOwned then
 				purchaseButton.Active = false
 				purchaseButton.AutoButtonColor = false
 				purchaseButton.BackgroundTransparency = 0.25
