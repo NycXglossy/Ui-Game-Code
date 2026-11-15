@@ -1,7 +1,8 @@
 -- ClubMusic audio ModuleScript installer
 -- Run this entire script once in Roblox Studio's Command Bar (View > Command Bar).
 -- Requires Game Settings > Security > Allow HTTP Requests.
--- This installs source modules only; it does NOT switch the live playback backend.
+-- This installs source modules only; it does NOT update the controller or renderer scripts.
+-- Install all matching branch revisions together in a stopped test place before starting playback.
 
 local HttpService = game:GetService("HttpService")
 local ServerStorage = game:GetService("ServerStorage")
