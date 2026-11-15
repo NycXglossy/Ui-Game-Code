@@ -77,7 +77,7 @@ Not executed from the repository connection. Required release checklist:
 
 ## Current release decision
 
-- Source changes committed: guarded modern migration, EQ graph/profile support, spatial graph hardening, and local profile validation.
-- Modern recovery now rebuilds a replacement AudioPlayer after an in-place decoder reload failure; client volume now routes through per-player AudioFaders and outputs.
-- Not claimed complete: automated failure-injection validation, multi-client volume independence, client audio routing on all devices, and spatial venue behavior.
-- Keep the legacy Sound and MusicGroup only as temporary compatibility objects until the modern routing and recovery gates pass.
+- Source changes committed: guarded modern migration, EQ graph/profile support, spatial graph hardening, local profile validation, replacement AudioPlayer recovery, and per-player output routing.
+- Studio validation: the user confirmed the modern recovery and independent client-volume updates are functional.
+- The controller now publishes `SoundService.ClubMusicAudioSourceKind` as `AudioPlayer` or `Sound` whenever source ownership is rebound. The renderer changes `MusicGroup.Volume` only while the guarded legacy Sound fallback is authoritative; modern playback continues to use private `PlayerMusicGain` faders.
+- Keep `ServerMusicSound` and `MusicGroup` as guarded fallback compatibility objects for now. Remaining Sound-based startup, transition, and recovery branches still depend on them; retire them only after a separate modern-only startup/fallback migration and regression pass.
