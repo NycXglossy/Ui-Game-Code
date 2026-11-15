@@ -5673,9 +5673,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			return false, "Global playback sync settings are restricted to the Owner and Co-Owner."
 		end
 		if typeof(payload.enabled) ~= "boolean" then return false, "Choose whether global playback sync should be enabled." end
-		if payload.enabled == true and globalQueueMode then
-			return false, "Disable the existing shared global queue mode before enabling playback-only sync. The two modes cannot run together."
-		end
 		local callOk, accepted, result = ControllerFunctions.globalInvoke(
 			"SetGlobalPlaybackSyncEnabled", payload.enabled, player.UserId
 		)
@@ -5683,6 +5680,11 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			local reason = tostring(result or accepted or "The global playback setting could not be saved.")
 			notify(player, reason, "warn")
 			return false, reason
+		end
+		-- The global service disables legacy shared-queue mode when playback-only
+		-- sync is enabled. Stop using its shared snapshot on this server immediately.
+		if payload.enabled == true then
+			globalQueueMode = false
 		end
 		local syncState = ControllerFunctions.globalPlaybackSyncState
 		syncState.enabled = payload.enabled
