@@ -6347,7 +6347,32 @@ authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): bo
 	if not requiredLevel then return false end
 	local player = Players:GetPlayerByUserId(math.floor(actorUserId))
 	if not player or player.Parent ~= Players then return false end
-	return ControllerFunctions.getLevel(player) >= requiredLevel
+
+	-- Prefer the server-verified rank cache, but do not let a stale/empty cache
+	-- in this resolver instance reject a player whose live group rank is valid.
+	local cachedLevel = ControllerFunctions.getLevel(player)
+	if cachedLevel >= requiredLevel then return true end
+
+	-- This path runs only for explicit privileged operations, never in a heartbeat.
+	-- computeRank rechecks configured owner IDs and the Roblox group rank directly;
+	-- a failed group lookup safely returns Guest and remains denied.
+	local rankOk, rankName, liveLevel = pcall(ControllerFunctions.computeRank, player)
+	if not rankOk or typeof(liveLevel) ~= "number" then
+		warn("[ClubMusic][Authorization] Rank refresh failed for permission=" .. permission
+			.. "; cachedLevel=" .. tostring(cachedLevel))
+		return false
+	end
+	if liveLevel < requiredLevel then
+		warn("[ClubMusic][Authorization] Permission denied; permission=" .. permission
+			.. "; cachedLevel=" .. tostring(cachedLevel)
+			.. "; verifiedLevel=" .. tostring(liveLevel)
+			.. "; rank=" .. tostring(rankName))
+		return false
+	end
+
+	-- Refresh this controller instance's cache after the successful live check.
+	rankCache[player.UserId] = {rank = rankName, level = liveLevel}
+	return true
 end
 
 -- Kohl's Admin security bridge helpers. Global security operations are checked by
