@@ -4001,13 +4001,14 @@ task.spawn(function()
 		if enabledOk and enabledStatus == true and typeof(status) == "table"
 			and status.syncEnabled == true and not globalQueueMode then
 			syncState.enabled = true
+			local wasLeader = syncState.isLeader == true
 			local leaderOk, acquired, leader = ControllerFunctions.globalInvoke("AcquireGlobalPlaybackLeadership")
 			syncState.isLeader = leaderOk == true and acquired == true
 			if syncState.isLeader then
 				local snapshotOk, snapshotRead, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
 				if snapshotOk and snapshotRead == true and typeof(snapshot) == "table" then
 					if typeof(snapshot.current) == "table" then
-						if nowPlaying.trackId ~= snapshot.current.trackId then
+						if not wasLeader or nowPlaying.trackId ~= snapshot.current.trackId then
 							ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot, true)
 						end
 						syncState.revision = tonumber(snapshot.revision) or syncState.revision
@@ -5707,7 +5708,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, reason, "warn")
 			return false, reason
 		end
-		if not globalQueueMode then ControllerFunctions.globalInvoke("PublishDJCommand", "Skip", {}, player.UserId) end
+		if not globalQueueMode and ControllerFunctions.globalPlaybackSyncState.enabled ~= true then
+			ControllerFunctions.globalInvoke("PublishDJCommand", "Skip", {}, player.UserId)
+		end
 		notify(player, "Track skipped.", "ok")
 		-- advance() commits through setNowPlaying(), which already publishes the
 		-- immediate playback snapshot. Avoid rebuilding and broadcasting the
