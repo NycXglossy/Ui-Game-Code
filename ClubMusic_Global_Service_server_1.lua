@@ -1026,7 +1026,7 @@ local sharedDependencies = {
 	jobId = JOB_ID,
 	guid = function() return HttpService:GenerateGUID(false) end,
 }
-globalConfigService = createOperationalService("ClubMusic_Global_Config_Service", sharedDependencies, {"Start", "GetStatus", "Get", "Set"})
+globalConfigService = createOperationalService("ClubMusic_Global_Config_Service", sharedDependencies, {"Start", "GetStatus", "Get", "Set", "SetLocal"})
 
 if globalConfigService then globalConfigService:Start() end
 
