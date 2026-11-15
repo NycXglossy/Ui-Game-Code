@@ -1259,6 +1259,23 @@ if globalWatchdogService then
 end
 
 -- Security services remain independent; authorization denies by default until a trusted resolver exists.
+local globalAuthorizationServiceResolver = function(actorUserId: any, permission: any): boolean
+	local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
+	if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then
+		warn("[ClubMusic][PlaybackSync Auth] Resolver dependency could not find the expected ServerStorage BindableFunction.")
+		return false
+	end
+	local ok, allowed = pcall(function() return resolver:Invoke(actorUserId, permission) end)
+	if not ok then
+		warn("[ClubMusic][PlaybackSync Auth] Resolver Invoke failed; actor=" .. tostring(actorUserId)
+			.. "; permission=" .. tostring(permission) .. "; error=" .. string.sub(tostring(allowed), 1, 180))
+		return false
+	end
+	print("[ClubMusic][PlaybackSync Auth] Resolver returned; actor=" .. tostring(actorUserId)
+		.. "; permission=" .. tostring(permission) .. "; allowed=" .. tostring(allowed))
+	return allowed == true
+end
+
 globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {
 	isResolverAvailable = function()
 		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
@@ -1267,22 +1284,7 @@ globalAuthorizationService = createOperationalService("ClubMusic_Global_Authoriz
 			.. "; class=" .. tostring(if resolver then resolver.ClassName else "missing"))
 		return available
 	end,
-	globalAuthorizationServiceResolver = function(actorUserId, permission)
-		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-		if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then
-			warn("[ClubMusic][PlaybackSync Auth] Resolver dependency could not find the expected ServerStorage BindableFunction.")
-			return false
-		end
-		local ok, allowed = pcall(function() return resolver:Invoke(actorUserId, permission) end)
-		if not ok then
-			warn("[ClubMusic][PlaybackSync Auth] Resolver Invoke failed; actor=" .. tostring(actorUserId)
-				.. "; permission=" .. tostring(permission) .. "; error=" .. string.sub(tostring(allowed), 1, 180))
-			return false
-		end
-		print("[ClubMusic][PlaybackSync Auth] Resolver returned; actor=" .. tostring(actorUserId)
-			.. "; permission=" .. tostring(permission) .. "; allowed=" .. tostring(allowed))
-		return allowed == true
-	end,
+	resolvePermission = globalAuthorizationServiceResolver,
 }, {"Start", "GetStatus", "Check"})
 if not globalAuthorizationService then
 	-- Authorization is a local security boundary, not a cross-server feature.
