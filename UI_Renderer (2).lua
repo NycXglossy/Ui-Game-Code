@@ -1684,8 +1684,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if state.blocked == true then
 			return true, "Staff disabled your song requests."
 		end
-		if state.locked == true and perm() < 1 then
-			return true, "Song requests are locked right now."
+		if state.locked == true and perm() < 3 then
+			return true, "DJ Control Mode is active. Normal song requests are temporarily locked."
 		end
 		return false, ""
 	end
@@ -2443,8 +2443,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			if item.vip == true then requestedBy ..= "  •  VIP PRIORITY" end
 			-- Narrow staff queue rows move moderation buttons below the track
 			-- metadata instead of squeezing the title into a tiny center column.
-			local compactStaffRow = staffLevel >= 1 and content.AbsoluteSize.X < 480
-			local actionSpace = if staffLevel >= 1 and not compactStaffRow then 100 else 12
+			local compactStaffRow = staffLevel >= 3 and content.AbsoluteSize.X < 480
+			local actionSpace = if staffLevel >= 3 and not compactStaffRow then 100 else 12
 			local row = card(if compactStaffRow then 84 else 62)
 			label(row, string.format("%02d", index), UDim2.fromOffset(8, 21), UDim2.fromOffset(27, 18), C.Gold, 11, true)
 			-- Prefer artwork supplied by the live queue item, then fall back to the
