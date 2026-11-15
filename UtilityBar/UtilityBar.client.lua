@@ -190,9 +190,12 @@ local function buildUtilityIcon(parent: Instance, kind: string, color: Color3): 
 		part("ShopHandle",.5,.17,.34,.12,0)
 		part("ShopWheelA",.32,.88,.14,.14,0)
 		part("ShopWheelB",.68,.88,.14,.14,0)
-	elseif kind == "Accessories" then
-		outline("AccessoryBand",.5,.52,.68,.62)
-		part("AccessoryGem",.5,.18,.22,.22,0)
+	elseif kind == "LightingControl" then
+		part("LightStand",.5,.52,.10,.68,0)
+		part("LightTop",.5,.20,.66,.14,0)
+		part("LightBeamA",.28,.48,.12,.48,28)
+		part("LightBeamB",.72,.48,.12,.48,-28)
+		part("LightBeamC",.5,.74,.12,.30,0)
 	end
 	return root
 end
@@ -202,11 +205,11 @@ local definitions = {
 	{key = "TikiTideSettings", label = "Tiki Tide", compactLabel = "Tiki", tint = COLORS.gold},
 	{key = "Mount", label = "Mount", tint = COLORS.cyan},
 	{key = "Size", label = "Size", tint = COLORS.gold},
-	{key = "Clone", label = "Clone", tint = COLORS.cyan},
+	{key = "Clone", label = "Clone Companion", compactLabel = "Clone", tint = COLORS.cyan},
 	{key = "Aura", label = "Aura", tint = COLORS.gold},
 	{key = "Inventory", label = "Inventory", compactLabel = "Bag", tint = COLORS.cyan},
 	{key = "ToolShop", label = "Tool Shop", compactLabel = "Shop", tint = COLORS.gold},
-	{key = "Accessories", label = "Accessories", compactLabel = "Acc.", tint = COLORS.cyan},
+	{key = "LightingControl", label = "Lighting Control", compactLabel = "Lights", tint = COLORS.cyan},
 }
 
 local buttons: {TextButton} = {}
@@ -414,4 +417,4 @@ gui.Destroying:Connect(function()
 	end
 end)
 
-print("[Utility Bar] Separate nine-action launcher loaded.")
+print("[Utility Bar] Separate nine-action launcher with pass-gated Lighting Control loaded.")
