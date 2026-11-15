@@ -5702,6 +5702,15 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if trustedAdminCommand == true and transitionInProgress then
 			return true, "A track transition is already being processed; no second skip was sent."
 		end
+		if ControllerFunctions.globalPlaybackSyncState.enabled == true
+			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
+			local sent, accepted = ControllerFunctions.globalInvoke("PublishDJCommand", "Skip", {}, player.UserId)
+			if sent and accepted == true then
+				notify(player, "Skip request sent to the global playback leader.", "ok")
+				return true, "Skip request sent to the global playback leader."
+			end
+			return false, "The global playback leader could not be reached. Your local queue was not changed."
+		end
 		local advanced, transitionError = ControllerFunctions.advance()
 		if not advanced then
 			local reason = tostring(transitionError or "The shared track transition could not be confirmed.")
@@ -5725,6 +5734,16 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
+		if ControllerFunctions.globalPlaybackSyncState.enabled == true
+			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
+			local sent, accepted = ControllerFunctions.globalInvoke(
+				"PublishDJCommand", "SetPlaybackPaused", {paused = desiredPaused}, player.UserId
+			)
+			if sent and accepted == true then
+				return true, if desiredPaused then "Pause request sent to the global playback leader." else "Resume request sent to the global playback leader."
+			end
+			return false, "The global playback leader could not be reached. Playback was not changed."
+		end
 		playbackControlRequestId += 1
 		local controlRequestId = playbackControlRequestId
 		local expectedTrackRevision = globalTrackRevision
@@ -5800,6 +5819,12 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			return false, "Global playback controls are currently hosted by the elected DJ server. Your server's request queue remains local."
 		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
+		if ControllerFunctions.globalPlaybackSyncState.enabled == true
+			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
+			local sent, accepted = ControllerFunctions.globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
+			if sent and accepted == true then return true, "Restart request sent to the global playback leader." end
+			return false, "The global playback leader could not be reached. Playback was not changed."
+		end
 		playbackControlRequestId += 1
 		local controlRequestId = playbackControlRequestId
 		local expectedTrackRevision = globalTrackRevision
@@ -7366,6 +7391,35 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		-- MessagingService may echo a command to its originating server. The local
 		-- action has already been applied there, so ignore that echo to avoid double skips.
 		if message.senderJob == game.JobId then return end
+		if ControllerFunctions.globalPlaybackSyncState.enabled == true then
+			-- In playback-only mode, DJ commands are routed to the elected leader;
+			-- queue mutations remain local and are never broadcast.
+			if ControllerFunctions.globalPlaybackSyncState.isLeader == true then
+				if message.command == "Skip" then
+					ControllerFunctions.advance()
+					ControllerFunctions.broadcast("The global playback leader skipped the current track.", "info")
+				elseif message.command == "SetPlaybackPaused" and typeof(message.payload) == "table"
+					and typeof(message.payload.paused) == "boolean" then
+					ControllerFunctions.cancelAudioTransition("global-playback-control")
+					local audio = ControllerFunctions.getAudioSnapshot()
+					if message.payload.paused then
+						local ok, _, position = pcall(ControllerFunctions.pauseAudio)
+						if ok and ControllerFunctions.isFiniteNumber(position) then nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration) end
+					else
+						pcall(ControllerFunctions.resumeAudio)
+					end
+					playbackPaused = message.payload.paused
+					ControllerFunctions.commitGlobalPlaybackSync("remote-pause-resume")
+				elseif message.command == "Restart" then
+					ControllerFunctions.cancelAudioTransition("global-restart")
+					nowPlaying.elapsed = 0
+					playbackPaused = false
+					ControllerFunctions.restartServerMusic(nowPlaying.soundId)
+					ControllerFunctions.commitGlobalPlaybackSync("remote-restart")
+				end
+			end
+			return
+		end
 		if message.command == "Skip" then
 			ControllerFunctions.advance()
 			ControllerFunctions.broadcast("A global DJ command skipped the current track.", "info")
