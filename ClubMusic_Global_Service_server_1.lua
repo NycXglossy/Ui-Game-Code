@@ -376,113 +376,6 @@ publishTopic = function(topic: string, payload: {[string]: any}): boolean
 	return true
 end
 
-local function publishDJCommand(command: any, payload: any, actorUserId: any): (boolean, number?)
-	if not SERVICE_ENABLED or not allowedDJCommands[command] or not finiteNumber(actorUserId) then return false end
-	local permission = if command == "ClearQueue" or command == "ForceStop" then "GlobalModeration" else "GlobalDJ"
-	if not authorizeGlobalActor(actorUserId, permission) then return false end
-	if typeof(payload) ~= "table" then payload = {} end
-	local cleanPayload = {}
-	if command == "SetRequestLock" then
-		if typeof(payload.locked) ~= "boolean" then return false end
-		cleanPayload.locked = payload.locked
-		-- Persist request-lock state only for SetRequestLock. Previously this
-		-- block was accidentally nested under SetPlaybackPaused, where it read
-		-- a nil payload.locked and prevented pause/resume publication.
-		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-		if not budgetShared or not budgetAllowed then
-			warn("[ClubMusic Global] Global request lock change rejected: shared DataStore budget unavailable.")
-			return false
-		end
-		local stored, storeResult = pcall(function()
-			return globalControlStore:UpdateAsync("requestLock", function(old)
-				local state = if typeof(old) == "table" then table.clone(old) else {}
-				state.locked = cleanPayload.locked
-				state.updatedAt = os.time()
-				state.updatedBy = math.floor(actorUserId)
-				return state
-			end)
-		end)
-		if not stored or typeof(storeResult) ~= "table" or storeResult.locked ~= cleanPayload.locked then
-			warn("[ClubMusic Global] Could not persist global request lock: " .. tostring(storeResult))
-			return false
-		end
-	elseif command == "SetPlaybackPaused" then
-		if typeof(payload.paused) ~= "boolean" then return false end
-		cleanPayload.paused = payload.paused
-	elseif command == "Restart" then
-		cleanPayload.restart = true
-	elseif command == "ForceStop" then
-		cleanPayload.forceStop = true
-	end
-	if playbackSyncEnabled and (command == "Skip" or command == "SetPlaybackPaused" or command == "Restart") then
-		-- Playback-only mode uses a transient command event. It must not write the
-		-- legacy playbackControl record, whose periodic replay would restart/pause
-		-- playback independently of the elected leader.
-		return publishTopic(CONFIG.Topics.Playback, {
-			kind = "PlaybackCommand", command = command, payload = cleanPayload,
-			actorUserId = math.floor(actorUserId),
-		})
-	end
-	if command == "SetPlaybackPaused" or command == "Restart" or command == "ForceStop" then
-		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-		if not budgetShared or not budgetAllowed then
-			warn("[ClubMusic Global] Playback control rejected: shared DataStore budget unavailable.")
-			return false
-		end
-		local stored, storeResult = pcall(function()
-			return globalControlStore:UpdateAsync("playbackControl", function(old)
-				local state = if typeof(old) == "table" then table.clone(old) else {}
-				local revision = if finiteNumber(state.revision) and state.revision >= 0 then math.floor(state.revision) else 0
-				state.revision = revision + 1
-				state.command = command
-				state.paused = if command == "SetPlaybackPaused" then cleanPayload.paused else (state.paused == true)
-				if command == "Restart" or (command == "SetPlaybackPaused" and cleanPayload.paused == false) then
-					state.stopRevision = nil
-				end
-				if command == "SetPlaybackPaused" then
-					state.pauseRevision = state.revision
-				elseif command == "Restart" then
-					state.restartRevision = state.revision
-				else
-					state.stopRevision = state.revision
-				end
-				state.updatedAt = os.time()
-				state.updatedBy = math.floor(actorUserId)
-				return state
-			end)
-		end)
-		if not stored or typeof(storeResult) ~= "table" or not finiteNumber(storeResult.revision) then
-			warn("[ClubMusic Global] Could not persist global playback control: " .. tostring(storeResult))
-			return false
-		end
-		cleanPayload.revision = math.floor(storeResult.revision)
-	end
-	local published = publishTopic(CONFIG.Topics.DJ, {
-		kind = "DJ", command = command, payload = cleanPayload,
-		actorUserId = math.floor(actorUserId),
-	})
-	-- Pause/resume and restart are durable; polling repairs missed MessagingService events.
-	if command == "SetRequestLock" then return true end
-	if command == "SetPlaybackPaused" or command == "Restart" or command == "ForceStop" then return true, cleanPayload.revision end
-	if command == "Skip" and published then
-		-- A confirmed skip is the explicit resume path after an emergency stop.
-		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-		if budgetShared and budgetAllowed then
-			pcall(function()
-				globalControlStore:UpdateAsync("playbackControl", function(old)
-					if typeof(old) ~= "table" or old.stopRevision == nil then return old end
-					local state = table.clone(old)
-					state.stopRevision = nil
-					state.updatedAt = os.time()
-					state.updatedBy = math.floor(actorUserId)
-					return state
-				end)
-			end)
-		end
-	end
-	return published
-end
-
 bindFunction("ConsumeActionBudget", function(userId: any, action: any, cost: any)
 	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
@@ -1823,27 +1716,7 @@ local function onPlaybackChanged(message)
 			trackRevision = if finiteNumber(data.trackRevision) then math.floor(data.trackRevision) else 0,
 			senderJob = data.senderJob,
 		})
-	elseif data.kind == "PlaybackCommand" then
-		if (data.command ~= "Skip" and data.command ~= "SetPlaybackPaused" and data.command ~= "Restart")
-			or typeof(data.payload) ~= "table" then return end
-		if data.command == "SetPlaybackPaused" and typeof(data.payload.paused) ~= "boolean" then return end
-		globalEventBindable:Fire({
-			kind = "PlaybackCommand", command = data.command, payload = data.payload,
-			senderJob = data.senderJob, actorUserId = if finiteNumber(data.actorUserId) then math.floor(data.actorUserId) else 0,
-		})
-	elseif data.kind == "PlaybackSyncModeChanged" and typeof(data.enabled) == "boolean" then
-		-- The event represents a successful shared-config write. Bring this
-		-- server's cache into line immediately; otherwise the 8-second authority
-		-- loop can keep acting on the previous 30-second cached config value.
-		playbackSyncEnabled = data.enabled
-		if globalConfigService then
-			globalConfigService:SetLocal("playbackSyncEnabled", data.enabled)
-		end
-		if not data.enabled and globalPlaybackAuthority then
-			globalPlaybackAuthority:ReleaseLeadership()
-		end
-		globalEventBindable:Fire({kind = "PlaybackSyncModeChanged", enabled = data.enabled, senderJob = data.senderJob})
-	end
+
 end
 
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
