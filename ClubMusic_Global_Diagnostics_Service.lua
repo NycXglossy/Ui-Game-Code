@@ -3,10 +3,6 @@
 local Service = {}
 Service.__index = Service
 
-local function clone(value)
-	return if typeof(value) == "table" then table.clone(value) else value
-end
-
 function Service.new(dependencies)
 	assert(type(dependencies) == "table" and type(dependencies.isEnabled) == "function", "Diagnostics dependencies missing")
 	return setmetatable({
@@ -32,6 +28,11 @@ end
 function Service:Record(name, value, latencySeconds)
 	if type(name) ~= "string" or #name == 0 or #name > 48 then return false end
 	local amount = if type(value) == "number" and value == value and value >= 0 and value < math.huge then value else 1
+	if self.metrics[name] == nil then
+		local metricCount = 0
+		for _ in pairs(self.metrics) do metricCount += 1 end
+		if metricCount >= 64 then return false end
+	end
 	local item = self.metrics[name] or {count = 0, latencyCount = 0, latencyTotal = 0, latencyMax = 0}
 	item.count = math.min(1000000000, item.count + amount)
 	if type(latencySeconds) == "number" and latencySeconds == latencySeconds and latencySeconds >= 0 and latencySeconds <= 120 then
