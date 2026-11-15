@@ -1642,6 +1642,7 @@ bindFunction("GetGlobalDiagnostics", function()
 		errorHistoryAvailable = errorsAvailable,
 		recentErrors = errors,
 		operationalServices = {
+			memoryStore = {capacityLimited = memoryStoreCapacityLimited, lastCapacityError = memoryStoreCapacityError},
 			registry = if globalRegistryService then globalRegistryService:GetStatus() else nil,
 			metrics = if globalMetricsService then globalMetricsService:GetStatus() else nil,
 			watchdog = if globalWatchdogService then globalWatchdogService:GetStatus() else nil,
