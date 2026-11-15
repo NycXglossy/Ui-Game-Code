@@ -749,6 +749,7 @@ local modernAudioMigrationSucceeded = false
 local modernAudioMigrationInProgress = false
 local modernAudioMigrationNextAttemptAt = 0
 local modernAudioMigrationFailureCount = 0
+local modernAudioStartToken = 0
 -- Forward-declared state is shared with the early-created crossfade factory.
 local queue: any = {}
 local queueManager: any = nil
@@ -1568,48 +1569,145 @@ ControllerFunctions.stopServerMusic = function()
 	ControllerFunctions.refreshActiveMusicSoundCount()
 end
 
+-- Start modern AudioPlayer first. The legacy Sound is started only if the
+-- modern module, decoder, or playback verification fails. A monotonically
+-- increasing token prevents a late decoder completion from replacing a newer track.
 ControllerFunctions.startServerMusic = function(soundId: any)
 	ControllerFunctions.stopServerMusic()
+	modernAudioStartToken += 1
+	local startToken = modernAudioStartToken
+	local startRevision = audioSourceRevision
 	if typeof(soundId) ~= "string" or #soundId > 64
 		or not string.match(soundId, "^rbxassetid://%d+$") then
 		ControllerFunctions.setAudioAsset("")
 		return
 	end
-	local setOk, setError = ControllerFunctions.setAudioAsset(soundId)
-	if setOk == false then warn("[ClubMusic] Server audio asset could not be assigned: " .. tostring(setError)); return end
-	-- A newly assigned SoundId may not be loaded yet. TimePosition can reject
-	-- an early seek on that first frame; that must not abort playback entirely.
-	-- Start the asset at its default position and let the global sync path perform
-	-- its one-time authoritative seek as soon as the source reports ready.
-	local seekCallOk, seekOk, seekError = pcall(function()
-		return ControllerFunctions.seekAudio(0)
-	end)
-	if not seekCallOk or seekOk == false then
-		warn("[ClubMusic] Initial audio position reset is waiting for readiness; playback will still start: " .. tostring(if seekCallOk then seekError else seekOk))
-	end
-	local trackId = tostring(nowPlaying.trackId or "")
+
+	local trackId = tostring(nowPlaying and nowPlaying.trackId or "")
 	local trim = getTrackVolumeTrim(trackId)
-	local volumeOk = pcall(function()
-		if activeAudioSource.kind == "Backend" and activeAudioSource.backend then
-			local player = activeAudioSource.backend:GetPlayer()
-			if not player then error("Active AudioPlayer is unavailable.") end
-			player.Volume = math.clamp(trim, 0.01, 10)
-		else
-			local sound = activeAudioSource.instance
-			if typeof(sound) ~= "Instance" or not sound:IsA("Sound") then error("Active Sound is unavailable.") end
-			sound.Volume = math.clamp(trim, 0.01, 10)
+	local playbackSpeed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId] or 1
+	local wasPaused = playbackPaused == true
+
+	local function isCurrentStart(): boolean
+		return modernAudioStartToken == startToken
+			and audioSourceRevision == startRevision
+			and activeAudioSource.kind == "Sound"
+			and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
+	end
+
+	local function startLegacyFallback(reason: string?)
+		if not isCurrentStart() then return end
+		local fallbackOk, fallbackError = pcall(function()
+			musicSound.SoundId = soundId
+			musicSound.Volume = math.clamp(trim, 0.01, 10)
+			musicSound.PlaybackSpeed = playbackSpeed
+			musicSound.TimePosition = 0
+			musicSound:Play()
+			if wasPaused then musicSound:Pause() end
+		end)
+		if not fallbackOk then
+			warn("[ClubMusic] Both modern startup and legacy fallback failed: " .. tostring(fallbackError))
+			return
+		end
+		ControllerFunctions.bindActiveAudioPlayingSignal()
+		if reason then
+			warn("[ClubMusic][AudioBackend] Modern-first startup failed; guarded Sound fallback started: " .. reason)
+			task.defer(ControllerFunctions.tryModernAudioBackendMigration)
+		end
+	end
+
+	if not CONFIG.UseModernAudioBackend then
+		startLegacyFallback(nil)
+		return
+	end
+
+	task.spawn(function()
+		local candidate: any = nil
+		local function discardCandidate()
+			if candidate then
+				pcall(function() candidate:Stop() end)
+				pcall(function() candidate:Cleanup() end)
+				candidate = nil
+			end
+		end
+		local ok, failure = pcall(function()
+			local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
+			if not backendModule or not backendModule:IsA("ModuleScript") then
+				error("Modern backend ModuleScript is missing.")
+			end
+			local BackendClass = require(backendModule)
+			if typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
+				error("Modern backend module has an invalid constructor.")
+			end
+			candidate = BackendClass.new({
+				Name = "ClubMusicMainAudioBackend",
+				Parent = SoundService,
+				Volume = math.clamp(trim, 0.01, 10),
+				PlaybackSpeed = playbackSpeed,
+				InitialGain = 0,
+			})
+			if typeof(candidate) ~= "table" then error("Modern backend could not be constructed.") end
+			local assetOk, assetError = candidate:SetAsset(soundId)
+			if assetOk ~= true then error(tostring(assetError or "Modern backend rejected the track asset.")) end
+
+			local readyDeadline = os.clock() + 8
+			local ready = false
+			repeat
+				if not isCurrentStart() then error("Track changed while the modern decoder was loading.") end
+				local readiness = candidate:GetReadinessSnapshot()
+				ready = typeof(readiness) == "table"
+					and readiness.ready == true
+					and readiness.asset == soundId
+					and ControllerFunctions.isFiniteNumber(readiness.length)
+					and readiness.length > 0
+				if not ready then task.wait(0.1) end
+			until ready or os.clock() >= readyDeadline
+			if not ready then error("Modern AudioPlayer decoder did not become ready within 8 seconds.") end
+
+			local played, playError = candidate:Play(nil, 0)
+			if played ~= true then error(tostring(playError or "Modern AudioPlayer failed to start.")) end
+			local playDeadline = os.clock() + 2
+			local playing = false
+			repeat
+				if not isCurrentStart() then error("Track changed while modern playback was starting.") end
+				playing = candidate:IsPlaying() == true
+				if not playing then task.wait(0.05) end
+			until playing or os.clock() >= playDeadline
+			if not playing then error("Modern AudioPlayer did not enter the playing state.") end
+			local finalReadiness = candidate:GetReadinessSnapshot()
+			if typeof(finalReadiness) ~= "table" or finalReadiness.ready ~= true
+				or finalReadiness.asset ~= soundId or finalReadiness.length <= 0 then
+				error("Modern AudioPlayer readiness changed during startup.")
+			end
+			if wasPaused then
+				local paused, pauseError = candidate:Pause()
+				if paused ~= true then error(tostring(pauseError or "Modern AudioPlayer could not preserve pause state.")) end
+			end
+			if not isCurrentStart() then error("Track changed before modern startup could commit.") end
+			local gainOk, gainError = candidate:SetGain(1)
+			if gainOk ~= true then error(tostring(gainError or "Modern AudioPlayer gain could not be enabled.")) end
+
+			local previousSource = activeAudioSource
+			activeAudioSource = { kind = "Backend", backend = candidate }
+			candidate = nil
+			ControllerFunctions.bindActiveAudioPlayingSignal()
+			pcall(function()
+				musicSound:Stop()
+				musicSound.TimePosition = 0
+			end)
+			if previousSource.kind == "Backend" and previousSource.backend then
+				pcall(function() previousSource.backend:Cleanup() end)
+			end
+			modernAudioMigrationSucceeded = true
+			modernAudioMigrationFailureCount = 0
+			modernAudioMigrationNextAttemptAt = 0
+			print("[ClubMusic][AudioBackend] Modern AudioPlayer started as the primary track source.")
+		end)
+		discardCandidate()
+		if not ok then
+			startLegacyFallback(tostring(failure))
 		end
 	end)
-	if not volumeOk then warn("[ClubMusic] Track volume trim could not be applied; playback was not started."); return end
-	local speedOk = ControllerFunctions.applyTrackPlaybackSpeed(trackId)
-	if not speedOk then warn("[ClubMusic] Track playback speed could not be applied; playback was not started."); return end
-	local ok, err = pcall(function()
-		ControllerFunctions.playAudio()
-		if playbackPaused then ControllerFunctions.pauseAudio() end
-	end)
-	if not ok then
-		warn("[ClubMusic] Server playback could not start: " .. tostring(err))
-	end
 end
 
 -- Restart the already-loaded asset in place. Avoid reassigning SoundId and
@@ -3189,9 +3287,6 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	nowPlaying.vip = entry.vip
 	nowPlaying.soundId = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
 	if preserveAudio ~= true then ControllerFunctions.startServerMusic(nowPlaying.soundId) end
-	if preserveAudio ~= true and CONFIG.UseModernAudioBackend then
-		task.defer(ControllerFunctions.tryModernAudioBackendMigration)
-	end
 
 	table.insert(recentTracks, entry.trackId)
 	while #recentTracks > CONFIG.AutoAvoidRecent do
