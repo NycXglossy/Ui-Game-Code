@@ -66,11 +66,10 @@ local IS_STUDIO = RunService:IsStudio()
 local SERVICE_ENABLED = CONFIG.Enabled and (not IS_STUDIO or CONFIG.EnableInStudio)
 local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false)
 local globalRegistryService: any = nil
-local globalWatchdogService: any = nil
+local globalDiagnosticsService: any = nil
 local globalConfigService: any = nil
 local globalStateReconciliationService: any = nil
 local globalMaintenanceService: any = nil
-local globalMetricsService: any = nil
 local globalAuditService: any = nil
 local globalRateLimitService: any = nil
 local globalAuthorizationService: any = nil
@@ -351,7 +350,7 @@ local function publishTopic(topic: string, payload: {[string]: any}): boolean
 	payload.at = os.time()
 	local ok, err = pcall(function() MessagingService:PublishAsync(topic, payload) end)
 	if not ok then warn("[ClubMusic Global] Publish failed: " .. tostring(err)); return false end
-	if globalMetricsService then pcall(globalMetricsService.Record, globalMetricsService, "publish:" .. tostring(payload.kind or "unknown"), 1) end
+	if globalDiagnosticsService then pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "publish:" .. tostring(payload.kind or "unknown"), 1) end
 	if globalAuditService then
 		if payload.kind == "DJ" then
 			pcall(globalAuditService.Record, globalAuditService, "AdminAction", payload.actorUserId, tostring(payload.command), tostring(payload.command))
@@ -838,7 +837,6 @@ end)
 -- Optional operational services. They observe the existing global queue and
 -- never create a second playback controller or mutate queue ownership.
 local globalRecoveryService: any = nil
-local globalHealthService: any = nil
 
 -- Cross-server sync is verified with peer heartbeats, not inferred from DataStore access.
 local SYNC_HEARTBEAT_INTERVAL_SECONDS = 60
@@ -920,10 +918,10 @@ end
 
 local function reportOperationalError(subsystem: string, operation: string, err: any, context: Instance?)
 	local metricName = string.lower(tostring(subsystem)) .. ":" .. string.lower(tostring(operation))
-	if globalMetricsService then
-		pcall(globalMetricsService.Record, globalMetricsService, "error:" .. string.sub(metricName, 1, 42), 1)
+	if globalDiagnosticsService then
+		pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "error:" .. string.sub(metricName, 1, 42), 1)
 		if string.find(metricName, "playback", 1, true) or string.find(metricName, "audio", 1, true) then
-			pcall(globalMetricsService.Record, globalMetricsService, "playbackFailure", 1)
+			pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "playbackFailure", 1)
 		end
 	end
 	if globalErrorHandler then
@@ -1042,31 +1040,36 @@ if recoveryModule then
 	end
 end
 
-local healthModule = loadOptionalGlobalModule("ClubMusic_Global_Health_Service")
-if healthModule and globalRecoveryService then
+local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
+if diagnosticsModule then
 	local createOk, instance = pcall(function()
-		return healthModule.new({
+		return diagnosticsModule.new({
 			isEnabled = function() return SERVICE_ENABLED end,
-			getRecoveryStatus = function() return globalRecoveryService:GetStatus() end,
-			getSyncStatus = getGlobalSyncStatus,
 			apiFolder = apiFolder,
 			queueModule = queueModule,
-			intervalSeconds = 30,
-			reportError = reportOperationalError,
+			getRecoveryStatus = function() return if globalRecoveryService then globalRecoveryService:GetStatus() else nil end,
+			getSyncStatus = getGlobalSyncStatus,
+			getRecentErrors = function()
+				if globalErrorHandler and type(globalErrorHandler.GetRecentErrors) == "function" then return globalErrorHandler.GetRecentErrors() end
+				return nil
+			end,
+			getMemoryStoreStatus = function() return {capacityLimited = memoryStoreCapacityLimited, lastCapacityError = memoryStoreCapacityError} end,
+			getSecurityMonitorStatus = function() return if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else nil end,
+			getMessageValidationStatus = function() return if globalMessageValidationService then globalMessageValidationService:GetStatus() else nil end,
+			getIdempotencyStatus = function() return if globalIdempotencyService then globalIdempotencyService:GetStatus() else nil end,
 		})
 	end)
-	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
-		globalHealthService = instance
-		-- The first health pass otherwise runs before Messaging subscriptions and
-		-- the recovery service have completed their initial probes.
+	if createOk and instance and type(instance.Start) == "function"
+		and type(instance.GetStatus) == "function" and type(instance.GetSnapshot) == "function" then
+		globalDiagnosticsService = instance
 		task.delay(4, function()
-			if globalHealthService == instance then
+			if globalDiagnosticsService == instance then
 				local startOk, startError = pcall(function() instance:Start() end)
-				if not startOk then warn("[ClubMusic Global Health] Delayed startup failed: " .. tostring(startError)) end
+				if not startOk then warn("[ClubMusic Diagnostics] Delayed startup failed: " .. tostring(startError)) end
 			end
 		end)
 	else
-		warn("[ClubMusic Global] Could not initialize Global Health Service: " .. tostring(instance))
+		warn("[ClubMusic Global] Could not initialize lightweight Diagnostics Service: " .. tostring(instance))
 	end
 end
 
@@ -1265,14 +1268,6 @@ local auditDependencies = table.clone(sharedDependencies)
 auditDependencies.isEnabled = function()
 	return SERVICE_ENABLED and globalConfigService ~= nil and globalConfigService:Get("auditEnabled") == true
 end
-local metricsDependencies = table.clone(sharedDependencies)
-metricsDependencies.isEnabled = function()
-	return SERVICE_ENABLED and globalConfigService ~= nil and globalConfigService:Get("metricsEnabled") == true
-end
-
-globalMetricsService = createOperationalService("ClubMusic_Global_Metrics_Service", metricsDependencies, {"Start", "GetStatus", "GetAggregate", "Record", "ObserveLatency"})
-if globalMetricsService then globalMetricsService:Start() end
-
 globalAuditService = createOperationalService("ClubMusic_Global_Audit_Service", auditDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
 if globalAuditService then globalAuditService:Start() end
 
@@ -1298,43 +1293,6 @@ globalStateReconciliationService = createOperationalService("ClubMusic_Global_St
 }, {"Start", "GetStatus", "Reconcile"})
 if globalStateReconciliationService then globalStateReconciliationService:Start() end
 
-globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Service", {
-	isEnabled = function() return SERVICE_ENABLED end,
-	getChecks = function()
-		local health = if globalHealthService then globalHealthService:GetStatus() else nil
-		local recovery = if globalRecoveryService then globalRecoveryService:GetStatus() else nil
-		local registry = if globalRegistryService then globalRegistryService:GetStatus() else nil
-		local sync = getGlobalSyncStatus()
-		return {
-			LocalHealth = if health == nil then {pending = true, detail = "Local health monitor has not completed its first check."}
-				else health.localState == "Healthy",
-			QueueModule = queueModule.Parent == ServerStorage and queueModule:IsA("ModuleScript"),
-			Recovery = if recovery == nil or recovery.state == "Starting" then
-				{pending = true, detail = if recovery then recovery.detail else "Recovery service has not started."}
-				else recovery.state == "Healthy" or recovery.state == "Disabled",
-			Registry = if registry == nil or registry.state == "Starting" then
-				{pending = true, detail = "Server registry is waiting for its first MemoryStore heartbeat."}
-				elseif registry.capacityLimited == true or registry.state == "CapacityLimited" then
-					{healthy = true, detail = "Optional server listing is paused at the MemoryStore total memory limit."}
-				else registry.state == "Healthy" or registry.state == "Disabled",
-			SyncHeartbeat = if sync.state == "Starting" or sync.state == "Unverified" then
-				{pending = true, detail = sync.detail}
-				else sync.state == "Healthy" or sync.state == "Disabled",
-		}
-	end,
-	reportError = reportOperationalError,
-}, {"Start", "GetStatus", "Check"})
-if globalWatchdogService then
-	local watchdog = globalWatchdogService
-	-- Registry and recovery are intentionally asynchronous. Do not classify their
-	-- initial Starting state as a fault during the service bootstrap window.
-	task.delay(10, function()
-		if globalWatchdogService == watchdog then
-			local startOk, startError = pcall(function() watchdog:Start() end)
-			if not startOk then warn("[ClubMusic Global Watchdog] Delayed startup failed: " .. tostring(startError)) end
-		end
-	end)
-end
 
 -- Security services remain independent; authorization denies by default until a trusted resolver exists.
 local globalAuthorizationServiceResolver = function(actorUserId: any, permission: any): boolean
@@ -1500,7 +1458,7 @@ if globalIncidentResponseService then globalIncidentResponseService:Start() end
 globalEventBindable.Event:Connect(function(event)
 	if typeof(event) ~= "table" then return end
 	local kind = tostring(event.kind or "Unknown")
-	if globalMetricsService then pcall(globalMetricsService.Record, globalMetricsService, "event:" .. kind, 1) end
+	if globalDiagnosticsService then pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "event:" .. kind, 1) end
 	if globalAuditService then
 		if kind == "DJ" then
 			pcall(globalAuditService.Record, globalAuditService, "AdminAction", event.actorUserId, tostring(event.command or "unknown"), tostring(event.command or "unknown"))
@@ -1519,11 +1477,8 @@ bindFunction("GetGlobalServers", function(limit: any)
 	return globalRegistryService:GetServers(limit)
 end)
 bindFunction("GetGlobalMetrics", function()
-	if not globalMetricsService then return false, nil end
-	local aggregateOk, aggregate, aggregateError = globalMetricsService:GetAggregate()
-	local status = globalMetricsService:GetStatus()
-	status.aggregate = aggregate
-	return aggregateOk, status, aggregateError
+	if not globalDiagnosticsService then return false, nil end
+	return true, globalDiagnosticsService:GetMetrics()
 end)
 bindFunction("GetGlobalAudit", function(limit: any)
 	if not globalAuditService then return false, {} end
@@ -1532,11 +1487,11 @@ end)
 bindFunction("GetGlobalOperationalStatus", function()
 	local status = {
 		Registry = if globalRegistryService then globalRegistryService:GetStatus() else {state = "Unavailable"},
-		Watchdog = if globalWatchdogService then globalWatchdogService:GetStatus() else {state = "Unavailable"},
+		Diagnostics = if globalDiagnosticsService then globalDiagnosticsService:GetStatus() else {state = "Unavailable"},
 		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
 		Reconciliation = if globalStateReconciliationService then globalStateReconciliationService:GetStatus() else {state = "Unavailable"},
 		Maintenance = if globalMaintenanceService then globalMaintenanceService:GetStatus() else {state = "Unavailable"},
-		Metrics = if globalMetricsService then globalMetricsService:GetStatus() else {state = "Unavailable"},
+		Metrics = if globalDiagnosticsService then globalDiagnosticsService:GetMetrics() else {state = "Unavailable"},
 		Audit = if globalAuditService then globalAuditService:GetStatus() else {state = "Unavailable"},
 		RateLimit = if globalRateLimitService then globalRateLimitService:GetStatus() else {state = "Unavailable"},
 		Authorization = if globalAuthorizationService then globalAuthorizationService:GetStatus() else {state = "Unavailable"},
@@ -1569,10 +1524,8 @@ bindFunction("ConsumeGlobalRateLimit", function(key: any, capacity: any, refill:
 	return globalRateLimitService:Consume(key, capacity, refill, cost)
 end)
 bindFunction("RecordGlobalMetric", function(name: any, value: any, latencySeconds: any)
-	if not globalMetricsService or typeof(name) ~= "string" or #name > 48 then return false end
-	globalMetricsService:Record(name, value)
-	if finiteNumber(latencySeconds) then globalMetricsService:ObserveLatency(name, latencySeconds) end
-	return true
+	if not globalDiagnosticsService or typeof(name) ~= "string" or #name > 48 then return false end
+	return globalDiagnosticsService:Record(name, value, latencySeconds)
 end)
 bindFunction("RecordGlobalAuditEvent", function(kind: any, actorUserId: any, target: any, action: any)
 	if not globalAuditService then return false end
@@ -1580,8 +1533,8 @@ bindFunction("RecordGlobalAuditEvent", function(kind: any, actorUserId: any, tar
 end)
 
 bindFunction("GetGlobalHealth", function()
-	if not globalHealthService then return false, nil end
-	return true, globalHealthService:GetStatus()
+	if not globalDiagnosticsService then return false, nil end
+	return true, globalDiagnosticsService:GetStatus()
 end)
 
 bindFunction("RunGlobalReconciliation", function(actorUserId: any)
@@ -1599,47 +1552,10 @@ end)
 -- Server-only diagnostic snapshot for trusted scripts in ServerStorage.
 -- This API performs no DataStore/MessagingService calls and never changes service state.
 bindFunction("GetGlobalDiagnostics", function()
-	local healthOk, health = pcall(function()
-		return if globalHealthService then globalHealthService:GetStatus() else nil
-	end)
-	local recoveryOk, recovery = pcall(function()
-		return if globalRecoveryService then globalRecoveryService:GetStatus() else nil
-	end)
-	local errors = {}
-	local errorsAvailable = false
-	if globalErrorHandler and type(globalErrorHandler.GetRecentErrors) == "function" then
-		local errorsOk, result = pcall(globalErrorHandler.GetRecentErrors)
-		if errorsOk and typeof(result) == "table" then
-			errorsAvailable = true
-			local firstIndex = math.max(1, #result - 19)
-			for index = firstIndex, #result do
-				local record = result[index]
-				if typeof(record) == "table" then
-					table.insert(errors, table.clone(record))
-				end
-			end
-		end
-	end
-	return true, {
-		generatedAt = os.time(),
-		serviceEnabled = SERVICE_ENABLED,
-		healthAvailable = healthOk and health ~= nil,
-		health = if healthOk then health else nil,
-		recoveryAvailable = recoveryOk and recovery ~= nil,
-		recovery = if recoveryOk then recovery else nil,
-		syncStatus = getGlobalSyncStatus(),
-		errorHistoryAvailable = errorsAvailable,
-		recentErrors = errors,
-		operationalServices = {
-			memoryStore = {capacityLimited = memoryStoreCapacityLimited, lastCapacityError = memoryStoreCapacityError},
-			registry = if globalRegistryService then globalRegistryService:GetStatus() else nil,
-			metrics = if globalMetricsService then globalMetricsService:GetStatus() else nil,
-			watchdog = if globalWatchdogService then globalWatchdogService:GetStatus() else nil,
-			securityMonitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else nil,
-			messageValidation = if globalMessageValidationService then globalMessageValidationService:GetStatus() else nil,
-			idempotency = if globalIdempotencyService then globalIdempotencyService:GetStatus() else nil,
-		},
-	}
+	if not globalDiagnosticsService then return false, nil end
+	local ok, snapshot = pcall(globalDiagnosticsService.GetSnapshot, globalDiagnosticsService)
+	if not ok or typeof(snapshot) ~= "table" then return false, nil end
+	return true, snapshot
 end)
 
 bindFunction("ReportSignal", function(userId: any, signal: any, detail: any)
