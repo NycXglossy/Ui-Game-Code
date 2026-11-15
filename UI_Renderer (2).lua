@@ -3564,7 +3564,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 20), if syncEnabled then C.Green else C.Muted, 11, true)
 			local roleText = if not syncEnabled then "Each server plays independently."
 				elseif sync.isLeader == true then "This server is the elected playback leader."
-				else "Following the elected playback leader."
+				elseif typeof(sync.leaderJobId) == "string" then "Following the elected playback leader."
+				else "Waiting for playback leader election."
 			local readinessText = if syncReady then "Playback authority is ready."
 				else nz(sync.error, "Playback authority status is unavailable.")
 			label(syncCard, roleText, UDim2.fromOffset(12, 31), UDim2.new(1, -24, 0, 18), C.White, 10, false)
