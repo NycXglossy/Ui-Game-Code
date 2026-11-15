@@ -569,6 +569,24 @@ function SafeCall:Run(serviceName: string, operation: string, callback: (...any)
 	return false, err, trace
 end
 
+function SafeCall:RecordFailure(serviceName: string, operation: string, detail: any)
+	local now = os.time()
+	local service = clean(serviceName)
+	local op = clean(operation)
+	local err = clean(detail)
+	self.counts.failures += 1
+	self.lastFailure = {service = service, operation = op, error = err, traceback = err, at = now}
+	table.insert(self.records, 1, table.clone(self.lastFailure))
+	while #self.records > MAX_RECORDS do table.remove(self.records) end
+	local signature = service .. "|" .. op .. "|" .. err
+	local lastWarn = self.lastWarnings[signature] or 0
+	if now - lastWarn >= WARN_COOLDOWN then
+		self.lastWarnings[signature] = now
+		warn("[ClubMusic][SafeCall] Operation reported failure; service=" .. service
+			.. "; operation=" .. op .. "; detail=" .. err)
+	end
+end
+
 function SafeCall:RecordRecovery(serviceName: string, operation: string)
 	self.counts.recovered += 1
 	local record = {service = clean(serviceName), operation = clean(operation), at = os.time()}
