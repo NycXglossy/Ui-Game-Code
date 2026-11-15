@@ -35,7 +35,6 @@ local CONFIG = {
 	Topics = {
 		Announcements = "ClubMusic_Global_Announcements_v1",
 		Moderation = "ClubMusic_Global_Moderation_v1",
-		DJ = "ClubMusic_Global_DJ_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
 		Queue = "ClubMusic_Global_Queue_v1",
@@ -377,7 +376,6 @@ publishTopic = function(topic: string, payload: {[string]: any}): boolean
 	return true
 end
 
-local allowedDJCommands = {Skip = true, ClearQueue = true, SetRequestLock = true, SetPlaybackPaused = true, Restart = true, ForceStop = true}
 local function publishDJCommand(command: any, payload: any, actorUserId: any): (boolean, number?)
 	if not SERVICE_ENABLED or not allowedDJCommands[command] or not finiteNumber(actorUserId) then return false end
 	local permission = if command == "ClearQueue" or command == "ForceStop" then "GlobalModeration" else "GlobalDJ"
@@ -638,7 +636,6 @@ bindFunction("PublishAnnouncement", function(message: any, actorUserId: any)
 	return publishTopic(CONFIG.Topics.Announcements, {kind = "Announcement", text = clean, actorUserId = math.floor(actorUserId)})
 end)
 
-bindFunction("PublishDJCommand", publishDJCommand)
 
 local function allowGlobalQueueStoreOperation(): boolean
 	-- When MemoryStore is down, consumeShared already applies a conservative
@@ -1750,17 +1747,6 @@ local function onXPBoost(message)
 	globalEventBindable:Fire({kind = "XPBoost", multiplier = data.multiplier, expiresAt = math.floor(data.expiresAt), lowerExpiresAt = lowerExpiry})
 end
 
-local function onDJ(message)
-	local data = message.Data
-	if not validEnvelope(data, "DJ") or data.kind ~= "DJ" or not unseen(data.id) then return end
-	if not allowedDJCommands[data.command] or not finiteNumber(data.actorUserId) then return end
-	local payload = if typeof(data.payload) == "table" then data.payload else {}
-	if data.command == "SetRequestLock" and typeof(payload.locked) ~= "boolean" then return end
-	if data.command == "SetPlaybackPaused" and (typeof(payload.paused) ~= "boolean" or not finiteNumber(payload.revision)) then return end
-	if data.command == "Restart" and not finiteNumber(payload.revision) then return end
-	globalEventBindable:Fire({kind = "DJ", command = data.command, payload = payload, actorUserId = data.actorUserId, senderJob = data.senderJob})
-end
-
 local function onCatalog(message)
 	local data = message.Data
 	if not validEnvelope(data, "Catalog") or data.kind ~= "Catalog" or not unseen(data.id) then return end
@@ -1892,7 +1878,6 @@ end
 if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.Announcements, onAnnouncement)
 	subscribeWithRetry(CONFIG.Topics.Moderation, onModeration)
-	subscribeWithRetry(CONFIG.Topics.DJ, onDJ)
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
 	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
