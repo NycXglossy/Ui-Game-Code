@@ -7228,6 +7228,12 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 	if typeof(message) ~= "table" then return end
 	if message.kind == "PlaybackSyncModeChanged" then
 		local syncState = ControllerFunctions.globalPlaybackSyncState
+		if not CONFIG.EnableGlobalPlaybackSync then
+			syncState.enabled = false
+			syncState.isLeader = false
+			syncState.leaderJobId = nil
+			return
+		end
 		syncState.enabled = message.enabled == true
 		if syncState.enabled then
 			-- The playback-only mode event also tells every peer controller to
