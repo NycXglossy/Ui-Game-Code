@@ -950,7 +950,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			notify("Action failed.", C.Red)
 			return false
 		end
-		return result ~= false
+		if result == false then
+			notify("Control was not sent. Please wait briefly and try again.", C.Orange)
+			return false
+		end
+		return true
 	end
 
 	-- Premium floating launcher: coordinated with the dark, gold and cyan ClubMusic surfaces.
