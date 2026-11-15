@@ -3314,6 +3314,98 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	end
 	table.clear(skipVotes)
 	if ControllerFunctions.publishPlaybackState then ControllerFunctions.publishPlaybackState() end
+	if ControllerFunctions.commitGlobalPlaybackSync then
+		task.defer(function() ControllerFunctions.commitGlobalPlaybackSync("track-change") end)
+	end
+end
+
+-- Optional playback-only sync is deliberately separate from globalQueueMode.
+-- The elected leader consumes only its own local queue; followers never import queue data.
+ControllerFunctions.globalPlaybackSyncState = {
+	enabled = false, isLeader = false, revision = 0, trackRevision = 0,
+	lastAppliedRevision = 0, lastStatusAt = 0, lastErrorAt = 0,
+}
+ControllerFunctions.commitGlobalPlaybackSync = function(reason: string?): boolean
+	local state = ControllerFunctions.globalPlaybackSyncState
+	if state.enabled ~= true or state.isLeader ~= true or globalQueueMode then return false end
+	local snapshotOk, snapshotRead, current = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
+	if not snapshotOk or snapshotRead ~= true or typeof(current) ~= "table" then return false end
+	local audio = ControllerFunctions.getAudioSnapshot()
+	local position = if typeof(audio) == "table" and ControllerFunctions.isFiniteNumber(audio.position)
+		then math.clamp(audio.position, 0, nowPlaying.duration) else math.clamp(nowPlaying.elapsed, 0, nowPlaying.duration)
+	local trackChanged = typeof(current.current) ~= "table" or current.current.trackId ~= nowPlaying.trackId
+	local nextTrackRevision = math.max(tonumber(current.trackRevision) or 0, tonumber(state.trackRevision) or 0)
+	if trackChanged then nextTrackRevision += 1 end
+	local payload = {
+		current = if nowPlaying.trackId ~= "" then {
+			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
+			soundId = nowPlaying.soundId, duration = nowPlaying.duration,
+		} else nil,
+		paused = playbackPaused == true,
+		position = position,
+		anchorTime = workspace:GetServerTimeNow(),
+		trackRevision = nextTrackRevision,
+	}
+	local commitOk, committed, result, message = ControllerFunctions.globalInvoke(
+		"CommitGlobalPlaybackSnapshot", payload, tonumber(current.revision) or 0
+	)
+	if commitOk and committed == true and typeof(result) == "table" then
+		state.revision = tonumber(result.revision) or state.revision
+		state.trackRevision = tonumber(result.trackRevision) or nextTrackRevision
+		state.lastAppliedRevision = state.revision
+		return true
+	end
+	if os.clock() - (state.lastErrorAt or 0) > 15 then
+		state.lastErrorAt = os.clock()
+		warn("[ClubMusic] Optional global playback commit failed (" .. tostring(reason or "update") .. "): " .. tostring(message or committed))
+	end
+	return false
+end
+
+ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any): boolean
+	local state = ControllerFunctions.globalPlaybackSyncState
+	if state.enabled ~= true or state.isLeader == true or globalQueueMode
+		or typeof(snapshot) ~= "table" or not ControllerFunctions.isFiniteNumber(snapshot.revision)
+		or snapshot.revision <= (state.lastAppliedRevision or 0) then return false end
+	local current = snapshot.current
+	if typeof(current) == "table" and typeof(current.trackId) == "string"
+		and typeof(current.soundId) == "string" and ControllerFunctions.isFiniteNumber(current.duration) then
+		if nowPlaying.trackId ~= current.trackId then
+			local entry: QueueEntry = {
+				id = "global-playback-" .. tostring(snapshot.trackRevision or snapshot.revision),
+				trackId = current.trackId, title = tostring(current.title or current.trackId),
+				artist = tostring(current.artist or "Unknown artist"), duration = math.max(1, current.duration),
+				requestedBy = "Global Playback", userId = 0, genre = "Unknown",
+				source = "auto", vip = false, passTier = 0, soundId = current.soundId,
+			}
+			ControllerFunctions.setNowPlaying(entry)
+		end
+		local anchor = if ControllerFunctions.isFiniteNumber(snapshot.anchorTime) then snapshot.anchorTime else workspace:GetServerTimeNow()
+		local base = if ControllerFunctions.isFiniteNumber(snapshot.position) then snapshot.position else 0
+		local elapsed = if snapshot.paused == true then base else base + math.max(0, workspace:GetServerTimeNow() - anchor)
+		nowPlaying.elapsed = math.clamp(elapsed, 0, nowPlaying.duration)
+		playbackPaused = snapshot.paused == true
+		pcall(function()
+			local audio = ControllerFunctions.getAudioSnapshot()
+			if audio.ready then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
+			if playbackPaused then ControllerFunctions.pauseAudio()
+			elseif not audio.playing then ControllerFunctions.playAudio() end
+		end)
+	else
+		if nowPlaying.trackId ~= "" then
+			ControllerFunctions.cancelAudioTransition("global-playback-empty")
+			ControllerFunctions.stopServerMusic()
+			ControllerFunctions.setAudioAsset("")
+			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
+			nowPlaying.soundId = ""; nowPlaying.elapsed = 0
+		end
+		playbackPaused = true
+	end
+	state.revision = snapshot.revision
+	state.trackRevision = tonumber(snapshot.trackRevision) or state.trackRevision
+	state.lastAppliedRevision = snapshot.revision
+	ControllerFunctions.publishPlaybackState()
+	return true
 end
 
 -- Shared queue mirror. The global DataStore is authoritative when the global
@@ -3654,6 +3746,10 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then
 		return false, "The current track changed before the transition started."
 	end
+	if ControllerFunctions.globalPlaybackSyncState.enabled == true
+		and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
+		return false, "Global playback is controlled by the elected DJ server. This server's queue remains local."
+	end
 	ControllerFunctions.cancelAudioTransition("advance")
 	transitionInProgress = true
 	if globalQueueMode then
@@ -3893,6 +3989,47 @@ task.spawn(function()
 				end
 			end
 		end
+	end
+end)
+
+-- Optional playback-only sync. This path never calls the global queue APIs.
+-- Followers reconcile the playback snapshot; only the elected leader may advance its local queue.
+task.spawn(function()
+	local syncState = ControllerFunctions.globalPlaybackSyncState
+	while script.Parent do
+		local enabledOk, enabledStatus, status = ControllerFunctions.globalInvoke("GetGlobalPlaybackSyncStatus")
+		if enabledOk and enabledStatus == true and typeof(status) == "table"
+			and status.syncEnabled == true and not globalQueueMode then
+			syncState.enabled = true
+			local leaderOk, acquired, leader = ControllerFunctions.globalInvoke("AcquireGlobalPlaybackLeadership")
+			syncState.isLeader = leaderOk == true and acquired == true
+			if syncState.isLeader then
+				local snapshotOk, snapshotRead, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
+				if snapshotOk and snapshotRead == true and typeof(snapshot) == "table" then
+					if typeof(snapshot.current) == "table" then
+						if nowPlaying.trackId ~= snapshot.current.trackId then
+							ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot)
+						end
+						syncState.revision = tonumber(snapshot.revision) or syncState.revision
+						syncState.trackRevision = tonumber(snapshot.trackRevision) or syncState.trackRevision
+					elseif nowPlaying.trackId ~= "" then
+						ControllerFunctions.commitGlobalPlaybackSync("leader-initialization")
+					end
+				end
+			else
+				local snapshotOk, snapshotRead, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
+				if snapshotOk and snapshotRead == true then
+					ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot)
+				end
+			end
+		elseif enabledOk and enabledStatus == true and typeof(status) == "table" and status.syncEnabled ~= true then
+			syncState.enabled = false
+			syncState.isLeader = false
+		elseif not enabledOk then
+			-- A transient service failure must not cause followers to start their own track.
+			syncState.isLeader = false
+		end
+		task.wait(4)
 	end
 end)
 
@@ -7089,6 +7226,27 @@ end
 
 ControllerFunctions.handleGlobalMessage = function(message: any)
 	if typeof(message) ~= "table" then return end
+	if message.kind == "PlaybackSyncModeChanged" then
+		local syncState = ControllerFunctions.globalPlaybackSyncState
+		syncState.enabled = message.enabled == true
+		if not syncState.enabled then
+			syncState.isLeader = false
+			syncState.lastAppliedRevision = 0
+		elseif not globalQueueMode then
+			task.defer(function()
+				local ok, readOk, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
+				if ok and readOk == true then ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot) end
+			end)
+		end
+		return
+	end
+	if message.kind == "PlaybackChanged" and ControllerFunctions.globalPlaybackSyncState.enabled == true then
+		task.defer(function()
+			local ok, readOk, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
+			if ok and readOk == true then ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot) end
+		end)
+		return
+	end
 	if message.kind == "QueueChanged" and globalQueueMode then
 		-- A committed transition carries a small, service-validated metadata hint.
 		-- Apply it immediately for responsive title/duration UI, then reconcile
