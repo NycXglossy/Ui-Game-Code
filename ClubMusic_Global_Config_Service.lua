@@ -1,7 +1,7 @@
 --!strict
 -- Validated, revisioned shared configuration with safe local defaults.
 local Service={}; Service.__index=Service
-local DEFAULTS={maintenanceEnabled=false,maintenanceMessage="",allowPlayerRequests=true,metricsEnabled=true,auditEnabled=true,messageMaxBytes=4096,messageMaxAgeSeconds=120,suspiciousSignalThreshold=8,idempotencyTtlSeconds=120,monitoringEnabled=true,playbackSyncEnabled=false}
+local DEFAULTS={maintenanceEnabled=false,maintenanceMessage="",allowPlayerRequests=true,metricsEnabled=true,auditEnabled=true,messageMaxBytes=4096,messageMaxAgeSeconds=120,suspiciousSignalThreshold=8,idempotencyTtlSeconds=120,monitoringEnabled=true,legacyGlobalQueueEnabled=true,playbackSyncEnabled=false}
 local POLICY_RANGES={
  messageMaxBytes={512,4096},
  messageMaxAgeSeconds={30,300},
