@@ -6,6 +6,13 @@
 local RecoveryService = {}
 RecoveryService.__index = RecoveryService
 
+local function runSafe(self, operation, callback, ...)
+    if self.dependencies.safeCall and type(self.dependencies.safeCall.Run) == "function" then
+        return self.dependencies.safeCall:Run("GlobalRecovery", operation, callback, ...)
+    end
+    return pcall(callback, ...)
+end
+
 export type Dependencies = {
     isEnabled: () -> boolean,
     allowStoreOperation: () -> boolean,
@@ -53,7 +60,7 @@ function RecoveryService:_setStatus(state: string, detail: string)
     if signature ~= self.lastSignature then
         self.lastSignature = signature
         if state == "Degraded" and type(self.dependencies.reportError) == "function" then
-            pcall(self.dependencies.reportError, "GlobalRecovery", "SharedQueueProbe", detail, nil)
+            runSafe(self, "ReportError", self.dependencies.reportError, "GlobalRecovery", "SharedQueueProbe", detail, nil)
         end
         if state == "Healthy" then
             print("[ClubMusic Global Recovery] " .. detail)
@@ -69,14 +76,14 @@ function RecoveryService:Start(): boolean
 
     task.spawn(function()
         while self.running do
-            local enabledOk, enabled = pcall(self.dependencies.isEnabled)
+            local enabledOk, enabled = runSafe(self, "CheckEnabled", self.dependencies.isEnabled)
             if not enabledOk or enabled ~= true then
                 self:_setStatus("Disabled", "Cross-server service is disabled; no global recovery operation was attempted.")
                 task.wait(60)
                 continue
             end
 
-            local budgetOk, budgetAllowed = pcall(self.dependencies.allowStoreOperation)
+            local budgetOk, budgetAllowed = runSafe(self, "CheckStoreBudget", self.dependencies.allowStoreOperation)
             if not budgetOk or budgetAllowed ~= true then
                 self.status.attempts += 1
                 self:_setStatus("Degraded", "Shared storage budget is unavailable; authoritative queue verification will retry.")
@@ -85,7 +92,7 @@ function RecoveryService:Start(): boolean
                 continue
             end
 
-            local readOk, snapshot, readError = pcall(function()
+            local readOk, snapshot, readError = runSafe(self, "ReadAuthoritativeSnapshot", function()
                 self.dependencies.invalidateSnapshot()
                 return self.dependencies.getSnapshot()
             end)
