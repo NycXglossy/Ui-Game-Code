@@ -723,17 +723,6 @@ bindFunction("GetGlobalPlaybackControl", function()
 	return nil, true
 end)
 
-bindFunction("GetGlobalRequestLock", function()
-	if not SERVICE_ENABLED then return nil, false end
-	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-	if not budgetShared or not budgetAllowed then return nil, false end
-	local ok, state = pcall(function() return globalControlStore:GetAsync("requestLock") end)
-	if not ok then return nil, false end
-	if typeof(state) == "table" and typeof(state.locked) == "boolean" then return state.locked, true end
-	-- No persisted lock means the experience is unlocked by default.
-	return false, true
-end)
-
 bindFunction("IsEnabled", function()
 	return SERVICE_ENABLED and (not globalConfigService or globalConfigService:Get("legacyGlobalQueueEnabled") ~= false)
 end)
@@ -1717,6 +1706,7 @@ local function onPlaybackChanged(message)
 			senderJob = data.senderJob,
 		})
 
+	end
 end
 
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
@@ -1772,60 +1762,12 @@ else
 	end
 end
 
--- Reconcile both the latest pause state and the latest restart independently.
--- Emit in revision order so an older pause cannot override a newer restart (or vice versa).
-task.spawn(function()
-	while true do
-		if SERVICE_ENABLED then
-			local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-			if allowed and shared then
-				local ok, state = pcall(function() return globalControlStore:GetAsync("playbackControl") end)
-				if ok and typeof(state) == "table" and finiteNumber(state.revision) then
-					local events = {}
-					if finiteNumber(state.restartRevision) and state.restartRevision > 0 then
-						table.insert(events, {revision = math.floor(state.restartRevision), command = "Restart"})
-					end
-					if finiteNumber(state.stopRevision) and state.stopRevision > 0 then
-						table.insert(events, {revision = math.floor(state.stopRevision), command = "ForceStop"})
-					end
-					if finiteNumber(state.pauseRevision) and state.pauseRevision > 0 and typeof(state.paused) == "boolean" then
-						table.insert(events, {revision = math.floor(state.pauseRevision), command = "SetPlaybackPaused", paused = state.paused})
-					end
-					table.sort(events, function(a, b) return a.revision < b.revision end)
-					for _, event in ipairs(events) do
-						globalEventBindable:Fire({
-							kind = "DJ", command = event.command,
-							payload = {revision = event.revision, paused = event.paused},
-							actorUserId = if finiteNumber(state.updatedBy) then state.updatedBy else 0,
-						})
-					end
-				elseif not ok then
-					warn("[ClubMusic Global] Playback-control reconciliation read failed: " .. tostring(state))
-				end
-			end
-		end
-		task.wait(60 + math.random(0, 15))
-	end
-end)
-
 -- Reconcile online users against durable moderation records so missed MessagingService
 -- deliveries do not leave a stale request-block/ban state indefinitely.
 task.spawn(function()
 	while true do
 		task.wait(CONFIG.ModerationReconcileSeconds)
 		if SERVICE_ENABLED then
-			local lockBudgetAllowed, lockBudgetShared = consumeShared("all:datastore", 90, 15, 1)
-			local lockOk, lockState = false, nil
-			if lockBudgetShared and lockBudgetAllowed then
-				lockOk, lockState = pcall(function() return globalControlStore:GetAsync("requestLock") end)
-			end
-			if lockOk and typeof(lockState) == "table" and typeof(lockState.locked) == "boolean" then
-				globalEventBindable:Fire({kind = "DJ", command = "SetRequestLock", payload = {locked = lockState.locked}, actorUserId = 0})
-			elseif not lockOk then
-				globalEventBindable:Fire({kind = "DJ", command = "SetRequestLock", payload = {locked = true}, actorUserId = 0})
-			else
-				globalEventBindable:Fire({kind = "DJ", command = "SetRequestLock", payload = {locked = false}, actorUserId = 0})
-			end
 			for _, player in ipairs(Players:GetPlayers()) do
 				local data = getModeration(player.UserId)
 				if data.lookupFailed then
