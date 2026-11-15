@@ -8,11 +8,11 @@ local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local modules = {
-    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8198d36/ClubMusicAudioBackend.luau"},
+    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/7630ea7/ClubMusicAudioBackend.luau"},
     {name = "ClubMusicAudioCrossfadeManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/652c5b3/ClubMusicAudioCrossfadeManager.luau"},
     {name = "ClubMusicAudioQualityProfiles", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/9334b4a/ClubMusicAudioQualityProfiles.luau"},
     {name = "ClubMusicDJSessionManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/e6286dc/ClubMusicDJSessionManager.luau"},
-    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/353f021/ClubMusicPlayerPreferences.luau"},
+    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/ca2a7c9/ClubMusicPlayerPreferences.luau"},
     {name = "ClubMusicSpatialAudioGraph", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/1fc0871/ClubMusicSpatialAudioGraph.luau"},
 }
 
@@ -66,4 +66,5 @@ end
 
 print("[ClubMusic] Installed 5 server ModuleScripts in ServerStorage/" .. folders.server)
 print("[ClubMusic] Installed 1 client ModuleScript in ReplicatedStorage/" .. folders.client)
-print("[ClubMusic] Existing playback remains unchanged. Do not delete ServerMusicSound or MusicGroup.")
+print("[ClubMusic] Modern audio now requires the matching updated server controller and UI_Renderer scripts.")
+print("[ClubMusic] Keep ServerMusicSound and MusicGroup only as temporary bootstrap/fallback compatibility objects until Studio validation passes.")
