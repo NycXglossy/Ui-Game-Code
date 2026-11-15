@@ -6,7 +6,7 @@
 -- ClubMusic modern Roblox audio backend.
 -- This module owns only its injected AudioPlayer graph. The server controller
 -- remains the sole authority for queue state, track selection, and transitions.
--- It is opt-in until the experience has completed Studio/multiplayer validation.
+-- The server owns the synchronized deck; each client owns its private output route.
 
 local Backend = {}
 Backend.__index = Backend
