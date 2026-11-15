@@ -4,6 +4,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
 
 local REMOTE_FOLDER = "UtilityBarRemotes"
 local REMOTE_NAME = "ExecuteUtility"
@@ -192,11 +193,100 @@ local function setAura(player: Player, request: any): (boolean, string)
 	return true, preset .. " aura applied to " .. string.lower(target) .. "."
 end
 
+-- Feature entitlements are populated by the main server controller after Roblox
+-- ownership verification. Never trust a client-supplied pass ID or ownership flag.
+local FEATURE_PASS_ATTRIBUTES = {
+	Mount = "HasIslandMountPass",
+	Clone = "HasIslandCompanionPass",
+	LightingControl = "HasStageClubLightingPass",
+}
+local function ownsFeaturePass(player: Player, actionName: string): boolean
+	local attribute = FEATURE_PASS_ATTRIBUTES[actionName]
+	return attribute ~= nil and player:GetAttribute(attribute) == true
+end
+
+-- Only explicitly tagged StageClubLight instances are affected. This keeps the
+-- controls away from Workspace-wide Lighting and unrelated island/environment lights.
+local originalLightState: {[Instance]: {enabled: boolean, color: Color3, brightness: number}} = {}
+local originalBeamState: {[Beam]: ColorSequence} = {}
+local function collectStageClubLights(): ({Light}, {Beam})
+	local lights: {Light} = {}
+	local beams: {Beam} = {}
+	local seen: {[Instance]: boolean} = {}
+	local function collect(instance: Instance)
+		if not instance:IsDescendantOf(workspace) then return end
+		if (instance:IsA("PointLight") or instance:IsA("SpotLight") or instance:IsA("SurfaceLight")) and not seen[instance] then
+			seen[instance] = true
+			table.insert(lights, instance :: Light)
+		elseif instance:IsA("Beam") and not seen[instance] then
+			seen[instance] = true
+			table.insert(beams, instance :: Beam)
+		end
+	end
+	for _, tagged in ipairs(CollectionService:GetTagged("StageClubLight")) do
+		collect(tagged)
+		for _, descendant in ipairs(tagged:GetDescendants()) do collect(descendant) end
+	end
+	return lights, beams
+end
+
+local LIGHT_PRESETS = {
+	Ocean = {color = Color3.fromRGB(65, 190, 210), brightness = 1.15},
+	Sunset = {color = Color3.fromRGB(255, 145, 82), brightness = 1.2},
+	Royal = {color = Color3.fromRGB(226, 194, 132), brightness = 1.25},
+	Tiki = {color = Color3.fromRGB(110, 220, 160), brightness = 1.1},
+}
+local function setStageClubLighting(player: Player, request: any): (boolean, string)
+	if typeof(request) ~= "table" or typeof(request.preset) ~= "string" then
+		return false, "Choose a lighting preset."
+	end
+	local lights, beams = collectStageClubLights()
+	if #lights == 0 and #beams == 0 then
+		return false, "No stage/club lights are tagged yet. Tag the club and stage light objects 'StageClubLight'."
+	end
+	if request.preset == "Off" then
+		for _, light in ipairs(lights) do
+			local original = originalLightState[light]
+			if original then
+				light.Enabled = original.enabled
+				light.Color = original.color
+				light.Brightness = original.brightness
+			end
+		end
+		for _, beam in ipairs(beams) do
+			local original = originalBeamState[beam]
+			if original then beam.Color = original end
+		end
+		return true, "Stage and club lighting restored to its original settings."
+	end
+	local preset = LIGHT_PRESETS[request.preset]
+	if not preset then return false, "That lighting preset is not available." end
+	local sequence = ColorSequence.new(preset.color)
+	for _, light in ipairs(lights) do
+		if not originalLightState[light] then
+			originalLightState[light] = {enabled = light.Enabled, color = light.Color, brightness = light.Brightness}
+		end
+		local original = originalLightState[light]
+		light.Enabled = true
+		light.Color = preset.color
+		light.Brightness = math.clamp(original.brightness * preset.brightness, 0, 10)
+	end
+	for _, beam in ipairs(beams) do
+		if not originalBeamState[beam] then originalBeamState[beam] = beam.Color end
+		beam.Color = sequence
+	end
+	return true, request.preset .. " lighting applied to the tagged club and stage fixtures."
+end
+
 execute.OnServerInvoke = function(player: Player, actionName: any, value: any): (boolean, string)
 	if typeof(actionName) ~= "string" then return false, "Invalid utility request." end
 	local allowed = actionName == "Mount" or actionName == "Size"
 		or actionName == "Clone" or actionName == "Aura" or actionName == "ClearAura"
+		or actionName == "LightingControl"
 	if not allowed then return false, "This utility action is not available." end
+	if FEATURE_PASS_ATTRIBUTES[actionName] and not ownsFeaturePass(player, actionName) then
+		return false, "The matching Game Pass is required for this feature."
+	end
 	local now = os.clock()
 	if now - (lastRequest[player.UserId] or 0) < COOLDOWN then
 		return false, "Please wait before using another utility."
@@ -205,6 +295,7 @@ execute.OnServerInvoke = function(player: Player, actionName: any, value: any): 
 	if actionName == "Mount" then return toggleMount(player) end
 	if actionName == "Size" then return setSize(player, value) end
 	if actionName == "Clone" then return createClone(player) end
+	if actionName == "LightingControl" then return setStageClubLighting(player, value) end
 	if actionName == "ClearAura" then
 		clearAura(player.UserId)
 		return true, "Aura cleared."
@@ -229,4 +320,4 @@ Players.PlayerRemoving:Connect(function(player)
 	local clone = workspace:FindFirstChild("UtilityClone_" .. player.UserId)
 	if clone then clone:Destroy() end
 end)
-print("[UtilityBar] Extended Mount, Size, Clone, and Aura actions ready.")
+print("[UtilityBar] Pass-gated Mount, Clone Companion, scoped Stage/Club Lighting, Size, and Aura actions ready.")
