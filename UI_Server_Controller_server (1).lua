@@ -4002,8 +4002,9 @@ task.spawn(function()
 			and status.syncEnabled == true and not globalQueueMode then
 			syncState.enabled = true
 			local wasLeader = syncState.isLeader == true
-			local leaderOk, acquired, leader = ControllerFunctions.globalInvoke("AcquireGlobalPlaybackLeadership")
-			syncState.isLeader = leaderOk == true and acquired == true
+			-- The global service owns the lease-renewal loop; the controller only
+			-- observes its status to avoid duplicate MemoryStore writes per server.
+			syncState.isLeader = status.isLeader == true
 			if syncState.isLeader then
 				local snapshotOk, snapshotRead, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
 				if snapshotOk and snapshotRead == true and typeof(snapshot) == "table" then
@@ -4030,7 +4031,7 @@ task.spawn(function()
 			-- A transient service failure must not cause followers to start their own track.
 			syncState.isLeader = false
 		end
-		task.wait(4)
+		task.wait(8)
 	end
 end)
 
