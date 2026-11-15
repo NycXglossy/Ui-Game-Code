@@ -7344,6 +7344,11 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 	if message.kind == "PlaybackSyncModeChanged" then
 		local syncState = ControllerFunctions.globalPlaybackSyncState
 		syncState.enabled = message.enabled == true
+		if syncState.enabled then
+			-- The playback-only mode event also tells every peer controller to
+			-- leave legacy shared-queue mode; queues remain local from this point.
+			globalQueueMode = false
+		end
 		if not syncState.enabled then
 			syncState.isLeader = false
 			syncState.lastAppliedRevision = 0
