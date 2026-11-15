@@ -76,7 +76,7 @@ local CONFIG = {
 	StudioUseGlobalQueue = false,
 
 	-- Keep the legacy Sound as the default until the modern AudioPlayer route is validated in Studio.
-	UseModernAudioBackend = false,
+	UseModernAudioBackend = true,
 	CrossfadeDurationSeconds = 4,
 	CrossfadePrepareLeadSeconds = 14,
 
