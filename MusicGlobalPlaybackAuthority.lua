@@ -72,6 +72,7 @@ end
 function PlaybackAuthority.new(dependencies: {[string]: any})
 	assert(typeof(dependencies) == "table", "PlaybackAuthority dependencies are required")
 	return setmetatable({
+		safeCall = dependencies.safeCall,
 		dataStoreService = dependencies.dataStoreService,
 		memoryStoreService = dependencies.memoryStoreService,
 		jobId = tostring(dependencies.jobId or ""),
@@ -88,9 +89,16 @@ function PlaybackAuthority.new(dependencies: {[string]: any})
 	}, PlaybackAuthority)
 end
 
+function PlaybackAuthority:_safeCall(operation: string, callback: (...any) -> ...any, ...: any): ...any
+	if self.safeCall and type(self.safeCall.Run) == "function" then
+		return self.safeCall:Run("PlaybackAuthority", operation, callback, ...)
+	end
+	return pcall(callback, ...)
+end
+
 function PlaybackAuthority:Start(): (boolean, string?)
 	if self.started then return true, nil end
-	local ok, result = pcall(function()
+	local ok, result = self:_safeCall("DataStoreAndMemoryStore.Initialize", function()
 		self.store = self.dataStoreService:GetDataStore("ClubMusic_GlobalPlaybackOnly_v1")
 		self.leaseMap = self.memoryStoreService:GetHashMap("ClubMusic_GlobalPlaybackLeader_v1")
 	end)
@@ -101,7 +109,7 @@ end
 
 function PlaybackAuthority:GetLeader(): (boolean, {[string]: any}?, string?)
 	if not self.started or not self.leaseMap then return false, nil, "Playback authority is not started." end
-	local ok, value = pcall(function() return self.leaseMap:GetAsync(LEASE_KEY) end)
+	local ok, value = self:_safeCall("MemoryStore.GetLeaderLease", function() return self.leaseMap:GetAsync(LEASE_KEY) end)
 	if not ok then return false, nil, tostring(value) end
 	if typeof(value) ~= "table" or not finite(value.expiresAt) or value.expiresAt <= os.time()
 		or typeof(value.jobId) ~= "string" or typeof(value.token) ~= "string" then
@@ -115,7 +123,7 @@ function PlaybackAuthority:AcquireOrRenewLeadership(): (boolean, {[string]: any}
 	local now = os.time()
 	local proposedToken = self.leaseToken or self.guid()
 	local alreadyFencedLeader = self.leadershipReady == true and self.leaseToken == proposedToken and self.leaderGeneration ~= nil
-	local ok, value = pcall(function()
+	local ok, value = self:_safeCall("MemoryStore.AcquireOrRenewLease", function()
 		return self.leaseMap:UpdateAsync(LEASE_KEY, function(old)
 			if typeof(old) == "table" and finite(old.expiresAt) and old.expiresAt > now then
 				if old.jobId == self.jobId and old.token == self.leaseToken then
@@ -150,7 +158,7 @@ function PlaybackAuthority:AcquireOrRenewLeadership(): (boolean, {[string]: any}
 		end
 		claimed = snapshot
 	else
-		local claimOk, claimResult = pcall(function()
+		local claimOk, claimResult = self:_safeCall("DataStore.ClaimLeaderFence", function()
 			return self.store:UpdateAsync(SNAPSHOT_KEY, function(old)
 				local state = sanitizeSnapshot(old)
 				state.leaderGeneration += 1
@@ -183,7 +191,7 @@ end
 function PlaybackAuthority:ReleaseLeadership(): boolean
 	local token = self.leaseToken
 	if not token or not self.leaseMap then return true end
-	local ok = pcall(function()
+	local ok = self:_safeCall("MemoryStore.ReleaseLeadership", function()
 		self.leaseMap:UpdateAsync(LEASE_KEY, function(old)
 			if typeof(old) == "table" and old.jobId == self.jobId and old.token == token then return nil end
 			return old
@@ -195,7 +203,7 @@ end
 
 function PlaybackAuthority:GetSnapshot(): (boolean, {[string]: any}?, string?)
 	if not self.started or not self.store then return false, nil, "Playback authority is not started." end
-	local ok, raw = pcall(function() return self.store:GetAsync(SNAPSHOT_KEY) end)
+	local ok, raw = self:_safeCall("DataStore.GetPlaybackSnapshot", function() return self.store:GetAsync(SNAPSHOT_KEY) end)
 	if not ok then return false, nil, tostring(raw) end
 	return true, sanitizeSnapshot(raw), nil
 end
@@ -217,7 +225,7 @@ function PlaybackAuthority:CommitPlayback(raw: any, expectedRevision: any): (boo
 	end
 	local token = self.leaseToken
 	local accepted = false
-	local ok, result = pcall(function()
+	local ok, result = self:_safeCall("DataStore.CommitPlayback", function()
 		return self.store:UpdateAsync(SNAPSHOT_KEY, function(old)
 			accepted = false
 			local state = sanitizeSnapshot(old)
@@ -240,7 +248,7 @@ function PlaybackAuthority:CommitPlayback(raw: any, expectedRevision: any): (boo
 	if not ok then return false, nil, tostring(result) end
 	local snapshot = sanitizeSnapshot(result)
 	if not accepted then return false, snapshot, "Playback revision changed or this leader was fenced out." end
-	if typeof(self.publish) == "function" then pcall(self.publish, {kind = "PlaybackChanged", revision = snapshot.revision, trackRevision = snapshot.trackRevision}) end
+	if typeof(self.publish) == "function" then self:_safeCall("Messaging.PublishPlaybackChanged", self.publish, {kind = "PlaybackChanged", revision = snapshot.revision, trackRevision = snapshot.trackRevision}) end
 	return true, snapshot, nil
 end
 
