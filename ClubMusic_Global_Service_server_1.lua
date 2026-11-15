@@ -785,7 +785,7 @@ bindFunction("GetGlobalRequestLock", function()
 end)
 
 bindFunction("IsEnabled", function()
-	return SERVICE_ENABLED
+	return SERVICE_ENABLED and (not globalConfigService or globalConfigService:Get("legacyGlobalQueueEnabled") ~= false)
 end)
 
 -- Optional operational services. They observe the existing global queue and
@@ -1086,6 +1086,13 @@ end)
 bindFunction("SetGlobalPlaybackSyncEnabled", function(enabled: any, actorUserId: any)
 	if typeof(enabled) ~= "boolean" or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false, "Not authorized or invalid setting." end
 	if not globalConfigService then return false, "Shared config service unavailable." end
+	-- Playback-only sync owns Now Playing across servers but must never coexist
+	-- with the legacy shared request queue. Disable legacy queue mode persistently
+	-- before enabling playback sync; keep it disabled when playback sync is later turned off.
+	if enabled then
+		local queueOk, queueResult = globalConfigService:Set("legacyGlobalQueueEnabled", false, math.floor(actorUserId))
+		if not queueOk then return false, queueResult end
+	end
 	local ok, result = globalConfigService:Set("playbackSyncEnabled", enabled, math.floor(actorUserId))
 	if not ok then return false, result end
 	playbackSyncEnabled = enabled
