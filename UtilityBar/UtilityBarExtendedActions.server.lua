@@ -195,7 +195,7 @@ end
 
 -- Feature entitlements are populated by the main server controller after Roblox
 -- ownership verification. Never trust a client-supplied pass ID or ownership flag.
-local FEATURE_PASS_ATTRIBUTES = {
+local FEATURE_PASS_ATTRIBUTES: {[string]: string} = {
 	Mount = "HasIslandMountPass",
 	Clone = "HasIslandCompanionPass",
 	LightingControl = "HasStageClubLightingPass",
@@ -230,7 +230,7 @@ local function collectStageClubLights(): ({Light}, {Beam})
 	return lights, beams
 end
 
-local LIGHT_PRESETS = {
+local LIGHT_PRESETS: {[string]: {color: Color3, brightness: number}} = {
 	Ocean = {color = Color3.fromRGB(65, 190, 210), brightness = 1.15},
 	Sunset = {color = Color3.fromRGB(255, 145, 82), brightness = 1.2},
 	Royal = {color = Color3.fromRGB(226, 194, 132), brightness = 1.25},
