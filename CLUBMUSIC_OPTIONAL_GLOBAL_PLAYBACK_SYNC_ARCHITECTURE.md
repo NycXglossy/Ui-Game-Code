@@ -25,6 +25,22 @@ The current `MusicGlobalQueueService` stores `queue`, `current`, `playback`, pla
 
 The current global queue mode must remain unchanged until the new playback-only authority is integrated and regression-tested. Do not repurpose `MusicGlobalQueueService` or simply stop syncing its queue field: its enqueue, advance, crossfade compare-and-swap, catalog reservation, and queue snapshot flows currently depend on that shared record.
 
+## Implementation progress
+
+### Phase 1: playback-only authority foundation
+
+Implemented on the feature branch:
+- Added `MusicGlobalPlaybackAuthority.lua` with a dedicated playback-only DataStore snapshot and a MemoryStore expiring leader lease.
+- Snapshot schema contains current track metadata, pause state, position, anchor time, playback revision, and leader identity only; it has no queue, request, rotation, or playlist fields.
+- Added revision compare-and-swap commits and leader lease acquisition/renewal/release.
+- Added shared config key `playbackSyncEnabled`, defaulting to `false`.
+- Added service bridge APIs for status, snapshot reads, leadership, playback commits, and an authorized opt-in toggle.
+- Added a separate MessagingService topic and strict envelope validation for playback invalidations.
+- Packaged the new ModuleScript in `ClubMusic_Global_Optional_Services.rbxmx`.
+- Preserved the existing global queue APIs and their current behavior.
+
+This is the authority/service foundation only. The main UI controller has not yet been switched to consume this snapshot, and no server currently uses it to drive audio. Do not enable the setting yet. Controller integration, leader-owned local-queue advancement, UI controls, and multi-server runtime validation remain outstanding.
+ 
 ## Required implementation phases
 
 1. **Playback authority service**
