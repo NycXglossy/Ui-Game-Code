@@ -53,7 +53,7 @@ The `UtilityBarExtendedActions.server.lua` script owns Mount, Size, Clone Compan
 
 - **Mount:** requires Game Pass `2087955619`, then opens its own panel and equips or unequips only a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
 - **Size:** opens its own control panel with a 0.50×–5.00× adjustable slider and a 1.00× reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
-- **Clone Companion:** requires Game Pass `2088585676`, then opens its own panel and creates a temporary non-interactive character companion for 12 seconds. The server creates a non-interactive, non-colliding visual copy beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
+- **Clone Companion:** requires Game Pass `2088585676`, then opens its own panel and creates a temporary non-interactive character companion for 12 seconds. The server creates a non-interactive, non-colliding visual copy that follows beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
 - **Aura:** opens three style tabs (Teal Glow, Royal Gold, Tiki Tide) and three target tabs (Character, Tools, Accessories). Apply uses server-owned Highlights; Clear Aura removes the active effect. Newly equipped Tools and Accessories receive the selected aura while it remains active.
 
 Mount requires an existing mount Tool; this update does not invent or import a third-party mount model. The extended actions are separate from ClubMusic and do not issue music, queue, catalog, or DJ requests.
@@ -83,7 +83,8 @@ The repository-side integration audit and static contract checks are complete. T
 - [ ] Verify the Mount pass gate, then confirm Mount equips only a tagged/named mount Tool and reports clearly when none is installed.
 - [ ] Verify Size cycles on R15, restores the captured baseline, and safely rejects R6.
 - [ ] Verify the Island Companion pass gate, then confirm Clone Companion is non-interactive, expires after 12 seconds, and is cleaned up on leave.
-- [ ] Verify Lighting Control requires its pass and its presets/restore action affect only StageClubLight-tagged fixtures.\n- [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
+- [ ] Verify Lighting Control requires its pass and its presets/restore action affect only StageClubLight-tagged fixtures.
+- [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
 - [ ] Verify repeated refresh requests are throttled and failed avatar lookups show a safe message.
 
 
