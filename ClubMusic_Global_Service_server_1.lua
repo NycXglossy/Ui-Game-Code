@@ -1688,6 +1688,16 @@ local function onPlaybackChanged(message)
 			senderJob = data.senderJob, actorUserId = if finiteNumber(data.actorUserId) then math.floor(data.actorUserId) else 0,
 		})
 	elseif data.kind == "PlaybackSyncModeChanged" and typeof(data.enabled) == "boolean" then
+		-- The event represents a successful shared-config write. Bring this
+		-- server's cache into line immediately; otherwise the 8-second authority
+		-- loop can keep acting on the previous 30-second cached config value.
+		playbackSyncEnabled = data.enabled
+		if globalConfigService then
+			globalConfigService:SetLocal("playbackSyncEnabled", data.enabled)
+		end
+		if not data.enabled and globalPlaybackAuthority then
+			globalPlaybackAuthority:ReleaseLeadership()
+		end
 		globalEventBindable:Fire({kind = "PlaybackSyncModeChanged", enabled = data.enabled, senderJob = data.senderJob})
 	end
 end
