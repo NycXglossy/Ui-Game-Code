@@ -21,16 +21,18 @@ function Service:Resolve(id,actorUserId)
  if not self.d.isEnabled() or type(id)~="string" or #id>64 then return false,"Invalid incident ID." end
  if self.d.authorize(actorUserId,"IncidentResponse")~=true then return false,"Incident response permission denied." end
  local ok,result=pcall(function()
-  local current=self.map:GetAsync(id)
-  if typeof(current)~="table" or current.state~="Open" then return nil end
-  if current.actorUserId~=actorUserId and self.d.authorize(actorUserId,"IncidentResponse")~=true then return nil end
+  local resolved=self.map:UpdateAsync(id,function(old)
+   if typeof(old)~="table" or old.state~="Open" then return old end
+   local item=table.clone(old); item.state="Resolved"; item.resolvedAt=os.time(); item.resolvedBy=actorUserId
+   return item
+  end,43200,os.time())
+  if typeof(resolved)~="table" or resolved.state~="Resolved" or resolved.resolvedBy~=actorUserId then return nil end
   self.map:RemoveAsync(id)
-  return current
+  return resolved
  end)
  if not ok then self.lastError=tostring(result); return false,"Incident storage unavailable." end
  if typeof(result)~="table" then return false,"Incident not found, already resolved, or resolution was not applied." end
  self.resolved+=1
- result.state="Resolved"; result.resolvedAt=os.time(); result.resolvedBy=actorUserId
  if type(self.d.onChange)=="function" then pcall(self.d.onChange,"resolved",result) end
  return true
 end
