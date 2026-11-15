@@ -1130,7 +1130,17 @@ bindFunction("SetGlobalPlaybackSyncEnabled", function(enabled: any, actorUserId:
 			.. "; playerOnThisServer=" .. tostring(Players:GetPlayerByUserId(math.floor(actorUserId)) ~= nil))
 		return false, "Global playback sync authorization failed. Check the server Output for PlaybackSync Auth diagnostics."
 	end
-	if not globalConfigService then return false, "Shared config service unavailable." end
+	if not SERVICE_ENABLED then
+		local detail = if IS_STUDIO and not CONFIG.EnableInStudio
+			then "Cross-server playback sync is disabled in Studio isolation (EnableInStudio=false). Publish the experience and test with multiple live servers."
+			else "Cross-server playback sync is disabled by the global service configuration."
+		warn("[ClubMusic][PlaybackSync] Toggle rejected: " .. detail)
+		return false, detail
+	end
+	if not globalConfigService then
+		warn("[ClubMusic][PlaybackSync] Toggle rejected: shared config service failed to initialize while cross-server services are enabled.")
+		return false, "Shared config service failed to initialize. Check the startup diagnostics for ClubMusic_Global_Config_Service."
+	end
 	-- Playback-only sync owns Now Playing across servers but must never coexist
 	-- with the legacy shared request queue. Disable legacy queue mode persistently
 	-- before enabling playback sync; keep it disabled when playback sync is later turned off.
