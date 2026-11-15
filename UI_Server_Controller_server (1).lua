@@ -1673,7 +1673,8 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 			until ready or os.clock() >= readyDeadline
 			if not ready then error("Modern AudioPlayer decoder did not become ready within 8 seconds.") end
 
-			local played, playError = candidate:Play(nil, 0)
+			local startPosition = math.max(0, tonumber(nowPlaying and nowPlaying.elapsed) or 0)
+			local played, playError = candidate:Play(nil, startPosition)
 			if played ~= true then error(tostring(playError or "Modern AudioPlayer failed to start.")) end
 			local playDeadline = os.clock() + 2
 			local playing = false
@@ -1714,7 +1715,17 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 		end)
 		discardCandidate()
 		if not ok then
-			startLegacyFallback(tostring(failure))
+			-- A seek/pause or other controller action may legitimately revise the
+			-- active Sound while the candidate is loading. Retry the same current
+			-- track with the latest playhead/pause state instead of falling silent.
+			if modernAudioStartToken == startToken
+				and activeAudioSource.kind == "Sound"
+				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
+				and audioSourceRevision ~= startRevision then
+				task.defer(ControllerFunctions.startServerMusic, soundId)
+			else
+				startLegacyFallback(tostring(failure))
+			end
 		end
 	end)
 end
