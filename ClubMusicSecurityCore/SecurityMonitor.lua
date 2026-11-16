@@ -60,6 +60,14 @@ function Service:Record(signal,subject)
 	return true,entry.count
 end
 
+function Service:ForgetSubject(subject)
+	local safeSubject=cleanPart(subject,48)
+	local suffix=":"..safeSubject
+	for key in pairs(self.signals) do
+		if string.sub(key,-#suffix)==suffix then self.signals[key]=nil end
+	end
+end
+
 function Service:GetStatus()
 	local tracked=0
 	for _ in pairs(self.signals) do tracked+=1 end
