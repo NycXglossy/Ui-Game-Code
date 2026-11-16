@@ -799,6 +799,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return tonumber(state.perm) or 0
 	end
 
+	-- Use explicit server-projected booth permissions; general staff level does
+	-- not include rank-100 DJs.
+	local function canUseDJBooth(): boolean
+		return state.canUseDJBooth == true or perm() >= 3
+	end
+
+	local function canManageDJBooth(): boolean
+		return state.canManageDJBooth == true or perm() >= 3
+	end
+
 	local function nz(value: any, fallback: string): string
 		if value == nil or value == "" then return fallback end
 		return tostring(value)
@@ -2539,7 +2549,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
 		local staffLevel = perm()
-		if staffLevel >= 3 then
+		if canUseDJBooth() then
 			local playbackControls = card(88)
 			label(playbackControls, "LOCAL PLAYBACK", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 15), C.Muted, 9, true)
 			local controlGap = 8
@@ -2570,12 +2580,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				local trackName = nz(item.title, nz(item.trackId, "Unknown track"))
 				local requestedBy = if item.source == "player" then "REQUESTED BY " .. string.upper(nz(item.requestedBy, "GUEST")) else "AUTO DJ"
 				if item.vip == true then requestedBy ..= "  •  VIP" end
-				local actionInset = if staffLevel >= 3 then 104 else 12
+				local actionInset = if canManageDJBooth() then 104 else 12
 				label(queueCard, string.format("%02d  %s", index, trackName),
 					UDim2.fromOffset(12, 7), UDim2.new(1, -actionInset - 12, 0, 22), C.White, 11, true)
 				label(queueCard, requestedBy .. "  •  " .. formatTime(tonumber(item.duration) or 0),
 					UDim2.fromOffset(12, 34), UDim2.new(1, -actionInset - 12, 0, 16), if item.source == "player" then C.Magenta else C.Muted, 8, false)
-				if staffLevel >= 3 and queueId ~= "" then
+				if canManageDJBooth() and queueId ~= "" then
 					if index > 1 then
 						local moveUp = actionButton(queueCard, "▲", UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
 							act("DJMoveUp", {queueId = queueId}, queueId)
@@ -3529,44 +3539,39 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function renderDJ()
-		local level = perm()
+		local hasDJAccess = canUseDJBooth()
+		local canManage = canManageDJBooth()
 		sectionLabel("DJ BOOTH")
-		if level < 3 then
+		if not hasDJAccess then
 			local restricted = card(82)
-			label(restricted, "🔒 OWNER & CO-OWNER ACCESS ONLY", UDim2.fromOffset(14, 10), UDim2.new(1, -28, 0, 22), C.Gold, 12, true)
-			label(restricted, "DJ Booth controls are reserved for the Owner and Co-Owner. Normal music requests remain available when Control Mode is off.", UDim2.fromOffset(14, 36), UDim2.new(1, -28, 0, 36), C.Muted, 10, false)
+			label(restricted, "🔒 DJ RANK OR HIGHER REQUIRED", UDim2.fromOffset(14, 10), UDim2.new(1, -28, 0, 22), C.Gold, 12, true)
+			label(restricted, "Rank-100 DJs and higher can use limited local playback controls. Playlist and queue management remain Owner/Co-owner only.", UDim2.fromOffset(14, 36), UDim2.new(1, -28, 0, 36), C.Muted, 10, false)
 			return
 		end
 		buildNowPlaying()
 
-		if level >= 3 then
-			local controls = card(104)
-			actionButton(controls, "DJ SKIP", UDim2.fromOffset(12, 10), UDim2.new(0.5, -18, 0, 34), function()
-				act("DJSkip", {})
-			end, C.Magenta)
-			actionButton(controls, "PAUSE / RESUME", UDim2.new(0.5, 6, 0, 10), UDim2.new(0.5, -18, 0, 34), function()
-				act("DJPause", {})
-			end, C.Purple)
-			actionButton(controls, "RESTART TRACK", UDim2.fromOffset(12, 54), UDim2.new(1, -24, 0, 34), function()
-				act("DJRestart", {})
-			end, C.Cyan)
+		local controls = card(104)
+		actionButton(controls, "DJ SKIP", UDim2.fromOffset(12, 10), UDim2.new(0.5, -18, 0, 34), function()
+			act("DJSkip", {})
+		end, C.Magenta)
+		actionButton(controls, "PAUSE / RESUME", UDim2.new(0.5, 6, 0, 10), UDim2.new(0.5, -18, 0, 34), function()
+			act("DJPause", {})
+		end, C.Purple)
+		actionButton(controls, "RESTART TRACK", UDim2.fromOffset(12, 54), UDim2.new(1, -24, 0, 34), function()
+			act("DJRestart", {})
+		end, C.Cyan)
 
-			sectionLabel("STAFF CONTROLS")
-			local staff = card(58)
-			local locked = state.locked == true
-			actionButton(staff, if locked then "DISABLE CONTROL MODE" else "ENABLE CONTROL MODE", UDim2.fromOffset(12, 12),
-				if level >= 2 then UDim2.new(0.5, -16, 0, 34) else UDim2.new(1, -24, 0, 34), function()
-					act("DJToggleLock", {})
-				end, if locked then C.Orange else C.Purple)
-			if level >= 2 then
-				actionButton(staff, "CLEAR QUEUE", UDim2.new(0.5, 4, 0, 12), UDim2.new(0.5, -16, 0, 34), function()
-					act("DJClearQueue", {})
-				end, C.Red)
-			end
-
-		else
-			local note = card(48)
-			label(note, "Vote to skip the current song from the Home tab.", UDim2.fromOffset(14, 0), UDim2.new(1, -28, 1, 0), C.Muted, 11, false)
+		sectionLabel("DJ CONTROL MODE")
+		local staff = card(58)
+		local locked = state.locked == true
+		actionButton(staff, if locked then "DISABLE CONTROL MODE" else "ENABLE CONTROL MODE", UDim2.fromOffset(12, 12),
+			if canManage then UDim2.new(0.5, -16, 0, 34) else UDim2.new(1, -24, 0, 34), function()
+				act("DJToggleLock", {})
+			end, if locked then C.Orange else C.Purple)
+		if canManage then
+			actionButton(staff, "CLEAR QUEUE", UDim2.new(0.5, 4, 0, 12), UDim2.new(0.5, -16, 0, 34), function()
+				act("DJClearQueue", {})
+			end, C.Red)
 		end
 
 		sectionLabel("UP NEXT")
