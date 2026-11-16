@@ -261,6 +261,7 @@ function Service:GetSnapshot(): {[string]: any}
 			securityMonitor = self:_readStatus("SecurityMonitor", self.d.getSecurityMonitorStatus),
 			messageValidation = self:_readStatus("MessageValidation", self.d.getMessageValidationStatus),
 			idempotency = self:_readStatus("Idempotency", self.d.getIdempotencyStatus),
+			errorHistory = self:_readStatus("ErrorHistory", self.d.getErrorHistoryStatus),
 		},
 	}
 end
