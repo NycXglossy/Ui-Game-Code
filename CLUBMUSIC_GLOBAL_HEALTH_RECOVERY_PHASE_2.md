@@ -57,7 +57,7 @@ The existing `GetGlobalHealth` BindableFunction remains unchanged.
 - It is a BindableFunction under ServerStorage, not a RemoteFunction; it is intended for trusted server scripts, not clients.
 - The response is a point-in-time snapshot. Health and recovery may change immediately after it is returned.
 - Error history remains local to the current server process. This phase does not provide cross-server aggregation or durable history.
-- The response includes error details and tracebacks; keep consumers server-side and do not forward the records to clients.
+- The server-side snapshot includes error details and tracebacks for trusted server scripts only. Client-facing admin output must use aggregate counts and must never forward error records or tracebacks.
 
 ## Verification
 
