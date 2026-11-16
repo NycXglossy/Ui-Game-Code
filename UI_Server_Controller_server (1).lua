@@ -5036,6 +5036,14 @@ end
 ControllerFunctions.adminBridgeGlobalCall = function(name: string, ...: any): (boolean, any, any)
 	local invoked, accepted, value, detail = ControllerFunctions.globalInvoke(name, ...)
 	if not invoked then return false, "Global security service is unavailable." end
+	-- GetGlobalAudit is a read-only list getter whose established provider
+	-- contract returns the records directly, rather than true, records.
+	-- Normalize that one legacy contract at this consumer boundary so the
+	-- provider and any other callers keep their existing return shape.
+	if name == "GetGlobalAudit" then
+		if typeof(accepted) == "table" then return true, accepted end
+		return false, if typeof(value) == "string" then value else "Security audit log is unavailable."
+	end
 	if accepted ~= true then
 		return false, if typeof(value) == "string" then value else "Global security operation was rejected."
 	end
