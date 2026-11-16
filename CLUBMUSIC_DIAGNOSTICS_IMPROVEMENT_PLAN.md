@@ -44,9 +44,19 @@ Existing cross-server ClubMusic features remain separate; diagnostics reports on
    - Keeps detailed messages and tracebacks server-side; the client-facing admin view receives aggregate counts only.
 
 6. **Global Service and trusted admin integration**
-   - `ClubMusic_Global_Service_server_1.lua` wires the registry, ServerHealth, Watchdog, and ErrorHistory into the existing ServerStorage BindableFunction snapshot.
-   - `UI_Server_Controller_server (1).lua` reports server-side AutoDJ, queue, playback, moderation, and recovery progress and displays local health, registry, watchdog, memory, and aggregate error-history counts to authorized staff; detailed records remain server-side.
+   - `ClubMusic_Global_Service_server_1.lua` wires the registry, ServerHealth, Watchdog, ErrorHistory, and read-only SecurityCore status providers into the existing ServerStorage BindableFunction snapshot.
+   - `UI_Server_Controller_server (1).lua` reports server-side AutoDJ, queue, playback, moderation, and recovery progress and displays local health, registry, watchdog, memory, aggregate error-history counts, and SecurityCore component health to authorized staff; detailed records remain server-side.
+   - The coordinator reports Local, CrossServer, Performance, and Watchdog dimensions while keeping diagnostics local-only.
+   - Snapshot copying is depth/size bounded, optional missing probes remain distinguishable from explicit degraded states, and health availability is no longer hard-coded.
+   - `ClubMusic_Global_SafeCall_Service.lua` now bounds warning-deduplication keys to 100 with 120-second expiry and validates callbacks.
    - No client-facing diagnostic remote was added.
+
+7. **Opt-in ClientDiagnostics** — `ClubMusic_Client_Diagnostics_Service.lua`
+   - Client-local rolling FPS/frame-time and frame-spike observations.
+   - Protected client memory sampling every 15 seconds and ping sampling every 5 seconds.
+   - Explicit `Start()` opt-in; `Stop()` disconnects and cancels sampling.
+   - Reports are marked `ClientLocalUntrusted`, remain on the client, and are never transmitted to the server.
+   - The component does not receive server health, server errors, tracebacks, or private authorization data.
 
 ## ServerStorage installation
 
@@ -64,8 +74,7 @@ The new registry, ServerHealth, and Watchdog modules are optional-load guarded. 
 
 ## Remaining plan
 
-7. Add separate, opt-in ClientDiagnostics for FPS, client memory, ping, and frame spikes. Keep client telemetry isolated from server health and do not expose server error history.
-8. Audit and retire obsolete diagnostic code only after every consumer has migrated and Studio tests pass.
+8. Audit and retire obsolete diagnostic code only after every consumer has migrated and Studio tests pass. Preserve existing public BindableFunction names and legacy structured metric counters during the transition.
 
 ## Runtime verification still required
 
@@ -77,5 +86,6 @@ Static repository checks do not prove Roblox runtime behavior. In Studio and a d
 - Playback, AutoDJ, and Queue pulses remain fresh during long tracks and paused playback.
 - An intentional missing AutoDJ pulse reports stale progress but performs no recovery action.
 - Error deduplication increments repeat counts while record and key caps remain bounded.
-- Authorized admin diagnostics show local metrics and metadata only.
-- No diagnostic information is sent to clients or stored/shared across servers.
+- Authorized admin diagnostics show local metrics, SecurityCore health states, and metadata only.
+- ClientDiagnostics remains stopped unless a local client script explicitly opts in; FPS, memory, ping, and frame-spike measurements stay client-local.
+- No server diagnostic information is sent to clients or stored/shared across servers.
