@@ -3079,18 +3079,8 @@ ControllerFunctions.insertIndex = function(tier: number): number
 	return lastPlayer + 1
 end
 
-ControllerFunctions.isTrackBlocked = function(trackId: string): boolean
-	if not globalQueueMode then return false end
-	local cache = ControllerFunctions.blockedTrackCache
-	if not cache then cache = {}; ControllerFunctions.blockedTrackCache = cache end
-	local cached = cache[trackId]
-	if typeof(cached) == "table" and os.clock() - cached.checkedAt < 30 then return cached.blocked end
-	local invoked, blocked, lookupOk = ControllerFunctions.globalInvoke("IsTrackBlocked", trackId)
-	if not invoked or lookupOk ~= true then
-		return not RunService:IsStudio()
-	end
-	cache[trackId] = {blocked = blocked == true, checkedAt = os.clock()}
-	return blocked == true
+ControllerFunctions.isTrackBlocked = function(_trackId: string): boolean
+	return false
 end
 
 ControllerFunctions.pickAutoTrack = function(): Track?
@@ -3135,31 +3125,7 @@ end
 
 ControllerFunctions.topUpAuto = function()
 	if autoQueueHold then return end
-	if globalQueueMode then
-		-- Generate one refill and commit it atomically. The service rechecks the
-		-- queue target inside UpdateAsync so concurrent servers cannot overfill it.
-		if not enqueueGlobalQueueBatch then return end
-		local entries: {QueueEntry} = {}
-		local guard = 0
-		while #queue + #entries < CONFIG.AutoQueueTarget and guard < 10 do
-			guard += 1
-			local playlistTrack = ControllerFunctions.nextPlaylistTrack()
-			if playlistTrack then
-				table.insert(entries, ControllerFunctions.makeEntry(playlistTrack, "playlist", nil))
-			else
-				if activePlaylistId then
-					warn("[ClubMusic] Active playlist has no playable catalog tracks; returning to Auto DJ.")
-					activePlaylistId = nil; activePlaylistName = ""
-					table.clear(activePlaylistTracks); activePlaylistCursor = 1
-				end
-				local autoTrack = ControllerFunctions.pickAutoTrack()
-				if not autoTrack then warn("[ClubMusic] No playable catalog tracks are available; automatic queue refill paused."); break end
-				table.insert(entries, ControllerFunctions.makeEntry(autoTrack, "auto", nil))
-			end
-		end
-		if #entries > 0 then enqueueGlobalQueueBatch(entries) end
-		return
-	end
+-- Auto DJ refills only this server's queue.
 	local guard = 0
 	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
 		guard += 1
@@ -3236,19 +3202,6 @@ ControllerFunctions.startPlaylistRotation = function(player: Player, playlistId:
 		notify(player, "This playlist has no tracks available in the current catalog.", "warn")
 		return false
 	end
-	if globalQueueMode then
-		local trackIds = {}
-		for _, playlistTrack in ipairs(validTracks) do table.insert(trackIds, playlistTrack.id) end
-		local callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlaylistRotation", found.id, found.name, trackIds)
-		if not callOk or changed ~= true or typeof(state) ~= "table" then
-			notify(player, tostring(message or "Global playlist rotation could not be started."), "warn")
-			return false
-		end
-		ControllerFunctions.applyGlobalQueueState(state)
-		ControllerFunctions.topUpAuto()
-		notify(player, "Global playlist rotation enabled: " .. found.name .. ".", "ok")
-		return true
-	end
 	activePlaylistId = found.id
 	activePlaylistName = found.name
 	activePlaylistTracks = validTracks
@@ -3265,17 +3218,6 @@ ControllerFunctions.stopPlaylistRotation = function(player: Player?)
 		return false
 	end
 	local stoppedName = activePlaylistName
-	if globalQueueMode then
-		local callOk, stopped, state, message = ControllerFunctions.globalInvoke("SetGlobalPlaylistRotation", nil)
-		if not callOk or stopped ~= true or typeof(state) ~= "table" then
-			if player then notify(player, tostring(message or "Global playlist rotation could not be stopped."), "warn") end
-			return false
-		end
-		ControllerFunctions.applyGlobalQueueState(state)
-		ControllerFunctions.topUpAuto()
-		if player then notify(player, "Global playlist rotation stopped: " .. stoppedName .. ".", "ok") end
-		return true
-	end
 	activePlaylistId = nil
 	activePlaylistName = ""
 	table.clear(activePlaylistTracks)
@@ -3614,143 +3556,7 @@ end
 -- Playlist edits are persistent per playlist, but an active rotation is shared
 -- state. Republish its complete ordered track list atomically so every server
 -- drops stale automatic entries and resumes from the same rotation definition.
-ControllerFunctions.syncGlobalPlaylistRotation = function(): (boolean, string?)
-	if not globalQueueMode then return true, nil end
-	local callOk, changed, state, message = false, false, nil, nil
-	if activePlaylistId and #activePlaylistTracks > 0 then
-		local trackIds = {}
-		for _, track in ipairs(activePlaylistTracks) do
-			table.insert(trackIds, track.id)
-		end
-		callOk, changed, state, message = ControllerFunctions.globalInvoke(
-			"SetGlobalPlaylistRotation", activePlaylistId, activePlaylistName, trackIds
-		)
-	else
-		callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlaylistRotation", nil)
-	end
-	if not callOk or changed ~= true or typeof(state) ~= "table" then
-		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		return false, tostring(message or "The shared playlist rotation could not be updated.")
-	end
-	if not ControllerFunctions.applyGlobalQueueState(state) then
-		return false, "The shared playlist state could not be applied."
-	end
-	return true, nil
-end
-
-enterLocalQueueBackup = function(reason: string)
-	if not globalQueueMode then return end
-	globalQueueMode = false
-	ControllerFunctions.globalPlaybackEndTime = 0
-	warn("[ClubMusic] Global queue unavailable; this server is using its independent local backup queue. " .. tostring(reason))
-	publishState(nil)
-end
-
-syncGlobalQueueSnapshot = function(): boolean
-	if not globalQueueMode or globalQueueSyncBusy then return false end
-	globalQueueSyncBusy = true
-	-- A malformed or unexpectedly-shaped bridge response must not strand the
-	-- sync lock. Keep the whole read/apply path protected and always release it.
-	local syncOk, applied, failureReason = pcall(function()
-		local callOk, readOk, state, message = ControllerFunctions.globalInvoke("GetGlobalQueueState")
-		local didApply = callOk == true and readOk == true and ControllerFunctions.applyGlobalQueueState(state)
-		return didApply == true, if didApply then nil else tostring(message or "Global queue snapshot could not be read or applied.")
-	end)
-	globalQueueSyncBusy = false
-	if not syncOk or applied ~= true then
-		globalQueueSnapshotFailureCount += 1
-		local reason = tostring(if syncOk then failureReason else applied)
-		warn("[ClubMusic] Global queue snapshot reconciliation failed (" .. tostring(globalQueueSnapshotFailureCount) .. "/" .. tostring(GLOBAL_QUEUE_SNAPSHOT_FAILURE_LIMIT) .. "): " .. reason)
-		-- A single failed read must not split this server onto a local queue.
-		-- Fall back only after repeated consecutive snapshot failures.
-		if globalQueueSnapshotFailureCount >= GLOBAL_QUEUE_SNAPSHOT_FAILURE_LIMIT and enterLocalQueueBackup then
-			enterLocalQueueBackup(reason)
-		end
-		return false
-	end
-	globalQueueSnapshotFailureCount = 0
-	publishState(nil)
-	return true
-end
-
-enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
-	local callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
-		"EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize, localCatalogRevision
-	)
-	if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-	if callOk and writeOk == true then return true, nil end
-	if tostring(message) == "Catalog changed on another server; refresh and retry."
-		and ControllerFunctions.refreshCatalogWhenReady() then
-		if not TRACK_BY_ID[entry.trackId] then return false, "That track is no longer in the shared catalog." end
-		callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
-			"EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize, localCatalogRevision
-		)
-		if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-		if callOk and writeOk == true then return true, nil end
-	end
-	local failureText = string.lower(tostring(message or writeOk or ""))
-	local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
-		or string.find(failureText, "temporarily", 1, true) ~= nil
-		or string.find(failureText, "budget", 1, true) ~= nil
-	-- A failed write alone does not prove shared storage is unavailable. A
-	-- fresh snapshot decides whether this server must remain global or fall back.
-	if syncGlobalQueueSnapshot and globalQueueMode then syncGlobalQueueSnapshot() end
-	if not globalQueueMode and queueManager and storageFailure then
-		queueManager:Insert(#queue + 1, entry)
-		publishState(nil)
-		return true, nil
-	end
-	return false, tostring(message or "Global queue is unavailable.")
-end
-
-enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
-	local callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
-		"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget, localCatalogRevision
-	)
-	if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-	if callOk and writeOk == true then return true, nil end
-	if tostring(message) == "Catalog changed on another server; refresh and retry."
-		and ControllerFunctions.refreshCatalogWhenReady() then
-		local allTracksPresent = true
-		for _, entry in ipairs(entries) do
-			if not TRACK_BY_ID[entry.trackId] then allTracksPresent = false; break end
-		end
-		if not allTracksPresent then
-			-- Rebuild the Auto DJ batch from the refreshed catalog rather than
-			-- leaving a short queue after a stale server selected a deleted ID.
-			task.defer(ControllerFunctions.topUpAuto)
-			return false, "An automatic track is no longer in the shared catalog; refill is being rebuilt."
-		end
-		callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
-			"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget, localCatalogRevision
-		)
-		if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-		if callOk and writeOk == true then return true, nil end
-	end
-	local failureText = string.lower(tostring(message or writeOk or ""))
-	local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
-		or string.find(failureText, "temporarily", 1, true) ~= nil
-		or string.find(failureText, "budget", 1, true) ~= nil
-	-- Keep global authority unless repeated snapshot reads also fail.
-	if syncGlobalQueueSnapshot and globalQueueMode then syncGlobalQueueSnapshot() end
-	if string.find(failureText, "recently played", 1, true) then
-		-- A different server may have prepared this batch from an older local
-		-- history snapshot. Rebuild after applying the authoritative history.
-		task.defer(ControllerFunctions.topUpAuto)
-		return false, tostring(message or "Recent-play history changed; rebuilding Auto DJ queue.")
-	end
-	if not globalQueueMode and queueManager and storageFailure then
-		if storageFailure then
-			for _, entry in ipairs(entries) do
-				if #queue >= CONFIG.MaxQueueSize then break end
-				queueManager:Insert(#queue + 1, entry)
-			end
-			publishState(nil)
-			return true, nil
-		end
-	end
-	return false, tostring(message or "Global automatic queue refill is unavailable.")
-end
+-- Global queue synchronization helpers were retired; queue maintenance is local.
 
 ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, string?)
 	-- Server-local queue only. Generation checks prevent the playback clock and
