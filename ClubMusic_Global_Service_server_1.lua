@@ -299,9 +299,11 @@ local publishTopic: (string, {[string]: any}) -> boolean
 local function updateModeration(userId: number, field: string, value: any, actorUserId: number, reason: string?): boolean
 	local key = userKey(userId)
 	if not key or (field ~= "globalBan" and field ~= "requestBlocked") then return false end
-	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-	if not budgetShared or not budgetAllowed then
-		warn("[ClubMusic Global] Moderation update rejected: shared DataStore budget unavailable.")
+	local budgetAllowed = consumeShared("all:datastore", 90, 15, 1)
+	-- Shared MemoryStore budgets are intentionally disabled in minimal-storage mode.
+	-- The bounded per-server fallback remains mandatory; reject only when it is exhausted.
+	if not budgetAllowed then
+		warn("[ClubMusic Global] Moderation update rejected: local DataStore budget exhausted.")
 		return false
 	end
 	local ok, result = pcall(function()
@@ -475,8 +477,8 @@ end
 bindFunction("IsTrackBlocked", function(trackId: any)
 	local key = validTrackKey(trackId)
 	if not SERVICE_ENABLED or not key then return false, false end
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	if not shared or not allowed then return false, false end
+	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	if not allowed then return false, false end
 	local ok, record = pcall(function() return globalControlStore:GetAsync(key) end)
 	if not ok then return false, false end
 	return typeof(record) == "table" and record.blocked == true, true
@@ -488,8 +490,8 @@ bindFunction("SetTrackBlocked", function(trackId: any, blocked: any, actorUserId
 		or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
 	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
 	if reason ~= nil and not cleanReason then return false end
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	if not shared or not allowed then return false end
+	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	if not allowed then return false end
 	local ok, record = pcall(function()
 		return globalControlStore:UpdateAsync(key, function(old)
 			local nextRecord = if typeof(old) == "table" then table.clone(old) else {}
