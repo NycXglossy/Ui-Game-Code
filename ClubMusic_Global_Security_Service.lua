@@ -324,7 +324,7 @@ local function severity(signal)
 end
 function Service.new(d)
  assert(type(d)=="table" and type(d.isEnabled)=="function","Security monitor dependencies missing")
- local self=setmetatable({d=d,signals={},total=0,alerts=0,lastAlertAt=0,events={},written=0,
+ local self=setmetatable({d=d,signals={},total=0,alerts=0,lastAlertAt=0,events={},eventHead=1,eventCount=0,written=0,
   droppedLow=0,lastError=nil,flushRunning=false,lastFlushAt=0},Service)
  if d.memoryStoreService then self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalSecurityBatches_v1") end
  return self
@@ -332,16 +332,31 @@ end
 function Service:_queue(signal,subject,count)
  local item={signal=string.sub(signal,1,48),subject=string.sub(tostring(subject or "server"),1,48),
   count=count or 1,at=os.time(),severity=severity(signal)}
- if #self.events>=CAPACITY then
-  local lowestIndex,lowest= nil,math.huge
-  for i,event in ipairs(self.events) do if event.severity<lowest then lowestIndex,lowest=i,event.severity end end
-  if lowestIndex and lowest<3 then table.remove(self.events,lowestIndex); self.droppedLow+=1
+ if self.eventCount>=CAPACITY then
+  local lowestOffset,lowest=nil,math.huge
+  for offset=1,self.eventCount do
+   local index=((self.eventHead+offset-2)%CAPACITY)+1
+   local level=self.events[index].severity
+   if level<lowest then lowestOffset,lowest=offset,level end
+  end
+  if lowestOffset and lowest<3 then
+   local rebuilt={}
+   for offset=1,self.eventCount do
+    if offset~=lowestOffset then
+     local index=((self.eventHead+offset-2)%CAPACITY)+1
+     table.insert(rebuilt,self.events[index])
+    end
+   end
+   table.clear(self.events); self.eventHead=1; self.eventCount=0
+   for _,event in ipairs(rebuilt) do self.eventCount+=1; self.events[self.eventCount]=event end
+   self.droppedLow+=1
   else
    warn("[ClubMusic][SecurityBatch] Local queue full of high-severity events; newest event could not be retained.")
    return false
   end
  end
- table.insert(self.events,item)
+ local tail=((self.eventHead+self.eventCount-2)%CAPACITY)+1
+ self.events[tail]=item; self.eventCount+=1
  return true
 end
 function Service:Record(signal,subject)
@@ -369,13 +384,14 @@ function Service:Record(signal,subject)
  return true,entry.count
 end
 function Service:_flush()
- if not self.map or not self.d.isEnabled() or #self.events<25 then return false end
+ if not self.map or not self.d.isEnabled() or self.eventCount<25 then return false end
  if os.clock()-self.lastFlushAt<5 then return false end
  local allowed,reason=StorageGuard.Allow()
  if not allowed then self.lastError=reason; return false end
  local batch={}
- for i=1,math.min(50,#self.events) do
-  local event=self.events[i]
+ for offset=1,math.min(50,self.eventCount) do
+  local index=((self.eventHead+offset-2)%CAPACITY)+1
+  local event=self.events[index]
   table.insert(batch,{s=event.signal,u=event.subject,n=event.count,t=event.at,p=event.severity})
  end
  local ok,payload=pcall(self.d.jsonEncode,batch)
@@ -396,14 +412,14 @@ function Service:_flush()
  if #key>64 then key=string.sub(key,1,64) end
  local writeOk,writeError=pcall(function() self.map:SetAsync(key,payload,600,os.time()) end)
  if not writeOk then self.lastError=tostring(writeError); StorageGuard.Failure(writeError); return false end
- for _=1,#batch do table.remove(self.events,1) end
+ for _=1,#batch do self.events[self.eventHead]=nil; self.eventHead=(self.eventHead%CAPACITY)+1; self.eventCount-=1 end
  self.written+=#batch; self.lastFlushAt=os.clock(); self.lastError=nil
  return true
 end
 function Service:GetStatus()
  return {state=if self.d.isEnabled() then "Observing" else "Disabled",totalSignals=self.total,
   alerts=self.alerts,trackedKeys=(function() local n=0; for _ in pairs(self.signals) do n+=1 end; return n end)(),
-  queued=#self.events,written=self.written,droppedLowSeverity=self.droppedLow,lastError=self.lastError,
+  queued=self.eventCount,written=self.written,droppedLowSeverity=self.droppedLow,lastError=self.lastError,
   eventsPerFlush={min=25,max=50},payloadMaxBytes=MAX_PAYLOAD,flushSeconds={min=5,max=10},
   maxFlushesPerMinute=12,ttlSeconds={min=300,max=900},keySharding="ServerId+TimeBucket",
   automaticEnforcement=false,storageGuard=StorageGuard.GetStatus()}
@@ -470,22 +486,34 @@ local TTL=3600
 local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderation" then 3 else if kind=="AdminAction" then 2 else 1 end
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Audit dependencies missing")
- local self=setmetatable({d=d,written=0,queued=0,droppedLow=0,lastError=nil,buffer={},lastFlushAt=0,
+ local self=setmetatable({d=d,written=0,queued=0,droppedLow=0,lastError=nil,buffer={},bufferHead=1,bufferCount=0,lastFlushAt=0,
   readCache={},readCacheAt={},flushRunning=false},Service)
  self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalAudit_v1")
  return self
 end
 function Service:_enqueue(record)
- if #self.buffer>=MAX_ITEMS then
-  local lowestIndex,lowestSeverity=nil,math.huge
-  for i,item in ipairs(self.buffer) do
-   local level=severity(item.kind)
-   if level<lowestSeverity then lowestIndex,lowestSeverity=i,level end
+ if self.bufferCount>=MAX_ITEMS then
+  local lowestOffset,lowestSeverity=nil,math.huge
+  for offset=1,self.bufferCount do
+   local index=((self.bufferHead+offset-2)%MAX_ITEMS)+1
+   local level=severity(self.buffer[index].kind)
+   if level<lowestSeverity then lowestOffset,lowestSeverity=offset,level end
   end
-  if lowestIndex and lowestSeverity<3 then table.remove(self.buffer,lowestIndex); self.droppedLow+=1
+  if lowestOffset and lowestSeverity<3 then
+   local rebuilt={}
+   for offset=1,self.bufferCount do
+    if offset~=lowestOffset then
+     local index=((self.bufferHead+offset-2)%MAX_ITEMS)+1
+     table.insert(rebuilt,self.buffer[index])
+    end
+   end
+   table.clear(self.buffer); self.bufferHead=1; self.bufferCount=0
+   for _,item in ipairs(rebuilt) do self.bufferCount+=1; self.buffer[self.bufferCount]=item end
+   self.droppedLow+=1
   else self.droppedLow+=1; return false end
  end
- table.insert(self.buffer,record); self.queued+=1
+ local tail=((self.bufferHead+self.bufferCount-2)%MAX_ITEMS)+1
+ self.buffer[tail]=record; self.bufferCount+=1; self.queued+=1
  return true
 end
 function Service:Record(kind,actorUserId,target,action)
@@ -497,14 +525,14 @@ function Service:Record(kind,actorUserId,target,action)
  return self:_enqueue(record)
 end
 function Service:_flush()
- if not self.d.isEnabled() or #self.buffer<1 then return false end
+ if not self.d.isEnabled() or self.bufferCount<1 then return false end
  local now=os.clock()
  if now-self.lastFlushAt<15 then return false end
  local allowed,reason=StorageGuard.Allow()
  if not allowed then self.lastError=reason; return false end
  local batch={}
- local count=math.min(100,#self.buffer)
- for i=1,count do table.insert(batch,self.buffer[i]) end
+ local count=math.min(100,self.bufferCount)
+ for offset=1,count do local index=((self.bufferHead+offset-2)%MAX_ITEMS)+1; table.insert(batch,self.buffer[index]) end
  local encodedOk,payload=pcall(self.d.jsonEncode,batch)
  if not encodedOk or type(payload)~="string" then self.lastError="Audit JSON serialization failed."; return false end
  while #payload>MAX_PAYLOAD and #batch>1 do
@@ -527,7 +555,7 @@ function Service:_flush()
  if not writeOk then
   self.lastError=tostring(writeError); StorageGuard.Failure(writeError); return false
  end
- for _=1,#batch do table.remove(self.buffer,1) end
+ for _=1,#batch do self.buffer[self.bufferHead]=nil; self.bufferHead=(self.bufferHead%MAX_ITEMS)+1; self.bufferCount-=1 end
  self.written+=#batch; self.lastFlushAt=now; self.lastError=nil; self.readCache={}; self.readCacheAt={}
  return true
 end
@@ -557,7 +585,7 @@ function Service:GetRecent(limit,moderatorUserId)
 end
 function Service:GetStatus()
  return {state=if self.d.isEnabled() then "Healthy" else "Disabled",written=self.written,
-  queued=#self.buffer,droppedLowSeverity=self.droppedLow,lastError=self.lastError,
+  queued=self.bufferCount,droppedLowSeverity=self.droppedLow,lastError=self.lastError,
   eventsPerBatch={min=50,max=100},payloadTargetBytes=MAX_PAYLOAD,flushSeconds={min=15,max=30},
   maxFlushesPerMinute=4,ttlSeconds=TTL,shards=3,storageGuard=StorageGuard.GetStatus()}
 end
@@ -567,7 +595,7 @@ function Service:Start()
  task.spawn(function()
   while self.flushRunning do
    task.wait(22.5)
-   if #self.buffer>=50 then self:_flush() end
+   if self.bufferCount>=50 then self:_flush() end
   end
  end)
  return true
