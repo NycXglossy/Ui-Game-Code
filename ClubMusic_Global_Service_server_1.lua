@@ -55,6 +55,7 @@ local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false
 local globalDiagnosticsService: any = nil
 local globalServiceRegistry: any = nil
 local globalServerHealthService: any = nil
+local globalLocalWatchdog: any = nil
 local subscriptionStatus: {[string]: string} = {}
 local messagingPublishSuccess = 0
 local messagingPublishFailures = 0
@@ -817,6 +818,32 @@ do
 	end
 end
 
+-- Local Watchdog records progress pulses only; it never controls the observed systems.
+do
+	local module = ServerStorage:FindFirstChild("ClubMusic_Local_Watchdog_Service")
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new)
+			if createOk and typeof(instance) == "table" and type(instance.Pulse) == "function"
+				and type(instance.SetExpected) == "function" and type(instance.GetStatus) == "function" then
+				globalLocalWatchdog = instance
+				if globalServiceRegistry then
+					pcall(globalServiceRegistry.Register, globalServiceRegistry, "Watchdog", instance, {"Pulse", "SetExpected", "GetStatus"}, false)
+				end
+			else
+				updateRegistryStatus("Watchdog", "Unavailable", "Watchdog module has an invalid interface.")
+				warn("[ClubMusic Diagnostics] Watchdog module has an invalid interface.")
+			end
+		else
+			updateRegistryStatus("Watchdog", "Unavailable", "Watchdog module failed to load.")
+			warn("[ClubMusic Diagnostics] Watchdog module failed to load: " .. tostring(exported))
+		end
+	else
+		warn("[ClubMusic Diagnostics] Optional ClubMusic_Local_Watchdog_Service ModuleScript is not installed.")
+	end
+end
+
 local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
 if diagnosticsModule then
 	local createOk, instance = pcall(function()
@@ -824,6 +851,7 @@ if diagnosticsModule then
 			isEnabled = function() return SERVICE_ENABLED end,
 			getRegistryStatus = function() return if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "Unavailable", scope = "ServerLocal", detail = "Registry module is not installed."} end,
 			getServerHealthStatus = function() return if globalServerHealthService then globalServerHealthService:GetStatus() else nil end,
+			getWatchdogStatus = function() return if globalLocalWatchdog then globalLocalWatchdog:GetStatus() else nil end,
 			apiFolder = apiFolder,
 				getSyncStatus = getGlobalSyncStatus,
 			getRecentErrors = function()
@@ -1067,6 +1095,7 @@ if lifecycleJanitor then
 			IncidentResponse=globalIncidentResponseService,
 			Diagnostics=globalDiagnosticsService,
 			ServerHealth=globalServerHealthService,
+			Watchdog=globalLocalWatchdog,
 		}) do
 			if service and type(service.Stop)=="function" then pcall(service.Stop,service) end
 		end
@@ -1142,6 +1171,7 @@ bindFunction("GetGlobalOperationalStatus", function()
 		Messaging = getMessagingStatus(),
 		Diagnostics = if globalDiagnosticsService then globalDiagnosticsService:GetStatus() else {state = "Unavailable"},
 		ServerHealth = if globalServerHealthService then globalServerHealthService:GetStatus() else {state = "NotInstalled"},
+		Watchdog = if globalLocalWatchdog then globalLocalWatchdog:GetStatus() else {state = "NotInstalled"},
 		ServiceRegistry = if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "NotInstalled"},
 		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
 		Reconciliation = if globalStateReconciliationService then globalStateReconciliationService:GetStatus() else {state = "Unavailable"},
@@ -1178,6 +1208,13 @@ bindFunction("ConsumeGlobalRateLimit", function(key: any, capacity: any, refill:
 	if not globalRateLimitService or typeof(key) ~= "string" or #key > 100
 		or not finiteNumber(capacity) or not finiteNumber(refill) or not finiteNumber(cost) then return false, false end
 	return globalRateLimitService:Consume(key, capacity, refill, cost)
+end)
+bindFunction("RecordLocalWatchdogPulse", function(name: any, detail: any, healthy: any, metadata: any)
+	if not globalLocalWatchdog or typeof(name) ~= "string" or #name > 24
+		or (detail ~= nil and typeof(detail) ~= "string")
+		or (healthy ~= nil and typeof(healthy) ~= "boolean")
+		or (metadata ~= nil and typeof(metadata) ~= "table") then return false end
+	return globalLocalWatchdog:Pulse(name, detail, healthy, metadata)
 end)
 bindFunction("RecordGlobalMetric", function(name: any, value: any, latencySeconds: any)
 	if not globalDiagnosticsService or typeof(name) ~= "string" or #name > 48 then return false end
