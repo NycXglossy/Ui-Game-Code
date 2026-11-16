@@ -19,18 +19,48 @@ return function(_K: any)
 	local AUTHORIZER_NAME = "ClubMusicAuthorizationResolver"
 	local AUTHORITY_NAME = "TikiTideMovementAuthority"
 
-	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, global: boolean?}} = {
-		gravity = {permission = "GlobalConfig", property = "WorldGravity", valueArg = 1, global = true},
-		starterspeed = {permission = "GlobalConfig", property = "StarterWalkSpeed", valueArg = 1, global = true},
-		speed = {permission = "GlobalModeration", property = "WalkSpeed", valueArg = 2, targetArg = 1},
-		jumppower = {permission = "GlobalModeration", property = "JumpPower", valueArg = 2, targetArg = 1},
-		jump = {permission = "GlobalModeration", property = "JumpImpulse", targetArg = 1},
-		setgravity = {permission = "GlobalModeration", property = "PersonalGravity", valueArg = 2, targetArg = 1},
-		size = {permission = "GlobalModeration", property = "BodyScale", valueArg = 2, targetArg = 1},
-		fly = {permission = "GlobalModeration", property = "Flight", valueArg = 0, targetArg = 1},
-		unfly = {permission = "GlobalModeration", property = "Flight", valueArg = 0, targetArg = 1},
-		freeze = {permission = "GlobalModeration", property = "Frozen", valueArg = 0, targetArg = 1},
-		thaw = {permission = "GlobalModeration", property = "Frozen", valueArg = 0, targetArg = 1},
+	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, global: boolean?, authority: boolean?, auditKind: string?}} = {
+		-- Verified movement/environment commands in the supplied Kohl's Admin export.
+		gravity = {permission = "GlobalConfig", property = "WorldGravity", valueArg = 1, global = true, authority = true},
+		starterspeed = {permission = "GlobalConfig", property = "StarterWalkSpeed", valueArg = 1, global = true, authority = true},
+		speed = {permission = "GlobalModeration", property = "WalkSpeed", valueArg = 2, targetArg = 1, authority = true},
+		jumppower = {permission = "GlobalModeration", property = "JumpPower", valueArg = 2, targetArg = 1, authority = true},
+		jump = {permission = "GlobalModeration", property = "JumpImpulse", targetArg = 1, authority = true},
+		size = {permission = "GlobalModeration", property = "BodyScale", valueArg = 2, targetArg = 1, authority = true},
+		fly = {permission = "GlobalModeration", property = "Flight", targetArg = 1, authority = true},
+		unfly = {permission = "GlobalModeration", property = "Flight", targetArg = 1, authority = true},
+		freeze = {permission = "GlobalModeration", property = "Frozen", targetArg = 1, authority = true},
+		thaw = {permission = "GlobalModeration", property = "Frozen", targetArg = 1, authority = true},
+		bring = {permission = "GlobalModeration", property = "Teleport", targetArg = 1, authority = true},
+		tp = {permission = "GlobalModeration", property = "Teleport", targetArg = 1, authority = true},
+
+		-- Native moderation enforcement commands retain Kohl's own role/target checks.
+		ban = {permission = "GlobalModeration", property = "Ban", targetArg = 1, auditKind = "Moderation"},
+		unban = {permission = "GlobalModeration", property = "Unban", targetArg = 1, auditKind = "Moderation"},
+		kick = {permission = "GlobalModeration", property = "Kick", targetArg = 1, auditKind = "Moderation"},
+		mute = {permission = "GlobalModeration", property = "Mute", targetArg = 1, auditKind = "Moderation"},
+		unmute = {permission = "GlobalModeration", property = "Unmute", targetArg = 1, auditKind = "Moderation"},
+		punish = {permission = "GlobalModeration", property = "Punish", targetArg = 1, auditKind = "Moderation"},
+		unpunish = {permission = "GlobalModeration", property = "Unpunish", targetArg = 1, auditKind = "Moderation"},
+		kill = {permission = "GlobalModeration", property = "Kill", targetArg = 1, auditKind = "Moderation"},
+		hurt = {permission = "GlobalModeration", property = "Hurt", targetArg = 1, auditKind = "Moderation"},
+		health = {permission = "GlobalModeration", property = "Health", targetArg = 1, auditKind = "Moderation"},
+		stun = {permission = "GlobalModeration", property = "Stun", targetArg = 1, auditKind = "Moderation"},
+		unstun = {permission = "GlobalModeration", property = "Unstun", targetArg = 1, auditKind = "Moderation"},
+		blind = {permission = "GlobalModeration", property = "Blind", targetArg = 1, auditKind = "Moderation"},
+		unblind = {permission = "GlobalModeration", property = "Unblind", targetArg = 1, auditKind = "Moderation"},
+
+		-- Server-wide disruptive commands require the highest Tiki Tide permission.
+		serverlock = {permission = "GlobalConfig", property = "ServerLock", global = true, auditKind = "AdminAction"},
+		unserverlock = {permission = "GlobalConfig", property = "ServerUnlock", global = true, auditKind = "AdminAction"},
+		shutdown = {permission = "GlobalConfig", property = "Shutdown", global = true, auditKind = "AdminAction"},
+		global = {permission = "GlobalConfig", property = "GlobalCommand", global = true, auditKind = "AdminAction"},
+	}
+
+	local BLOCKED_COMMANDS = {
+		-- These built-ins intentionally hang/crash a target client or repeatedly kill them.
+		crash = "This command is disabled by Tiki Tide security.",
+		loopkill = "This command is disabled by Tiki Tide security.",
 	}
 
 	local VALUE_LIMITS: {[string]: {min: number, max: number}} = {
@@ -39,7 +69,7 @@ return function(_K: any)
 		WalkSpeed = {min = 0, max = 100},
 		JumpPower = {min = 0, max = 250},
 		PersonalGravity = {min = 0, max = 5},
-		BodyScale = {min = 0.1, max = 10},
+		BodyScale = {min = 0.1, max = 10},\n\t\tWorldGravity = {min = 0, max = 500},\n\t\tStarterWalkSpeed = {min = 0, max = 100},\n\t\tTeleport = {min = 0, max = 0},
 	}
 
 	local function finiteNumber(value: any): boolean
@@ -181,9 +211,8 @@ return function(_K: any)
 		return false, "Unknown movement authority operation."
 	end
 
-	local function logAction(command: any, policy: any, targets: {Player}, value: any)
+	local function logAction(command: any, policy: any, targets: {Player}, value: any, targetCount: number)
 		local id = actorUserId(command)
-		local targetCount = #targets
 		local valueText = if value == nil then "default" elseif typeof(value) == "boolean" then tostring(value) else tostring(value)
 		local commandName = tostring(command.definition.name)
 		local message = string.format(
@@ -194,21 +223,19 @@ return function(_K: any)
 			local ok, err = pcall(_K.log, message, "COMMAND", id)
 			if not ok then warn("[Tiki Tide Security][Kohl's] Kohl's log failed: " .. tostring(err)) end
 		end
-		-- Send the successful action to the existing unified SecurityCore Audit.
-		-- This is best-effort reporting and does not affect command execution.
+		-- Successful moderation actions enter the existing unified SecurityCore Audit.
 		local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 		local audit = api and api:IsA("Folder") and api:FindFirstChild("RecordGlobalAuditEvent")
 		if audit and audit:IsA("BindableFunction") then
 			task.spawn(function()
-				local ok, recorded = pcall(function()
-					return audit:Invoke("AdminAction", id or 0, tostring(targetCount) .. " target(s)", "kohls:" .. policy.property)
+				local ok = pcall(function()
+					return audit:Invoke(policy.auditKind or "AdminAction", id or 0,
+						tostring(targetCount) .. " target(s)", "kohls:" .. policy.property)
 				end)
-				if not ok then
-					warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit invocation failed for command=" .. commandName)
-				end
+				if not ok then warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit invocation failed for command=" .. commandName) end
 			end)
 		else
-			warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit API is unavailable; Kohl's command log remains the fallback.")
+			warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit API unavailable; Kohl's command log remains the fallback.")
 		end
 	end
 
@@ -223,37 +250,41 @@ return function(_K: any)
 			local args = table.pack(...)
 			local result = table.pack(original(context, table.unpack(args, 1, args.n)))
 			local targets: {Player} = {}
+			local targetCount = 0
 			local targetArg = policy.targetArg
 			if targetArg then
 				local rawTargets = args[targetArg]
 				if typeof(rawTargets) == "Instance" and rawTargets:IsA("Player") then
 					table.insert(targets, rawTargets)
+					targetCount = 1
 				elseif typeof(rawTargets) == "table" then
+					targetCount = #rawTargets
 					for _, target in ipairs(rawTargets) do
 						if typeof(target) == "Instance" and target:IsA("Player") then table.insert(targets, target) end
 					end
 				end
 			end
-			local value = if policy.valueArg == 0 then false elseif policy.valueArg then args[policy.valueArg] else true
+			local value = if policy.valueArg then args[policy.valueArg] else nil
+			if policy.property == "JumpImpulse" then value = true end
+			if policy.property == "Flight" then value = command.alias ~= "unfly" end
+			if policy.property == "Frozen" then value = command.alias ~= "thaw" end
 			if value == nil then value = "DEFAULT" end
-			if command.alias == "unfly" or command.alias == "thaw" then value = false
-			elseif command.alias == "fly" or command.alias == "freeze" then value = true end
 			local actorId = actorUserId(context)
 			if actorId then
-				if policy.global then
-					local globalValue = value
-					if globalValue == nil and policy.property == "WorldGravity" and context.env then globalValue = context.env.gravity end
-					local registerOk = (authority :: BindableFunction):Invoke("Register", actorId, 0, policy.property, globalValue, "KohlsAdmin", 120)
-					if registerOk ~= true then warn("[Tiki Tide Security][Kohl's] Could not register global movement authority.") end
-				else
-					for _, target in ipairs(targets) do
-						local targetValue = value
-						if policy.property == "JumpImpulse" then targetValue = true end
-						local registerOk = (authority :: BindableFunction):Invoke("Register", actorId, target.UserId, policy.property, targetValue, "KohlsAdmin", 120)
-						if registerOk ~= true then warn("[Tiki Tide Security][Kohl's] Could not register target movement authority.") end
+				if policy.authority == true then
+					if policy.global then
+						local globalValue = value
+						if globalValue == "DEFAULT" and policy.property == "WorldGravity" and context.env then globalValue = context.env.gravity end
+						local registerOk = (authority :: BindableFunction):Invoke("Register", actorId, 0, policy.property, globalValue, "KohlsAdmin", 120)
+						if registerOk ~= true then warn("[Tiki Tide Security][Kohl's] Could not register global movement authority.") end
+					else
+						for _, target in ipairs(targets) do
+							local registerOk = (authority :: BindableFunction):Invoke("Register", actorId, target.UserId, policy.property, value, "KohlsAdmin", 120)
+							if registerOk ~= true then warn("[Tiki Tide Security][Kohl's] Could not register target movement authority.") end
+						end
 					end
 				end
-				logAction(context, policy, targets, value)
+				logAction(context, policy, targets, value, targetCount)
 			end
 			return table.unpack(result, 1, result.n)
 		end
@@ -268,6 +299,19 @@ return function(_K: any)
 	local filter = function(command: any): (boolean, string?)
 		if typeof(command) ~= "table" or typeof(command.definition) ~= "table" then return true end
 		local commandName = string.lower(tostring(command.definition.name or ""))
+		if BLOCKED_COMMANDS[commandName] then
+			local actorId = actorUserId(command)
+			if actorId then
+				task.spawn(function()
+					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+					local report = api and api:IsA("Folder") and api:FindFirstChild("ReportSignal")
+					if report and report:IsA("BindableFunction") then
+						pcall(function() report:Invoke(actorId, "kohls_dangerous_command_blocked", commandName) end)
+					end
+				end)
+			end
+			return false, BLOCKED_COMMANDS[commandName]
+		end
 		local policy = POLICY[commandName]
 		if not policy then return true end
 
@@ -282,8 +326,8 @@ return function(_K: any)
 				end
 			end)
 			return false, if policy.permission == "GlobalConfig"
-				then "Tiki Tide owner/co-owner authorization is required for global movement settings."
-				else "Tiki Tide administrator authorization is required for player movement commands."
+				then "Tiki Tide owner/co-owner authorization is required for this server-wide command."
+				else "Tiki Tide administrator authorization is required for this moderation or player-control command."
 		end
 		if not consumeBudget(actorId) then
 			return false, "Regular administrative commands are being rate-limited. Wait a moment and retry."
@@ -294,7 +338,7 @@ return function(_K: any)
 			value = true
 		elseif policy.property == "Flight" or policy.property == "Frozen" then
 			value = commandName == "fly" or commandName == "freeze"
-		elseif value ~= nil then
+		elseif value ~= nil and policy.authority == true then
 			local limits = VALUE_LIMITS[policy.property]
 			if not finiteNumber(value) or (limits and (value < limits.min or value > limits.max)) then
 				return false, string.format("The requested %s value is outside the permitted range.", policy.property)
