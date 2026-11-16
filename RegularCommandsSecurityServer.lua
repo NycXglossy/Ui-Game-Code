@@ -105,6 +105,7 @@ return function(_K: any)
 
 	Players.PlayerRemoving:Connect(function(player)
 		buckets[player.UserId] = nil
+		permissionCache[player.UserId] = nil
 	end)
 
 	-- Server-only, bounded, in-memory movement authorization ledger. Other server
@@ -169,7 +170,7 @@ return function(_K: any)
 			if typeof(value) == "number" and typeof(entry.value) == "number" then
 				return math.abs(value - entry.value) <= 0.05, entry.origin
 			end
-			return value == entry.value, entry.origin
+			return entry.value == "DEFAULT" or value == entry.value, entry.origin
 		elseif operation == "Status" then
 			local count = 0
 			for key, entry in pairs(authorityEntries) do
