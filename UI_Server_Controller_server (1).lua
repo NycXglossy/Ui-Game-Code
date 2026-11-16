@@ -6353,7 +6353,7 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Playe
 	if not isMembershipPass and not isNewFeaturePass then return end
 	task.spawn(function()
 		if isNewFeaturePass then ControllerFunctions.refreshPersonalPasses(player) end
-		if isMembershipPass then ControllerFunctions.refreshVip(player) end
+		if isMembershipPass then ControllerFunctions.refreshVip(player, true) end
 		if isMembershipPass then
 			ControllerFunctions.applyVipAttribute(player)
 			ControllerFunctions.syncTitleTagUnlocks(player)
