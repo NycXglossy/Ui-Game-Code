@@ -3173,9 +3173,8 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	if ControllerFunctions.publishPlaybackState then ControllerFunctions.publishPlaybackState() end
 end
 
--- Global queue state reconciliation is retired; the local queue is authoritative.
+-- Queue state and playback transitions are owned by this server.
 
--- Global queue synchronization helpers were retired; queue maintenance is local.
 
 ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, string?)
 	-- Server-local queue only. Generation checks prevent the playback clock and
@@ -3218,7 +3217,6 @@ else
 	warn("[ClubMusic] Startup held: the catalog contains no playable audio tracks.")
 end
 
--- Global queue and playback-sync startup/recovery loops have been retired.
 -- Each server runs its own local queue and playback clock.
 
 -- Skip voting ---------------------------------------------------------------------
@@ -6394,9 +6392,8 @@ task.spawn(function()
 			end
 		end
 
-		-- Each server prepares the same authoritative global queue head. At fade
-		-- completion the queue service CAS commits that exact entry once; peers
-		-- accept the same committed entry rather than advancing a second time.
+		-- This server prepares its own next local queue entry before the current
+		-- track ends; the crossfade commit advances only this server's queue.
 		if not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
 			local remaining = nowPlaying.duration - nowPlaying.elapsed
