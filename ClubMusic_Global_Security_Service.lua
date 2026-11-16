@@ -525,7 +525,11 @@ function Service:_flush()
   self.flushInFlight=false
   return true
  end
- local allowed,reason=StorageGuard.Allow("low")
+ local hasCritical=false
+ for _,event in ipairs(pending.events) do
+  if event.priority=="Critical" then hasCritical=true; break end
+ end
+ local allowed,reason=StorageGuard.Allow(if hasCritical then "critical" else "low")
  if not allowed then
   self.lastError=reason
   self.retryAt=now+self.retryDelay
