@@ -5,7 +5,7 @@
 --
 -- This adapter uses the installed Kohl's Process.addCommandFilter enforcement point.
 -- It authorizes before command-request splitting, then wraps only the matched server
--- handlers so movement authority is recorded and moderation actions are audited only after the original handler returns.
+-- handlers so approved movement changes are registered and sensitive actions are audited after execution.
 
 return function(_K: any)
 	if _K.IsServer ~= true then return end
@@ -291,13 +291,13 @@ return function(_K: any)
 	end
 
 	local auditUnavailableWarned = false
-	local function logAction(command: any, policy: any, targets: {Player}, value: any, targetCount: number)
+	local function logAction(command: any, policy: any, value: any, targetCount: number, targetSummary: string)
 		local id = actorUserId(command)
 		local valueText = if value == nil then "default" elseif typeof(value) == "boolean" then tostring(value) else tostring(value)
 		local commandName = tostring(command.alias or command.definition.name)
 		local message = string.format(
-			"Kohl's administrative command invoked: command=%s property=%s targets=%d value=%s",
-			commandName, policy.property, targetCount, string.sub(valueText, 1, 24)
+			"Kohl's administrative command invoked: command=%s property=%s targets=%d targetIds=%s value=%s",
+			commandName, policy.property, targetCount, string.sub(targetSummary, 1, 96), string.sub(valueText, 1, 24)
 		)
 		if type(_K.log) == "function" then
 			local ok, err = pcall(_K.log, message, "COMMAND", id)
@@ -310,7 +310,7 @@ return function(_K: any)
 			task.spawn(function()
 				local ok = pcall(function()
 					return audit:Invoke(policy.auditKind or "AdminAction", id or 0,
-						tostring(targetCount) .. " target(s)", "kohls:" .. policy.property)
+						string.sub(targetSummary, 1, 160), "kohls:" .. policy.property)
 				end)
 				if not ok then warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit invocation failed for command=" .. commandName) end
 			end)
@@ -336,21 +336,38 @@ return function(_K: any)
 			if not activePolicy then return table.unpack(result, 1, result.n) end
 
 			local targets: {Player} = {}
+			local targetRefs: {string} = {}
 			local targetCount = if activePolicy.targetSelf then 1 else 0
+			local function addTargetRef(target: any)
+				if #targetRefs >= 8 then return end
+				if typeof(target) == "Instance" and target:IsA("Player") then
+					table.insert(targetRefs, tostring(target.UserId))
+				elseif typeof(target) == "number" and finiteNumber(target) then
+					table.insert(targetRefs, tostring(math.floor(target)))
+				elseif typeof(target) == "string" and #target <= 24 then
+					table.insert(targetRefs, target)
+				end
+			end
+			if activePolicy.targetSelf then addTargetRef(context.fromPlayer and context.fromPlayer.UserId) end
 			for _, targetIndex in ipairs({activePolicy.targetArg, activePolicy.targetArg2}) do
 				if targetIndex then
 					local rawTargets = args[targetIndex]
 					if typeof(rawTargets) == "Instance" and rawTargets:IsA("Player") then
 						table.insert(targets, rawTargets)
 						targetCount += 1
+						addTargetRef(rawTargets)
 					elseif typeof(rawTargets) == "table" then
 						targetCount += #rawTargets
 						for _, target in ipairs(rawTargets) do
 							if typeof(target) == "Instance" and target:IsA("Player") then table.insert(targets, target) end
+							addTargetRef(target)
 						end
 					end
 				end
 			end
+			local targetSummary = if #targetRefs > 0 then table.concat(targetRefs, ",")
+				else if activePolicy.global then "server-wide" else "none"
+			if targetCount > #targetRefs then targetSummary ..= string.format(",+%d", targetCount - #targetRefs) end
 
 			local value = if activePolicy.valueArg then args[activePolicy.valueArg] else nil
 			if activePolicy.property == "JumpImpulse" then value = true end
@@ -382,7 +399,7 @@ return function(_K: any)
 						for _, target in ipairs(targets) do registerAuthority(target.UserId, value) end
 					end
 				end
-				logAction(context, activePolicy, targets, value, targetCount)
+				logAction(context, activePolicy, value, targetCount, targetSummary)
 			end
 			return table.unpack(result, 1, result.n)
 		end
