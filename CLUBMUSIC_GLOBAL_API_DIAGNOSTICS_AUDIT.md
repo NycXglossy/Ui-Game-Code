@@ -224,3 +224,37 @@ The server-only `ServerStorage.ClubMusicAdminBridge` is a BindableFunction, not 
 2. `RequestAction` is a multiplexed event. Its individual action cases must be traced through `handleAction` before any statement can be made that every mutation has correct authorization, validation, and rate limiting.
 3. Continue the wider security remote inventory separately across UtilityBar, Tiki Tide Settings, Kohl's Admin adapter, and other server scripts. Do not modify third-party package internals as part of this diagnostics-only pass.
 4. Keep runtime tests outstanding: attempt to read diagnostics from an ordinary client, send malformed PurchaseDiagnostic telemetry, exceed its rate limit, and verify no traceback or private server snapshot reaches the client.
+
+
+## Fourth-pass: RequestAction authorization and validation matrix
+
+**Scope:** static trace of `ControllerFunctions.handleAction` and its `RequestAction.OnServerEvent` entry point in the current controller source. No source logic was changed in this pass.
+
+### Shared entry controls
+
+- Rejects a non-live player, invalid/oversized action string, unbounded payload, and action names absent from the fixed `ACTION_COOLDOWNS` allowlist.
+- Payload is capped at 16 top-level keys; string keys/values and nested collections are bounded; numbers must be finite; nested values are restricted to bounded strings, finite numbers, and booleans.
+- Applies per-player/per-server action budgets and action cooldowns before entering action-specific handlers.
+- The normal UI RemoteEvent path does not set the trusted-admin flag. The separate server-only admin bridge authenticates staff before calling the shared action handler with its trusted-admin lane.
+
+### Action groups and observed checks
+
+| Action group | Actions | Authorization / validation observed |
+|---|---|---|
+| Player requests | `RequestTrack`, `RequestAudioAsset`, `VoteSkip` | Catalog track IDs must resolve to playable server catalog entries; request lock/block state, queue capacity, cooldown, per-player request limits, duplicates and current track are checked. Raw audio asset requests require staff, integer asset ID, optional allowlist, inspection concurrency/token budget, duration limit, and a second block-state check after the yielding inspection. Skip voting delegates to the server vote manager |
+| Catalog management | `CatalogAddAudio`, `CatalogRemoveTrack` | Staff-only. Add validates asset ID, genre, optional image/decal asset, optional audio allowlist, inspection cooldown/concurrency/token budget, duration, and rechecks staff after yielding. Remove only accepts a server-known custom track, refuses current/queued tracks, and requires storage readiness/budget |
+| Playlist management | `PlaylistCreate`, `PlaylistDelete`, `PlaylistAddTrack`, `PlaylistRemoveTrack`, `PlaylistMoveTrack` | Staff-only. Requires playlist service readiness and DataStore budget. Added track must be present in current server catalog. Service methods own playlist-ID/name/position validation |
+| DJ booth controls | `DJPlayPlaylist`, `DJStopPlaylist`, `DJMoveUp`, `DJRemove`, `DJSkip`, `DJPause`, `DJRestart`, `DJClearQueue`, `DJToggleLock` | Each branch checks `isDJBoothController` (configured owner/co-owner level). Queue IDs are bounded and looked up server-side. Playback transitions are guarded; pause/resume/restart check audio operation results; queue operations act on local server queue |
+| Moderation | `ModBlockUser`, `ModPurgeUser` | Admin-level check, then `findTarget` requires a live distinct target and hierarchy check. Block persists through Global API outside Studio; failed block remains locally blocked and failed unblock remains blocked. Purge removes only target's player-originated queue entries |
+| Owner membership rewards | `ModSetPassTier` | Requires owner level (level >= 4), live distinct target/hierarchy validation, integer tier 0–3, and a loaded target profile; saves the owner-awarded tier |
+| Daily rewards / title tags | `ClaimDailyReward`, `BuyTitleTag`, `EquipTitleTag` | Server validates day/streak/claim state; title purchases use server-side fixed prices and balance/ownership checks; equip requires an allowlisted tag already owned |
+| Custom title settings | `SaveCustomTitle`, `SaveTitleSlot`, `SelectTitleSlot`, `ClearTitleSlot`, `SetTitleVisible` | Server validates text length, color/style/effect/font/slot data, ownership and unlocked slots. Title slot save requires Tiki Tide entitlement and server-side text filtering; client-supplied colors are not trusted |
+
+### Findings and follow-up
+
+1. The action dispatcher has a meaningful central validation/rate-limit boundary and each privileged action group performs its own authorization check. The observed rank tiers are delegated to SecurityCore Authorization through `GetLevel`; this file alone does not define the underlying group-rank mapping.
+2. The `ModBlockUser` / `ModPurgeUser` handlers use `isAdmin`, and `findTarget` enforces strict target-rank hierarchy and prevents self-targeting. `ModSetPassTier` is owner-only.
+3. `Playlist*`, `CatalogAddAudio`, `CatalogRemoveTrack`, and `RequestAudioAsset` use the controller's `isStaff` projection. Confirm the SecurityCore level-1 threshold remains the intended moderation/staff threshold (rank 150+) and that DJ-only rank 100 is not promoted to staff.
+4. A number of rejected action branches return silently or notify rather than returning a structured false result. This is not an authorization bypass by itself, but it limits observability and should be considered separately from diagnostics exposure.
+5. This is a static source review. It does not inspect every service method's internal validation, all client UI callers, or other remotes in UtilityBar / Tiki Tide Settings / Kohl's Admin. Do not infer complete repository-wide remote coverage.
+6. Studio test matrix: attempt every privileged action as guest, DJ-only, moderator, admin, co-owner, and owner; test equal/higher-rank targets; malformed payloads; rapid repeats; failed Global moderation persistence; and confirm no diagnostic snapshots or tracebacks are returned to clients.
