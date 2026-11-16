@@ -2302,6 +2302,19 @@ ControllerFunctions.isFiniteNumber = function(value: any): boolean
 	return typeof(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
+-- Audio asset IDs are untrusted input. Prefer the shared finite-integer validator;
+-- keep a strict local fallback for staged deployments without the module.
+ControllerFunctions.isValidAudioAssetId = function(value: any): boolean
+	if sanityValidationService then
+		local ok, valid = pcall(sanityValidationService.IsInteger, value, 1, 9007199254740991)
+		if ok then return valid == true end
+	end
+	return ControllerFunctions.isFiniteNumber(value)
+		and value >= 1
+		and value <= 9007199254740991
+		and value % 1 == 0
+end
+
 ControllerFunctions.acquireProfileWriteLock = function(userId: number): boolean
 	local startedAt = os.clock()
 	while profileWriteLocks[userId] do
@@ -4410,13 +4423,13 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local assetId = payload.assetId
 		local genreId = payload.genreId
 		local artworkAssetId = payload.artworkAssetId
-		if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then
+		if not ControllerFunctions.isValidAudioAssetId(assetId) then
 			notify(player, "Enter a valid audio asset ID.", "warn"); return
 		end
 		if typeof(genreId) ~= "string" or #genreId > 24 then
 			notify(player, "Choose a valid catalog genre.", "warn"); return
 		end
-		if artworkAssetId ~= nil and (typeof(artworkAssetId) ~= "number" or artworkAssetId ~= artworkAssetId or artworkAssetId % 1 ~= 0 or artworkAssetId <= 0 or artworkAssetId > 9007199254740991) then
+		if artworkAssetId ~= nil and not ControllerFunctions.isValidAudioAssetId(artworkAssetId) then
 			notify(player, "Artwork must be a valid Roblox image asset ID.", "warn"); return
 		end
 		if artworkAssetId ~= nil then
@@ -4590,7 +4603,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			return
 		end
 		local assetId = payload.assetId
-		if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then
+		if not ControllerFunctions.isValidAudioAssetId(assetId) then
 			notify(player, "That audio asset ID isn't valid.", "warn")
 			return
 		end
