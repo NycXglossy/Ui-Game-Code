@@ -2285,6 +2285,8 @@ ControllerFunctions.consumeActionBudget = function(userId: number, now: number):
 	return true
 end
 
+local sanityValidationService: any = nil
+
 local ACTION_COOLDOWNS: {[string]: number} = {
 	RequestTrack = 0.5, RequestAudioAsset = CONFIG.AudioInspectionCooldownSeconds,
 	ReloadSong = CONFIG.ReloadCooldownSeconds, ToggleFavorite = 0.2, VoteSkip = 0.5,
@@ -2341,7 +2343,6 @@ local requestsLocked = false
 local recentTracks: {string} = {}
 local lastAutoGenre = ""
 
-local sanityValidationService: any = nil
 do
 	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("SanityValidation") else nil
