@@ -170,3 +170,8 @@ This is a static compatibility pass, not proof that every consumer in all embedd
 - Playlist rotation, queue reorder/removal, and queue clearing remain Owner/Co-owner only.
 - Added separate `canUseDJBooth` and `canManageDJBooth` player-state flags.
 - Follow-up: inspect client renderer visibility conditions and test rank 100/150/200/254/255 in Studio. Runtime verification not yet performed.
+
+
+### Client UI follow-up completed (static)
+
+The renderer now uses the server-projected DJ permissions instead of assuming DJs are staff. Rank-100 DJs see local playback and Control Mode actions; queue mutation and playlist-management controls remain Owner/Co-owner only. This is a static source update only; Studio and published-server testing remain outstanding.
