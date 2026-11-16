@@ -16,7 +16,6 @@ return function(_K: any)
 
 	local Players = game:GetService("Players")
 	local ServerStorage = game:GetService("ServerStorage")
-	local AUTHORIZER_NAME = "ClubMusicAuthorizationResolver"
 	local AUTHORITY_NAME = "TikiTideMovementAuthority"
 
 	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, targetArg2: number?, detailArg: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?, budget: string?, authorityTTL: number?}} = {
@@ -134,42 +133,35 @@ return function(_K: any)
 		return nil
 	end
 
-	-- Prime trusted permission snapshots outside the synchronous command filter.
-	-- Process.addCommandFilter must not yield; expired/missing snapshots deny.
-	local permissionCache: {[number]: {GlobalModeration: boolean, GlobalAnnouncement: boolean, GlobalConfig: boolean, expiresAt: number}} = {}
-	local function refreshAuthorization(player: Player)
-		task.spawn(function()
-			local resolver = ServerStorage:FindFirstChild(AUTHORIZER_NAME)
-			if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then
-				permissionCache[player.UserId] = nil
-				return
+	-- Use the same SecurityCore authorization singleton as ClubMusic Global.
+	-- Check is synchronous and reads only the module's short-lived server cache;
+	-- an expired/missing cache denies the command while refresh happens asynchronously.
+	local authorizationService: any = nil
+	do
+		local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+		local module = if core and core:IsA("Folder") then core:FindFirstChild("Authorization") else nil
+		if module and module:IsA("ModuleScript") then
+			local requireOk, exported = pcall(require, module)
+			if requireOk and typeof(exported) == "table" and type(exported.GetShared) == "function" then
+				local sharedOk, instance = pcall(exported.GetShared)
+				if sharedOk and typeof(instance) == "table" and type(instance.Check) == "function" then
+					authorizationService = instance
+				else
+					warn("[Tiki Tide Security][Kohl's] SecurityCore Authorization could not initialize; privileged commands are fail-closed.")
+				end
+			else
+				warn("[Tiki Tide Security][Kohl's] SecurityCore Authorization module failed to load; privileged commands are fail-closed.")
 			end
-			local snapshotOk, snapshot = pcall(function() return resolver:Invoke(player.UserId, "KohlsAdminSnapshot") end)
-			if player.Parent ~= Players then return end
-			permissionCache[player.UserId] = {
-				GlobalModeration = snapshotOk and typeof(snapshot) == "table" and snapshot.GlobalModeration == true,
-				GlobalAnnouncement = snapshotOk and typeof(snapshot) == "table" and snapshot.GlobalAnnouncement == true,
-				GlobalConfig = snapshotOk and typeof(snapshot) == "table" and snapshot.GlobalConfig == true,
-				expiresAt = os.clock() + 15,
-			}
-		end)
-	end
-	local function authorize(userId: number, permission: string): boolean
-		local cached = permissionCache[userId]
-		if not cached or cached.expiresAt <= os.clock() then return false end
-		if permission == "GlobalModeration" then return cached.GlobalModeration end
-		if permission == "GlobalAnnouncement" then return cached.GlobalAnnouncement end
-		if permission == "GlobalConfig" then return cached.GlobalConfig end
-		return false
-	end
-	Players.PlayerAdded:Connect(refreshAuthorization)
-	for _, player in ipairs(Players:GetPlayers()) do refreshAuthorization(player) end
-	task.spawn(function()
-		while true do
-			task.wait(10)
-			for _, player in ipairs(Players:GetPlayers()) do refreshAuthorization(player) end
+		else
+			warn("[Tiki Tide Security][Kohl's] SecurityCore Authorization module is missing; privileged commands are fail-closed.")
 		end
-	end)
+	end
+
+	local function authorize(userId: number, permission: string): boolean
+		if not authorizationService then return false end
+		local ok, allowed = pcall(authorizationService.Check, authorizationService, userId, permission)
+		return ok and allowed == true
+	end
 
 	-- Small per-server buckets are split by risk class so routine moderation
 	-- cannot consume the budget reserved for privilege/world-changing operations.
