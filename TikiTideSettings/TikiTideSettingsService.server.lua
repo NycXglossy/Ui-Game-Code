@@ -405,11 +405,13 @@ local function handleRequest(player: Player, action: any, payload: any)
 		return {ok = true, message = if settings.allowTeleport then "Players may teleport to you." else "Teleport permission disabled.", data = snapshot(player)}
 	elseif action == "TeleportTo" then
 		local targetUserId = payload.userId
-		if not SanityValidation or not SanityValidation.IsInteger(targetUserId, 1, 9007199254740991) then
+		if typeof(targetUserId) ~= "number" or targetUserId ~= targetUserId
+			or targetUserId == math.huge or targetUserId == -math.huge
+			or targetUserId % 1 ~= 0 or targetUserId < 1 or targetUserId > 9007199254740991 then
 			return fail("Select a valid player.")
 		end
 		local target = Players:GetPlayerByUserId(targetUserId)
-		if not target or target == player or not SanityValidation.IsLivePlayer(target) then
+		if not target or target == player or (SanityValidation ~= nil and not SanityValidation.IsLivePlayer(target)) then
 			return fail("That player is unavailable.")
 		end
 		local actorCharacter = player.Character
@@ -430,8 +432,8 @@ local function handleRequest(player: Player, action: any, payload: any)
 		end
 		-- Permission checks can yield. Revalidate the actor, recipient, character
 		-- instances and consent after the yield, before reserving or moving anyone.
-		if not hasTikiTideAccess(player) or not SanityValidation.IsLivePlayer(player)
-			or not SanityValidation.IsLivePlayer(target)
+		if not hasTikiTideAccess(player) or player.Parent ~= Players or target.Parent ~= Players
+			or (SanityValidation ~= nil and (not SanityValidation.IsLivePlayer(player) or not SanityValidation.IsLivePlayer(target)))
 			or player.Character ~= actorCharacter or target.Character ~= targetCharacter then
 			return fail("Teleport access is no longer available.")
 		end
@@ -611,6 +613,8 @@ Players.PlayerRemoving:Connect(function(player)
 	settingsByUserId[player.UserId] = nil
 	lastRequestAt[player.UserId] = nil
 	lastBubbleAt[player.UserId] = nil
+	lastTeleportByActor[player.UserId] = nil
+	lastTeleportToRecipient[player.UserId] = nil
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then baseMovementByHumanoid[humanoid] = nil end
