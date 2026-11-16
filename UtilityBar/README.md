@@ -70,11 +70,20 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 ## Shared SecurityCore integration
 
-Install `RegularCommandsSecurityServer.lua` as a **ModuleScript** in `ServerScriptService > Kohl's Admin > Addons`. Keep the existing `KohlsAdmin_ClubMusic_Addon` installed separately. The new server-only add-on uses Kohl's `Process.addCommandFilter` enforcement API, checks the existing Tiki Tide server-side `GlobalModeration` / `GlobalConfig` permissions, and writes successful moderation/admin actions to the existing unified SecurityCore Audit API. It does not edit Kohl's core modules or create another MemoryStore map.
+Install `RegularCommandsSecurityServer.lua` as a **ModuleScript** in `ServerScriptService > Kohl's Admin > Addons`. Keep the existing `KohlsAdmin_ClubMusic_Addon` installed separately. The server-only add-on uses Kohl's synchronous `Process.addCommandFilter` enforcement point and the existing Tiki Tide authorization resolver. It does not modify Kohl's core modules or create another ban store, audit store, MemoryStore map, or persistent rate-limit bucket.
 
-The integration covers the exported built-in ban/unban, kick, mute/unmute, punish/unpunish, kill/hurt/health, stun/unstun, blind/unblind, movement, teleport, server-lock, and shutdown paths. Kohl's native role checks, target-rank checks, ban storage, and request flow remain in place. The built-in `crash`, `loopkill`, and arbitrary `global` command-string paths are blocked by the security filter; use dedicated Tiki Tide global controls instead.
+Permission levels:
+- `GlobalModeration`: player moderation, movement, teleport, respawn/refresh, and private hints
+- `GlobalAnnouncement`: persistent cross-server announcements and server broadcasts
+- `GlobalConfig`: role/permission changes, tool/asset grants, building tools, world cleanup, terrain clearing, server lock, place teleport, and shutdown
 
-The Utility Bar Size button remains an ordinary self-service feature; it does not require an admin role or a Game Pass. Its server-side size change registers with the same movement authority ledger so a future CharacterPhysicsGuard can distinguish authorized resizing from suspicious changes. The ledger is local to each server and creates no DataStore or MemoryStore records.
+Additional protected built-ins include `role/rank`, `temprole/temprank`, `unrole/removerole`, `removemember`, `give`, `startergive`, `starterremove`, `copytools`, `gear`, `btools/build/f3x`, `insert/ins`, `announce/unannounce`, `hint`, `message`, `fullmessage`, `privatehint`, `respawn/spawn`, `refresh/re`, `clean`, and `clearterrain`. Kohl's native role hierarchy, target-rank checks, command request flow, and native ban storage remain in place.
+
+Arbitrary server script execution (`script/loadstring`), client-crashing (`crash`), repeated-kill (`loopkill`), and arbitrary cross-server command strings (`global`) are blocked. Use the dedicated Tiki Tide global controls for approved cross-server operations.
+
+For performance, Kohl's permissions are refreshed as one small server-local snapshot per player every 10 seconds (15-second cache lifetime). Command filters never yield. Separate small in-memory token buckets isolate moderation, privilege, asset, broadcast, and world-changing operations; they are cleaned when players leave. No additional MemoryStore traffic is introduced by these command checks.
+
+The Utility Bar Size button remains an ordinary self-service feature; it does not require an admin role or a Game Pass. Its server-side size change registers with the same server-local `TikiTideMovementAuthority` ledger so a future CharacterPhysicsGuard can distinguish authorized resizing from suspicious changes. The ledger creates no DataStore or MemoryStore records.
 
 ## Validation
 
@@ -91,8 +100,9 @@ The repository-side integration audit and static contract checks are complete. T
 - [ ] Install both server Scripts and verify Refresh Outfit updates only the requesting player's avatar.
 - [ ] Verify the Mount pass gate, then confirm Mount equips only a tagged/named mount Tool and reports clearly when none is installed.
 - [ ] Verify Size applies only to the requesting player, accepts 0.50×–5.00×, rejects values outside that range, restores the captured baseline, registers BodyScale authority, and safely rejects R6.
-- [ ] Install `RegularCommandsSecurityServer.lua` as a Kohl's Admin server add-on; verify unauthorized moderation commands are denied, authorized ban/kick/mute actions still use Kohl's native handlers, successful actions appear in the unified SecurityCore Audit, and `crash` / `loopkill` are blocked.
-- [ ] Verify `:gravity`, `:starterspeed`, `:serverlock`, `:unserverlock`, `:shutdown`, and `:place` require the owner/co-owner SecurityCore permission; verify `:global` is blocked.
+- [ ] Install `RegularCommandsSecurityServer.lua` as a Kohl's Admin server add-on; verify unauthorized moderation, role, asset-grant, and world-control commands are denied; authorized commands still use Kohl's native handlers; audit events reach the unified SecurityCore Audit; and `script`, `loadstring`, `crash`, `loopkill`, and `global` are blocked.
+- [ ] Verify `:gravity`, `:starterspeed`, `:role`, `:temprole`, `:unrole`, `:removemember`, `:give`, `:startergive`, `:gear`, `:btools`, `:insert`, `:clearterrain`, `:serverlock`, `:unserverlock`, `:shutdown`, and `:place` require the owner/co-owner SecurityCore permission; verify `:global` is blocked.
+- [ ] Verify `:announce`, `:unannounce`, `:hint`, `:message`, and `:fullmessage` require the `GlobalAnnouncement` permission and use their existing Kohl's broadcast handlers.
 - [ ] Verify the Island Companion pass gate, then confirm Clone Companion is non-interactive, expires after 12 seconds, and is cleaned up on leave.
 - [ ] Verify Lighting Control requires its pass and its presets/restore action affect only StageClubLight-tagged fixtures.
 - [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
