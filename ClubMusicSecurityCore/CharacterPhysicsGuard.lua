@@ -64,6 +64,7 @@ function Service.new(dependencies)
 		d = dependencies,
 		started = false,
 		playerStates = {},
+		characterAddedConnections = {},
 		totalSignals = 0,
 		suppressedSignals = 0,
 		lastSignalAt = {},
@@ -232,13 +233,16 @@ function Service:Start()
 	self.started = true
 	self.gravityBaseline = Workspace.Gravity
 	self:_watchGravity()
-	self.playerAddedConnection = Players.PlayerAdded:Connect(function(player)
-		player.CharacterAdded:Connect(function(character)
+	local function attachPlayer(player: Player)
+		self.characterAddedConnections[player.UserId] = player.CharacterAdded:Connect(function(character)
 			self:_watchCharacter(player, character)
 		end)
 		if player.Character then self:_watchCharacter(player, player.Character) end
-	end)
+	end
+	self.playerAddedConnection = Players.PlayerAdded:Connect(attachPlayer)
 	self.playerRemovingConnection = Players.PlayerRemoving:Connect(function(player)
+		local characterConnection = self.characterAddedConnections[player.UserId]
+		if characterConnection then characterConnection:Disconnect(); self.characterAddedConnections[player.UserId] = nil end
 		local state = self.playerStates[player.UserId]
 		if state then
 			for _, connection in ipairs(state.connections) do connection:Disconnect() end
@@ -249,12 +253,7 @@ function Service:Start()
 			if string.sub(key, -#suffix) == suffix then self.lastSignalAt[key] = nil end
 		end
 	end)
-	for _, player in ipairs(Players:GetPlayers()) do
-		player.CharacterAdded:Connect(function(character)
-			self:_watchCharacter(player, character)
-		end)
-		if player.Character then self:_watchCharacter(player, player.Character) end
-	end
+	for _, player in ipairs(Players:GetPlayers()) do attachPlayer(player) end
 	return true
 end
 
@@ -283,6 +282,8 @@ function Service:Stop()
 		for _, connection in ipairs(state.connections) do connection:Disconnect() end
 	end
 	table.clear(self.playerStates)
+	for _, connection in pairs(self.characterAddedConnections) do connection:Disconnect() end
+	table.clear(self.characterAddedConnections)
 	table.clear(self.lastSignalAt)
 end
 
