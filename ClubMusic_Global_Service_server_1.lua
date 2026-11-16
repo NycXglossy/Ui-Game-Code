@@ -37,7 +37,6 @@ local CONFIG = {
 		Moderation = "ClubMusic_Global_Moderation_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
-		Queue = "ClubMusic_Global_Queue_v1",
 
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
@@ -369,8 +368,6 @@ publishTopic = function(topic: string, payload: {[string]: any}): boolean
 			pcall(globalAuditService.Record, globalAuditService, "AdminAction", payload.actorUserId, tostring(payload.command), tostring(payload.command))
 		elseif payload.kind == "Catalog" then
 			pcall(globalAuditService.Record, globalAuditService, "CatalogChange", 0, "catalog", "invalidate")
-		elseif payload.kind == "QueueChanged" then
-			pcall(globalAuditService.Record, globalAuditService, "GlobalQueueChange", 0, "global-queue", "changed")
 		end
 	end
 	return true
@@ -894,43 +891,13 @@ bindFunction("GetGlobalSafeCallStatus", function()
 	print("[ClubMusic][SafeCall] Diagnostics helper ready; maxRecords=50.")
 end
 
-local recoveryModule = loadOptionalGlobalModule("ClubMusic_Global_Recovery_Service")
-if recoveryModule then
-	local createOk, instance = pcall(function()
-		return recoveryModule.new({
-			safeCall = globalSafeCall,
-			isEnabled = function() return SERVICE_ENABLED end,
-			allowStoreOperation = allowGlobalQueueStoreOperation,
-			invalidateSnapshot = function()
-				if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
-					MusicGlobalQueueService:InvalidateSnapshot()
-				end
-			end,
-			getSnapshot = function()
-				return MusicGlobalQueueService:GetSnapshot()
-			end,
-			initialRetrySeconds = 30,
-			maxRetrySeconds = 180,
-			reportError = reportOperationalError,
-		})
-	end)
-	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
-		globalRecoveryService = instance
-		globalRecoveryService:Start()
-	else
-		warn("[ClubMusic Global] Could not initialize Global Recovery Service: " .. tostring(instance))
-	end
-end
-
 local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
 if diagnosticsModule then
 	local createOk, instance = pcall(function()
 		return diagnosticsModule.new({
 			isEnabled = function() return SERVICE_ENABLED end,
 			apiFolder = apiFolder,
-			queueModule = queueModule,
-			getRecoveryStatus = function() return if globalRecoveryService then globalRecoveryService:GetStatus() else nil end,
-			getSyncStatus = getGlobalSyncStatus,
+				getSyncStatus = getGlobalSyncStatus,
 			getRecentErrors = function()
 				if globalErrorHandler and type(globalErrorHandler.GetRecentErrors) == "function" then return globalErrorHandler.GetRecentErrors() end
 				return nil
@@ -1040,13 +1007,6 @@ globalMaintenanceService = if globalConfigService then createOperationalService(
 	end,
 }, {"Start", "GetStatus", "Set"}) else nil
 if globalMaintenanceService then globalMaintenanceService:Start() end
-
-globalStateReconciliationService = createOperationalService("ClubMusic_Global_State_Reconciliation_Service", {
-	isEnabled = function() return SERVICE_ENABLED end,
-	getSnapshot = function() return MusicGlobalQueueService:GetSnapshot() end,
-}, {"Start", "GetStatus", "Reconcile"})
-if globalStateReconciliationService then globalStateReconciliationService:Start() end
-
 
 -- Security services remain independent; authorization denies by default until a trusted resolver exists.
 local globalAuthorizationServiceResolver = function(actorUserId: any, permission: any): boolean
@@ -1218,8 +1178,6 @@ globalEventBindable.Event:Connect(function(event)
 			pcall(globalAuditService.Record, globalAuditService, "AdminAction", event.actorUserId, tostring(event.command or "unknown"), tostring(event.command or "unknown"))
 		elseif kind == "Catalog" then
 			pcall(globalAuditService.Record, globalAuditService, "CatalogChange", 0, "catalog", "received")
-		elseif kind == "QueueChanged" then
-			pcall(globalAuditService.Record, globalAuditService, "GlobalQueueChange", 0, "global-queue", "received")
 		elseif kind == "Moderation" then
 			pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", event.actorUserId, tostring(event.field or "moderation"), tostring(event.field or "moderation"))
 		end
@@ -1469,51 +1427,6 @@ local function onCatalog(message)
 	end
 end
 
-local function onQueueChanged(message)
-	local data = if typeof(message) == "table" then message.Data else nil
-	if not validEnvelope(data, "Queue") then return end
-	if data.kind ~= "QueueChanged" or not finiteNumber(data.revision) then return end
-	if not unseen(data.id) then return end
-	-- The originating controller already applies the state returned by its
-	-- successful mutation. Ignore our own echo to avoid a redundant DataStore read.
-	if data.senderJob == JOB_ID then return end
-	lastQueueNotificationAt = os.clock()
-	queueNotificationsReceived += 1
-	-- MessagingService is an invalidation signal: discard this server's short-lived
-	-- snapshot cache before the controller asks for the authoritative queue state.
-	if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
-		MusicGlobalQueueService:InvalidateSnapshot()
-	end
-	local trackHint = nil
-	if typeof(data.trackHint) == "table" then
-		local hint = data.trackHint
-		local validTrack = typeof(hint.trackId) == "string" and #hint.trackId > 0 and #hint.trackId <= 64
-			and string.match(hint.trackId, "^[%w%-_]+$") ~= nil
-			and typeof(hint.title) == "string" and #hint.title <= 160
-			and typeof(hint.artist) == "string" and #hint.artist <= 100
-			and finiteNumber(hint.duration) and hint.duration >= 1 and hint.duration <= 86400
-			and finiteNumber(hint.trackRevision) and hint.trackRevision >= 0 and hint.trackRevision % 1 == 0
-		if validTrack then
-			trackHint = {
-				id = if typeof(hint.id) == "string" then string.sub(hint.id, 1, 64) else "",
-				trackId = hint.trackId, title = hint.title, artist = hint.artist,
-				genre = if typeof(hint.genre) == "string" then string.sub(hint.genre, 1, 40) else "Unknown",
-				duration = hint.duration,
-				requestedBy = if typeof(hint.requestedBy) == "string" then string.sub(hint.requestedBy, 1, 80) else "Auto DJ",
-				userId = if finiteNumber(hint.userId) then math.max(0, math.floor(hint.userId)) else 0,
-				source = if typeof(hint.source) == "string" then string.sub(hint.source, 1, 24) else "auto",
-				vip = hint.vip == true,
-				soundId = if typeof(hint.soundId) == "string" then string.sub(hint.soundId, 1, 64) else "",
-				trackRevision = math.floor(hint.trackRevision),
-			}
-		end
-	end
-	globalEventBindable:Fire({
-		kind = "QueueChanged", revision = math.floor(data.revision),
-		senderJob = data.senderJob, trackHint = trackHint,
-	})
-end
-
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	task.spawn(function()
@@ -1548,7 +1461,6 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.Moderation, onModeration)
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
-	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
 else
 	if not CONFIG.Enabled then
 		warn("[ClubMusic Global] Cross-server service is disabled by CONFIG.Enabled=false; local UI controller remains fully functional.")
