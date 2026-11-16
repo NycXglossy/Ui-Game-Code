@@ -109,6 +109,12 @@ type Settings = {
 local settingsByUserId: {[number]: Settings} = {}
 local lastRequestAt: {[number]: number} = {}
 local lastBubbleAt: {[number]: number} = {}
+-- Social-action budgets are server-owned and scoped to live sessions. A recipient
+-- cooldown prevents several callers from repeatedly moving the same player.
+local lastTeleportByActor: {[number]: number} = {}
+local lastTeleportToRecipient: {[number]: number} = {}
+local TELEPORT_ACTOR_COOLDOWN = 2
+local TELEPORT_RECIPIENT_COOLDOWN = 3
 local lastAnnouncementAt = 0
 local ingressTokens = 48
 local ingressUpdatedAt = os.clock()
@@ -399,31 +405,62 @@ local function handleRequest(player: Player, action: any, payload: any)
 		return {ok = true, message = if settings.allowTeleport then "Players may teleport to you." else "Teleport permission disabled.", data = snapshot(player)}
 	elseif action == "TeleportTo" then
 		local targetUserId = payload.userId
-		if typeof(targetUserId) ~= "number" or targetUserId % 1 ~= 0 or targetUserId <= 0 then
+		if not SanityValidation or not SanityValidation.IsInteger(targetUserId, 1, 9007199254740991) then
 			return fail("Select a valid player.")
 		end
 		local target = Players:GetPlayerByUserId(targetUserId)
-		if not target or target == player or not target.Character then return fail("That player is unavailable.") end
-		if target:GetAttribute("TikiTideAllowTeleport") ~= true and not hasClubPermission(player, "GlobalModeration") then
+		if not target or target == player or not SanityValidation.IsLivePlayer(target) then
+			return fail("That player is unavailable.")
+		end
+		local actorCharacter = player.Character
+		local targetCharacter = target.Character
+		if not actorCharacter or not actorCharacter.Parent or not targetCharacter or not targetCharacter.Parent then
+			return fail("Character position is not ready.")
+		end
+		local actorHumanoid = actorCharacter:FindFirstChildOfClass("Humanoid")
+		local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+		if not actorHumanoid or actorHumanoid.Health <= 0 or not targetHumanoid or targetHumanoid.Health <= 0 then
+			return fail("Both players must have active characters.")
+		end
+		local function recipientAllowsTeleport(): boolean
+			return target:GetAttribute("TikiTideAllowTeleport") == true
+		end
+		if not recipientAllowsTeleport() and not hasClubPermission(player, "GlobalModeration") then
 			return fail("That player has not allowed teleporting to them.")
 		end
-		-- Permission resolution may yield; verify both participants and consent again.
-		if not hasTikiTideAccess(player) or player.Parent ~= Players or target.Parent ~= Players then
+		-- Permission checks can yield. Revalidate the actor, recipient, character
+		-- instances and consent after the yield, before reserving or moving anyone.
+		if not hasTikiTideAccess(player) or not SanityValidation.IsLivePlayer(player)
+			or not SanityValidation.IsLivePlayer(target)
+			or player.Character ~= actorCharacter or target.Character ~= targetCharacter then
 			return fail("Teleport access is no longer available.")
 		end
-		if target:GetAttribute("TikiTideAllowTeleport") ~= true and not hasClubPermission(player, "GlobalModeration") then
+		if not recipientAllowsTeleport() and not hasClubPermission(player, "GlobalModeration") then
 			return fail("That player has not allowed teleporting to them.")
 		end
-		local targetRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-		local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if player.Parent ~= Players or target.Parent ~= Players
+			or player.Character ~= actorCharacter or target.Character ~= targetCharacter then
+			return fail("A player character changed; please try again.")
+		end
+		local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+		local ownRoot = actorCharacter:FindFirstChild("HumanoidRootPart")
 		if not targetRoot or not targetRoot:IsA("BasePart") or not ownRoot or not ownRoot:IsA("BasePart") then
 			return fail("Character position is not ready.")
 		end
 		if not teleportValidationService then
 			return fail("Secure teleport validation is unavailable; please try again later.")
 		end
-		-- Resolve the destination from the server-observed target transform. The
-		-- ticket is bound to this player, destination and trusted server origin.
+		local nowTeleport = os.clock()
+		if nowTeleport - (lastTeleportByActor[player.UserId] or 0) < TELEPORT_ACTOR_COOLDOWN then
+			return fail("Please wait before teleporting again.")
+		end
+		if nowTeleport - (lastTeleportToRecipient[target.UserId] or 0) < TELEPORT_RECIPIENT_COOLDOWN then
+			return fail("That player was just teleported to; please try again shortly.")
+		end
+		-- Reserve both budgets without yielding, closing duplicate/concurrent calls.
+		lastTeleportByActor[player.UserId] = nowTeleport
+		lastTeleportToRecipient[target.UserId] = nowTeleport
+		-- Resolve destination only from the server-observed recipient transform.
 		local destinationCFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
 		local ticketOk, ticket = pcall(
 			teleportValidationService.Begin,
@@ -434,13 +471,22 @@ local function handleRequest(player: Player, action: any, payload: any)
 			8
 		)
 		if not ticketOk or typeof(ticket) ~= "string" then
+			if lastTeleportByActor[player.UserId] == nowTeleport then lastTeleportByActor[player.UserId] = nil end
+			if lastTeleportToRecipient[target.UserId] == nowTeleport then lastTeleportToRecipient[target.UserId] = nil end
 			return fail("Teleport could not be authorized safely.")
 		end
 		local moveOk = pcall(function()
+			if player.Parent ~= Players or target.Parent ~= Players
+				or player.Character ~= actorCharacter or target.Character ~= targetCharacter
+				or ownRoot.Parent ~= actorCharacter or targetRoot.Parent ~= targetCharacter then
+				error("A player or character changed before teleport execution.")
+			end
 			ownRoot.CFrame = destinationCFrame
 		end)
 		if not moveOk then
 			pcall(teleportValidationService.Cancel, ticket)
+			if lastTeleportByActor[player.UserId] == nowTeleport then lastTeleportByActor[player.UserId] = nil end
+			if lastTeleportToRecipient[target.UserId] == nowTeleport then lastTeleportToRecipient[target.UserId] = nil end
 			return fail("Teleport could not be completed.")
 		end
 		local completeOk, verified = pcall(
