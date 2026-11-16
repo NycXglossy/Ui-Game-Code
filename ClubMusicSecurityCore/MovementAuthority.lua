@@ -133,11 +133,19 @@ function MovementAuthority.Status()
 	}
 end
 
-function MovementAuthority.Invoke(operation: any, actorId: any, targetId: any, property: any, value: any, origin: any, ttl: any)
+-- Stable BindableFunction contract:
+--   Invoke("Register", actorId, targetId, property, value, origin, ttl)
+--   Invoke("Check", targetId, property, value)
+--   Invoke("Status")
+-- The previous dispatcher treated Check's targetId as actorId, shifting every
+-- remaining argument. CharacterPhysicsGuard therefore never reached Check's
+-- intended target/property/value tuple. Keep Check's three-argument public
+-- shape while retaining the seven-slot Register shape.
+function MovementAuthority.Invoke(operation: any, first: any, second: any, third: any, fourth: any, fifth: any, sixth: any)
 	if operation == "Register" then
-		return MovementAuthority.Register(actorId, targetId, property, value, origin, ttl)
+		return MovementAuthority.Register(first, second, third, fourth, fifth, sixth)
 	elseif operation == "Check" then
-		return MovementAuthority.Check(targetId, property, value)
+		return MovementAuthority.Check(first, second, third)
 	elseif operation == "Status" then
 		return MovementAuthority.Status()
 	end
