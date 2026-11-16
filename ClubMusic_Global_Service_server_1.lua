@@ -542,7 +542,9 @@ bindFunction("GetGlobalPlaybackControl", function()
 end)
 
 bindFunction("IsEnabled", function()
-	return SERVICE_ENABLED and (not globalConfigService or globalConfigService:Get("legacyGlobalQueueEnabled") ~= false)
+	-- Reports availability of global moderation/configuration services only.
+	-- Queue/playback modes are permanently local and no longer gate this check.
+	return SERVICE_ENABLED
 end)
 
 -- Optional operational services. They observe the existing global queue and
