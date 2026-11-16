@@ -18,6 +18,23 @@ return function(_K: any)
 	local ServerStorage = game:GetService("ServerStorage")
 	local AUTHORITY_NAME = "TikiTideMovementAuthority"
 
+	local sanityModule = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local sanityModuleScript = sanityModule and sanityModule:IsA("Folder") and sanityModule:FindFirstChild("SanityValidation")
+	local SanityValidation: any = nil
+	if sanityModuleScript and sanityModuleScript:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, sanityModuleScript)
+		if requireOk and typeof(exported) == "table"
+			and type(exported.IsFiniteNumber) == "function"
+			and type(exported.IsLivePlayer) == "function"
+			and type(exported.ValidatePlayerTargets) == "function" then
+			SanityValidation = exported
+		end
+	end
+	if not SanityValidation then
+		warn("[Tiki Tide Security][Kohl's] Shared SanityValidation is unavailable; privileged regular commands were not installed.")
+		return
+	end
+
 	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, targetArg2: number?, detailArg: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?, budget: string?, authorityTTL: number?}} = {
 		-- Verified movement/environment commands in the supplied Kohl's Admin export.
 		gravity = {permission = "GlobalConfig", property = "WorldGravity", valueArg = 1, global = true, authority = true, budget = "World"},
@@ -122,7 +139,24 @@ return function(_K: any)
 	}
 
 	local function finiteNumber(value: any): boolean
-		return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
+		return SanityValidation.IsFiniteNumber(value)
+	end
+
+	local function validatePreparedTargets(command: any, policy: any): (boolean, string?)
+		if policy.targetSelf then
+			if not SanityValidation.IsLivePlayer(command.fromPlayer) then
+				return false, "A live player actor is required for this command."
+			end
+		end
+		local prepared = command.preparedArgs
+		for _, index in ipairs({policy.targetArg, policy.targetArg2}) do
+			if index then
+				if typeof(prepared) ~= "table" then return false, "Command target arguments are unavailable." end
+				local valid, _, reason = SanityValidation.ValidatePlayerTargets(prepared[index], 8)
+				if not valid then return false, reason or "Command target failed server validation." end
+			end
+		end
+		return true
 	end
 
 	local function actorUserId(command: any): number?
@@ -408,6 +442,11 @@ return function(_K: any)
 				elseif policy.permission == "GlobalAnnouncement"
 				then "Tiki Tide announcement authorization is required for this broadcast command."
 				else "Tiki Tide administrator authorization is required for this moderation or player-control command."
+		end
+		local targetsValid, targetError = validatePreparedTargets(command, policy)
+		if not targetsValid then
+			reportSecuritySignal(actorId, "kohls_invalid_command_target", commandName)
+			return false, targetError or "Command target failed server validation."
 		end
 		if not consumeBudget(actorId, policy.budget) then
 			return false, "Regular administrative commands are being rate-limited. Wait a moment and retry."
