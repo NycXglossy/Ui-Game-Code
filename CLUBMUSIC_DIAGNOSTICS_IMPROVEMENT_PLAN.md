@@ -108,3 +108,17 @@ Static repository checks do not prove Roblox runtime behavior. In Studio and a d
 - Authorized admin diagnostics show local metrics, SecurityCore health states, and metadata only.
 - ClientDiagnostics remains stopped unless a local client script explicitly opts in; FPS, memory, ping, and frame-spike measurements stay client-local.
 - No server diagnostic information is sent to clients or stored/shared across servers.
+
+
+## Compatibility audit progress
+
+The first static Global API compatibility pass is documented in `CLUBMUSIC_GLOBAL_API_DIAGNOSTICS_AUDIT.md`.
+
+- Confirmed the Global Service currently registers 45 BindableFunctions plus the `GlobalEvent` BindableEvent.
+- Confirmed UI Server Controller consumers for `GetGlobalHealth`, `GetGlobalMetrics`, `GetGlobalDiagnostics`, `GetGlobalOperationalStatus`, and `RecordLocalWatchdogPulse`.
+- Preserved all API names and the existing structured/aggregate metrics contract.
+- Identified SafeCall and ErrorHistory as overlapping but distinct stores; neither is retired or merged in this pass.
+- Identified the packaged SafeCall ModuleScript copy in `ClubMusic_Global_Optional_Services.rbxmx`; keep it synchronized with the standalone module until the Studio deployment source is confirmed.
+- Confirmed ClientDiagnostics remains opt-in and isolated from server health and enforcement.
+
+This is a static compatibility pass, not proof that every consumer in all embedded assets has been found. The remaining sweep must cover dynamic invocations, packaged third-party models, and Studio installer behavior. No runtime verification has been performed.
