@@ -162,3 +162,11 @@ This is a static compatibility pass, not proof that every consumer in all embedd
 - Added a live-player guard to the UtilityBar RemoteFunction.
 - Audited UtilityBar pass gates and Tiki Tide Settings entitlement, teleport consent, gravity, announcement, text-filtering, and cooldown checks.
 - Remaining: trace actual DJ Booth access/control-mode toggle and test the new mapping in Studio. No runtime test is claimed.
+
+
+## Limited DJ Control Mode implementation (2026-11-16)
+
+- Rank 100+ DJs may toggle Control Mode and use skip, pause/resume, and restart.
+- Playlist rotation, queue reorder/removal, and queue clearing remain Owner/Co-owner only.
+- Added separate `canUseDJBooth` and `canManageDJBooth` player-state flags.
+- Follow-up: inspect client renderer visibility conditions and test rank 100/150/200/254/255 in Studio. Runtime verification not yet performed.
