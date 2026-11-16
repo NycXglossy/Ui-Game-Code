@@ -162,7 +162,7 @@ The Global Service source contains exactly 45 unique `bindFunction` registration
 - Bridge behavior: `adminBridgeGlobalCall` requires the provider's first return value to be exactly `true`, interpreting that first value as an acceptance flag.
 - Result: if `GetRecent` returns its normal entries table as the first value, the bridge rejects a successful read and reports the operation as rejected. The `OperationalSecurityLog` command therefore has a source-level contract defect.
 
-**Remediation decision:** preserve the existing `GetGlobalAudit` provider contract until all callers are known; update the admin bridge in a narrowly scoped compatibility patch to accept this read-only list-returning API, or introduce a separately named normalized wrapper after confirming no other consumer relies on the current return shape. Do not change the provider return shape blindly.
+**Remediation implemented (static):** the UI Server Controller's `adminBridgeGlobalCall` now special-cases only `GetGlobalAudit`: a table returned as the first provider value is normalized to the bridge's `true, entries` result. A non-table first value remains a failed read with a bounded fallback message. The Global Service provider was not changed, preserving its existing contract for other callers.
 
 Other inspected diagnostics getters used by the UI bridge (`GetGlobalHealth`, `GetGlobalDiagnostics`, `GetGlobalOperationalStatus`, `GetGlobalMetrics`, and `GetGlobalConfig`) explicitly return `true, payload`, matching the bridge convention.
 
@@ -177,7 +177,7 @@ Other inspected diagnostics getters used by the UI bridge (`GetGlobalHealth`, `G
 
 1. Keep all 45 registered API names stable; account for the three optional SafeCall registrations when checking runtime presence.
 2. Keep the Global API server-only and preserve the current dynamic late-discovery behavior.
-3. Record `GetGlobalAudit` as a confirmed return-shape mismatch requiring a focused compatibility fix before declaring admin diagnostics consumers fully compatible.
+3. Keep the focused `GetGlobalAudit` consumer-side normalization in place; verify it in Studio before declaring the admin diagnostics path runtime-compatible.
 4. Do not claim the Kohl's Admin export or all embedded models have been exhaustively scanned; the fetched export content was empty.
 5. Keep the Optional Services package and standalone SafeCall source synchronized until the actual Studio distribution path is confirmed.
 
@@ -187,7 +187,7 @@ Other inspected diagnostics getters used by the UI bridge (`GetGlobalHealth`, `G
 - Start Global Service before UI Server Controller; verify the initial folder/event connection is established.
 - Remove and recreate `GlobalEvent`; verify the controller attaches to the replacement exactly once.
 - Invoke every diagnostics getter and producer with valid and invalid arguments; verify expected first-return success flag and payload shape.
-- Specifically exercise `OperationalSecurityLog` and verify `GetGlobalAudit` returns entries through the admin bridge after the compatibility fix.
+- Specifically exercise `OperationalSecurityLog`: verify a populated audit list is accepted, an empty list is displayed as no recent events, and an unavailable audit service fails closed with a clear message.
 - Run with SafeCall installed and absent; verify optional API presence is reported accurately and no core global feature depends on it.
 - Confirm no raw SafeCall tracebacks or client-originated diagnostics are exposed to players.
 
