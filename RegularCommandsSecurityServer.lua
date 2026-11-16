@@ -21,8 +21,8 @@ return function(_K: any)
 
 	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, targetArg2: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?, budget: string?, authorityTTL: number?}} = {
 		-- Verified movement/environment commands in the supplied Kohl's Admin export.
-		gravity = {permission = "GlobalConfig", property = "WorldGravity", valueArg = 1, global = true, authority = true},
-		starterspeed = {permission = "GlobalConfig", property = "StarterWalkSpeed", valueArg = 1, global = true, authority = true},
+		gravity = {permission = "GlobalConfig", property = "WorldGravity", valueArg = 1, global = true, authority = true, budget = "World"},
+		starterspeed = {permission = "GlobalConfig", property = "StarterWalkSpeed", valueArg = 1, global = true, authority = true, budget = "World"},
 		speed = {permission = "GlobalModeration", property = "WalkSpeed", valueArg = 2, targetArg = 1, authority = true},
 		jumppower = {permission = "GlobalModeration", property = "JumpPower", valueArg = 2, targetArg = 1, authority = true},
 		jump = {permission = "GlobalModeration", property = "JumpImpulse", targetArg = 1, authority = true},
@@ -35,7 +35,7 @@ return function(_K: any)
 		fling = {permission = "GlobalModeration", property = "Fling", valueArg = 2, targetArg = 1, authority = true, limitProperty = "FlingStrength", authorityTTL = 5},
 		tp = {permission = "GlobalModeration", property = "Teleport", targetArg = 1, authority = true},
 		to = {permission = "GlobalModeration", property = "Teleport", targetSelf = true, authority = true},
-		place = {permission = "GlobalConfig", property = "TeleportPlace", targetArg = 1, auditKind = "AdminAction"},
+		place = {permission = "GlobalConfig", property = "TeleportPlace", targetArg = 1, auditKind = "AdminAction", budget = "World"},
 
 		-- Native moderation enforcement commands retain Kohl's own role/target checks.
 		ban = {permission = "GlobalModeration", property = "Ban", targetArg = 1, auditKind = "Moderation"},
@@ -459,6 +459,8 @@ return function(_K: any)
 			reportSecuritySignal(actorId, "kohls_regular_command_denied", commandName)
 			return false, if policy.permission == "GlobalConfig"
 				then "Tiki Tide owner/co-owner authorization is required for this server-wide command."
+				elseif policy.permission == "GlobalAnnouncement"
+				then "Tiki Tide announcement authorization is required for this broadcast command."
 				else "Tiki Tide administrator authorization is required for this moderation or player-control command."
 		end
 		if not consumeBudget(actorId, policy.budget) then
