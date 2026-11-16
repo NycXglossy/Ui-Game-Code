@@ -72,6 +72,25 @@ Keep the existing Global Service Script and UI Server Controller Script as singl
 
 The new registry, ServerHealth, and Watchdog modules are optional-load guarded. If one is absent or fails to load, the service continues to start and the snapshot reports its status rather than crashing ClubMusic startup.
 
+## ClientDiagnostics installation
+
+Place `ClubMusic_Client_Diagnostics_Service.lua` as a ModuleScript named `ClubMusic_Client_Diagnostics_Service` under ReplicatedStorage. It does not start automatically. A trusted LocalScript may opt in:
+
+```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Diagnostics = require(ReplicatedStorage:WaitForChild("ClubMusic_Client_Diagnostics_Service"))
+local clientDiagnostics = Diagnostics.new()
+clientDiagnostics:Start()
+
+-- Read local-only, untrusted measurements when needed:
+local snapshot = clientDiagnostics:GetStatus()
+
+-- Stop when the owning UI/session no longer needs measurements:
+-- clientDiagnostics:Stop()
+```
+
+The returned snapshot stays on the client. Do not forward it to server authorization, enforcement, or SecurityCore decisions.
+
 ## Remaining plan
 
 8. Audit and retire obsolete diagnostic code only after every consumer has migrated and Studio tests pass. Preserve existing public BindableFunction names and legacy structured metric counters during the transition.
