@@ -5383,11 +5383,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local ok, health = ControllerFunctions.adminBridgeGlobalCall("GetGlobalHealth")
 		if not ok or typeof(health) ~= "table" then return false, tostring(health or "Health status is unavailable.") end
 		return true, string.sub(string.format(
-			"ClubMusic Health: %s | Local: %s | Global: %s | Sync: %s (%d peers) | Recovery: %s\n%s",
+			"ClubMusic Local Health: %s | Dependencies: %s | Global service: %s | Recovery: %s\n%s",
 			tostring(health.state or "Unknown"), tostring(health.localState or "Unknown"),
-			tostring(health.serviceState or "Unknown"), tostring(health.syncState or "Unknown"),
-			math.clamp(tonumber(health.syncStatus and health.syncStatus.peerCount) or 0, 0, 999),
-			tostring(health.recoveryState or "Unknown"), string.sub(tostring(health.detail or health.localDetail or ""), 1, 500)
+			tostring(health.serviceState or "Unknown"), tostring(health.recoveryState or "Unknown"),
+			string.sub(tostring(health.detail or health.localDetail or ""), 1, 500)
 		), 1, 1100)
 	end
 	if operation == "PurchaseDiagnostics" then
@@ -5414,6 +5413,12 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local watchdog = if typeof(services.watchdog) == "table" then services.watchdog else {}
 		local watchdogIssues = if typeof(watchdog.issues) == "table" then watchdog.issues else {}
 		local watchdogDetail = if #watchdogIssues > 0 then table.concat(watchdogIssues, " | ") else "none reported"
+		local serverHealth = if typeof(services.serverHealth) == "table" then services.serverHealth else {}
+		local heartbeat = if typeof(serverHealth.heartbeat) == "table" then serverHealth.heartbeat else {}
+		local memory = if typeof(serverHealth.memory) == "table" then serverHealth.memory else {}
+		local registry = if typeof(services.serviceRegistry) == "table" then services.serviceRegistry else {}
+		local registryCounts = if typeof(registry.counts) == "table" then registry.counts else {}
+		local errorHistory = if typeof(services.errorHistory) == "table" then services.errorHistory else {}
 		local _, globalOperational = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
 		local messaging = if typeof(globalOperational) == "table" and typeof(globalOperational.Messaging) == "table" then globalOperational.Messaging else {}
 		local memoryStore = if typeof(services.memoryStore) == "table" then services.memoryStore else {}
@@ -5422,11 +5427,20 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"ClubMusic Diagnostic Snapshot:",
 			"Generated: " .. os.date("!%Y-%m-%d %H:%M:%S UTC", tonumber(snapshot.generatedAt) or os.time()),
 			"Global enabled: " .. tostring(snapshot.serviceEnabled == true),
-			"Health: " .. tostring(health.state or "Unavailable") .. " / Local: " .. tostring(health.localState or "Unavailable"),
-			"Sync: " .. tostring(sync.state or "Unavailable") .. " / peers: " .. tostring(sync.peerCount or 0),
+			"Local health: " .. tostring(health.state or "Unavailable") .. " / " .. tostring(health.localState or "Unavailable"),
+			"Server runtime: " .. tostring(serverHealth.state or "NotInstalled")
+				.. " | Heartbeat max " .. tostring(math.floor((tonumber(heartbeat.maxDeltaSeconds) or 0) * 1000)) .. "ms"
+				.. " | Memory " .. tostring(memory.usageMb or "n/a") .. " MB",
+			"Service registry: " .. tostring(registry.state or "NotInstalled")
+				.. " | total " .. tostring(registry.serviceCount or 0)
+				.. " | healthy " .. tostring(registryCounts.Healthy or 0)
+				.. " | degraded " .. tostring(registryCounts.Degraded or 0)
+				.. " | unavailable " .. tostring(registryCounts.Unavailable or 0),
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(watchdog.state or "Unavailable"),
-			"Watchdog detail: " .. string.sub(watchdogDetail, 1, 450),
+			"Watchdog detail: " .. string.sub(watchdogDetail, 1, 300),
+			"Error history: " .. tostring(errorHistory.count or 0) .. "/" .. tostring(errorHistory.maxRecords or 50)
+				.. " records | repeats " .. tostring(errorHistory.totalRepeats or 0),
 			"Messaging: " .. tostring(messaging.state or "Unavailable")
 				.. " | published " .. tostring(messaging.published or 0)
 				.. " | failures " .. tostring(messaging.publishFailures or 0)
