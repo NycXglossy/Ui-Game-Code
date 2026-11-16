@@ -54,6 +54,7 @@ local SERVICE_ENABLED = CONFIG.Enabled and (not IS_STUDIO or CONFIG.EnableInStud
 local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false)
 local globalDiagnosticsService: any = nil
 local globalServiceRegistry: any = nil
+local globalServerHealthService: any = nil
 local subscriptionStatus: {[string]: string} = {}
 local messagingPublishSuccess = 0
 local messagingPublishFailures = 0
@@ -783,12 +784,46 @@ local function updateRegistryStatus(name: string, state: string, detail: string)
 	end
 end
 
+-- Local ServerHealth probe: heartbeat timing and process memory only.
+do
+	local module = ServerStorage:FindFirstChild("ClubMusic_Server_Health_Service")
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new)
+			if createOk and typeof(instance) == "table" and type(instance.Start) == "function"
+				and type(instance.GetStatus) == "function" and type(instance.Stop) == "function" then
+				globalServerHealthService = instance
+				local startOk, started = pcall(instance.Start, instance)
+				if startOk and started == true then
+					if globalServiceRegistry then
+						pcall(globalServiceRegistry.Register, globalServiceRegistry, "ServerHealth", instance, {"Start", "GetStatus", "Stop"}, false)
+					end
+				else
+					globalServerHealthService = nil
+					updateRegistryStatus("ServerHealth", "Unavailable", "ServerHealth probe failed to start.")
+					warn("[ClubMusic Diagnostics] ServerHealth probe failed to start.")
+				end
+			else
+				updateRegistryStatus("ServerHealth", "Unavailable", "ServerHealth module has an invalid interface.")
+				warn("[ClubMusic Diagnostics] ServerHealth module has an invalid interface.")
+			end
+		else
+			updateRegistryStatus("ServerHealth", "Unavailable", "ServerHealth module failed to load.")
+			warn("[ClubMusic Diagnostics] ServerHealth module failed to load: " .. tostring(exported))
+		end
+	else
+		warn("[ClubMusic Diagnostics] Optional ClubMusic_Server_Health_Service ModuleScript is not installed.")
+	end
+end
+
 local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
 if diagnosticsModule then
 	local createOk, instance = pcall(function()
 		return diagnosticsModule.new({
 			isEnabled = function() return SERVICE_ENABLED end,
 			getRegistryStatus = function() return if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "Unavailable", scope = "ServerLocal", detail = "Registry module is not installed."} end,
+			getServerHealthStatus = function() return if globalServerHealthService then globalServerHealthService:GetStatus() else nil end,
 			apiFolder = apiFolder,
 				getSyncStatus = getGlobalSyncStatus,
 			getRecentErrors = function()
@@ -1031,6 +1066,7 @@ if lifecycleJanitor then
 			Idempotency=globalIdempotencyService,
 			IncidentResponse=globalIncidentResponseService,
 			Diagnostics=globalDiagnosticsService,
+			ServerHealth=globalServerHealthService,
 		}) do
 			if service and type(service.Stop)=="function" then pcall(service.Stop,service) end
 		end
@@ -1105,6 +1141,8 @@ bindFunction("GetGlobalOperationalStatus", function()
 	local status = {
 		Messaging = getMessagingStatus(),
 		Diagnostics = if globalDiagnosticsService then globalDiagnosticsService:GetStatus() else {state = "Unavailable"},
+		ServerHealth = if globalServerHealthService then globalServerHealthService:GetStatus() else {state = "NotInstalled"},
+		ServiceRegistry = if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "NotInstalled"},
 		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
 		Reconciliation = if globalStateReconciliationService then globalStateReconciliationService:GetStatus() else {state = "Unavailable"},
 		Maintenance = if globalMaintenanceService then globalMaintenanceService:GetStatus() else {state = "Unavailable"},
