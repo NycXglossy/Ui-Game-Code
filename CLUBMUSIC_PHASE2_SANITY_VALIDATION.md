@@ -67,3 +67,8 @@ The Security Core installer now includes `SanityValidation` before `TeleportVali
 ## Phase 7 update
 
 Detection-only avatar/accessory monitoring now runs from the main server controller; see `CLUBMUSIC_PHASE7_AVATAR_ACCESSORY_VALIDATION.md`. It records server-observed anomalies without stripping accessories or punishing players.
+
+
+## Phase 8 update
+
+ClubMusic audio asset ingress now uses shared finite-integer validation for audio and artwork asset IDs; existing server-owned catalog, staff permissions, preload verification, rate limits, and modern AudioPlayer path remain intact. See `CLUBMUSIC_PHASE8_AUDIO_ANIMATION_SECURITY.md`. No boombox or animation remotes were found in the audited repository snapshot, so those integrations remain pending their actual scripts.
