@@ -56,7 +56,9 @@ function Service:RecordEvent(kind,detail,eventSeverity)
  local record={
   kind=category,eventType=string.sub(kind,1,48),
   detail=if type(detail)=="string" then string.sub(detail,1,120) else string.sub(tostring(detail or ""),1,120),
-  severity=severityName,actorUserId=0,target="",action="",jobId=self.d.jobId,at=os.time(),
+  severity=severityName,actorUserId=0,target=string.sub(kind,1,32),
+  action=string.sub(if type(detail)=="string" then detail else tostring(detail or ""),1,32),
+  jobId=self.d.jobId,at=os.time(),
  }
  return self:_enqueue(record)
 end
