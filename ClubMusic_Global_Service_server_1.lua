@@ -516,22 +516,24 @@ end)
 
 
 local function allowGlobalDataStoreOperation(): boolean
-	-- When MemoryStore is down, consumeShared already applies a conservative
-	-- per-server fallback bucket. Keep the DataStore-backed global queue online
-	-- instead of treating a budget-service outage as a queue-storage outage.
-	local allowed = consumeShared("all:datastore", 90, 15, 1)
-	return allowed == true
-end
-
--- Global queue API: every mutation is atomic in the shared DataStore.
--- Controller callers still perform role, moderation, catalog, and request-limit checlocal function allowGlobalDataStoreOperation(): boolean
 	-- Shared DataStore operations retain a conservative per-server budget
 	-- when the optional cross-server MemoryStore budget is unavailable.
 	local allowed = consumeShared("all:datastore", 90, 15, 1)
 	return allowed == true
 end
 
-ypeof(state) == "table" and finiteNumber(state.revision)
+bindFunction("PublishCatalogChange", function()
+	if not SERVICE_ENABLED then return false end
+	return publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
+end)
+
+bindFunction("GetGlobalPlaybackControl", function()
+	if not SERVICE_ENABLED then return nil, false end
+	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
+	if not shared or not allowed then return nil, false end
+	local ok, state = pcall(function() return globalControlStore:GetAsync("playbackControl") end)
+	if not ok then return nil, false end
+	if typeof(state) == "table" and finiteNumber(state.revision)
 		and (state.command == "SetPlaybackPaused" or state.command == "Restart")
 		and typeof(state.paused) == "boolean" then
 		return {revision = math.floor(state.revision), command = state.command, paused = state.paused}, true
