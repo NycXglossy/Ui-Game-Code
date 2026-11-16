@@ -5851,6 +5851,10 @@ ControllerFunctions.onJoin = function(player: Player)
 	-- Fetch ban and request-block status together to avoid serial durable reads.
 	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+	ControllerFunctions.recordDiagnosticPulse("Moderation",
+		if moderationCallOk and moderationLookupOk == true then "join-moderation-verified" else "join-moderation-lookup-failed",
+		moderationCallOk and moderationLookupOk == true,
+		{lookupSucceeded = moderationCallOk and moderationLookupOk == true})
 	if moderationCallOk and moderationLookupOk == true then
 		if globallyBanned == true then
 			player:Kick("You are globally banned from this experience.")
@@ -5885,6 +5889,8 @@ ControllerFunctions.onJoin = function(player: Player)
 					local callOk, lookupOk, banned, blocked =
 						ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
 					if callOk and lookupOk == true then
+						ControllerFunctions.recordDiagnosticPulse("Moderation", "moderation-retry-verified", true,
+							{lookupSucceeded = true})
 						moderationResolved = true
 						if banned == true then
 							player:Kick("You are globally banned from this experience.")
@@ -6354,7 +6360,11 @@ task.spawn(function()
 				if seekOk and seekResult ~= false then
 					playOk, playResult = pcall(ControllerFunctions.playAudio)
 				end
-				if not playOk or playResult == false then
+				local recoveredAudio = playOk and playResult ~= false
+				ControllerFunctions.recordDiagnosticPulse("Recovery",
+					if recoveredAudio then "audio-resume-recovered" else "audio-resume-failed",
+					recoveredAudio, {generation = currentGeneration})
+				if not recoveredAudio then
 					warn("[ClubMusic] Playback watchdog could not resume the stopped track at its saved playhead.")
 				end
 			elseif (playheadAtEnd and stoppedFor >= 2)
