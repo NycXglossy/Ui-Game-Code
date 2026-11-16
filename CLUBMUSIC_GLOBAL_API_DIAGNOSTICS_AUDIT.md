@@ -371,3 +371,20 @@ Reviewed `TikiTideSettings/TikiTideSettingsService.server.lua`:
 - Kohl's Admin internals remain outside scope; inspect and maintain only the separate security adapter/add-on.
 - Runtime verification is still outstanding: malformed and oversized payloads, rapid remote calls, expired/missing SecurityCore cache, permission revocation during yielding operations, cross-server message rejection/replay, and ordinary-client attempts to reach diagnostic APIs.
 - Do not retire legacy diagnostics or mark the audit runtime-complete until the Studio and published-server test matrix passes.
+
+
+## Seventh-pass: text-source remote inventory and UtilityBar lifecycle hardening (2026-11-16)
+
+The branch tree was enumerated and text-based Lua/Luau sources were reviewed for remote creation, invocation, and event-handler patterns. The active ClubMusic, Tiki Tide Settings, and UtilityBar remote families are now listed in `CLUBMUSIC_DIAGNOSTICS_MASTER_RELEASE_REGISTER.md`.
+
+Additional findings and changes:
+- `UtilityBar/UtilityBarActions.server.lua` now rejects a non-live player and rechecks player connection after the yielding avatar-description lookup, before applying the description. This closes the disconnect-during-yield lifecycle gap.
+- `UtilityBar/ToolShop.server.lua` now rejects a non-live player and rate-limits the read-only `GetShop` RemoteFunction to one query per player per 0.5 seconds. Per-player query state is cleared on departure.
+- Tiki Tide Settings `Broadcast` is server-to-client only in the inspected service; no client-to-server listener was found.
+- The UtilityBar extended-action, avatar-refresh, and ToolShop RemoteFunctions are separate from ClubMusic's RequestAction dispatcher and are documented as such.
+- The root-level legacy `Music System` creates a separate `MusicRemotes` family. Its `DispatchAction` uses a fixed action allowlist and the legacy RoleSystem/rate-limiter path; `RequestSync` has a per-player cooldown. This path is not proven active or inactive in the published place, and it is not integrated with the current SecurityCore authorization contract. Do not delete or disable it without checking the live place hierarchy and client references.
+- The five manager source files now exist in the repository. Their presence does not prove a manager migration: several are adapters around controller-owned operations, and the legacy `Music System` expects child modules under its own Roblox instance. The earlier Phase 0 source-availability statement is superseded; see the updated Phase 0 audit and master release register.
+
+**Scope boundary:** This is a repository text-source inventory, not a decompilation or certification of binary `.rbxm`/`.rbxmx` assets, embedded third-party packages, or Kohl's Admin internals. The live Roblox place hierarchy remains unverified.
+
+**Still required before release:** complete the Studio and published-server matrix in the master release register, reconcile the legacy `MusicRemotes` deployment status, and inspect binary/model assets or explicitly record their exclusion. Do not mark runtime verification complete based on static source inspection.
