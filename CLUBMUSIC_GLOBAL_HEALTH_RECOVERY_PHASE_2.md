@@ -12,12 +12,12 @@ This phase does not add another queue controller, playback owner, persistent log
 
 ## Installation
 
-1. Replace the existing `ClubMusic_Global_Service_server_1` Script in ServerScriptService with the updated source.
-2. Keep the existing `ClubMusic_Global_Health_Service`, `ClubMusic_Global_Recovery_Service`, `ClubMusicErrorHandler`, and `MusicGlobalQueueService` ModuleScripts in ServerStorage.
-3. Do not create a second global service Script or another copy of any existing module.
-4. Keep `EnableInStudio = false` unless intentionally testing cross-server behavior in a dedicated test universe.
+1. Keep exactly one `ClubMusic_Global_Service_server_1` Script in ServerScriptService.
+2. Install the current local diagnostics ModuleScripts directly under ServerStorage: `ClubMusic_Global_Diagnostics_Service`, `ClubMusic_Local_Service_Registry`, `ClubMusic_Server_Health_Service`, `ClubMusic_Local_Watchdog_Service`, and `ClubMusicErrorHandler`.
+3. Keep the existing queue manager and other service modules in their established locations; do not create a second queue controller or playback owner.
+4. Keep `EnableInStudio = false` unless intentionally testing existing cross-server features in a dedicated test universe.
 
-No new Explorer instances are required for Phase 2.
+The former standalone `ClubMusic_Global_Health_Service` and `ClubMusic_Global_Recovery_Service` modules are not part of the current branch and should not be recreated from this historical phase note.
 
 ## API
 
