@@ -453,10 +453,12 @@ local function handleRequest(player: Player, action: any, payload: any)
 			return fail("Secure teleport validation is unavailable; please try again later.")
 		end
 		local nowTeleport = os.clock()
-		if nowTeleport - (lastTeleportByActor[player.UserId] or 0) < TELEPORT_ACTOR_COOLDOWN then
+		local actorPreviousTeleport = lastTeleportByActor[player.UserId]
+		if actorPreviousTeleport ~= nil and nowTeleport - actorPreviousTeleport < TELEPORT_ACTOR_COOLDOWN then
 			return fail("Please wait before teleporting again.")
 		end
-		if nowTeleport - (lastTeleportToRecipient[target.UserId] or 0) < TELEPORT_RECIPIENT_COOLDOWN then
+		local recipientPreviousTeleport = lastTeleportToRecipient[target.UserId]
+		if recipientPreviousTeleport ~= nil and nowTeleport - recipientPreviousTeleport < TELEPORT_RECIPIENT_COOLDOWN then
 			return fail("That player was just teleported to; please try again shortly.")
 		end
 		-- Reserve both budgets without yielding, closing duplicate/concurrent calls.
