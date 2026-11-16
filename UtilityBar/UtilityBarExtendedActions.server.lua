@@ -14,6 +14,8 @@ local CLONE_LIFETIME = 12
 local lastRequest: {[number]: number} = {}
 local sizeStep: {[number]: number} = {}
 local sizeBaseline: {[number]: {humanoid: Humanoid, height: number, width: number, depth: number, head: number}} = {}
+local warnedMovementAuthorityMissing = false
+local warnedMovementAuthorityFailure = false
 local auraByPlayer: {[number]: {highlights: {Highlight}, connection: RBXScriptConnection?, character: Model}} = {}
 
 local folder = ReplicatedStorage:FindFirstChild(REMOTE_FOLDER)
@@ -76,10 +78,12 @@ local function setSize(player: Player, requestedFactor: any): (boolean, string)
 		local authorityOk, registered = pcall(function()
 			return authority:Invoke("Register", player.UserId, player.UserId, "BodyScale", factor, "UtilityBarSize", 120)
 		end)
-		if not authorityOk or registered ~= true then
-			warn("[UtilityBar] Size change applied, but MovementAuthority registration failed for userId " .. tostring(player.UserId))
+		if (not authorityOk or registered ~= true) and not warnedMovementAuthorityFailure then
+			warnedMovementAuthorityFailure = true
+			warn("[UtilityBar] Size change applied, but MovementAuthority registration failed.")
 		end
-	else
+	elseif not warnedMovementAuthorityMissing then
+		warnedMovementAuthorityMissing = true
 		warn("[UtilityBar] TikiTideMovementAuthority is unavailable; install the RegularCommandsSecurityServer add-on to enable movement authorization tracking.")
 	end
 
