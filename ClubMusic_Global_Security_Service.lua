@@ -312,11 +312,37 @@ end)()
 
 Bundle.SecurityMonitor = (function()
 --!strict
--- Bounded, observational security signal aggregation. Never bans or restricts players.
+-- Local signal aggregation plus compact, bounded cross-server security-event batches.
 local Service={}; Service.__index=Service
+local CAPACITY=200
+local MAX_PAYLOAD=16000
+local function severity(signal)
+ local s=string.lower(tostring(signal))
+ if string.find(s,"exploit",1,true) or string.find(s,"unauthorized",1,true)
+  or string.find(s,"admin",1,true) or string.find(s,"ban",1,true) then return 3 end
+ return 1
+end
 function Service.new(d)
  assert(type(d)=="table" and type(d.isEnabled)=="function","Security monitor dependencies missing")
- return setmetatable({d=d,signals={},total=0,alerts=0,lastAlertAt=0},Service)
+ local self=setmetatable({d=d,signals={},total=0,alerts=0,lastAlertAt=0,events={},written=0,
+  droppedLow=0,lastError=nil,flushRunning=false,lastFlushAt=0},Service)
+ if d.memoryStoreService then self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalSecurityBatches_v1") end
+ return self
+end
+function Service:_queue(signal,subject,count)
+ local item={signal=string.sub(signal,1,48),subject=string.sub(tostring(subject or "server"),1,48),
+  count=count or 1,at=os.time(),severity=severity(signal)}
+ if #self.events>=CAPACITY then
+  local lowestIndex,lowest= nil,math.huge
+  for i,event in ipairs(self.events) do if event.severity<lowest then lowestIndex,lowest=i,event.severity end end
+  if lowestIndex and lowest<3 then table.remove(self.events,lowestIndex); self.droppedLow+=1
+  else
+   warn("[ClubMusic][SecurityBatch] Local queue full of high-severity events; newest event could not be retained.")
+   return false
+  end
+ end
+ table.insert(self.events,item)
+ return true
 end
 function Service:Record(signal,subject)
  if not self.d.isEnabled() or type(signal)~="string" or #signal<1 or #signal>48 then return false end
@@ -333,6 +359,7 @@ function Service:Record(signal,subject)
  end
  if now-entry.windowStart>60 then entry.count=0; entry.windowStart=now end
  entry.count+=1; entry.updated=now; self.total+=1
+ self:_queue(signal,subject,entry.count)
  local configured=if type(self.d.getThreshold)=="function" then self.d.getThreshold() else self.d.threshold
  local threshold=if type(configured)=="number" then math.max(1,math.floor(configured)) else 8
  if entry.count==threshold then
@@ -341,11 +368,59 @@ function Service:Record(signal,subject)
  end
  return true,entry.count
 end
-function Service:GetStatus() return {state=if self.d.isEnabled() then "Observing" else "Disabled",totalSignals=self.total,alerts=self.alerts,trackedKeys=(function() local n=0; for _ in pairs(self.signals) do n+=1 end; return n end)(),lastAlertAt=self.lastAlertAt,automaticEnforcement=false} end
-function Service:Start() return true end
-function Service:Stop() end
+function Service:_flush()
+ if not self.map or not self.d.isEnabled() or #self.events<25 then return false end
+ if os.clock()-self.lastFlushAt<5 then return false end
+ local allowed,reason=StorageGuard.Allow()
+ if not allowed then self.lastError=reason; return false end
+ local batch={}
+ for i=1,math.min(50,#self.events) do
+  local event=self.events[i]
+  table.insert(batch,{s=event.signal,u=event.subject,n=event.count,t=event.at,p=event.severity})
+ end
+ local ok,payload=pcall(self.d.jsonEncode,batch)
+ if not ok or type(payload)~="string" then self.lastError="Security batch JSON serialization failed."; return false end
+ while #payload>MAX_PAYLOAD and #batch>25 do
+  table.remove(batch)
+  ok,payload=pcall(self.d.jsonEncode,batch)
+  if not ok or type(payload)~="string" then self.lastError="Security batch JSON serialization failed."; return false end
+ end
+ if #payload>MAX_PAYLOAD then
+  for _,event in ipairs(batch) do event.s=string.sub(event.s,1,24); event.u=string.sub(event.u,1,24) end
+  ok,payload=pcall(self.d.jsonEncode,batch)
+  if not ok or type(payload)~="string" or #payload>MAX_PAYLOAD then self.lastError="Security batch exceeds 16 KB ceiling."; return false end
+ end
+ local bucket=math.floor(os.time()/10)
+ local job=string.sub(tostring(self.d.jobId or "server"),1,36)
+ local key="TT:SEC:"..job..":"..tostring(bucket)
+ if #key>64 then key=string.sub(key,1,64) end
+ local writeOk,writeError=pcall(function() self.map:SetAsync(key,payload,600,os.time()) end)
+ if not writeOk then self.lastError=tostring(writeError); StorageGuard.Failure(writeError); return false end
+ for _=1,#batch do table.remove(self.events,1) end
+ self.written+=#batch; self.lastFlushAt=os.clock(); self.lastError=nil
+ return true
+end
+function Service:GetStatus()
+ return {state=if self.d.isEnabled() then "Observing" else "Disabled",totalSignals=self.total,
+  alerts=self.alerts,trackedKeys=(function() local n=0; for _ in pairs(self.signals) do n+=1 end; return n end)(),
+  queued=#self.events,written=self.written,droppedLowSeverity=self.droppedLow,lastError=self.lastError,
+  eventsPerFlush={min=25,max=50},payloadMaxBytes=MAX_PAYLOAD,flushSeconds={min=5,max=10},
+  maxFlushesPerMinute=12,ttlSeconds={min=300,max=900},keySharding="ServerId+TimeBucket",
+  automaticEnforcement=false,storageGuard=StorageGuard.GetStatus()}
+end
+function Service:Start()
+ if self.flushRunning then return true end
+ self.flushRunning=true
+ task.spawn(function()
+  while self.flushRunning do
+   task.wait(7.5)
+   self:_flush()
+  end
+ end)
+ return true
+end
+function Service:Stop() self.flushRunning=false end
 return Service
-
 end)()
 
 Bundle.SecurityPolicy = (function()
