@@ -49,9 +49,9 @@ The service:
 - is a server-only ModuleScript; no RemoteEvent or client ticket API is exposed;
 - accepts only live Player instances and server-derived finite Vector3 destinations;
 - restricts trusted origin labels to a small allowlist;
-- issues short-lived (1–15 second), single-use tickets bound to actor, moved player, destination and origin;
+- issues short-lived (1–15 second), single-use tickets bound to actor, moved player, destination, source position, character/root instance and origin;
 - rejects coordinates outside a broad configured world envelope (±100,000 studs per axis);
-- verifies the server-observed resulting position within 8 studs of the ticket destination;
+- verifies the current server-owned character/root is still the same instance captured at authorization time, then checks its server-observed position within 8 studs of the ticket destination;
 - expires tickets, consumes them on verification, cleans actor/target tickets on PlayerRemoving, and caps outstanding tickets at 128;
 - emits bounded signals for expired, mismatched, invalid and replayed tickets;
 - does not kick, ban, snap back or otherwise punish a player.
