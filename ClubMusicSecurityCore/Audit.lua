@@ -136,7 +136,7 @@ function Service:GetStatus()
  return {state=if self.d.isEnabled() then "Healthy" else "Disabled",written=self.written,
   queued=self.bufferCount,droppedLowSeverity=self.droppedLow,lastError=self.lastError,
   eventsPerBatch={min=50,max=100},payloadTargetBytes=MAX_PAYLOAD,flushSeconds={min=15,max=30},
-  maxFlushesPerMinute=4,ttlSeconds=TTL,shards=3,storageGuard=StorageGuard.GetStatus()}
+  maxFlushesPerMinute=4,ttlSeconds=TTL,shards=3,storageGuard=StorageGuard.GetStatus(),resourceGuard=ResourceGuard.GetStatus()}
 end
 function Service:Start()
  if self.flushRunning then return true end
@@ -153,6 +153,7 @@ end
 function Service:Stop()
  self.flushRunning=false
  self.janitor:Cleanup()
+ self.janitor=ConnectionJanitor.new()
  -- Do not attempt unbounded shutdown writes; remaining records expire with this server.
 end
 return Service
