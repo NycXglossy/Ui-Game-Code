@@ -294,21 +294,31 @@ function Service:GetSnapshot(): {[string]: any}
 		errorHistory = self:_readStatus("ErrorHistory", self.d.getErrorHistoryStatus),
 	}
 	local securityStates = {}
+	local securityObserved = 0
+	local securityUnavailable = 0
 	for _, key in ipairs({"authorization", "rateLimit", "securityPolicy", "securityMonitor",
 		"messageValidation", "idempotency", "audit", "eventLog", "incidentResponse"}) do
 		local item = operationalServices[key]
-		if item.state ~= "Unavailable" and item.state ~= "NotInstalled" then
-			table.insert(securityStates, tostring(item.state or "Unknown"))
+		local itemState = tostring(item.state or "Unknown")
+		if itemState == "Unavailable" or itemState == "NotInstalled" then
+			securityUnavailable += 1
+		else
+			securityObserved += 1
+			table.insert(securityStates, itemState)
 		end
 	end
-	local securityState = if #securityStates == 0 then "Unavailable"
+	local securityState = if securityObserved == 0 then "Unavailable"
 		elseif table.find(securityStates, "Degraded") or table.find(securityStates, "Failed") then "Degraded"
-		elseif table.find(securityStates, "Starting") then "Starting" else "Observed"
+		elseif table.find(securityStates, "Starting") then "Starting"
+		elseif securityUnavailable > 0 then "Partial" else "Observed"
 	operationalServices.securityHealth = {
 		state = securityState,
 		scope = "ServerLocal",
 		observationalOnly = true,
 		independentOfDiagnostics = true,
+		observedComponents = securityObserved,
+		unavailableComponents = securityUnavailable,
+		totalComponents = securityObserved + securityUnavailable,
 		components = {
 			authorization = operationalServices.authorization.state,
 			rateLimit = operationalServices.rateLimit.state,
