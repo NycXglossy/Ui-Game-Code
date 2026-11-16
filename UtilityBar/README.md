@@ -72,7 +72,7 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 Install `RegularCommandsSecurityServer.lua` as a **ModuleScript** in `ServerScriptService > Kohl's Admin > Addons`. Keep the existing `KohlsAdmin_ClubMusic_Addon` installed separately. The new server-only add-on uses Kohl's `Process.addCommandFilter` enforcement API, checks the existing Tiki Tide server-side `GlobalModeration` / `GlobalConfig` permissions, and writes successful moderation/admin actions to the existing unified SecurityCore Audit API. It does not edit Kohl's core modules or create another MemoryStore map.
 
-The integration covers the exported built-in ban/unban, kick, mute/unmute, punish/unpunish, kill/hurt/health, stun/unstun, blind/unblind, movement, teleport, server-lock, shutdown, and global-command paths. Kohl's native role checks, target-rank checks, ban storage, and request flow remain in place. The built-in `crash` and `loopkill` commands are blocked by the security filter.
+The integration covers the exported built-in ban/unban, kick, mute/unmute, punish/unpunish, kill/hurt/health, stun/unstun, blind/unblind, movement, teleport, server-lock, and shutdown paths. Kohl's native role checks, target-rank checks, ban storage, and request flow remain in place. The built-in `crash`, `loopkill`, and arbitrary `global` command-string paths are blocked by the security filter; use dedicated Tiki Tide global controls instead.
 
 The Utility Bar Size button remains an ordinary self-service feature; it does not require an admin role or a Game Pass. Its server-side size change registers with the same movement authority ledger so a future CharacterPhysicsGuard can distinguish authorized resizing from suspicious changes. The ledger is local to each server and creates no DataStore or MemoryStore records.
 
@@ -92,7 +92,7 @@ The repository-side integration audit and static contract checks are complete. T
 - [ ] Verify the Mount pass gate, then confirm Mount equips only a tagged/named mount Tool and reports clearly when none is installed.
 - [ ] Verify Size applies only to the requesting player, accepts 0.50×–5.00×, rejects values outside that range, restores the captured baseline, registers BodyScale authority, and safely rejects R6.
 - [ ] Install `RegularCommandsSecurityServer.lua` as a Kohl's Admin server add-on; verify unauthorized moderation commands are denied, authorized ban/kick/mute actions still use Kohl's native handlers, successful actions appear in the unified SecurityCore Audit, and `crash` / `loopkill` are blocked.
-- [ ] Verify `:gravity`, `:starterspeed`, `:serverlock`, `:unserverlock`, `:shutdown`, and `:global` require the owner/co-owner SecurityCore permission.
+- [ ] Verify `:gravity`, `:starterspeed`, `:serverlock`, `:unserverlock`, and `:shutdown` require the owner/co-owner SecurityCore permission; verify `:global` is blocked.
 - [ ] Verify the Island Companion pass gate, then confirm Clone Companion is non-interactive, expires after 12 seconds, and is cleaned up on leave.
 - [ ] Verify Lighting Control requires its pass and its presets/restore action affect only StageClubLight-tagged fixtures.
 - [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
