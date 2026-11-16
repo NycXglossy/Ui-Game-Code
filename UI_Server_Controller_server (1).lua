@@ -4605,15 +4605,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJRemove" then
-		publishState(nil)
-		return
-	end
-
-	if action == "DJRemove" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		local id = payload.queueId
 		if not ControllerFunctions.isValidString(id, 64) then return false, "A valid queue entry ID is required." end
-		local index = ControllerFunctions.findQueueIndex(id)
 		local index = ControllerFunctions.findQueueIndex(id)
 		if not index then return false, "Queue entry was not found. Run ;cmqueue to refresh the IDs." end
 		local removedEntry = queueManager:RemoveAt(index, true)
