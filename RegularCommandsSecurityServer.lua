@@ -19,7 +19,7 @@ return function(_K: any)
 	local AUTHORIZER_NAME = "ClubMusicAuthorizationResolver"
 	local AUTHORITY_NAME = "TikiTideMovementAuthority"
 
-	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, targetArg2: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?, budget: string?, authorityTTL: number?}} = {
+	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, targetArg2: number?, detailArg: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?, budget: string?, authorityTTL: number?}} = {
 		-- Verified movement/environment commands in the supplied Kohl's Admin export.
 		gravity = {permission = "GlobalConfig", property = "WorldGravity", valueArg = 1, global = true, authority = true, budget = "World"},
 		starterspeed = {permission = "GlobalConfig", property = "StarterWalkSpeed", valueArg = 1, global = true, authority = true, budget = "World"},
@@ -84,7 +84,7 @@ return function(_K: any)
 		incognito = {permission = "GlobalModeration", property = "Incognito", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		team = {permission = "GlobalModeration", property = "TeamChange", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		teamrespawn = {permission = "GlobalModeration", property = "TeamRespawn", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
-		change = {permission = "GlobalConfig", property = "LeaderstatChange", valueArg = 2, targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
+		change = {permission = "GlobalConfig", property = "LeaderstatChange", valueArg = 3, detailArg = 2, targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
 		clean = {permission = "GlobalConfig", property = "AdminCleanup", auditKind = "AdminAction", budget = "World"},
 		clearterrain = {permission = "GlobalConfig", property = "ClearTerrain", global = true, auditKind = "AdminAction", budget = "World"},
 		time = {permission = "GlobalConfig", property = "LightingTime", auditKind = "AdminAction", budget = "World"},
@@ -404,6 +404,9 @@ return function(_K: any)
 			if targetCount > #targetRefs then targetSummary ..= string.format(",+%d", targetCount - #targetRefs) end
 
 			local value = if activePolicy.valueArg then args[activePolicy.valueArg] else nil
+			if activePolicy.detailArg then
+				value = tostring(args[activePolicy.detailArg]) .. "=" .. tostring(value)
+			end
 			if activePolicy.property == "JumpImpulse" then value = true end
 			if activePolicy.property == "Fling" and value == nil then value = 1 end
 			if activePolicy.property == "BodyScale" and (value == nil or context.undo) then value = 1 end
