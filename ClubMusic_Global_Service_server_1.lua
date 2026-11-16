@@ -849,109 +849,14 @@ globalMaintenanceService = if globalConfigService then createOperationalService(
 }, {"Start", "GetStatus", "Set"}) else nil
 if globalMaintenanceService then globalMaintenanceService:Start() end
 
--- Security authorization prefers the controller's shared rank resolver when it exists.
--- If that optional bridge is absent during startup or deployment, use the same
--- server-verified Roblox group policy locally. Resolver errors/explicit denials
--- never fall through to the local path.
-local AUTH_GROUP_ID = 500470662
-local AUTH_RANK_LEVELS = {
-	GlobalDJ = 1,
-	GlobalModeration = 2,
-	GlobalAnnouncement = 2,
-	GlobalConfig = 3,
-	SecurityPolicy = 3,
-	IncidentResponse = 3,
-}
-local authRankCache: {[number]: {level: number, expiresAt: number}} = {}
-local authRankRefresh: {[number]: boolean} = {}
-
-Players.PlayerRemoving:Connect(function(player)
-	authRankCache[player.UserId] = nil
-	authRankRefresh[player.UserId] = nil
-end)
-
-local function resolveNativePermission(actorUserId: any, permission: any): boolean
-	if not finiteNumber(actorUserId) or actorUserId < 1 or actorUserId % 1 ~= 0
-		or typeof(permission) ~= "string" or not AUTH_RANK_LEVELS[permission] then
-		return false
-	end
-	local player = Players:GetPlayerByUserId(math.floor(actorUserId))
-	if not player or player.Parent ~= Players then return false end
-
-	-- Match the controller's StudioStaff=true setting for isolated Studio tests.
-	if RunService:IsStudio() then
-		return true
-	end
-
-	local now = os.clock()
-	local cached = authRankCache[player.UserId]
-	local level: number
-	if cached and cached.expiresAt > now then
-		level = cached.level
-	else
-		-- A concurrent refresh or group lookup failure denies this check; it never
-		-- reuses stale privilege data after the cache expires.
-		if authRankRefresh[player.UserId] then return false end
-		authRankRefresh[player.UserId] = true
-		local ok, rank = pcall(function()
-			return player:GetRankInGroup(AUTH_GROUP_ID)
-		end)
-		authRankRefresh[player.UserId] = nil
-		if player.Parent ~= Players or not ok or not finiteNumber(rank) or rank % 1 ~= 0 or rank < 0 or rank > 255 then
-			authRankCache[player.UserId] = nil
-			warn("[ClubMusic][Authorization] Native group-rank lookup failed; access denied.")
-			return false
-		end
-		if rank >= 255 then
-			level = 4
-		elseif rank >= 254 then
-			level = 3
-		elseif rank >= 200 then
-			level = 2
-		elseif rank >= 100 then
-			level = 1
-		else
-			level = 0
-		end
-		authRankCache[player.UserId] = {
-			level = level,
-			expiresAt = now + math.random(120, 300),
-		}
-	end
-	return level >= AUTH_RANK_LEVELS[permission]
-end
-
-local globalAuthorizationServiceResolver = function(actorUserId: any, permission: any): boolean
-	local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-	if resolver == nil then
-		return resolveNativePermission(actorUserId, permission)
-	end
-	if not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then
-		warn("[ClubMusic][Authorization] Resolver object has an invalid class or parent; access denied.")
-		return false
-	end
-	local ok, allowed = pcall(function() return resolver:Invoke(actorUserId, permission) end)
-	if not ok then
-		warn("[ClubMusic][Authorization] Controller resolver failed; access denied; permission="
-			.. tostring(permission) .. "; error=" .. string.sub(tostring(allowed), 1, 180))
-		return false
-	end
-	return allowed == true
-end
-
--- Authorization is local security infrastructure, not a cross-server feature.
--- Load the separately installed ModuleScript even when SERVICE_ENABLED is false
--- (including isolated Studio sessions).
+-- Authorization is owned by the installed SecurityCore module. There is no
+-- controller BindableFunction resolver or legacy authorization fallback.
 local authorizationModule = loadOptionalGlobalModule("ClubMusic_Global_Authorization_Service")
-if authorizationModule then
+if authorizationModule and type(authorizationModule.GetShared) == "function" then
 	local createOk, instance = pcall(function()
-		return authorizationModule.new({
-			isResolverAvailable = function()
-				-- Native group authorization is always available as a local fallback;
-				-- the controller BindableFunction is an optional shared-policy bridge.
-				return true
-			end,
-			resolvePermission = globalAuthorizationServiceResolver,
+		return authorizationModule.GetShared({
+			groupId = 500470662,
+			studioStaff = true,
 			onDenied = function(actorUserId, permission, count)
 				if globalAuditService then
 					pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", actorUserId,
@@ -965,78 +870,27 @@ if authorizationModule then
 		and type(instance.GetStatus) == "function"
 		and type(instance.Check) == "function" then
 		globalAuthorizationService = instance
+		local authStartOk, authStartResult = pcall(instance.Start, instance)
+		if not authStartOk or authStartResult ~= true then
+			warn("[ClubMusic][Authorization] SecurityCore authorization failed to start; protected actions remain denied.")
+			globalAuthorizationService = nil
+		end
 	else
-		warn("[ClubMusic][Authorization] Separate authorization ModuleScript could not be constructed: "
+		warn("[ClubMusic][Authorization] SecurityCore authorization module could not be initialized: "
 			.. tostring(instance))
 	end
 else
-	warn("[ClubMusic][Authorization] Separate authorization ModuleScript was not found under ServerStorage.")
+	warn("[ClubMusic][Authorization] SecurityCore Authorization module is unavailable; protected actions remain denied.")
 end
-if not globalAuthorizationService then
-	-- Keep a strict built-in fallback if the separately installed module is absent
-	-- or malformed. Its resolver uses the optional controller bridge or native group policy.
-	local allowedPermissions = {
-		GlobalDJ = true,
-		GlobalModeration = true,
-		GlobalAnnouncement = true,
-		GlobalConfig = true,
-		SecurityPolicy = true,
-		IncidentResponse = true,
-	}
-	globalAuthorizationService = {
-		checks = 0,
-		denied = 0,
-		Start = function(self)
-			return true
-		end,
-		Check = function(self, actorUserId, permission)
-			if not finiteNumber(actorUserId) or actorUserId < 1 or actorUserId % 1 ~= 0
-				or not allowedPermissions[permission] then
-				self.denied += 1
-				return false, "Invalid actor or permission."
-			end
-			local ok, allowed = pcall(function()
-				return globalAuthorizationServiceResolver(actorUserId, permission)
-			end)
-			self.checks += 1
-			if not ok or allowed ~= true then
-				self.denied += 1
-				return false, "Permission denied."
-			end
-			return true
-		end,
-		GetStatus = function(self)
-			return {state = "Fallback", checks = self.checks, denied = self.denied, default = "Deny"}
-		end,
-	}
-	warn("[ClubMusic][Authorization] Using built-in fail-closed authorization adapter.")
-end
-local authStartOk, authStartResult = pcall(globalAuthorizationService.Start, globalAuthorizationService)
-print("[ClubMusic][Authorization] Authorization service loaded; startOk=" .. tostring(authStartOk)
-	.. "; startResult=" .. tostring(authStartResult))
+
 authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
-	print("[ClubMusic][Authorization] Authorization check requested; actor=" .. tostring(actorUserId)
-		.. "; permission=" .. tostring(permission) .. "; servicePresent=" .. tostring(globalAuthorizationService ~= nil))
-	if not globalAuthorizationService then
-		warn("[ClubMusic][Authorization] Authorization check denied because the service instance is missing.")
-		return false
-	end
-	-- Use a statement rather than a conditional expression here: the authorization
-	-- adapter and SafeCall both return multiple values, and a Luau if-expression
-	-- can collapse those returns, leaving allowed=nil even when Check returned true.
-	local ok, allowed
-	if globalSafeCall then
-		ok, allowed = globalSafeCall:Run("GlobalAuthorization", "Check",
-			globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission)
-	else
-		ok, allowed = pcall(globalAuthorizationService.Check,
-			globalAuthorizationService, actorUserId, permission)
-	end
+	local service = globalAuthorizationService
+	if not service then return false end
+	local ok, allowed, reason = pcall(service.Check, service, actorUserId, permission)
 	if not ok then
-		warn("[ClubMusic][Authorization] Authorization Check threw an error: " .. string.sub(tostring(allowed), 1, 180))
+		warn("[ClubMusic][Authorization] SecurityCore Check failed; access denied: " .. string.sub(tostring(allowed), 1, 180))
 		return false
 	end
-	print("[ClubMusic][Authorization] Authorization Check returned; allowed=" .. tostring(allowed))
 	return allowed == true
 end
 
