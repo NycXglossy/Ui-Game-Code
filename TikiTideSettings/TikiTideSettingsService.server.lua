@@ -231,16 +231,26 @@ do
 	end
 end
 
+local function truncateUtf8(value: string, maxCharacters: number): string?
+	local length = utf8.len(value)
+	if not length then return nil end
+	if length <= maxCharacters then return value end
+	local nextByte = utf8.offset(value, maxCharacters + 1)
+	if not nextByte then return value end
+	return string.sub(value, 1, nextByte - 1)
+end
+
 local function filterBroadcastText(player: Player, raw: any): string?
 	if typeof(raw) ~= "string" then return nil end
 	local trimmed = string.match(raw, "^%s*(.-)%s*$") or ""
 	if trimmed == "" or #trimmed > MAX_MESSAGE_LENGTH then return nil end
+	if not utf8.len(trimmed) then return nil end
 	local ok, result = pcall(function()
 		local filtered = TextService:FilterStringAsync(trimmed, player.UserId)
 		return filtered:GetNonChatStringForBroadcastAsync()
 	end)
 	if not ok or typeof(result) ~= "string" or result == "" then return nil end
-	return string.sub(result, 1, MAX_MESSAGE_LENGTH)
+	return truncateUtf8(result, MAX_MESSAGE_LENGTH)
 end
 
 local function applyMovement(player: Player)
