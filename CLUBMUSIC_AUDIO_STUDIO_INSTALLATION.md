@@ -1,48 +1,62 @@
-# ClubMusic Audio Module Installation Packages
+# ClubMusic Audio Module Installation
 
 Branch: `feature/sultan-settings-2026-11-10`
 
-## Package files
-- `ClubMusic_Audio_Server_Modules.rbxmx`: five separate server ModuleScripts.
-- `ClubMusic_Audio_Client_Modules.rbxmx`: one separate client ModuleScript.
+Audited source snapshot: `8edd537a30f002e39bd437a6d77f74e5ce66c2c6`
 
-## Install
-1. Download each RBXMX file using GitHub's **Raw** view / Download raw file.
-2. In Roblox Studio, use **File → Insert from File...** and import the server package.
-3. Move the resulting `ClubMusicAudioModules` Folder under `ServerStorage`.
-4. Import the client package the same way.
-5. Move `ClubMusicClientAudioModules` under `ReplicatedStorage`.
-6. Confirm the six children are ModuleScripts with the exact names listed in this package.
-7. Save a backup copy of the place before testing.
+## Architecture contract
 
-## Important
-This package installs the modules as separate ModuleScripts. On the current integration branch, the server controller discovers `ClubMusicAudioBackend` and `ClubMusicAudioCrossfadeManager` in `ServerStorage.ClubMusicAudioModules` (or directly under `ServerStorage`). When both are present, it initializes the controller-owned crossfade coordinator; automatic queued-track transitions can then use an AudioPlayer incoming deck while the established legacy Sound remains the main playback source.
+- Playback, queue order, Auto DJ selection, skip/pause/restart, and crossfade timing are owned by each individual game server.
+- A server's queue and playback state are not copied to, reconciled with, or controlled by another server.
+- The modern server AudioPlayer is the controller-owned main playback source.
+- Client volume is per-listener output routing; it must not change another player's volume or server queue state.
+- Global services are reserved for shared features that genuinely need cross-server delivery, such as moderation updates, announcements, catalog invalidation, and global boost controls. They are not playback or queue authorities.
+- Do not install or recreate `MusicGlobalQueueService`, `MusicGlobalPlaybackAuthority`, `ClubMusic_Global_Recovery_Service`, or `ClubMusic_Global_State_Reconciliation_Service`. Those retired modules are not dependencies of the local playback design.
 
-The main playback migration is enabled: `UseModernAudioBackend = true` makes the controller adopt the modern AudioPlayer as its canonical source. The reported Studio log `[ClubMusic][AudioBackend] Modern AudioPlayer is now the controller-owned main source.` confirms that the guarded handoff completed.
+## Module package
 
-### Modern server recovery
+The current audio package contains six ModuleScripts:
 
-The controller first attempts an in-place AudioPlayer decoder reload. If that fails, it now constructs a replacement modern backend, reloads the same asset, restores playback speed, playhead, pause state, and transition gain, verifies playback, and only then swaps ownership. Queue ownership and the authoritative global playback clock are not changed. The old backend is cleaned up only after the replacement is committed. The legacy `ServerMusicSound` remains temporarily for startup handoff and emergency compatibility if the modern backend cannot initialize; it is no longer the intended recovery path after modern ownership has been established.
+**ServerStorage / ClubMusicAudioModules**
+- `ClubMusicAudioBackend`
+- `ClubMusicAudioCrossfadeManager`
+- `ClubMusicAudioQualityProfiles`
+- `ClubMusicDJSessionManager`
+- `ClubMusicSpatialAudioGraph`
 
-### Per-player modern output
+**ReplicatedStorage / ClubMusicClientAudioModules**
+- `ClubMusicPlayerPreferences`
 
-The server backend now ends at its replicated `MusicFader`; it no longer creates a shared `AudioDeviceOutput`. The client `ClubMusicPlayerPreferences` module detects the main and crossfade backend folders and adds a private `AudioFader` plus `AudioDeviceOutput` with `Player = LocalPlayer` for each deck. This preserves server-controlled crossfade gain while applying personal volume independently for each listener. The renderer's volume slider updates those local faders. `MusicGroup` is retained only as a local compatibility volume control while the legacy Sound bootstrap/fallback remains.
+Keep server-only modules in ServerStorage. Only the client preferences/routing module belongs in ReplicatedStorage.
 
-The crossfade manager does not own a separate queue or playback timeline; the server controller remains authoritative for track selection, timing, and queue commits. Keep the server modules in ServerStorage and the client preferences module in ReplicatedStorage. Do not put server-only modules in ReplicatedStorage.
+## Recommended installation: Command Bar installer
 
-Use a stopped test place and update the server controller, UI_Renderer, server ModuleScripts, and client ModuleScript as one coordinated change before starting playback. Do not run a live server between partial replacements. The server backend now intentionally has no shared device output, so installing only the updated server module without the updated client routing module and renderer will leave modern music inaudible; installing only the new client routing with the old server backend can produce duplicate output. Test two clients at different volume levels, mute one client, trigger a crossfade, and force a modern reload/rebuild before publishing. This package and its source files are not a substitute for Roblox Studio runtime or multiplayer testing.
+The repository's `ClubMusic_Studio_CommandBar_Installer.lua` is pinned to the same audited source snapshot for all six modules. Prefer it over older locally saved copies of the RBXMX packages, which may contain an earlier module revision.
 
+1. Make a backup copy of the place and stop all running test servers.
+2. In Studio, open **Game Settings → Security** and enable **Allow HTTP Requests**.
+3. Open **View → Command Bar**.
+4. Open the installer file from this branch, copy its entire contents, paste it into the Command Bar, and run it once.
+5. Confirm that the two folders and all six ModuleScripts appear under the exact parents and names listed above.
+6. Install the matching `UI_Server_Controller_server (1).lua` and `UI_Renderer (2).lua` from this same branch snapshot. Do not mix controller, renderer, and module revisions from different snapshots.
+7. Save the place before starting the test session.
 
-## Alternative: Command Bar installer (when RBXMX import is unavailable)
+The installer stages all six downloads before creating or replacing ModuleScripts. It only replaces same-named ModuleScripts inside its two dedicated folders and stops if a conflicting non-ModuleScript object is present. It does not modify the controller, renderer, legacy compatibility objects, or global services.
 
-The repository also includes `ClubMusic_Studio_CommandBar_Installer.lua`. This avoids the RBXMX import UI:
+## Legacy compatibility
 
-1. In Studio, open **Game Settings → Security** and enable **Allow HTTP Requests**.
-2. Open **View → Command Bar**.
-3. Open the installer Lua file from this repository, copy its entire contents, and paste it into the Command Bar.
-4. Run it once. It downloads the six source modules from pinned repository commits and creates the ModuleScripts in the required folders.
-5. Confirm the folders and all six ModuleScripts appear in Explorer, then save the place.
+Keep any existing `ServerMusicSound` or `MusicGroup` objects until the current controller/client volume path has been validated in Studio. Do not remove compatibility objects merely because the modern AudioPlayer is the main source. Their removal is a separate cleanup after playback, recovery, and per-player volume regression tests pass.
 
-The installer stages all six downloads before creating or replacing any ModuleScripts. It only replaces same-named ModuleScripts inside its two dedicated folders; it stops if a conflicting non-ModuleScript object is present. It does not modify the controller, renderer, live playback, `ServerMusicSound`, or `MusicGroup`.
+## Studio regression checks
 
-**Important:** the modern shared playback backend and crossfade are integrated, and the reported controller-owned-source log confirms successful handoff in Studio. This does not by itself prove every multi-client, failure-recovery, or device-routing regression gate. Do not remove the legacy fallback objects yet: `ServerMusicSound` remains in the controller's recovery and transition fallback paths, while `MusicGroup` remains in the client volume-preference path. DJ-session handoff UI, local listener routing, and spatial venue routing remain separate future integration work.
+Run these in a stopped-place copy with at least two clients:
+
+1. Confirm the server starts with the modern AudioPlayer as its main source.
+2. Confirm each server maintains an independent queue and Auto DJ progression.
+3. Change volume and mute on client A; verify client B's volume is unchanged.
+4. Trigger a crossfade and verify both clients hear a clean transition.
+5. Exercise local pause, resume, skip, restart, and queue edits.
+6. Exercise modern audio reload/recovery and verify playback resumes without duplicating or advancing the queue.
+7. Confirm global moderation, announcements, catalog invalidation, and boost controls still work independently of local playback.
+
+This repository audit and installer update are static checks only. They do not substitute for Roblox Studio multiplayer testing or a published-server test.
