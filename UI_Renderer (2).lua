@@ -2541,7 +2541,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local staffLevel = perm()
 		if staffLevel >= 3 then
 			local playbackControls = card(88)
-			label(playbackControls, "GLOBAL PLAYBACK", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 15), C.Muted, 9, true)
+			label(playbackControls, "LOCAL PLAYBACK", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 15), C.Muted, 9, true)
 			local controlGap = 8
 			local controlWidth = UDim2.new(1/3, -((controlGap * 2) / 3) - 8, 0, 38)
 			actionButton(playbackControls, if now.paused == true then "▶ RESUME" else "Ⅱ PAUSE",
