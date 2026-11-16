@@ -1,5 +1,7 @@
 --!strict
 local StorageGuard = require(script.Parent:WaitForChild("StorageGuard"))
+local ResourceGuard = require(script.Parent:WaitForChild("ResourceGuard"))
+local ConnectionJanitor = require(script.Parent:WaitForChild("ConnectionJanitor"))
 
 -- Local bounded audit queue; compact JSON batches are written to sharded expiring keys.
 local Service={}; Service.__index=Service
@@ -11,7 +13,7 @@ local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderati
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Audit dependencies missing")
  local self=setmetatable({d=d,written=0,queued=0,droppedLow=0,lastError=nil,buffer={},bufferHead=1,bufferCount=0,lastFlushAt=0,batchSequence=0,
-  readCache={},readCacheAt={},flushRunning=false},Service)
+  readCache={},readCacheAt={},flushRunning=false,janitor=ConnectionJanitor.new()},Service)
  self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalAudit_v1")
  return self
 end
@@ -68,6 +70,8 @@ function Service:_flush()
  if now-self.lastFlushAt<15 then return false end
  local allowed,reason=StorageGuard.Allow("low")
  if not allowed then self.lastError=reason; return false end
+ local acquired,release=ResourceGuard.TryAcquire("MemoryStoreWrite")
+ if not acquired then self.lastError="LocalResourceLimit:MemoryStoreWrite"; return false end
  local batch={}
  local count=math.min(100,self.bufferCount)
  for offset=1,count do local index=((self.bufferHead+offset-2)%MAX_ITEMS)+1; table.insert(batch,self.buffer[index]) end
@@ -91,9 +95,11 @@ function Service:_flush()
  local key="TT:A:"..tostring(shard)..":"..job..":"..tostring(bucket)..":"..tostring(self.batchSequence)
  if #key>64 then key=string.sub(key,1,64) end
  local writeOk,writeError=pcall(function() self.map:SetAsync(key,payload,TTL,os.time()) end)
+ release()
  if not writeOk then
   self.lastError=tostring(writeError); StorageGuard.Failure(writeError); return false
  end
+ StorageGuard.Success()
  for _=1,#batch do self.buffer[self.bufferHead]=nil; self.bufferHead=(self.bufferHead%MAX_ITEMS)+1; self.bufferCount-=1 end
  self.written+=#batch; self.lastFlushAt=now; self.lastError=nil; self.readCache={}; self.readCacheAt={}
  return true
@@ -108,8 +114,12 @@ function Service:GetRecent(limit,moderatorUserId)
  end
  local allowed,reason=StorageGuard.Allow("low")
  if not allowed then self.lastError=reason; return false,{} end
+ local acquired,release=ResourceGuard.TryAcquire("MemoryStoreRead")
+ if not acquired then self.lastError="LocalResourceLimit:MemoryStoreRead"; return false,{} end
  local ok,result=pcall(function() return self.map:GetRangeAsync(Enum.SortDirection.Descending,50) end)
+ release()
  if not ok then self.lastError=tostring(result); StorageGuard.Failure(result); return false,{} end
+ StorageGuard.Success()
  local out={}
  for _,entry in ipairs(result) do
   if type(entry.value)=="string" then
@@ -131,16 +141,18 @@ end
 function Service:Start()
  if self.flushRunning then return true end
  self.flushRunning=true
- task.spawn(function()
+ local thread=task.spawn(function()
   while self.flushRunning do
    task.wait(22.5)
    if self.bufferCount>0 then self:_flush() end
   end
  end)
+ self.janitor:Add(thread,"Cancel")
  return true
 end
 function Service:Stop()
  self.flushRunning=false
+ self.janitor:Cleanup()
  -- Do not attempt unbounded shutdown writes; remaining records expire with this server.
 end
 return Service
