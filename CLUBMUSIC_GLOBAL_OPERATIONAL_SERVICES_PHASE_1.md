@@ -1,3 +1,5 @@
+> **SUPERSEDED — do not use as a current installation checklist.** This historical phase document describes an earlier multi-service architecture, including modules and queue reconciliation that have since been retired or consolidated. In particular, do not reinstall `ClubMusic_Global_State_Reconciliation_Service`, a global queue service, or any retired global playback authority. Preserve the current server-side authorization, security, global moderation, catalog invalidation, announcements, and boost functionality. See the current branch sources and `CLUBMUSIC_AUDIO_STUDIO_INSTALLATION.md` for the active local-playback boundary.
+
 # ClubMusic Global Operational Services — Phase 1
 
 ## Scope
