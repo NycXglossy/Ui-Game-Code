@@ -5449,7 +5449,6 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Messaging last error: " .. string.sub(tostring(messaging.lastError or "none recorded"), 1, 240),
 			"MemoryStore limiter fallback: " .. tostring(memoryStore.capacityLimited == true),
 			"MemoryStore capacity error: " .. string.sub(memoryStoreError, 1, 300),
-			"Error history: " .. tostring(snapshot.errorHistoryAvailable == true),
 			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s):",
 		}
 		for index = math.max(1, #purchaseDiagnosticEntries - 3), #purchaseDiagnosticEntries do
@@ -5482,8 +5481,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		for index = math.max(1, #errors - 7), #errors do
 			local item = errors[index]
 			if typeof(item) == "table" then
-				table.insert(lines, string.format("%s | %s / %s | repeats not included",
-					tostring(item.id or "?"), tostring(item.subsystem or "?"), tostring(item.operation or "?")))
+				table.insert(lines, string.format("%s | %s / %s | repeats %s | %s",
+					tostring(item.id or "?"), tostring(item.subsystem or "?"), tostring(item.operation or "?"),
+					tostring(item.repeats or 0), os.date("!%H:%M:%S UTC", tonumber(item.timestamp) or os.time())))
 			end
 		end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1200)
