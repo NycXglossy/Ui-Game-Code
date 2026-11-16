@@ -355,7 +355,7 @@ function Service:_queue(signal,subject,count)
    return false
   end
  end
- local tail=((self.eventHead+self.eventCount-2)%CAPACITY)+1
+ local tail=((self.eventHead+self.eventCount-1)%CAPACITY)+1
  self.events[tail]=item; self.eventCount+=1
  return true
 end
@@ -512,7 +512,7 @@ function Service:_enqueue(record)
    self.droppedLow+=1
   else self.droppedLow+=1; return false end
  end
- local tail=((self.bufferHead+self.bufferCount-2)%MAX_ITEMS)+1
+ local tail=((self.bufferHead+self.bufferCount-1)%MAX_ITEMS)+1
  self.buffer[tail]=record; self.bufferCount+=1; self.queued+=1
  return true
 end
