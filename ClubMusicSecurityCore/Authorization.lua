@@ -26,6 +26,7 @@ local PERMISSION_LEVELS = {
 
 local DEFAULT_THRESHOLDS = {
 	GroupDJ = 100,
+	Moderator = 150,
 	Admin = 200,
 	CoOwner = 254,
 	Owner = 255,
@@ -86,7 +87,7 @@ function Service:_rankName(level: number): string
 	if level >= 4 then return "OWNER" end
 	if level >= 3 then return "CO-OWNER" end
 	if level >= 2 then return "ADMIN" end
-	if level >= 1 then return "GROUP DJ" end
+	if level >= 1 then return "MODERATOR" end
 	return "GUEST"
 end
 
@@ -128,7 +129,7 @@ function Service:_levelForRank(rank: number): number
 	if rank >= t.Owner then return 4 end
 	if rank >= t.CoOwner then return 3 end
 	if rank >= t.Admin then return 2 end
-	if rank >= t.GroupDJ then return 1 end
+	if rank >= t.Moderator then return 1 end
 	return 0
 end
 
@@ -290,7 +291,14 @@ function Service:Check(actorUserId: any, permission: any): (boolean, string?)
 		return false, "Authorization data is unavailable; retry shortly."
 	end
 
-	if cached.level < PERMISSION_LEVELS[permission] then
+	-- DJ rank is a narrowly scoped booth entitlement, not general staff.
+	-- Keep GlobalDJ available to rank 100+ without elevating that player to
+	-- Moderator or granting staff-only controller actions.
+	local allowed = if permission == "GlobalDJ"
+		then (typeof(cached.groupRank) == "number" and cached.groupRank >= self.thresholds.GroupDJ)
+			or cached.level >= 1
+		else cached.level >= PERMISSION_LEVELS[permission]
+	if not allowed then
 		self.denied += 1
 		self:_recordDenied(userId, permission)
 		return false, "Permission denied."
