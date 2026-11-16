@@ -5305,7 +5305,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
 			return false, "ClubMusic co-owner/owner permission is required."
 		end
-		local ok, incidents = ControllerFunctions.adminBridgeGlobalCall("GetGlobalSecurityIncidents", 8)
+		local ok, incidents = ControllerFunctions.adminBridgeGlobalCall("GetGlobalSecurityIncidents", 8, caller.UserId)
 		if not ok or typeof(incidents) ~= "table" then return false, tostring(incidents or "Incident service is unavailable.") end
 		if #incidents == 0 then return true, "No recent ClubMusic security incidents." end
 		local lines = {"Recent ClubMusic security incidents:"}
@@ -5323,11 +5323,14 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			return false, "ClubMusic co-owner/owner permission is required."
 		end
 		if typeof(argument) ~= "string" or #argument < 4 or #argument > 200 then
-			return false, "Usage: ;cmincident <SecurityAlert|ServiceDegraded|AbuseReport|ManualReview> <summary>"
+			return false, "Usage: ;cmincident <SecurityAlert|ServiceDegraded|AbuseReport|ManualReview> <userId|server> <summary>"
 		end
-		local kind, summary = string.match(argument, "^(%a+)%s+(.+)$")
-		if not kind or not summary or #summary > 180 then return false, "Provide an allowed incident type followed by a summary (max 180 characters)." end
-		local ok, incidentId = ControllerFunctions.adminBridgeGlobalCall("OpenGlobalSecurityIncident", kind, summary, caller.UserId)
+		local kind, subjectToken, summary = string.match(argument, "^(%a+)%s+(%S+)%s+(.+)$")
+		local subjectUserId = if subjectToken == "server" then 0 else tonumber(subjectToken)
+		if not kind or not subjectUserId or subjectUserId < 0 or subjectUserId % 1 ~= 0 or not summary or #summary > 180 then
+			return false, "Provide an allowed incident type, a numeric userId (or server), and a summary."
+		end
+		local ok, incidentId = ControllerFunctions.adminBridgeGlobalCall("OpenGlobalSecurityIncident", kind, summary, caller.UserId, subjectUserId)
 		if not ok then return false, tostring(incidentId) end
 		return true, "Security incident opened: " .. tostring(incidentId)
 	end
@@ -5522,7 +5525,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, string.sub(table.concat(lines, "\n"), 1, 1400)
 	end
 	if operation == "OperationalSecurityLog" then
-		local ok, entries = ControllerFunctions.adminBridgeGlobalCall("GetGlobalAudit", 30)
+		local ok, entries = ControllerFunctions.adminBridgeGlobalCall("GetGlobalAudit", 30, caller.UserId)
 		if not ok or typeof(entries) ~= "table" then return false, tostring(entries or "Security audit log is unavailable.") end
 		local lines = {"Recent ClubMusic security audit events:"}
 		local count = 0
