@@ -45,7 +45,7 @@ Existing cross-server ClubMusic features remain separate; diagnostics reports on
 
 6. **Global Service and trusted admin integration**
    - `ClubMusic_Global_Service_server_1.lua` wires the registry, ServerHealth, Watchdog, and ErrorHistory into the existing ServerStorage BindableFunction snapshot.
-   - `UI_Server_Controller_server (1).lua` reports server-side AutoDJ, queue, playback, moderation, and recovery progress and displays local health, registry, watchdog, memory, and error-history counters to authorized staff.
+   - `UI_Server_Controller_server (1).lua` reports server-side AutoDJ, queue, playback, moderation, and recovery progress and displays local health, registry, watchdog, memory, and aggregate error-history counts to authorized staff; detailed records remain server-side.
    - No client-facing diagnostic remote was added.
 
 ## ServerStorage installation
