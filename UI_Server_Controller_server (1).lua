@@ -228,7 +228,7 @@ local function classifyConfiguredPurchaseId(promptType: string, itemId: number):
 end
 
 purchaseDiagnosticRemote.OnServerEvent:Connect(function(player: Player, promptType: any, itemId: any, eventKind: any, payload: any)
-	if not ControllerFunctions.isLiveRemotePlayer(player)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players
 		or (promptType ~= "GamePass" and promptType ~= "DeveloperProduct")
 		or typeof(itemId) ~= "number" or not (itemId > 0 and itemId <= 9007199254740991) or itemId % 1 ~= 0 then
 		return
