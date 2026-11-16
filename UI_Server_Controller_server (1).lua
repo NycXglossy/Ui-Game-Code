@@ -2320,13 +2320,7 @@ ControllerFunctions.releaseProfileWriteLock = function(userId: number)
 end
 
 -- Session-only moderation / VIP / vote state.
--- Group/configured staff roles are verified on join and cached locally; routine
--- permission checks never query DataStoreService or MemoryStoreService.
-local rankCache: {[number]: {rank: string, level: number, refreshedAt: number, expiresAt: number}} = {}
-local rankRefreshInFlight: {[number]: boolean} = {}
-local rankRetryAfter: {[number]: number} = {}
-local RANK_CACHE_MIN_TTL_SECONDS = 120
-local RANK_CACHE_MAX_TTL_SECONDS = 300
+-- All group-rank authorization and caching is owned by SecurityCore.Authorization.
 local vipPass: {[number]: boolean} = {}
 local vvipPass: {[number]: boolean} = {}
 local tikiTidePass: {[number]: boolean} = {}
@@ -2336,78 +2330,58 @@ local requestsLocked = false
 local recentTracks: {string} = {}
 local lastAutoGenre = ""
 
--- Ranks, permissions and VIP -------------------------------------------------
+local authorizationService: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("Authorization") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.GetShared) == "function" then
+			local sharedOk, instance = pcall(exported.GetShared, {
+				groupId = CONFIG.GroupId,
+				studioStaff = CONFIG.StudioStaff,
+				staffUserIds = CONFIG.StaffUserIds,
+				thresholds = {
+					GroupDJ = CONFIG.RankThresholds.GroupDJ,
+					Admin = CONFIG.RankThresholds.Admin,
+					CoOwner = CONFIG.RankThresholds.CoOwner,
+					Owner = CONFIG.RankThresholds.Owner,
+				},
+			})
+			if sharedOk and typeof(instance) == "table"
+				and type(instance.GetRank) == "function"
+				and type(instance.GetLevel) == "function"
+				and type(instance.Refresh) == "function" then
+				authorizationService = instance
+			end
+		end
+	end
+	if not authorizationService then
+		warn("[ClubMusic][Authorization] SecurityCore Authorization is unavailable; rank-based privileges are fail-closed.")
+	end
+end
 
+-- Rank names, levels and refreshes are projections of the single SecurityCore cache.
 ControllerFunctions.computeRank = function(player: Player): (string, number)
-	for _, id in ipairs(CONFIG.StaffUserIds) do
-		if id == player.UserId then return "OWNER", 4 end
-	end
-	if CONFIG.StudioStaff and RunService:IsStudio() then return "OWNER", 4 end
-	if CONFIG.GroupId <= 0 then return "GUEST", 0 end
-
-	local ok, rank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
-	if not ok or typeof(rank) ~= "number" then return "GUEST", 0 end
-	local t = CONFIG.RankThresholds
-	if rank >= t.Owner then return "OWNER", 4 end
-	if rank >= t.CoOwner then return "CO-OWNER", 3 end
-	if rank >= t.Admin then return "ADMIN", 2 end
-	if rank >= t.GroupDJ then return "GROUP DJ", 1 end
-	return "GUEST", 0
+	if not authorizationService then return "GUEST", 0 end
+	return authorizationService:GetRank(player)
 end
 
--- This is the only routine rank refresh path. It runs on PlayerAdded and only
--- again after the bounded local cache expires. Concurrent checks fail closed
--- while a refresh is already yielding on Roblox's group-rank API.
 ControllerFunctions.refreshRank = function(player: Player): boolean
-	if player.Parent ~= Players then return false end
-	local userId = player.UserId
-	if rankRefreshInFlight[userId] then return false end
-	rankRefreshInFlight[userId] = true
-	local ok, rank, level = pcall(ControllerFunctions.computeRank, player)
-	rankRefreshInFlight[userId] = nil
-	if player.Parent ~= Players then return false end
-	if not ok or typeof(rank) ~= "string" or typeof(level) ~= "number"
-		or level < 0 or level > 4 or level % 1 ~= 0 then
-		rankRetryAfter[userId] = os.clock() + 15
-		warn("[ClubMusic][Authorization] Rank refresh failed; privileged checks remain denied until retry.")
-		return false
-	end
-	local now = os.clock()
-	local ttl = math.random(RANK_CACHE_MIN_TTL_SECONDS, RANK_CACHE_MAX_TTL_SECONDS)
-	rankCache[userId] = {
-		rank = rank,
-		level = level,
-		refreshedAt = now,
-		expiresAt = now + ttl,
-	}
-	rankRetryAfter[userId] = nil
-	return true
-end
-
-local function getFreshRankCache(player: Player)
-	local userId = player.UserId
-	local now = os.clock()
-	local cached = rankCache[userId]
-	if cached and cached.expiresAt > now then return cached end
-	if rankRefreshInFlight[userId] or (rankRetryAfter[userId] and rankRetryAfter[userId] > now) then
-		return nil
-	end
-	if ControllerFunctions.refreshRank(player) then
-		return rankCache[userId]
-	end
-	return nil
+	if not authorizationService or player.Parent ~= Players then return false end
+	local ok, refreshed = pcall(authorizationService.Refresh, authorizationService, player)
+	return ok and refreshed == true
 end
 
 ControllerFunctions.getRank = function(player: Player): string
-	local cached = getFreshRankCache(player)
-	return if cached then cached.rank else "GUEST"
+	if not authorizationService then return "GUEST" end
+	local rank = authorizationService:GetRank(player)
+	return rank
 end
 
--- Permission level: 0 guest, 1 GROUP DJ, 2 ADMIN, 3 CO-OWNER, 4 OWNER.
--- Expired or unavailable role data never grants a privileged permission.
 ControllerFunctions.getLevel = function(player: Player): number
-	local cached = getFreshRankCache(player)
-	return if cached then cached.level else 0
+	if not authorizationService then return 0 end
+	return authorizationService:GetLevel(player)
 end
 
 ControllerFunctions.isStaff = function(player: Player): boolean
