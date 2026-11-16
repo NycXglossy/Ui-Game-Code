@@ -5851,10 +5851,11 @@ ControllerFunctions.onJoin = function(player: Player)
 	-- Fetch ban and request-block status together to avoid serial durable reads.
 	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+	local moderationVerified = not globalModerationRequired or (moderationCallOk and moderationLookupOk == true)
 	ControllerFunctions.recordDiagnosticPulse("Moderation",
-		if moderationCallOk and moderationLookupOk == true then "join-moderation-verified" else "join-moderation-lookup-failed",
-		moderationCallOk and moderationLookupOk == true,
-		{lookupSucceeded = moderationCallOk and moderationLookupOk == true})
+		if not globalModerationRequired then "studio-local-moderation-isolated"
+		elseif moderationVerified then "join-moderation-verified" else "join-moderation-lookup-failed",
+		moderationVerified, {lookupSucceeded = moderationCallOk and moderationLookupOk == true})
 	if moderationCallOk and moderationLookupOk == true then
 		if globallyBanned == true then
 			player:Kick("You are globally banned from this experience.")
