@@ -7,11 +7,37 @@ SafeCall.__index = SafeCall
 local MAX_RECORDS = 50
 local MAX_TEXT = 240
 local WARN_COOLDOWN = 30
+local WARNING_TTL = 120
+local MAX_WARNING_KEYS = 100
 
 local function clean(value: any): string
-	local text = tostring(value or "")
+	local ok, result = pcall(tostring, value or "")
+	local text = if ok then result else "<unprintable>"
 	text = string.gsub(text, "[%c]", " ")
 	return string.sub(text, 1, MAX_TEXT)
+end
+
+local function pruneWarnings(warnings: {[string]: number}, now: number)
+	local count = 0
+	local oldestKey: string? = nil
+	local oldestAt = math.huge
+	for key, at in pairs(warnings) do
+		if now - at >= WARNING_TTL then
+			warnings[key] = nil
+		else
+			count += 1
+			if at < oldestAt then oldestAt = at; oldestKey = key end
+		end
+	end
+	if count >= MAX_WARNING_KEYS and oldestKey then warnings[oldestKey] = nil end
+end
+
+local function shouldWarn(self: any, signature: string, now: number): boolean
+	pruneWarnings(self.lastWarnings, now)
+	local lastWarn = self.lastWarnings[signature] or 0
+	if now - lastWarn < WARN_COOLDOWN then return false end
+	self.lastWarnings[signature] = now
+	return true
 end
 
 function SafeCall.new(dependencies: {[string]: any}?)
@@ -28,6 +54,10 @@ end
 
 function SafeCall:Run(serviceName: string, operation: string, callback: (...any) -> ...any, ...: any): ...any
 	self.counts.calls += 1
+	if type(callback) ~= "function" then
+		self:RecordFailure(serviceName, operation, "Callback is not a function.")
+		return false, "Callback is not a function.", "Callback is not a function."
+	end
 	local packed = table.pack(pcall(callback, ...))
 	local ok = packed[1] == true
 	local now = os.time()
@@ -51,9 +81,7 @@ function SafeCall:Run(serviceName: string, operation: string, callback: (...any)
 	while #self.records > MAX_RECORDS do table.remove(self.records) end
 
 	local signature = service .. "|" .. op .. "|" .. err
-	local lastWarn = self.lastWarnings[signature] or 0
-	if now - lastWarn >= WARN_COOLDOWN then
-		self.lastWarnings[signature] = now
+	if shouldWarn(self, signature, now) then
 		warn("[ClubMusic][SafeCall] Operation failed; service=" .. service
 			.. "; operation=" .. op .. "; error=" .. err)
 	end
@@ -70,9 +98,7 @@ function SafeCall:RecordFailure(serviceName: string, operation: string, detail: 
 	table.insert(self.records, 1, table.clone(self.lastFailure))
 	while #self.records > MAX_RECORDS do table.remove(self.records) end
 	local signature = service .. "|" .. op .. "|" .. err
-	local lastWarn = self.lastWarnings[signature] or 0
-	if now - lastWarn >= WARN_COOLDOWN then
-		self.lastWarnings[signature] = now
+	if shouldWarn(self, signature, now) then
 		warn("[ClubMusic][SafeCall] Operation reported failure; service=" .. service
 			.. "; operation=" .. op .. "; detail=" .. err)
 	end
@@ -95,8 +121,13 @@ function SafeCall:GetRecent(limit: number?): {any}
 end
 
 function SafeCall:GetStatus(): {[string]: any}
+	local warningKeyCount = 0
+	for _ in pairs(self.lastWarnings) do warningKeyCount += 1 end
 	return {
 		service = self.serviceName,
+		warningKeyCount = warningKeyCount,
+		maxWarningKeys = MAX_WARNING_KEYS,
+		warningTtlSeconds = WARNING_TTL,
 		calls = self.counts.calls,
 		failures = self.counts.failures,
 		recovered = self.counts.recovered,
