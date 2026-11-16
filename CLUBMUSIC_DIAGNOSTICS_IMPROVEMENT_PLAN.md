@@ -114,7 +114,7 @@ Static repository checks do not prove Roblox runtime behavior. In Studio and a d
 
 The first static Global API compatibility pass is documented in `CLUBMUSIC_GLOBAL_API_DIAGNOSTICS_AUDIT.md`.
 
-- Confirmed the Global Service currently registers 45 BindableFunctions plus the `GlobalEvent` BindableEvent.
+- Confirmed 45 unique BindableFunction registrations in source plus the `GlobalEvent` BindableEvent; three SafeCall-related functions are conditional on the optional SafeCall module.
 - Confirmed UI Server Controller consumers for `GetGlobalHealth`, `GetGlobalMetrics`, `GetGlobalDiagnostics`, `GetGlobalOperationalStatus`, and `RecordLocalWatchdogPulse`.
 - Preserved all API names and the existing structured/aggregate metrics contract.
 - Identified SafeCall and ErrorHistory as overlapping but distinct stores; neither is retired or merged in this pass.
@@ -122,3 +122,15 @@ The first static Global API compatibility pass is documented in `CLUBMUSIC_GLOBA
 - Confirmed ClientDiagnostics remains opt-in and isolated from server health and enforcement.
 
 This is a static compatibility pass, not proof that every consumer in all embedded assets has been found. The remaining sweep must cover dynamic invocations, packaged third-party models, and Studio installer behavior. No runtime verification has been performed.
+
+
+### Second compatibility pass (2026-11-16)
+
+- Traced the UI Server Controller's dynamic `globalInvoke` bridge and its late-folder/event discovery logic.
+- Compared the explicitly invoked Global API names with provider-side signatures.
+- Found a confirmed return-contract mismatch: `GetGlobalAudit` returns its entries directly, while the Kohl's/admin bridge helper requires the first provider return to be `true`. The `OperationalSecurityLog` path can therefore reject a successful audit read. This is documented for a narrow compatibility fix; provider behavior is not changed in this audit commit.
+- Verified that the Global Service source has 45 unique BindableFunction registrations, but only 42 are unconditional; the three SafeCall-related functions depend on optional module availability.
+- The repository fetch for the Kohl's Admin export returned empty content, so that embedded package remains unverified. The separate adapter source is still the supported inspection boundary.
+- Added a Studio compatibility test matrix covering startup order, late API discovery, event replacement, optional SafeCall availability, and the audit return-shape mismatch.
+
+**Next implementation task:** fix the `GetGlobalAudit` consumer contract without changing the provider's existing return shape, then run static contract checks before Studio verification. No runtime test is claimed.
