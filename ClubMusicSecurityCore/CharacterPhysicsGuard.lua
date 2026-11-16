@@ -217,6 +217,34 @@ function Service:_watchCharacter(player: Player, character: Model)
 				table.insert(state.connections, value.Changed:Connect(checkScaleChange))
 			end
 		end
+
+		-- Observe only sustained extreme assembly motion. Ordinary running,
+		-- jumping, and seated movement are intentionally below these thresholds.
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		if rootPart and rootPart:IsA("BasePart") then
+			local function checkVelocity(property: string, threshold: number, signal: string)
+				if state.pending[property] then return end
+				state.pending[property] = true
+				task.delay(CHECK_DELAY, function()
+					state.pending[property] = nil
+					if not self.started or player.Parent ~= Players
+						or player.Character ~= character or state.humanoid ~= humanoid
+						or humanoid.SeatPart ~= nil then return end
+					local magnitude = if property == "AssemblyLinearVelocity"
+						then rootPart.AssemblyLinearVelocity.Magnitude
+						else rootPart.AssemblyAngularVelocity.Magnitude
+					if magnitude <= threshold then return end
+					if self:_checkAuthority(player.UserId, "Fling", "ANY") then return end
+					self:_emit(signal, player, property .. "=" .. string.format("%.1f", magnitude))
+				end)
+			end
+			table.insert(state.connections, rootPart:GetPropertyChangedSignal("AssemblyLinearVelocity"):Connect(function()
+				checkVelocity("AssemblyLinearVelocity", 300, "suspicious_physics_velocity")
+			end))
+			table.insert(state.connections, rootPart:GetPropertyChangedSignal("AssemblyAngularVelocity"):Connect(function()
+				checkVelocity("AssemblyAngularVelocity", 120, "suspicious_physics_rotation")
+			end))
+		end
 	end)
 end
 
