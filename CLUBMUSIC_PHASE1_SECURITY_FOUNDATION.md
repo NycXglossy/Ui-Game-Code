@@ -41,19 +41,28 @@ The ledger remains server-local, bounded, expiring, and independent of DataStore
 
 The inspected main controller did not expose another direct player CFrame/PivotTo teleport in the searched movement-related paths. This is not a claim that every external Kohl's Admin or third-party script has been audited.
 
+## Completed: initial TeleportValidationService integration
+
+Added `ClubMusicSecurityCore/TeleportValidationService.lua` and routed the Tiki Tide Settings `TeleportTo` action through it.
+
+The service:
+- is a server-only ModuleScript; no RemoteEvent or client ticket API is exposed;
+- accepts only live Player instances and server-derived finite Vector3 destinations;
+- restricts trusted origin labels to a small allowlist;
+- issues short-lived (1–15 second), single-use tickets bound to actor, moved player, destination and origin;
+- rejects coordinates outside a broad configured world envelope (±100,000 studs per axis);
+- verifies the server-observed resulting position within 8 studs of the ticket destination;
+- expires tickets, consumes them on verification, cleans actor/target tickets on PlayerRemoving, and caps outstanding tickets at 128;
+- emits bounded signals for expired, mismatched, invalid and replayed tickets;
+- does not kick, ban, snap back or otherwise punish a player.
+
+The Tiki Tide Settings action retains its existing entitlement, consent, moderator-override, participant and character checks. It now requests a ticket before the CFrame mutation, verifies the resulting position, and fails closed if the validation service is unavailable. A failed post-move verification is reported but does not trigger an automatic snapback.
+
+The installer now includes `TeleportValidationService` and pins the module bundle to the corrected release commit. It has not been executed.
+
 ## Next implementation slice
 
-Create a dedicated server-only `TeleportValidationService` and integrate it first with the Tiki Tide Settings `TeleportTo` action. Then adapt Kohl's `bring`/`tp`/`to` commands after confirming their actual target/destination semantics.
-
-The service must:
-- accept requests only from trusted server code;
-- require a live actor and target, a finite destination, a bounded reason/origin, and a short-lived authorization record;
-- validate destination bounds and safe character/root state;
-- record origin, target, actor, source/destination, issue time, and expiry in a bounded per-server ledger;
-- verify the resulting server-observed position against the authorized destination;
-- expire and consume tickets, clean player state on departure, and emit bounded security signals;
-- never punish from one unexplained displacement and never let the client create authorization;
-- remain detection/validation-only until Studio tests demonstrate safe behavior.
+Integrate Kohl's Admin `bring`, `tp` and `to` commands with the same ticket API. The command implementation is supplied by Kohl's Admin and is not contained in this repository snapshot, so its handler semantics must be confirmed before changing execution order. Then add explicit teleport diagnostics and complete the Studio test matrix before enabling any automated response.
 
 ## Required Studio test matrix before enabling
 
@@ -72,4 +81,4 @@ The service must:
 
 - No live Roblox place was modified.
 - No Studio or published-server runtime test has been performed.
-- The existing installer file has not been updated in this branch yet. Do not run the old installer as a way to deploy this branch's movement API correction; its pinned release still points to the prior module snapshot.
+- The installer is updated to include the new module and pins its source bundle to the corrected security release. It has not been run in Studio.
