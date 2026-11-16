@@ -5045,51 +5045,7 @@ stateFunction.OnServerInvoke = function(player: Player)
 	return snapshot
 end
 
--- Server-only integration point for trusted admin addons (for example Kohl's Admin).
--- This is deliberately not replicated. Every request is re-authorized by ClubMusic's
--- own rank cache and then passes through the same action budgets/cooldowns/handlers.
--- Narrow server-only permission resolver for the global security authorization adapter.
--- Uses the same server-verified rank cache as the existing admin bridge.
-local authorizationResolver = ControllerFunctions.getOrCreate(
-	ServerStorage,
-	"BindableFunction",
-	"ClubMusicAuthorizationResolver"
-) :: BindableFunction
-local GLOBAL_PERMISSION_LEVELS = {
-	GlobalDJ = 1,
-	GlobalModeration = 2,
-	GlobalAnnouncement = 2,
-	GlobalConfig = 3,
-	SecurityPolicy = 3,
-	IncidentResponse = 3,
-}
-authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): any
-	if typeof(actorUserId) ~= "number" or actorUserId < 1 or actorUserId % 1 ~= 0
-		or typeof(permission) ~= "string" then
-		return false
-	end
-	if permission ~= "KohlsAdminSnapshot" and not GLOBAL_PERMISSION_LEVELS[permission] then return false end
-	local player = Players:GetPlayerByUserId(math.floor(actorUserId))
-	if not player or player.Parent ~= Players then return false end
-
-	-- getLevel uses the 120-300 second server-local verified rank cache.
-	-- It refreshes only after expiry; a concurrent/failed refresh returns Guest,
-	-- so an unavailable role lookup can never grant a sensitive operation.
-	local level = ControllerFunctions.getLevel(player)
-	if permission == "KohlsAdminSnapshot" then
-		-- One local resolver call supplies the small, fixed permission set required
-		-- by the Kohl's command filter instead of separate calls per permission.
-		return {
-			GlobalModeration = level >= (GLOBAL_PERMISSION_LEVELS.GlobalModeration or math.huge),
-			GlobalAnnouncement = level >= (GLOBAL_PERMISSION_LEVELS.GlobalAnnouncement or math.huge),
-			GlobalConfig = level >= (GLOBAL_PERMISSION_LEVELS.GlobalConfig or math.huge),
-		}
-	end
-	local requiredLevel = GLOBAL_PERMISSION_LEVELS[permission]
-	if not requiredLevel then return false end
-	return level >= requiredLevel
-end
-
+-- Trusted admin integrations use ClubMusic Global's SecurityCore authorization API.
 -- Kohl's Admin security bridge helpers. Global security operations are checked by
 -- the same server-only authorization service used by the cross-server API.
 ControllerFunctions.adminBridgeGlobalCall = function(name: string, ...: any): (boolean, any, any)
