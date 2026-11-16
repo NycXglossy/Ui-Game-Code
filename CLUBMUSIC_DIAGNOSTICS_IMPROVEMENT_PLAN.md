@@ -152,3 +152,13 @@ This is a static compatibility pass, not proof that every consumer in all embedd
 - Confirmed DJ booth controls are owner/co-owner gated; moderation is admin gated with target hierarchy checks; membership rank rewards are owner-only.
 - Follow-up: verify SecurityCore level-1 mapping remains rank 150+ (not DJ rank 100), and test all privileged action groups in Studio across the staff hierarchy.
 - No runtime or exploit-client tests have been performed. This remains a static audit, not a repository-wide remote certification.
+
+
+## SecurityCore and utility remote update (2026-11-16)
+
+- Corrected the authorization rank mapping: rank 100 DJ is no longer general staff; rank 150 Moderator maps to level 1; Admin/Co-owner/Owner remain levels 2/3/4.
+- Kept GlobalDJ as a narrow rank-100+ permission without elevating DJ to staff.
+- Updated the Security Core installer to fetch the corrected Authorization module.
+- Added a live-player guard to the UtilityBar RemoteFunction.
+- Audited UtilityBar pass gates and Tiki Tide Settings entitlement, teleport consent, gravity, announcement, text-filtering, and cooldown checks.
+- Remaining: trace actual DJ Booth access/control-mode toggle and test the new mapping in Studio. No runtime test is claimed.
