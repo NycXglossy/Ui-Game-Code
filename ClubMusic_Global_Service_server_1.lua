@@ -996,9 +996,9 @@ bindFunction("GetGlobalMetrics", function()
 	if not globalDiagnosticsService then return false, nil end
 	return true, globalDiagnosticsService:GetMetrics()
 end)
-bindFunction("GetGlobalAudit", function(limit: any)
+bindFunction("GetGlobalAudit", function(limit: any, moderatorUserId: any)
 	if not globalAuditService then return false, {} end
-	return globalAuditService:GetRecent(limit)
+	return globalAuditService:GetRecent(limit, moderatorUserId)
 end)
 bindFunction("GetGlobalOperationalStatus", function()
 	local status = {
@@ -1117,21 +1117,21 @@ bindFunction("SetGlobalSecurityPolicy", function(key: any, value: any, actorUser
 	if not globalSecurityPolicyService or typeof(key) ~= "string" then return false, "Policy service unavailable." end
 	return globalSecurityPolicyService:Set(key, value, actorUserId)
 end)
-bindFunction("ReserveGlobalOperation", function(operationId: any, ttlSeconds: any)
+bindFunction("ReserveGlobalOperation", function(operationId: any, ttlSeconds: any, crossServer: any)
 	if not globalIdempotencyService then return false, "Idempotency service unavailable." end
-	return globalIdempotencyService:Reserve(operationId, ttlSeconds)
+	return globalIdempotencyService:Reserve(operationId, ttlSeconds, crossServer == true)
 end)
-bindFunction("OpenGlobalSecurityIncident", function(kind: any, summary: any, actorUserId: any)
+bindFunction("OpenGlobalSecurityIncident", function(kind: any, summary: any, actorUserId: any, subjectUserId: any)
 	if not globalIncidentResponseService then return false, "Incident service unavailable." end
-	return globalIncidentResponseService:Open(kind, summary, actorUserId)
+	return globalIncidentResponseService:Open(kind, summary, actorUserId, subjectUserId)
 end)
 bindFunction("ResolveGlobalSecurityIncident", function(id: any, actorUserId: any)
 	if not globalIncidentResponseService then return false, "Incident service unavailable." end
 	return globalIncidentResponseService:Resolve(id, actorUserId)
 end)
-bindFunction("GetGlobalSecurityIncidents", function(limit: any)
+bindFunction("GetGlobalSecurityIncidents", function(limit: any, moderatorUserId: any)
 	if not globalIncidentResponseService then return false, {} end
-	return globalIncidentResponseService:GetRecent(limit)
+	return globalIncidentResponseService:GetRecent(limit, moderatorUserId)
 end)
 
 local function validEnvelope(data: any, topic: string): boolean
