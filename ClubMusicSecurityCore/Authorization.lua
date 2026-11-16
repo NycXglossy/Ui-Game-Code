@@ -1,36 +1,63 @@
 --!strict
--- Local authorization adapter for ClubMusic global controls.
--- This service is intentionally independent of cross-server enablement and Studio isolation.
--- It always denies by default unless the controller supplies a trusted permission resolver.
+-- Central server-side authorization authority for Tiki Tide / ClubMusic.
+-- No external BindableFunction resolver is used. Permission checks are local,
+-- cached, synchronous and fail closed while a group-rank refresh is unavailable.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local Service = {}
 Service.__index = Service
 
-local ALLOWED_PERMISSIONS = {
-	GlobalDJ = true,
-	GlobalModeration = true,
-	GlobalAnnouncement = true,
-	GlobalConfig = true,
-	SecurityPolicy = true,
-	IncidentResponse = true,
+local GROUP_ID = 500470662
+local CACHE_MIN_SECONDS = 120
+local CACHE_MAX_SECONDS = 300
+local RETRY_SECONDS = 15
+local MAX_DENIAL_KEYS = 256
+
+local PERMISSION_LEVELS = {
+	GlobalDJ = 1,
+	GlobalModeration = 2,
+	GlobalAnnouncement = 2,
+	GlobalConfig = 3,
+	SecurityPolicy = 3,
+	IncidentResponse = 3,
 }
 
-local function validActor(actorUserId: any): boolean
-	return typeof(actorUserId) == "number"
-		and actorUserId == actorUserId
-		and actorUserId > 0
-		and actorUserId < math.huge
-		and actorUserId % 1 == 0
+local DEFAULT_THRESHOLDS = {
+	GroupDJ = 100,
+	Admin = 200,
+	CoOwner = 254,
+	Owner = 255,
+}
+
+local sharedInstance: any = nil
+
+local function validUserId(value: any): boolean
+	return typeof(value) == "number"
+		and value == value
+		and value > 0
+		and value < math.huge
+		and value % 1 == 0
 end
 
-function Service.new(dependencies: {[string]: any})
-	assert(typeof(dependencies) == "table", "Authorization dependencies missing")
-	assert(type(dependencies.resolvePermission) == "function", "Trusted permission resolver is required")
-
+function Service.new(dependencies: {[string]: any}?)
+	dependencies = if typeof(dependencies) == "table" then dependencies else {}
+	local thresholds = if typeof(dependencies.thresholds) == "table" then dependencies.thresholds else DEFAULT_THRESHOLDS
 	return setmetatable({
-		dependencies = dependencies,
+		groupId = if validUserId(dependencies.groupId) then math.floor(dependencies.groupId) else GROUP_ID,
+		studioStaff = dependencies.studioStaff ~= false,
+		thresholds = thresholds,
+		onDenied = dependencies.onDenied,
+		cache = {},
+		refreshInFlight = {},
+		retryAfter = {},
+		connections = {},
 		checks = 0,
+		allowed = 0,
 		denied = 0,
+		refreshes = 0,
+		refreshFailures = 0,
 		lastError = nil,
 		started = false,
 		denials = {},
@@ -38,99 +65,215 @@ function Service.new(dependencies: {[string]: any})
 	}, Service)
 end
 
-function Service:Start(): boolean
-	-- Do not require DataStore, MemoryStore, MessagingService, or global enablement.
-	self.started = true
-	return true
+function Service:_levelForRank(rank: number): number
+	local t = self.thresholds
+	if rank >= t.Owner then return 4 end
+	if rank >= t.CoOwner then return 3 end
+	if rank >= t.Admin then return 2 end
+	if rank >= t.GroupDJ then return 1 end
+	return 0
 end
 
-function Service:_recordDenied(actorUserId: any, permission: string)
-	if not validActor(actorUserId) then return end
-	local now=os.clock()
-	local key=tostring(math.floor(actorUserId))..":"..permission
-	local entry=self.denials[key]
-	if not entry then
-		local count=0
-		local oldestKey,oldestAt=nil,math.huge
-		for existingKey,value in pairs(self.denials) do
-			count+=1
-			if value.updated<oldestAt then oldestAt=value.updated; oldestKey=existingKey end
+function Service:Refresh(player: Player): boolean
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
+		return false
+	end
+	local userId = player.UserId
+	if self.refreshInFlight[userId] then return false end
+	local retryAt = self.retryAfter[userId]
+	if retryAt and retryAt > os.clock() then return false end
+
+	self.refreshInFlight[userId] = true
+	self.refreshes += 1
+	local level: number? = nil
+	local lookupError: any = nil
+
+	if RunService:IsStudio() and self.studioStaff then
+		level = 4
+	else
+		local ok, rank = pcall(function()
+			return player:GetRankInGroup(self.groupId)
+		end)
+		if ok and typeof(rank) == "number" and rank == rank
+			and rank >= 0 and rank <= 255 and rank % 1 == 0 then
+			level = self:_levelForRank(rank)
+		else
+			lookupError = if ok then "Invalid group rank response." else rank
 		end
-		if count>=256 and oldestKey then self.denials[oldestKey]=nil end
-		entry={count=0,windowStart=now,updated=now,reportedAt=0}
-		self.denials[key]=entry
-	end
-	if now-entry.windowStart>60 then entry.count=0; entry.windowStart=now end
-	entry.count+=1
-	entry.updated=now
-	self.deniedActions+=1
-	if entry.count>=3 and now-entry.reportedAt>=60 then
-		entry.reportedAt=now
-		if type(self.dependencies.onDenied)=="function" then
-			pcall(self.dependencies.onDenied,math.floor(actorUserId),permission,entry.count)
-		end
-	end
-end
-
-function Service:Check(actorUserId: any, permission: any): (boolean, string?)
-	if not validActor(actorUserId) or typeof(permission) ~= "string"
-		or not ALLOWED_PERMISSIONS[permission] then
-		self.denied += 1
-		if typeof(permission)=="string" and ALLOWED_PERMISSIONS[permission] then self:_recordDenied(actorUserId,permission) end
-		return false, "Invalid actor or permission."
 	end
 
-	local resolver = self.dependencies.resolvePermission
-	if type(resolver) ~= "function" then
-		self.denied += 1
-		self.lastError = "Trusted permission resolver is unavailable."
-		return false, self.lastError
+	self.refreshInFlight[userId] = nil
+	if player.Parent ~= Players then
+		self.cache[userId] = nil
+		self.retryAfter[userId] = nil
+		return false
+	end
+	if level == nil then
+		self.cache[userId] = nil
+		self.retryAfter[userId] = os.clock() + RETRY_SECONDS
+		self.refreshFailures += 1
+		self.lastError = string.sub(tostring(lookupError or "Group rank lookup failed."), 1, 180)
+		warn("[ClubMusic][Authorization] Group-rank refresh failed; protected actions remain denied.")
+		return false
 	end
 
-	local ok, allowed = pcall(resolver, math.floor(actorUserId), permission)
-	self.checks += 1
-	if not ok then
-		self.denied += 1
-		self.lastError = string.sub(tostring(allowed), 1, 180)
-		warn("[ClubMusic][Authorization] Trusted resolver failed; permission=" .. permission
-			.. "; error=" .. self.lastError)
-		return false, "Authorization resolver failed."
-	end
-	if allowed ~= true then
-		self.denied += 1
-		self:_recordDenied(actorUserId,permission)
-		return false, "Permission denied."
-	end
-
+	local now = os.clock()
+	self.cache[userId] = {
+		level = level,
+		refreshedAt = now,
+		expiresAt = now + math.random(CACHE_MIN_SECONDS, CACHE_MAX_SECONDS),
+	}
+	self.retryAfter[userId] = nil
 	self.lastError = nil
 	return true
 end
 
-function Service:GetStatus(): {[string]: any}
-	local available = false
-	local availabilityError = nil
-	if type(self.dependencies.isResolverAvailable) == "function" then
-		local ok, result = pcall(self.dependencies.isResolverAvailable)
-		available = ok and result == true
-		if not ok then availabilityError = string.sub(tostring(result), 1, 180) end
+function Service:_scheduleRefresh(player: Player)
+	local userId = player.UserId
+	if self.refreshInFlight[userId] then return end
+	local retryAt = self.retryAfter[userId]
+	if retryAt and retryAt > os.clock() then return end
+	task.spawn(function()
+		self:Refresh(player)
+	end)
+end
+
+function Service:Start(): boolean
+	if self.started then return true end
+	self.started = true
+	table.insert(self.connections, Players.PlayerAdded:Connect(function(player)
+		self:_scheduleRefresh(player)
+	end))
+	table.insert(self.connections, Players.PlayerRemoving:Connect(function(player)
+		self.cache[player.UserId] = nil
+		self.refreshInFlight[player.UserId] = nil
+		self.retryAfter[player.UserId] = nil
+		local prefix = tostring(player.UserId) .. ":"
+		for key in pairs(self.denials) do
+			if string.sub(key, 1, #prefix) == prefix then self.denials[key] = nil end
+		end
+	end))
+	for _, player in ipairs(Players:GetPlayers()) do
+		self:_scheduleRefresh(player)
+	end
+	return true
+end
+
+function Service:_recordDenied(userId: number, permission: string)
+	local now = os.clock()
+	local key = tostring(userId) .. ":" .. permission
+	local entry = self.denials[key]
+	if not entry then
+		local count, oldestKey, oldestAt = 0, nil, math.huge
+		for existingKey, value in pairs(self.denials) do
+			count += 1
+			if value.updated < oldestAt then oldestAt = value.updated; oldestKey = existingKey end
+		end
+		if count >= MAX_DENIAL_KEYS and oldestKey then self.denials[oldestKey] = nil end
+		entry = {count = 0, windowStart = now, updated = now, reportedAt = 0}
+		self.denials[key] = entry
+	end
+	if now - entry.windowStart > 60 then
+		entry.count = 0
+		entry.windowStart = now
+	end
+	entry.count += 1
+	entry.updated = now
+	self.deniedActions += 1
+	if entry.count >= 3 and now - entry.reportedAt >= 60 then
+		entry.reportedAt = now
+		if type(self.onDenied) == "function" then
+			pcall(self.onDenied, userId, permission, entry.count)
+		end
+	end
+end
+
+function Service:SetOnDenied(callback: any)
+	self.onDenied = if type(callback) == "function" then callback else nil
+end
+
+function Service:Check(actorUserId: any, permission: any): (boolean, string?)
+	self.checks += 1
+	if not validUserId(actorUserId) or typeof(permission) ~= "string"
+		or not PERMISSION_LEVELS[permission] then
+		self.denied += 1
+		return false, "Invalid actor or permission."
 	end
 
+	local userId = math.floor(actorUserId)
+	local player = Players:GetPlayerByUserId(userId)
+	if not player or player.Parent ~= Players then
+		self.denied += 1
+		self:_recordDenied(userId, permission)
+		return false, "A live player is required."
+	end
+
+	if RunService:IsStudio() and self.studioStaff then
+		self.allowed += 1
+		return true
+	end
+
+	local cached = self.cache[userId]
+	if not cached or cached.expiresAt <= os.clock() then
+		if cached then self.cache[userId] = nil end
+		self:_scheduleRefresh(player)
+		self.denied += 1
+		self:_recordDenied(userId, permission)
+		return false, "Authorization data is unavailable; retry shortly."
+	end
+
+	if cached.level < PERMISSION_LEVELS[permission] then
+		self.denied += 1
+		self:_recordDenied(userId, permission)
+		return false, "Permission denied."
+	end
+
+	self.allowed += 1
+	return true
+end
+
+function Service:GetStatus(): {[string]: any}
+	local cacheEntries = 0
+	for _ in pairs(self.cache) do cacheEntries += 1 end
 	return {
-		state = if not self.started then "Stopped" elseif available then "Ready" else "ResolverUnavailable",
+		state = if self.started then "Ready" else "Stopped",
 		started = self.started,
-		resolverAvailable = available,
+		authority = "SecurityCore",
+		groupId = self.groupId,
+		permissionLevels = table.clone(PERMISSION_LEVELS),
 		checks = self.checks,
+		allowed = self.allowed,
 		denied = self.denied,
 		deniedActions = self.deniedActions,
-		trackedDenialKeys = (function() local n=0; for _ in pairs(self.denials) do n+=1 end; return n end)(),
-		maxTrackedDenialKeys = 256,
-		lastError = self.lastError or availabilityError,
+		refreshes = self.refreshes,
+		refreshFailures = self.refreshFailures,
+		cacheEntries = cacheEntries,
+		cacheMinSeconds = CACHE_MIN_SECONDS,
+		cacheMaxSeconds = CACHE_MAX_SECONDS,
+		lastError = self.lastError,
 		default = "Deny",
 	}
 end
 
 function Service:Stop()
+	for _, connection in ipairs(self.connections) do
+		pcall(function() connection:Disconnect() end)
+	end
+	table.clear(self.connections)
 	self.started = false
+	table.clear(self.cache)
+	table.clear(self.refreshInFlight)
+	table.clear(self.retryAfter)
+end
+
+function Service.GetShared(dependencies: {[string]: any}?): any
+	if not sharedInstance then
+		sharedInstance = Service.new(dependencies)
+		sharedInstance:Start()
+	elseif typeof(dependencies) == "table" and type(dependencies.onDenied) == "function" then
+		sharedInstance:SetOnDenied(dependencies.onDenied)
+	end
+	return sharedInstance
 end
 
 return Service
