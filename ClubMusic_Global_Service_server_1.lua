@@ -966,6 +966,17 @@ globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Securi
 }, {"Start", "GetStatus", "Record", "ForgetSubject"})
 if globalSecurityMonitorService then globalSecurityMonitorService:Start() end
 
+-- Local character-physics detections feed the existing bounded SecurityMonitor.
+-- This is telemetry only; it never changes enforcement or creates another storage map.
+bindFunction("RecordGlobalSecuritySignal", function(signal: any, subject: any)
+	if not globalSecurityMonitorService or typeof(signal) ~= "string"
+		or #signal < 1 or #signal > 48 then return false end
+	local safeSubject = if typeof(subject) == "string" then string.sub(subject, 1, 48) else "server"
+	local ok, recorded = pcall(globalSecurityMonitorService.Record,
+		globalSecurityMonitorService, signal, safeSubject)
+	return ok and recorded == true
+end)
+
 globalMessageValidationService = createOperationalService("ClubMusic_Global_Message_Validation_Service", {
 	getJobId = function() return JOB_ID end,
 	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
