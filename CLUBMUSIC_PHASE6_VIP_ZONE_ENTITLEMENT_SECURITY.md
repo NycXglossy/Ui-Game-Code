@@ -63,7 +63,7 @@ When the actual zone scripts/parts are supplied or added, each entry point must 
 
 ## Installer
 
-The Security Core installer now includes `EntitlementAuthority` immediately after `Authorization`. Its download pin points to commit `a8f65f9eb42dca6e0734e2aac63f5a73999a6c8d`, which contains the module source.
+The Security Core installer now includes `EntitlementAuthority` immediately after `Authorization`. Its download pin points to commit `1d33ed0b8019361fcfac36f6d2f35ba6020de973`, which contains the module source.
 
 The installer has not been executed in Roblox Studio.
 
