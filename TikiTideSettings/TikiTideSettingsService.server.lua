@@ -8,6 +8,25 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local TextService = game:GetService("TextService")
 
+-- Authorization is read directly from the shared SecurityCore singleton.
+local authorizationService: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("Authorization") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.GetShared) == "function" then
+			local sharedOk, instance = pcall(exported.GetShared)
+			if sharedOk and typeof(instance) == "table" and type(instance.Check) == "function" then
+				authorizationService = instance
+			end
+		end
+	end
+	if not authorizationService then
+		warn("[Tiki Tide] SecurityCore Authorization is unavailable; privileged settings actions are fail-closed.")
+	end
+end
+
 -- A second copy would overwrite RemoteFunction.OnServerInvoke and duplicate
 -- player lifecycle listeners. Refuse to start if another copy already owns the service.
 local SERVICE_MARKER_NAME = "TikiTideSettingsServiceActive"
@@ -95,11 +114,8 @@ local function hasTikiTideAccess(player: Player): boolean
 end
 
 local function hasClubPermission(player: Player, permission: string): boolean
-	local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-	if not resolver or not resolver:IsA("BindableFunction") then return false end
-	local ok, allowed = pcall(function()
-		return resolver:Invoke(player.UserId, permission)
-	end)
+	if player.Parent ~= Players or not authorizationService then return false end
+	local ok, allowed = pcall(authorizationService.Check, authorizationService, player.UserId, permission)
 	return ok and allowed == true
 end
 
