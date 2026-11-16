@@ -6,7 +6,7 @@ local ResourceGuard = require(script.Parent:WaitForChild("ResourceGuard"))
 local Service={}; Service.__index=Service
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Idempotency dependencies missing")
- return setmetatable({d=d,map=d.memoryStoreService:GetHashMap(d.mapName or "ClubMusic_GlobalIdempotency_v1"),
+ return setmetatable({d=d,map=nil,mapName=d.mapName or "ClubMusic_GlobalIdempotency_v1",
 	seenNonces={},reserved=0,duplicates=0,sharedChecks=0,localHits=0,lastError=nil,
 	sharedWindowAt=0,sharedWindowCount=0},Service)
 end
@@ -35,6 +35,13 @@ function Service:Reserve(operationId,ttlSeconds,crossServer)
   return true,"ReservedLocal"
  end
  if not self.d.isEnabled() then return false,"Cross-server idempotency is disabled." end
+ local key="TT:IDEM:"..operationId
+ if #key>64 then return false,"Idempotency key exceeds 64 characters." end
+ if not self.map then
+  local mapOk,mapOrError=pcall(function() return self.d.memoryStoreService:GetHashMap(self.mapName) end)
+  if not mapOk then self.lastError=tostring(mapOrError); return false,"Idempotency storage unavailable." end
+  self.map=mapOrError
+ end
  if now-self.sharedWindowAt>=1 then self.sharedWindowAt=now; self.sharedWindowCount=0 end
  if self.sharedWindowCount>=2 then return false,"Cross-server idempotency check rate limited." end
  self.sharedWindowCount+=1
@@ -43,8 +50,6 @@ function Service:Reserve(operationId,ttlSeconds,crossServer)
  local allowed,reason=StorageGuard.Allow("critical")
  if not allowed then release(); return false,reason end
  local token=self.d.guid()
- local key="TT:IDEM:"..operationId
- if #key>64 then return false,"Idempotency key exceeds 64 characters." end
  self.sharedChecks+=1
  local ok,result=pcall(function()
   return self.map:UpdateAsync(key,function(old)
@@ -69,7 +74,7 @@ end
 function Service:GetStatus()
  return {state=if self.d.isEnabled() then "Ready" else "Disabled",reserved=self.reserved,
   duplicates=self.duplicates,localCacheHits=self.localHits,sharedChecks=self.sharedChecks,
-  keyStrategy="Direct transaction key",recordBytes={min=100,max=250},storageGuard=StorageGuard.GetStatus(),resourceGuard=ResourceGuard.GetStatus()}
+  keyStrategy="Direct transaction key",mapInitialized=self.map~=nil,recordBytes={min=100,max=250},storageGuard=StorageGuard.GetStatus(),resourceGuard=ResourceGuard.GetStatus()}
 end
 function Service:Start() return true end
 function Service:Stop() table.clear(self.seenNonces) end
