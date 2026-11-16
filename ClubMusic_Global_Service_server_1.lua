@@ -917,6 +917,9 @@ if globalSecurityPolicyService then globalSecurityPolicyService:Start() end
 
 globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Security_Monitor_Service", {
 	isEnabled = function() return SERVICE_ENABLED and globalSecurityPolicyService ~= nil and globalSecurityPolicyService:Get("monitoringEnabled") == true end,
+	memoryStoreService = MemoryStoreService,
+	jobId = JOB_ID,
+	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
 	getThreshold = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("suspiciousSignalThreshold") else 8 end,
 	onAlert = function(signal, count)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", 0, signal, "threshold-reached:" .. tostring(count)) end
