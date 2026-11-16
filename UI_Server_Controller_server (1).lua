@@ -2415,6 +2415,47 @@ do
 	end
 end
 
+-- Detection-only avatar/accessory validation. It records bounded server observations
+-- and never removes accessories or applies moderation actions.
+local avatarAccessoryValidation: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("AvatarAccessoryValidationService") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new, {
+				onSignal = function(signal: string, subject: number, detail: string)
+					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+					local recorder = api and api:FindFirstChild("RecordGlobalSecuritySignal")
+					if recorder and recorder:IsA("BindableFunction") then
+						local recordOk, result = pcall(function()
+							return recorder:Invoke(signal, subject)
+						end)
+						if recordOk and result == true then return end
+					end
+					warn("[Tiki Tide][AvatarValidation] " .. tostring(signal)
+						.. " subject=" .. tostring(subject) .. " detail=" .. string.sub(tostring(detail), 1, 120))
+				end,
+			})
+			if createOk and typeof(instance) == "table"
+				and type(instance.Start) == "function"
+				and type(instance.GetStatus) == "function"
+				and type(instance.Stop) == "function" then
+				avatarAccessoryValidation = instance
+				local startOk, started = pcall(instance.Start, instance)
+				if not startOk or started ~= true then
+					warn("[Tiki Tide][AvatarValidation] Startup failed: " .. tostring(started))
+					avatarAccessoryValidation = nil
+				end
+			end
+		end
+	end
+	if not avatarAccessoryValidation then
+		warn("[Tiki Tide][AvatarValidation] Detection service unavailable; avatar checks are not active.")
+	end
+end
+
 -- Rank names, levels and refreshes are projections of the single SecurityCore cache.
 ControllerFunctions.computeRank = function(player: Player): (string, number)
 	if not authorizationService then return "GUEST", 0 end
