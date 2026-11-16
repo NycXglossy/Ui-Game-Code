@@ -324,3 +324,50 @@ The ClubMusic renderer now reads the explicit `canUseDJBooth` and `canManageDJBo
 - The Music tab also shows local playback controls to authorized DJs, while queue mutation controls remain elevated.
 - General `perm` continues to represent staff level; it is not used as a substitute for the DJ entitlement.
 - Runtime verification remains required for group ranks 100, 150, 200, 254, and 255.
+
+
+## Sixth-pass: Global Service, UtilityBar, and Tiki Tide Settings remote boundary (2026-11-16)
+
+### Global Service BindableFunction surface
+
+Reviewed the current `ClubMusic_Global_Service_server_1.lua` source, including the server-created `ServerStorage.ClubMusicGlobalAPI` BindableFunction surface and MessagingService receive handlers.
+
+- Global moderation/configuration mutations that accept an actor ID call the shared SecurityCore authorization check for the relevant permission (`GlobalModeration`, `GlobalAnnouncement`, or `GlobalConfig`) before mutation or publication.
+- Authorization initialization failure leaves protected actions denied. The authorization helper wraps `Check` in `pcall` and requires an explicit `true` result.
+- Global security-policy writes delegate to the policy service; its service-level authorization contract remains a dependency that must be retained when that module is changed.
+- Cross-server messages pass through the dedicated MessageValidation service; if that service is absent or rejects/throws, the receiver rejects the message rather than using a weaker fallback.
+- Message IDs are deduplicated with a bounded 2,048-entry, 120-second local cache. Receive handlers additionally validate message kind and relevant fields before firing the server-local BindableEvent.
+- The diagnostics snapshot and SafeCall recent-record functions are server-only BindableFunctions under ServerStorage. They are not exposed as client remotes by the inspected Global Service source. The main controller's client-facing diagnostics projection remains separately constrained to aggregate data as documented above.
+- The BindableFunction API is an internal server-to-server trust boundary, not a client security boundary. Every new server script that invokes a mutation must supply an actor identity that is independently authorized; do not treat possession of a BindableFunction reference as authorization.
+
+### UtilityBar RemoteFunction
+
+Reviewed `UtilityBar/UtilityBarExtendedActions.server.lua`:
+
+- The RemoteFunction rejects non-live players and unknown action names.
+- Feature pass checks use server-owned player attributes; no client-supplied pass ID or ownership claim is trusted.
+- A shared per-player 1.25-second cooldown applies before dispatch.
+- Size input is finite-number checked and clamped to the supported 0.5x–5x range; avatar and Humanoid components are resolved server-side.
+- Aura presets/targets and Stage/Club Lighting presets/fixtures are allowlisted; clone scripts are removed and clone parts are non-colliding/non-queryable.
+- Size remains intentionally absent from the feature-pass map until a real pass ID and server-owned entitlement attribute are configured. Do not infer or invent a pass ID.
+- No additional authorization bypass was identified in this static pass.
+
+### Tiki Tide Settings RemoteFunction / Broadcast RemoteEvent
+
+Reviewed `TikiTideSettings/TikiTideSettingsService.server.lua`:
+
+- The Request RemoteFunction accepts only a live player, bounded action string, table payload, and a per-player cooldown; action handlers validate the specific values they consume.
+- Every settings action requires the server-set `HasTikiTideAccess` attribute. Privileged gravity and announcement actions additionally require SecurityCore permissions.
+- Teleport validates a live distinct target, recipient consent or moderator permission, both players' continued presence, and character roots before moving the caller.
+- Gravity is finite-number checked, clamped, and reauthorized immediately before mutation.
+- Broadcast messages are filtered through TextService and permission/entitlement are rechecked after the yielding filter call; announcement and bubble cooldowns are rechecked before broadcast.
+- Broadcast is server-to-client only in this service. No client-to-server listener was found on that RemoteEvent.
+- SecurityCore unavailability fails closed for privileged actions; duplicate service startup is rejected.
+
+### Pass result and boundaries
+
+- No new client-reachable authorization bypass was identified in these inspected handlers.
+- This pass extends the earlier controller, UtilityBar, Settings, and Global API audits, but it is not a formal certification of every script/model in the repository. GitHub code search did not return an indexed remote inventory for this branch, so remaining embedded assets and third-party packages cannot be claimed as exhaustively inspected.
+- Kohl's Admin internals remain outside scope; inspect and maintain only the separate security adapter/add-on.
+- Runtime verification is still outstanding: malformed and oversized payloads, rapid remote calls, expired/missing SecurityCore cache, permission revocation during yielding operations, cross-server message rejection/replay, and ordinary-client attempts to reach diagnostic APIs.
+- Do not retire legacy diagnostics or mark the audit runtime-complete until the Studio and published-server test matrix passes.
