@@ -6221,6 +6221,8 @@ Players.PlayerRemoving:Connect(function(player)
 		if appliedProfile == departingProfile then receiptMemoryApplied[receiptId] = nil end
 	end
 	profiles[userId] = nil
+	-- Final save/lease handling has completed; discard the local writer lock.
+	profileWriteLocks[userId] = nil
 	requestCounts[userId] = nil
 	lastRequestAt[userId] = nil
 	lastActionAt[userId] = nil
@@ -6256,6 +6258,7 @@ Players.PlayerRemoving:Connect(function(player)
 			publishState(nil)
 		end)
 	end
+	skipVotes[userId] = nil
 end)
 
 for _, player in ipairs(Players:GetPlayers()) do
