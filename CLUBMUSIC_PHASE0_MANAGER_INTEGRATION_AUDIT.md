@@ -1,75 +1,50 @@
 # ClubMusic Phase 0 — Manager Integration Audit
 
-**Branch:** `audit/hardened-clubmusic-2026-11-08`  
-**Audit date:** 2026-11-09  
-**Scope:** Repository source inspection only. No Roblox Studio runtime or live-service tests were performed.
+**Branch:** `feature/sultan-settings-2026-11-10`  
+**Audit date:** 2026-11-16  
+**Scope:** Repository source and adapter-boundary inspection only. No Roblox Studio runtime or live-place hierarchy tests were performed.
 
-## Result
+## Updated result
 
-**Phase 0 is not complete.** The controller currently owns several music responsibilities directly, while the five manager modules named in the future-additions roadmap are not present in the repository source search. Their APIs and implementations cannot be safely integrated or reviewed without the actual module files.
+The earlier audit stated that the five named manager source files were not present. That statement is no longer accurate for the current branch. All five source files now exist:
 
-## Repository evidence
+| Module | Current source | Static role / boundary |
+|---|---|---|
+| Queue | `MusicQueueManager.luau` | Queue helper/adapter. The controller remains the authority for its queue policy and request action path. |
+| Playback | `MusicPlaybackManager.luau` | Callback adapter for controller-owned playback operations; it explicitly refuses operations when controller callbacks are absent. |
+| Validation | `MusicValidationService.luau` | Audio metadata/ID validation, caching, cooldown, and player validation helper. |
+| Skip vote | `MusicSkipVoteManager.luau` | Callback adapter for controller-owned skip-vote state and player-departure updates. |
+| Playlist | `MusicPlaylistManager.luau` | Adapter over the existing playlist service and controller-owned rotation callbacks. |
 
-### Existing server-side service modules
+**Phase 0 is still not complete as an installation/migration milestone.** The presence of these root-level source files does not prove that they are installed under the expected Roblox instance hierarchy or that the old controller has migrated state ownership to them.
 
-`UI_Server_Controller_server (1).lua` waits for and requires:
+## Current state ownership
 
-- `ServerStorage.MusicCatalogService`
-- `ServerStorage.MusicPlaylistService`
+The current `UI_Server_Controller` remains the verified authority for:
+- Live queue state, request limits, queue priority and mutations.
+- Current playback state, track advancement, playback recovery, and modern audio backend ownership.
+- Skip-vote state and vote outcomes.
+- DJ/staff authorization, action dispatch, and the existing client remote contract.
+- Playlist rotation state, while `MusicPlaylistService` remains the persistence service for playlist definitions.
 
-The controller calls their initialization and catalog/playlist APIs. These are distinct from the five proposed child managers.
+The adapter modules must not introduce a second authoritative copy of these states. The queue, playback, skip-vote, and playlist adapters should continue delegating to controller callbacks unless a separately reviewed migration explicitly transfers ownership.
 
-### Responsibilities currently owned by the controller
+## Legacy Music System distinction
 
-The controller directly declares and mutates:
+The repository also contains a root-level legacy `Music System` script that creates a separate `MusicRemotes` folder and requires child modules from its own script hierarchy. Its role checks use a separate `RoleSystem` contract. Repository source alone cannot establish whether this script and its child modules are currently installed in the published place.
 
-- Queue entries and queue state (`QueueEntry`, `queue`, `requestCounts`, queue insertion/removal and priority handling).
-- Current playback state (`nowPlaying`, `playbackPaused`, `musicSound`, track advancement and playback recovery).
-- Skip voting (`skipVotes`, `checkSkipVotes`, `skipStatus`, `VoteSkip` handling).
-- Playlist rotation state (`activePlaylistId`, `activePlaylistTracks`, `activePlaylistCursor`) while delegating persistent playlist definitions to `MusicPlaylistService`.
-- Request authorization, cooldowns, VIP tier priority, staff permissions, moderation and remote action dispatch.
+Do not merge its remotes or manager state with `ClubMusicRemotes`, and do not delete or disable it until the live place hierarchy and client references have been checked. The current diagnostics/security update does not migrate this legacy system.
 
-The controller also owns the existing remote contract and bridges global operations through its existing global API integration. These responsibilities must not be duplicated by new modules.
+## Required steps to finish Phase 0
 
-## Five-manager source availability
-
-The repository code search returned no matching source files for:
-
-| Expected module | Source found | Audit status |
-|---|---:|---|
-| `MusicQueueManager` | No | Cannot inspect API or behavior |
-| `MusicPlaybackManager` | No | Cannot inspect API or behavior |
-| `MusicValidationService` | No | Cannot inspect API or behavior |
-| `MusicSkipVoteManager` | No | Cannot inspect API or behavior |
-| `MusicPlaylistManager` | No | Cannot inspect API or behavior |
-
-This is a source-availability finding, not proof that the modules do not exist in an unpublished Roblox place or another asset.
-
-## Integration decisions
-
-Until the original five module sources are available:
-
-1. Keep `UI_Server_Controller` as the sole permission and action authority.
-2. Keep the existing queue, playback, and skip-vote state owned by the controller; do not create parallel managers that also mutate those states.
-3. Keep `MusicCatalogService` and `MusicPlaylistService` as the only currently verified service-module dependencies from this audit.
-4. Do not add remotes, DataStores, role authorities, receipt journals, or competing global playback/queue state.
-5. Do not replace the existing LocalScripts or change the current remote payload contract.
-6. Do not claim that the five-manager integration is complete.
-
-## Required inputs to finish Phase 0
-
-Provide the actual source for all five modules, preferably as their original `.lua` files, plus any ModuleScripts they require. If they exist only inside a Roblox model or place file, provide that source/export. The audit can then compare public APIs, dependencies, state ownership, event connections, yields, cleanup, and behavior against the current controller before making a minimal compatibility-preserving integration.
-
-## Phase 0 exit criteria
-
-- [ ] All five original module sources inspected.
-- [ ] Dependencies and public APIs documented.
-- [ ] State ownership mapped with no duplicate authoritative state.
-- [ ] Existing controller permission checks remain authoritative.
-- [ ] Duplicate event connections and mutation paths removed or disabled, if present.
-- [ ] Initialization, shutdown, cleanup, and failure behavior documented.
-- [ ] Existing UI actions and remote contracts have regression coverage.
+- [ ] Inspect the live Roblox place hierarchy and confirm whether the five manager modules are installed, and where.
+- [ ] Confirm whether the legacy `Music System` and `MusicRemotes` are active, unused, or still required by a client UI.
+- [ ] Compare installed ModuleScript source with this branch; do not infer deployment from repository filenames.
+- [ ] Confirm the controller remains the only authority for queue, playback, skip-vote, and playlist-rotation state.
+- [ ] Check initialization, duplicate connections, cleanup, and failure behavior in Studio.
+- [ ] Regression-test request, playback, skip-vote, playlist, DJ, and admin controls after any hierarchy change.
+- [ ] Only then decide whether any adapter migration or legacy decommissioning is necessary.
 
 ## Verification boundary
 
-This audit is based on the repository files and code-search results available on the audit date. It does not verify Roblox Studio behavior, live DataStore access, Marketplace receipts, MessagingService delivery, or exploit-client resistance.
+This document records the source files and architectural boundaries visible in the repository branch. It does not verify the published Roblox place, runtime behavior, DataStore/MemoryStore/MessagingService behavior, or exploit-client resistance. No module migration or live-place installation was performed in this audit.
