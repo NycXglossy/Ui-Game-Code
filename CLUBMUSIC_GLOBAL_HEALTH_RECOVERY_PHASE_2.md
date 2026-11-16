@@ -87,16 +87,15 @@ The current GetGlobalDiagnostics snapshot remains a trusted server-to-server-scr
 
 ## Follow-on diagnostics improvements
 
-The next implementation stages are:
+The repository implementation now covers stages 1–7:
 
-1. Harden and consolidate the diagnostics coordinator and preserve existing query APIs.
-2. Add a bounded, server-local service registry.
-3. Add local ServerHealth probes for heartbeat, memory, and frame stability.
-4. Add an observational Watchdog for Auto DJ, queue progress, moderation, and recovery progress.
-5. Expand local metrics and bounded ErrorHistory, correlating error IDs with health/watchdog state.
-6. Update the trusted admin snapshot to display the new fields without exposing raw errors to clients.
-7. Add a separate opt-in ClientDiagnostics component for client-side FPS, memory, ping, and frame spikes; client reports remain untrusted telemetry.
-8. Retire obsolete diagnostic implementations only after all consumers have migrated.
+- The diagnostics coordinator preserves existing query APIs and uses bounded snapshot copying.
+- The local service registry, ServerHealth probes, and observational Watchdog are installed as optional local components.
+- Metrics and ErrorHistory remain bounded and server-local.
+- The trusted admin snapshot includes SecurityCore health observations without exposing error records or tracebacks.
+- Opt-in ClientDiagnostics measures local FPS, frame spikes, memory, and ping. Its measurements remain on the client and are explicitly untrusted.
+
+The remaining stage is to audit all diagnostic consumers, remove obsolete duplicate paths only after migration is proven, and complete Studio/published-server verification. Preserve the existing public BindableFunction names and metric counter compatibility during that work.
 
 No diagnostics component may become an enforcement authority or a dependency of SecurityCore.
 
