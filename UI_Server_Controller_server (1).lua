@@ -2251,16 +2251,8 @@ ControllerFunctions.consumeToken = function(bucket: TokenBucket, now: number, co
 end
 
 ControllerFunctions.waitForDataStoreBudget = function(maxWaitSeconds: number): boolean
-	-- Prefer the shared cross-server limiter when healthy, but never make profile
-	-- availability depend on the global bridge/MemoryStore being reachable.
-	-- The local token bucket remains an enforced conservative fallback whenever
-	-- the shared limiter is unavailable or temporarily rejects its own request.
-	local sharedStoreCallOk, sharedStoreAllowed = ControllerFunctions.globalInvoke("ConsumeDataStoreBudget")
-	local sharedLimiterHealthy = sharedStoreCallOk and sharedStoreAllowed == true
-	if not sharedLimiterHealthy then
-		-- Deliberately degrade to the bounded per-server budget below. This is
-		-- rate-limited, not an unrestricted DataStore bypass.
-	end
+	-- DataStore operations use a bounded per-server token bucket. Persistent
+	-- storage remains server-owned; no MemoryStore call is required for budgeting.
 	local startedAt = os.clock()
 	while true do
 		if ControllerFunctions.consumeToken(globalDataStoreBucket, os.clock(), 1) then return true end
@@ -4186,31 +4178,19 @@ end
 
 ControllerFunctions.handleAction = function(player: Player, action: any, payload: any, trustedAdminCommand: boolean?): (boolean?, string?)
 	if player.Parent ~= Players then return false, "The caller is no longer in this server." end
-	-- Validate the small, fixed remote contract before spending shared-service
-	-- budget or forwarding attacker-controlled action values across the server bridge.
+	-- Validate the small, fixed remote contract before spending local rate-limit
+	-- capacity or processing attacker-controlled action values.
 	if not ControllerFunctions.isValidString(action, 32) or not ControllerFunctions.isBoundedPayload(payload) then return false, "Invalid action or payload." end
 	if ACTION_COOLDOWNS[action] == nil then return false, "That action is not supported." end
 
-	-- Global + per-action throttles apply only to recognized, bounded actions.
+	-- Per-player + per-server throttles apply only to recognized, bounded actions.
 	local now = os.clock()
 	local userId = player.UserId
 	if not ControllerFunctions.consumeActionBudget(userId, now) then return false, "ClubMusic action rate limit reached. Try again shortly." end
-	-- Reload is a server-local audio recovery control, not a shared mutation.
-	-- Its per-player and per-server local token buckets above already bound use;
-	-- do not let an unrelated global MemoryStore/action-budget outage disable it.
-	if action ~= "ReloadSong" then
-		local globalBudgetOk, globalAllowed = ControllerFunctions.globalInvoke("ConsumeActionBudget", userId, action, 1)
-		if RunService:IsStudio() then
-			if globalBudgetOk and globalAllowed == false then return false, "ClubMusic shared action budget is exhausted." end
-		else
-			-- Live shared actions still require the authoritative aggregate budget.
-			if not globalBudgetOk or globalAllowed ~= true then return false, "ClubMusic security budget is unavailable. Try again shortly." end
-		end
-	end
 	-- Check every cooldown before recording timestamps. A rejected action must not
 	-- consume the cross-action interval and block an unrelated command immediately after it.
 	-- Keep trusted admin commands in a separate per-action cooldown lane.
-	-- The shared action budgets above still protect the server, while this avoids
+	-- The local per-player/server budgets still protect this bridge, while this avoids
 	-- a normal DJ-booth/UI action accidentally blocking the equivalent admin command.
 	local actionTimesByPlayer = if trustedAdminCommand == true then lastAdminActionByType else lastActionByType
 	local actionTimes = actionTimesByPlayer[userId]
@@ -4685,20 +4665,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isStaff(player) then
 			notify(player, "Audio asset IDs are staff only.", "warn")
 			return
-		end
-		local audioBudgetCallOk, audioBudgetAllowed = ControllerFunctions.globalInvoke("ConsumeAudioBudget", userId)
-		if RunService:IsStudio() then
-			if audioBudgetCallOk and audioBudgetAllowed == false then
-				notify(player, "Global audio inspection capacity is busy. Please try again shortly.", "warn")
-				return
-			end
-		else
-			-- Live servers must not silently fall back to independent per-server
-			-- audio limits when the shared cross-server budget is unavailable.
-			if not audioBudgetCallOk or audioBudgetAllowed ~= true then
-				notify(player, "Shared audio inspection capacity is unavailable. Try again shortly.", "warn")
-				return
-			end
 		end
 		local assetId = payload.assetId
 		if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then
@@ -5317,12 +5283,6 @@ playlistFunction.OnServerInvoke = function(player: Player)
 	if player.Parent ~= Players or not playlistStorageReady then return nil end
 	local now = os.clock()
 	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
-	local sharedOk, allowed = ControllerFunctions.globalInvoke("ConsumeStateBudget", player.UserId)
-	if RunService:IsStudio() then
-		if sharedOk and allowed == false then return nil end
-	else
-		if not sharedOk or allowed ~= true then return nil end
-	end
 	local previous = lastPlaylistInvoke[player.UserId] or 0
 	if previous > 0 and now - previous < 1 then return nil end
 	lastPlaylistInvoke[player.UserId] = now
@@ -5338,12 +5298,6 @@ stateFunction.OnServerInvoke = function(player: Player)
 	if player.Parent ~= Players then return nil end
 	local now = os.clock()
 	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
-	local sharedStateCallOk, sharedStateAllowed = ControllerFunctions.globalInvoke("ConsumeStateBudget", player.UserId)
-	if RunService:IsStudio() then
-		if sharedStateCallOk and sharedStateAllowed == false then return nil end
-	else
-		if not sharedStateCallOk or sharedStateAllowed ~= true then return nil end
-	end
 	local previous = lastStateInvoke[player.UserId] or 0
 	if previous > 0 and now - previous < CONFIG.GetStateCooldownSeconds then
 		return nil -- StateChanged continues to push live updates; client can retry after cooldown.
