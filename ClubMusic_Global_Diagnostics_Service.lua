@@ -276,6 +276,51 @@ function Service:GetSnapshot(): {[string]: any}
 	local healthAvailable = typeof(health) == "table"
 		and health.state ~= "Unavailable" and health.state ~= "NotInstalled"
 	local metricsAvailable = typeof(metrics) == "table" and metrics.state == "Available"
+	local operationalServices = {
+		memoryStore = self:_readStatus("MemoryStore", self.d.getMemoryStoreStatus),
+		diagnostics = self:GetStatus(),
+		serviceRegistry = serviceRegistry,
+		serverHealth = serverHealth,
+		watchdog = watchdog,
+		authorization = self:_readStatus("Authorization", self.d.getAuthorizationStatus),
+		rateLimit = self:_readStatus("RateLimit", self.d.getRateLimitStatus),
+		securityPolicy = self:_readStatus("SecurityPolicy", self.d.getSecurityPolicyStatus),
+		securityMonitor = self:_readStatus("SecurityMonitor", self.d.getSecurityMonitorStatus),
+		messageValidation = self:_readStatus("MessageValidation", self.d.getMessageValidationStatus),
+		idempotency = self:_readStatus("Idempotency", self.d.getIdempotencyStatus),
+		audit = self:_readStatus("Audit", self.d.getAuditStatus),
+		eventLog = self:_readStatus("EventLog", self.d.getEventLogStatus),
+		incidentResponse = self:_readStatus("IncidentResponse", self.d.getIncidentResponseStatus),
+		errorHistory = self:_readStatus("ErrorHistory", self.d.getErrorHistoryStatus),
+	}
+	local securityStates = {}
+	for _, key in ipairs({"authorization", "rateLimit", "securityPolicy", "securityMonitor",
+		"messageValidation", "idempotency", "audit", "eventLog", "incidentResponse"}) do
+		local item = operationalServices[key]
+		if item.state ~= "Unavailable" and item.state ~= "NotInstalled" then
+			table.insert(securityStates, tostring(item.state or "Unknown"))
+		end
+	end
+	local securityState = if #securityStates == 0 then "Unavailable"
+		elseif table.find(securityStates, "Degraded") or table.find(securityStates, "Failed") then "Degraded"
+		elseif table.find(securityStates, "Starting") then "Starting" else "Observed"
+	operationalServices.securityHealth = {
+		state = securityState,
+		scope = "ServerLocal",
+		observationalOnly = true,
+		independentOfDiagnostics = true,
+		components = {
+			authorization = operationalServices.authorization.state,
+			rateLimit = operationalServices.rateLimit.state,
+			securityPolicy = operationalServices.securityPolicy.state,
+			securityMonitor = operationalServices.securityMonitor.state,
+			messageValidation = operationalServices.messageValidation.state,
+			idempotency = operationalServices.idempotency.state,
+			audit = operationalServices.audit.state,
+			eventLog = operationalServices.eventLog.state,
+			incidentResponse = operationalServices.incidentResponse.state,
+		},
+	}
 	return {
 		generatedAt = os.time(),
 		serviceEnabled = enabledOk and enabled == true,
@@ -288,17 +333,7 @@ function Service:GetSnapshot(): {[string]: any}
 		recentErrors = errors,
 		metrics = metrics,
 		metricsAvailable = metricsAvailable,
-		operationalServices = {
-			memoryStore = self:_readStatus("MemoryStore", self.d.getMemoryStoreStatus),
-			diagnostics = self:GetStatus(),
-			serviceRegistry = serviceRegistry,
-			serverHealth = serverHealth,
-			watchdog = watchdog,
-			securityMonitor = self:_readStatus("SecurityMonitor", self.d.getSecurityMonitorStatus),
-			messageValidation = self:_readStatus("MessageValidation", self.d.getMessageValidationStatus),
-			idempotency = self:_readStatus("Idempotency", self.d.getIdempotencyStatus),
-			errorHistory = self:_readStatus("ErrorHistory", self.d.getErrorHistoryStatus),
-		},
+		operationalServices = operationalServices,
 	}
 end
 
