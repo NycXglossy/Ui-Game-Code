@@ -919,6 +919,7 @@ globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Securi
 	isEnabled = function() return SERVICE_ENABLED and globalSecurityPolicyService ~= nil and globalSecurityPolicyService:Get("monitoringEnabled") == true end,
 	memoryStoreService = MemoryStoreService,
 	jobId = JOB_ID,
+	guid = function() return HttpService:GenerateGUID(false) end,
 	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
 	getThreshold = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("suspiciousSignalThreshold") else 8 end,
 	onAlert = function(signal, count)
