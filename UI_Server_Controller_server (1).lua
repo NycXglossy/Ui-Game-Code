@@ -5419,6 +5419,8 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local registry = if typeof(services.serviceRegistry) == "table" then services.serviceRegistry else {}
 		local registryCounts = if typeof(registry.counts) == "table" then registry.counts else {}
 		local errorHistory = if typeof(services.errorHistory) == "table" then services.errorHistory else {}
+		local securityHealth = if typeof(services.securityHealth) == "table" then services.securityHealth else {}
+		local securityComponents = if typeof(securityHealth.components) == "table" then securityHealth.components else {}
 		local _, globalOperational = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
 		local messaging = if typeof(globalOperational) == "table" and typeof(globalOperational.Messaging) == "table" then globalOperational.Messaging else {}
 		local memoryStore = if typeof(services.memoryStore) == "table" then services.memoryStore else {}
@@ -5437,6 +5439,12 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | unavailable " .. tostring(registryCounts.Unavailable or 0),
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(watchdog.state or "Unavailable"),
+			"SecurityCore health: " .. tostring(securityHealth.state or "Unavailable")
+				.. " | Auth " .. tostring(securityComponents.authorization or "Unavailable")
+				.. " | RateLimit " .. tostring(securityComponents.rateLimit or "Unavailable")
+				.. " | Validation " .. tostring(securityComponents.messageValidation or "Unavailable")
+				.. " | Audit " .. tostring(securityComponents.audit or "Unavailable")
+				.. " | Incidents " .. tostring(securityComponents.incidentResponse or "Unavailable"),
 			"Watchdog detail: " .. string.sub(watchdogDetail, 1, 300),
 			"Error history: " .. tostring(errorHistory.count or 0) .. "/" .. tostring(errorHistory.maxRecords or 50)
 				.. " records | repeats " .. tostring(errorHistory.totalRepeats or 0),
