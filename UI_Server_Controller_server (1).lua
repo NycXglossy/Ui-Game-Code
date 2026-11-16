@@ -811,7 +811,6 @@ end
 
 local playbackPaused = false
 local audioReloadInProgress = false
-local lastGlobalPlaybackRevision = 0
 -- Prevent out-of-order persistence replies from an earlier pause/resume/restart
 -- overwriting a newer local control action on the same track.
 local playbackControlRequestId = 0
@@ -5782,16 +5781,12 @@ end
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
 	local isPlaybackControl = action == "DJPause" or action == "DJRestart" or action == "DJSkip"
-	if action == "DJToggleGlobalPlaybackSync" then
-		print("[ClubMusic][PlaybackSync Server] Toggle request received from " .. player.Name .. "; enabled=" .. tostring(typeof(payload) == "table" and payload.enabled))
-	elseif isPlaybackControl then
+	if isPlaybackControl then
 		print("[ClubMusic][PlaybackControl] Request received; action=" .. tostring(action) .. "; player=" .. player.Name)
 	end
 	local ok, accepted, result = pcall(ControllerFunctions.handleAction, player, action, payload)
 	if not ok then
 		warn("[ClubMusic] Action handler error: " .. tostring(accepted))
-	elseif action == "DJToggleGlobalPlaybackSync" then
-		print("[ClubMusic][PlaybackSync Server] Handler result; accepted=" .. tostring(accepted) .. "; detail=" .. tostring(result))
 	elseif isPlaybackControl then
 		print("[ClubMusic][PlaybackControl] Handler result; action=" .. tostring(action)
 			.. "; accepted=" .. tostring(accepted) .. "; detail=" .. tostring(result))
