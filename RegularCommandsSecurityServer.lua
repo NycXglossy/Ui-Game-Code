@@ -5,7 +5,7 @@
 --
 -- This adapter uses the installed Kohl's Process.addCommandFilter enforcement point.
 -- It authorizes before command-request splitting, then wraps only the matched server
--- handler so movement authority is recorded only after the original handler returns.
+-- handlers so movement authority is recorded and moderation actions are audited only after the original handler returns.
 
 return function(_K: any)
 	if _K.IsServer ~= true then return end
@@ -68,10 +68,7 @@ return function(_K: any)
 		StarterWalkSpeed = {min = 0, max = 100},
 		WalkSpeed = {min = 0, max = 100},
 		JumpPower = {min = 0, max = 250},
-		PersonalGravity = {min = 0, max = 5},
 		BodyScale = {min = 0.1, max = 10},
-		WorldGravity = {min = 0, max = 500},
-		StarterWalkSpeed = {min = 0, max = 100},
 	}
 
 	local function finiteNumber(value: any): boolean
