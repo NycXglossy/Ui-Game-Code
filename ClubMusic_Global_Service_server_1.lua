@@ -9,6 +9,7 @@
 -- MessagingService is not a durable queue; periodic reconciliation handles moderation state.
 
 local Players = game:GetService("Players")
+local TextService = game:GetService("TextService")
 local ServerStorage = game:GetService("ServerStorage")
 local MemoryStoreService = game:GetService("MemoryStoreService")
 local DataStoreService = game:GetService("DataStoreService")
@@ -148,6 +149,20 @@ local function cleanText(value: any, maxLength: number): string?
 	local clean = value:gsub("[%c]", " "):gsub("^%s+", ""):gsub("%s+$", "")
 	if clean == "" then return nil end
 	return clean
+end
+
+-- Cross-server announcements are filtered at the trusted publishing server.
+-- Receivers can then rely on the signed-by-server MessagingService envelope and
+-- do not need to re-filter the same text independently in every destination server.
+local function filterAnnouncementText(value: any, actorUserId: number): string?
+	local clean = cleanText(value, CONFIG.MaxAnnouncementLength)
+	if not clean then return nil end
+	local ok, filteredText = pcall(function()
+		local filtered = TextService:FilterStringAsync(clean, actorUserId)
+		return filtered:GetNonChatStringForBroadcastAsync()
+	end)
+	if not ok or typeof(filteredText) ~= "string" then return nil end
+	return cleanText(filteredText, CONFIG.MaxAnnouncementLength)
 end
 
 local fallbackBuckets: {[string]: {tokens: number, updated: number}} = {}
@@ -514,9 +529,21 @@ bindFunction("SetTrackBlocked", function(trackId: any, blocked: any, actorUserId
 end)
 
 bindFunction("PublishAnnouncement", function(message: any, actorUserId: any)
-	local clean = cleanText(message, CONFIG.MaxAnnouncementLength)
-	if not SERVICE_ENABLED or not clean or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalAnnouncement") then return false end
-	return publishTopic(CONFIG.Topics.Announcements, {kind = "Announcement", text = clean, actorUserId = math.floor(actorUserId)})
+	if not SERVICE_ENABLED or not finiteNumber(actorUserId) or actorUserId < 1
+		or actorUserId % 1 ~= 0 or actorUserId > 9007199254740991 then return false end
+	local actorId = math.floor(actorUserId)
+	local actor = Players:GetPlayerByUserId(actorId)
+	if not actor or actor.Parent ~= Players or not authorizeGlobalActor(actorId, "GlobalAnnouncement") then return false end
+
+	local filteredText = filterAnnouncementText(message, actorId)
+	if not filteredText or actor.Parent ~= Players
+		or not authorizeGlobalActor(actorId, "GlobalAnnouncement") then return false end
+
+	return publishTopic(CONFIG.Topics.Announcements, {
+		kind = "Announcement",
+		text = filteredText,
+		actorUserId = actorId,
+	})
 end)
 
 
