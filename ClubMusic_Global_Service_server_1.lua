@@ -920,13 +920,16 @@ if authorizationModule and type(authorizationModule.GetShared) == "function" the
 		if not authStartOk or authStartResult ~= true then
 			warn("[ClubMusic][Authorization] SecurityCore authorization failed to start; protected actions remain denied.")
 			globalAuthorizationService = nil
+			updateRegistryStatus("Authorization", "Unavailable", "SecurityCore Authorization failed to start.")
 		end
 	else
 		warn("[ClubMusic][Authorization] SecurityCore authorization module could not be initialized: "
 			.. tostring(instance))
+		updateRegistryStatus("Authorization", "Unavailable", "SecurityCore Authorization could not initialize.")
 	end
 else
 	warn("[ClubMusic][Authorization] SecurityCore Authorization module is unavailable; protected actions remain denied.")
+	updateRegistryStatus("Authorization", "Unavailable", "SecurityCore Authorization ModuleScript is missing.")
 end
 
 authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
