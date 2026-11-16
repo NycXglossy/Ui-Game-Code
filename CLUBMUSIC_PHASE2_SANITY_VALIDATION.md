@@ -72,3 +72,8 @@ Detection-only avatar/accessory monitoring now runs from the main server control
 ## Phase 8 update
 
 ClubMusic audio asset ingress now uses shared finite-integer validation for audio and artwork asset IDs; existing server-owned catalog, staff permissions, preload verification, rate limits, and modern AudioPlayer path remain intact. See `CLUBMUSIC_PHASE8_AUDIO_ANIMATION_SECURITY.md`. No boombox or animation remotes were found in the audited repository snapshot, so those integrations remain pending their actual scripts.
+
+
+## Phase 9 update
+
+Chat/text integrity hardening now re-filters persisted custom titles before replication, filters saved slots before selection, makes Tiki Tide filtered broadcast truncation UTF-8-safe, and filters cross-server announcements at the authorized publishing server. See `CLUBMUSIC_PHASE9_CHAT_TEXT_INTEGRITY.md`. External Kohl's Admin native announcement handlers remain outside the source snapshot and require separate verification.
