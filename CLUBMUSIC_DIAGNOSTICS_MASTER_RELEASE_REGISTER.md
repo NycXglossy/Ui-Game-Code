@@ -6,7 +6,7 @@
 
 ## Release decision
 
-**Do not install or publish from this register yet.** Static source work is updated and the inspected active remote surfaces are documented. Roblox Studio and published-server verification remain mandatory. The legacy `Music System` remote family and binary Roblox model/package contents also prevent claiming a complete repository-wide certification.
+**Do not install or publish from this register yet.** Static source work is updated and the inspected active remote surfaces are documented. Roblox Studio and published-server verification remain mandatory. Binary Roblox model/package contents and live-place deployment verification still prevent claiming a complete repository-wide certification.
 
 This register distinguishes source implementation, static review, and runtime verification. A static pass is not a security certification.
 
@@ -59,13 +59,10 @@ This register distinguishes source implementation, static review, and runtime ve
 | `ExecuteUtility` | Client → server | Extended utility actions; live-player guard, allowlist, server-owned entitlement checks, cooldown, and bounded values. |
 | `ToolShop` | Client → server | Read-only `GetShop` query; live-player guard and 0.5-second per-player cooldown. |
 
-### Legacy MusicRemotes — separate legacy path, not certified for release
-The repository also contains a separate root-level `Music System` script that creates `MusicRemotes`:
-- `DispatchAction` is client-to-server and accepts a table action with a fixed action allowlist.
-- `RequestSync` is client-to-server and has a per-player sync cooldown.
-- `DispatchEvent`, `MusicBroadcast`, and `MusicUpdate` are server-to-client outputs in the inspected script.
+### Original standalone Music System — retired from the active runtime architecture
+The repository still retains the original root-level `Music System` source and its companion legacy modules as reference assets. However, the canonical integration guide explicitly says this standalone script is **not a runtime dependency** and must not be installed alongside ClubMusic. Its queue, playback, validation, skip-vote, playlist, role, and transport responsibilities have been replaced or absorbed by the secured `UI_Server_Controller`, `MusicCatalogService`, `MusicPlaylistService`, and `ClubMusicRemotes` architecture.
 
-The legacy dispatcher uses its own `RoleSystem`, rate limiter, and manager modules rather than the current ClubMusic SecurityCore contract. It is not safe to assume this script is deployed, unused, or equivalent to the modern controller from repository files alone. Before installation, compare the live Roblox place hierarchy and client references. Do not silently delete or disable this path as part of the diagnostics update.
+The legacy script itself still contains code that would create a separate `MusicRemotes` folder and use its own `RoleSystem` if someone manually installed it. That source file remaining in GitHub does not mean those remotes are active. Do not install the standalone script, its legacy role system, or its manager children. Treat source cleanup/archive deletion as a separate optional housekeeping task, not a release blocker. The live Roblox place should still be checked to confirm it follows the documented secured hierarchy.
 
 ### Server-only BindableFunction surfaces
 The Global API, diagnostics snapshot/recent-record providers, and Kohl's adapter bridge use ServerStorage BindableFunctions in the inspected source. These are server-to-server trust boundaries, not client remotes. Each mutation caller must still provide an actor that the receiving service independently authorizes.
@@ -84,7 +81,6 @@ The earlier Phase 0 audit's statement that these sources were absent is stale. T
 ## Explicit exclusions / incomplete evidence
 - Binary `.rbxm` / `.rbxmx` assets and embedded third-party packages were not exhaustively decompiled or reviewed in this text-source pass.
 - Kohl's Admin internals are not certified by this register; only the separate ClubMusic/Tiki Tide adapter and hardening integration are in scope.
-- The legacy `Music System` remote family needs live-place deployment/reference verification and a dedicated compatibility decision.
 - No repository review can prove that the currently published Roblox place contains the exact source revision in this branch.
 
 ## Required Roblox runtime verification before installation
@@ -97,11 +93,11 @@ Run in a dedicated test universe/place, not against production data:
 5. Publish invalid, expired, wrong-scope, and replayed cross-server messages. Confirm MessageValidation rejects them and no local mutation/broadcast occurs.
 6. From an ordinary client, attempt to locate or invoke diagnostics APIs. Confirm no diagnostic records, traces, or privileged service methods are client-reachable.
 7. Test avatar refresh while respawning/leaving and rapid Tool Shop query calls; confirm cooldowns and safe rejection.
-8. Inspect the live place hierarchy for `MusicRemotes`, the legacy `Music System`, the five manager modules, Kohl's adapter, and all installer scripts. Confirm which are active before installing any replacements.
+8. Inspect the live place hierarchy to confirm it matches the documented secured ClubMusic layout; specifically confirm the standalone legacy `Music System` and `MusicRemotes` are not installed, and review the five ClubMusic adapters, Kohl's adapter, and installer scripts.
 9. Run the existing purchase/profile/session-lock, global playback sync, and two-server regression tests in the isolated environment. Do not use live production DataStores for test fixtures.
 
 ## Sign-off criteria
-- [ ] Live-place hierarchy and legacy remote deployment status reconciled.
+- [ ] Live-place hierarchy confirmed to use the secured ClubMusic transport, with no separately installed legacy `Music System` / `MusicRemotes` stack.
 - [ ] Binary model/package scope reviewed or explicitly excluded by the project owner.
 - [ ] Studio multiplayer test matrix passes.
 - [ ] Published test-server matrix passes, including two-server MessagingService/MemoryStore behavior.
