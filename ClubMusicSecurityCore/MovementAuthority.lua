@@ -115,6 +115,9 @@ function MovementAuthority.Check(targetId: any, property: any, value: any): (boo
 		entries[key] = nil
 		return false
 	end
+	-- "ANY" is a server-only presence check used by physics telemetry to
+	-- recognize a recently authorized fling without guessing its resulting velocity.
+	if value == "ANY" then return true, entry.origin end
 	if typeof(value) == "number" and typeof(entry.value) == "number" then
 		return math.abs(value - entry.value) <= 0.05, entry.origin
 	end
