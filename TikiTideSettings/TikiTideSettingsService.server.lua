@@ -330,8 +330,8 @@ local function handleRequest(player: Player, action: any, payload: any)
 			return fail("Invalid gravity value.")
 		end
 		-- Keep the entitlement and administrator checks adjacent to the mutation.
-		-- This makes the intended authorization boundary explicit if the resolver
-		-- implementation later gains yielding work.
+		-- This keeps the authorization boundary adjacent to the mutation if
+		-- the SecurityCore permission implementation changes in the future.
 		if not hasTikiTideAccess(player) or player.Parent ~= Players
 			or not hasClubPermission(player, "GlobalConfig") then
 			return fail("Administrator configuration permission is no longer available.")
