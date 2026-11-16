@@ -5068,6 +5068,7 @@ authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): an
 		or typeof(permission) ~= "string" then
 		return false
 	end
+	if permission ~= "KohlsAdminSnapshot" and not GLOBAL_PERMISSION_LEVELS[permission] then return false end
 	local player = Players:GetPlayerByUserId(math.floor(actorUserId))
 	if not player or player.Parent ~= Players then return false end
 
