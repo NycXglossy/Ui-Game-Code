@@ -17,23 +17,12 @@ local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local ReceiptHash = require(ServerStorage:WaitForChild("ClubMusic_ReceiptHash"))
 
-local queueModule = ServerStorage:WaitForChild("MusicGlobalQueueService", 20)
-if not queueModule or not queueModule:IsA("ModuleScript") then
-	error("[ClubMusic Global] Missing ServerStorage.MusicGlobalQueueService ModuleScript.")
-end
-local queueRequireOk, queueRequireResult = pcall(require, queueModule)
-if not queueRequireOk then
-	error("[ClubMusic Global] MusicGlobalQueueService failed to load: " .. tostring(queueRequireResult))
-end
-local MusicGlobalQueueService = queueRequireResult
-
 local CONFIG = {
 	Enabled = true,
 	-- Keep Studio isolated by default. Set true only for intentional cross-server Studio tests.
 	EnableInStudio = false,
 
 	Topics = {
-		Queue = "ClubMusic_Global_Queue_v1",
 		Announcements = "ClubMusic_Global_Announcements_v1",
 		Moderation = "ClubMusic_Global_Moderation_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
@@ -98,9 +87,8 @@ local xpReceiptStore: any = nil
 local MAX_PURCHASE_ID_LENGTH = 128
 
 if SERVICE_ENABLED then
-	-- Durable DataStore handles are required for global queue authority.
-	-- MemoryStore is an optimization for shared rate limits, not a prerequisite
-	-- for playback; queue calls can use the conservative per-server limiter.
+	-- Durable DataStore handles are required for global moderation, configuration,
+	-- and purchase records. MemoryStore rate-limit allocation remains disabled.
 	local storesOk, storesError = pcall(function()
 		moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 		globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
@@ -114,7 +102,6 @@ if SERVICE_ENABLED then
 	else
 		-- MemoryStore rate-limit records are intentionally disabled to minimize
 		-- universe-wide allocation. Cross-server requests use bounded local limits.
-		-- Playback leadership retains its single lease key in the dedicated authority map.
 		budgetMap = nil
 		budgetMapInitializationError = "MemoryStore total memory budget disabled for minimal storage mode."
 	end
@@ -528,7 +515,7 @@ bindFunction("PublishAnnouncement", function(message: any, actorUserId: any)
 end)
 
 
-local function allowGlobalQueueStoreOperation(): boolean
+local function allowGlobalDataStoreOperation(): boolean
 	-- When MemoryStore is down, consumeShared already applies a conservative
 	-- per-server fallback bucket. Keep the DataStore-backed global queue online
 	-- instead of treating a budget-service outage as a queue-storage outage.
@@ -537,183 +524,14 @@ local function allowGlobalQueueStoreOperation(): boolean
 end
 
 -- Global queue API: every mutation is atomic in the shared DataStore.
--- Controller callers still perform role, moderation, catalog, and request-limit checks.
-bindFunction("GetGlobalQueueState", function()
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	return MusicGlobalQueueService:GetSnapshot()
-end)
+-- Controller callers still perform role, moderation, catalog, and request-limit checlocal function allowGlobalDataStoreOperation(): boolean
+	-- Shared DataStore operations retain a conservative per-server budget
+	-- when the optional cross-server MemoryStore budget is unavailable.
+	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	return allowed == true
+end
 
-bindFunction("RemoveGlobalQueueEntriesForTrack", function(trackId: any)
-	if not SERVICE_ENABLED or typeof(trackId) ~= "string" or #trackId < 1 or #trackId > 64
-		or not string.match(trackId, "^[%w%-_]+$") then return false, nil, "Invalid track ID." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	return MusicGlobalQueueService:RemoveTrackEntries(trackId)
-end)
-
-bindFunction("EnqueueGlobalQueueEntry", function(entry: any, playerQueueCap: any, catalogRevision: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Enqueue(entry, playerQueueCap, catalogRevision)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("EnqueueGlobalQueueBatch", function(entries: any, maxQueueSize: any, targetQueueSize: any, catalogRevision: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:EnqueueBatch(entries, maxQueueSize, targetQueueSize, catalogRevision)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("RemoveGlobalQueueEntry", function(entryId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Remove(entryId)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("SetGlobalPlaylistRotation", function(playlistId: any, playlistName: any, trackIds: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:SetPlaylistRotation(playlistId, playlistName, trackIds)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("MoveUpGlobalQueueEntry", function(entryId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:MoveUp(entryId)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("PurgeGlobalUserQueueEntries", function(userId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:RemoveUserEntries(userId)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("ClearGlobalQueue", function()
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Clear()
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallbackEntry: any, catalogRevision: any, expectedNextEntryId: any?)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry, catalogRevision, expectedNextEntryId)
-	if ok then
-		-- Carry the compact committed track metadata in the invalidation message.
-		-- Peer servers can update title/duration immediately without waiting for
-		-- an additional DataStore snapshot round trip.
-		local current = state.current
-		local playback = state.playback
-		local trackHint = if typeof(current) == "table" and typeof(playback) == "table" then {
-			id = current.id, trackId = current.trackId, title = current.title, artist = current.artist,
-			genre = current.genre, duration = current.duration, requestedBy = current.requestedBy,
-			userId = current.userId, source = current.source, vip = current.vip,
-			soundId = current.soundId, trackRevision = playback.trackRevision,
-		} else nil
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision, trackHint = trackHint})
-		-- A committed next-track transition is the resume path after ForceStop.
-		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-		if budgetShared and budgetAllowed then
-			pcall(function()
-				globalControlStore:UpdateAsync("playbackControl", function(old)
-					if typeof(old) ~= "table" or old.stopRevision == nil then return old end
-					local nextControl = table.clone(old)
-					nextControl.stopRevision = nil
-					nextControl.updatedAt = os.time()
-					return nextControl
-				end)
-			end)
-		end
-	end
-	return ok, state, message
-end)
-
-bindFunction("ReserveCatalogRemoval", function(trackId: any, catalogRevision: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:ReserveCatalogRemoval(trackId, catalogRevision)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("CompleteCatalogRemoval", function(trackId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:CompleteCatalogRemoval(trackId)
-	if ok then
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
-		publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
-	end
-	return ok, state, message
-end)
-
-bindFunction("ReserveCatalogAddition", function(trackId: any, catalogRevision: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:ReserveCatalogAddition(trackId, catalogRevision)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("CompleteCatalogAddition", function(trackId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:CompleteCatalogAddition(trackId)
-	if ok then
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
-		publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
-	end
-	return ok, state, message
-end)
-
-bindFunction("AdvanceCatalogRevision", function()
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:AdvanceCatalogRevision()
-	if ok then
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
-		publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
-	end
-	return ok, state, message
-end)
-
-bindFunction("SetGlobalPlayback", function(paused: any, position: any, expectedTrackRevision: any, restart: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:SetPlayback(paused, position, expectedTrackRevision, restart)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("GetGlobalPlaybackPosition", function(snapshot: any)
-	return MusicGlobalQueueService:GetPosition(snapshot)
-end)
-
-bindFunction("PublishCatalogChange", function()
-	if not SERVICE_ENABLED then return false end
-	return publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
-end)
-
-bindFunction("GetGlobalPlaybackControl", function()
-	if not SERVICE_ENABLED then return nil, false end
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	if not shared or not allowed then return nil, false end
-	local ok, state = pcall(function() return globalControlStore:GetAsync("playbackControl") end)
-	if not ok then return nil, false end
-	if typeof(state) == "table" and finiteNumber(state.revision)
+ypeof(state) == "table" and finiteNumber(state.revision)
 		and (state.command == "SetPlaybackPaused" or state.command == "Restart")
 		and typeof(state.paused) == "boolean" then
 		return {revision = math.floor(state.revision), command = state.command, paused = state.paused}, true
@@ -948,7 +766,7 @@ local sharedDependencies = {
 	isEnabled = function() return SERVICE_ENABLED end,
 	memoryStoreService = MemoryStoreService,
 	dataStore = globalConfigStore,
-	allowStoreOperation = allowGlobalQueueStoreOperation,
+	allowStoreOperation = allowGlobalDataStoreOperation,
 	jobId = JOB_ID,
 	guid = function() return HttpService:GenerateGUID(false) end,
 }
