@@ -601,6 +601,7 @@ local SECURITY_MODULE_EXPORTS: {[string]: string} = {
 	ClubMusic_Global_Audit_Service = "Audit",
 	ClubMusic_Global_Event_Log_Service = "EventLog",
 	ClubMusic_Global_Incident_Response_Service = "IncidentResponse",
+	ClubMusic_Global_Connection_Janitor_Service = "ConnectionJanitor",
 }
 local cachedSecurityBundle: any = nil
 local securityBundleLoadAttempted = false
@@ -855,6 +856,12 @@ if authorizationModule then
 				return available
 			end,
 			resolvePermission = globalAuthorizationServiceResolver,
+			onDenied = function(actorUserId, permission, count)
+				if globalAuditService then
+					pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", actorUserId,
+						permission, "repeated-privilege-denial:" .. tostring(count))
+				end
+			end,
 		})
 	end)
 	if createOk and typeof(instance) == "table"
@@ -986,7 +993,32 @@ globalIncidentResponseService = createOperationalService("ClubMusic_Global_Incid
 }, {"Start", "GetStatus", "Open", "Resolve", "GetRecent"})
 if globalIncidentResponseService then globalIncidentResponseService:Start() end
 
-globalEventBindable.Event:Connect(function(event)
+local janitorModule = loadOptionalGlobalModule("ClubMusic_Global_Connection_Janitor_Service")
+local lifecycleJanitor = nil
+if janitorModule then
+	local janitorOk,janitorResult=pcall(janitorModule.new)
+	if janitorOk and typeof(janitorResult)=="table" and type(janitorResult.Add)=="function"
+		and type(janitorResult.Cleanup)=="function" then
+		lifecycleJanitor=janitorResult
+	else
+		warn("[ClubMusic][SecurityJanitor] Lifecycle cleanup unavailable: "..tostring(janitorResult))
+	end
+end
+local function ownConnection(connection)
+	if lifecycleJanitor then lifecycleJanitor:Add(connection,"Disconnect") end
+	return connection
+end
+local function ownThread(thread)
+	if lifecycleJanitor then lifecycleJanitor:Add(thread,"Cancel") end
+	return thread
+end
+if lifecycleJanitor then
+	ownConnection(script.Destroying:Connect(function()
+		lifecycleJanitor:Cleanup()
+	end))
+end
+
+ownConnection(globalEventBindable.Event:Connect(function(event)
 	if typeof(event) ~= "table" then return end
 	local kind = tostring(event.kind or "Unknown")
 	if globalDiagnosticsService then pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "event:" .. kind, 1) end
@@ -1255,10 +1287,10 @@ end
 
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
-	task.spawn(function()
+	ownThread(task.spawn(function()
 		while SERVICE_ENABLED do
-			local ok, err = pcall(function()
-				MessagingService:SubscribeAsync(topic, function(message)
+			local ok, subscriptionOrError = pcall(function()
+				return MessagingService:SubscribeAsync(topic, function(message)
 					messagingReceived += 1
 					local callbackOk, callbackError = pcall(callback, message)
 					if not callbackOk then
@@ -1267,19 +1299,20 @@ local function subscribeWithRetry(topic: string, callback: (any) -> ())
 						warn("[ClubMusic Global] Message handler failed on topic " .. topic .. ": " .. tostring(callbackError))
 					end
 				end)
-			end)
-				if ok then
+				end)
+			if ok then
+				if typeof(subscriptionOrError)=="RBXScriptConnection" then ownConnection(subscriptionOrError) end
 				-- Subscription stays active after SubscribeAsync returns.
 				subscriptionStatus[topic] = "Active"
 				print("[ClubMusic Global] Messaging subscription active: " .. topic)
 				return
 			end
 			subscriptionStatus[topic] = "Retrying"
-			warn("[ClubMusic Global] Subscription failed for " .. topic .. "; retrying: " .. tostring(err))
+			warn("[ClubMusic Global] Subscription failed for " .. topic .. "; retrying: " .. tostring(subscriptionOrError))
 			task.wait(CONFIG.SubscriptionRetrySeconds)
 		end
 		subscriptionStatus[topic] = "Disabled"
-	end)
+	end))
 end
 
 if SERVICE_ENABLED then
@@ -1299,7 +1332,7 @@ end
 
 -- Reconcile online users against durable moderation records so missed MessagingService
 -- deliveries do not leave a stale request-block/ban state indefinitely.
-task.spawn(function()
+ownThread(task.spawn(function()
 	while true do
 		task.wait(CONFIG.ModerationReconcileSeconds)
 		if SERVICE_ENABLED then
@@ -1322,7 +1355,7 @@ task.spawn(function()
 			end
 		end
 	end
-end)
+end))
 
 local function globalXPState(record: any): (number, number, number)
 	if typeof(record) ~= "table" or typeof(record.boosts) ~= "table" then return 1, 0, 0 end
