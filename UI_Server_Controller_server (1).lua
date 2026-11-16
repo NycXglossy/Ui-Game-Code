@@ -2365,6 +2365,7 @@ ControllerFunctions.refreshRank = function(player: Player): boolean
 	rankRefreshInFlight[userId] = true
 	local ok, rank, level = pcall(ControllerFunctions.computeRank, player)
 	rankRefreshInFlight[userId] = nil
+	if player.Parent ~= Players then return false end
 	if not ok or typeof(rank) ~= "string" or typeof(level) ~= "number"
 		or level < 0 or level > 4 or level % 1 ~= 0 then
 		rankRetryAfter[userId] = os.clock() + 15
