@@ -69,7 +69,9 @@ return function(_K: any)
 		WalkSpeed = {min = 0, max = 100},
 		JumpPower = {min = 0, max = 250},
 		PersonalGravity = {min = 0, max = 5},
-		BodyScale = {min = 0.1, max = 10},\n\t\tWorldGravity = {min = 0, max = 500},\n\t\tStarterWalkSpeed = {min = 0, max = 100},\n\t\tTeleport = {min = 0, max = 0},
+		BodyScale = {min = 0.1, max = 10},
+		WorldGravity = {min = 0, max = 500},
+		StarterWalkSpeed = {min = 0, max = 100},
 	}
 
 	local function finiteNumber(value: any): boolean
