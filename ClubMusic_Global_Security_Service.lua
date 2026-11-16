@@ -471,7 +471,7 @@ local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderati
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Audit dependencies missing")
  local self=setmetatable({d=d,written=0,queued=0,droppedLow=0,lastError=nil,buffer={},lastFlushAt=0,
-  readCache=nil,readCacheAt=0,flushRunning=false},Service)
+  readCache={},readCacheAt={},flushRunning=false},Service)
  self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalAudit_v1")
  return self
 end
@@ -528,14 +528,15 @@ function Service:_flush()
   self.lastError=tostring(writeError); StorageGuard.Failure(writeError); return false
  end
  for _=1,#batch do table.remove(self.buffer,1) end
- self.written+=#batch; self.lastFlushAt=now; self.lastError=nil; self.readCache=nil
+ self.written+=#batch; self.lastFlushAt=now; self.lastError=nil; self.readCache={}; self.readCacheAt={}
  return true
 end
-function Service:GetRecent(limit)
+function Service:GetRecent(limit,moderatorUserId)
  if not self.d.isEnabled() then return false,{} end
+ local cacheKey=tostring(if type(moderatorUserId)=="number" and moderatorUserId>0 then math.floor(moderatorUserId) else "server")
  local now=os.clock()
- if self.readCache and now-self.readCacheAt<10 then
-  local cached={}; for i,item in ipairs(self.readCache) do if i>math.clamp(math.floor(tonumber(limit) or 20),1,50) then break end; table.insert(cached,table.clone(item)) end
+ if self.readCache[cacheKey] and now-(self.readCacheAt[cacheKey] or 0)<10 then
+  local cached={}; for i,item in ipairs(self.readCache[cacheKey]) do if i>math.clamp(math.floor(tonumber(limit) or 20),1,50) then break end; table.insert(cached,table.clone(item)) end
   return true,cached
  end
  local allowed,reason=StorageGuard.Allow()
@@ -550,7 +551,7 @@ function Service:GetRecent(limit)
   elseif typeof(entry.value)=="table" then table.insert(out,table.clone(entry.value)) end
  end
  table.sort(out,function(a,b) return (tonumber(a.at) or 0)>(tonumber(b.at) or 0) end)
- self.readCache=out; self.readCacheAt=now
+ self.readCache[cacheKey]=out; self.readCacheAt[cacheKey]=now
  local selected={}; for i=1,math.min(#out,math.clamp(math.floor(tonumber(limit) or 20),1,50)) do table.insert(selected,table.clone(out[i])) end
  return true,selected
 end
