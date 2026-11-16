@@ -1,3 +1,5 @@
+> **RETIRED — superseded on 2026-11-15.** Cross-server playback synchronization and global queue authority were removed by design. Do not use this document as an installation or implementation guide. Each game server now owns its own playback state and queue. See [CLUBMUSIC_AUDIO_STUDIO_INSTALLATION.md](CLUBMUSIC_AUDIO_STUDIO_INSTALLATION.md) for the current architecture and Studio installation instructions.
+
 # ClubMusic Optional Cross-Server Playback Sync
 
 ## Agreed behavior
