@@ -6338,6 +6338,10 @@ task.spawn(function()
 		})
 		if ticks % 30 == 0 then
 			ControllerFunctions.recordDiagnosticPulse("Queue", "queue-state-sampled", true, {queueDepth = #queue})
+			ControllerFunctions.recordDiagnosticPulse("AutoDJ",
+				if autoQueueHold then "refill-held" else "queue-target-sampled",
+				autoQueueHold or #queue >= CONFIG.AutoQueueTarget,
+				{queueDepth = #queue, target = CONFIG.AutoQueueTarget})
 		end
 
 		local currentGeneration = playbackGeneration
