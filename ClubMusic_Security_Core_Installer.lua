@@ -8,7 +8,7 @@ local RunService = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
-local RELEASE_COMMIT = "ae7d8a03b2fa344a328370be3b5f93e597526a32"
+local RELEASE_COMMIT = "b53c09e3c87e87f6cf069e90826809c81127f205"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
 local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "TeleportValidationService"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
