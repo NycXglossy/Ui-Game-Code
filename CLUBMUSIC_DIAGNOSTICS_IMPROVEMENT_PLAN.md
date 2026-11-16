@@ -175,3 +175,18 @@ This is a static compatibility pass, not proof that every consumer in all embedd
 ### Client UI follow-up completed (static)
 
 The renderer now uses the server-projected DJ permissions instead of assuming DJs are staff. Rank-100 DJs see local playback and Control Mode actions; queue mutation and playlist-management controls remain Owner/Co-owner only. This is a static source update only; Studio and published-server testing remain outstanding.
+
+
+## Sixth-pass remote-boundary audit (2026-11-16)
+
+Static review extended the diagnostics/security boundary across the Global Service BindableFunction API, UtilityBar RemoteFunction, and Tiki Tide Settings Request/Broadcast remotes.
+
+- Global Service privileged writes use SecurityCore actor authorization and fail closed when Authorization is unavailable. Cross-server messages require the dedicated MessageValidation service and use bounded local message-ID deduplication.
+- Diagnostics snapshots and SafeCall recent records remain server-only BindableFunctions; the inspected source does not add a client-facing diagnostics remote. Keep the UI controller's client projection aggregate-only.
+- UtilityBar validates live players, action allowlists, server-owned entitlement attributes, bounded size values, and per-player cooldowns. Size pass enforcement remains pending a configured real pass ID and server-owned entitlement.
+- Tiki Tide Settings validates live player/action/payload shape, entitlement, per-player cooldown, teleport consent, finite/clamped gravity, SecurityCore privileges, and reauthorizes after TextService filtering yields.
+- No new client-reachable authorization bypass was identified in the inspected handlers.
+
+**Static-audit boundary:** this is a wider scoped review, not proof that every embedded model, installer, third-party package, or remote in the repository has been enumerated. GitHub code search did not provide an indexed remote inventory for the working branch. Kohl's Admin internals remain out of scope; maintain the separate adapter only.
+
+**Still required before sign-off:** Studio and published-server tests for malformed/oversized payloads, remote spam, authorization-cache expiry/unavailability, permission revocation during yielding operations, replay/invalid cross-server messages, and attempts by ordinary clients to access diagnostics. Legacy diagnostic code must not be retired until all consumers are migrated and runtime tests pass.
