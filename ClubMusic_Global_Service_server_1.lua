@@ -204,9 +204,11 @@ end
 
 local function consumeShared(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
  if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
- if budgetMap == nil and isMemoryCapacityError(budgetMapInitializationError) then
-  memoryStoreCapacityLimited = true
-  memoryStoreCapacityError = string.sub(tostring(budgetMapInitializationError), 1, 300)
+ -- Shared MemoryStore rate-limit allocation is intentionally disabled in
+ -- minimal-storage mode. Use bounded per-server buckets directly; do not
+ -- classify this deliberate configuration as a capacity failure.
+ if budgetMap == nil then
+  return fallbackBucket(key, math.min(capacity, CONFIG.FallbackPlayerCapacity), CONFIG.FallbackPlayerRefillPerSecond, cost), false
  end
  -- Consolidate the three per-player limiter records (user/state/audio) into
  -- one expiring MemoryStore item per player. This lowers key cardinality
@@ -680,7 +682,12 @@ if safeCallModule then
 end
 if globalSafeCall then
 	bindFunction("GetGlobalMemoryStoreStatus", function()
-	return {capacityLimited = memoryStoreCapacityLimited, lastCapacityError = memoryStoreCapacityError}
+	return {
+		sharedRateLimitsEnabled = budgetMap ~= nil and not memoryStoreCapacityLimited,
+		capacityLimited = memoryStoreCapacityLimited,
+		lastCapacityError = memoryStoreCapacityError,
+		mode = if budgetMap == nil then "LocalOnly" else (if memoryStoreCapacityLimited then "LocalFallback" else "Shared")
+	}
 end)
 
 bindFunction("GetGlobalSafeCallStatus", function()
