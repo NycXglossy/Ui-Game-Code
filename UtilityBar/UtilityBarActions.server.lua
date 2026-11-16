@@ -38,6 +38,9 @@ end
 local refreshRemote = remote :: RemoteFunction
 
 refreshRemote.OnServerInvoke = function(player: Player): (boolean, string)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
+		return false, "A connected player is required."
+	end
 	local now = os.clock()
 	local previous = lastRequestAt[player.UserId] or 0
 	if now - previous < REQUEST_COOLDOWN then
@@ -58,6 +61,10 @@ refreshRemote.OnServerInvoke = function(player: Player): (boolean, string)
 	local ok, result = pcall(function()
 		return Players:GetHumanoidDescriptionFromUserIdAsync(player.UserId)
 	end)
+	if player.Parent ~= Players then
+		if typeof(result) == "Instance" then result:Destroy() end
+		return false, "Your session ended before the avatar could be refreshed."
+	end
 	if not ok or typeof(result) ~= "Instance" or not result:IsA("HumanoidDescription") then
 		warn("[UtilityBar] Avatar description lookup failed for userId " .. tostring(player.UserId) .. ": " .. tostring(result))
 		return false, "Roblox could not load your current avatar."
