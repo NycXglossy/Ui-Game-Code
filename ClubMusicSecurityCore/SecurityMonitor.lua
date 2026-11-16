@@ -78,6 +78,12 @@ function Service:GetStatus()
 		lastSignal=self.lastSignal,lastAlertAt=self.lastAlertAt,
 		persistence="Unified Audit threshold events only",
 		independentMemoryStoreMap=false,memoryStoreWrites=0,
+		-- Compatibility fields retained for existing diagnostics consumers.
+		queuedCritical=0,queuedStandard=0,queued=0,written=0,
+		droppedLowSeverity=self.droppedKeys,coalescedCritical=0,
+		lastError=nil,retryInSeconds=0,eventsPerFlush={min=0,max=0},
+		payloadMaxBytes=0,flushSeconds=0,maxFlushesPerMinute=0,ttlSeconds=0,
+		batchIdempotency="Local aggregation only",automaticEnforcement=false,
 		resourceGuard=ResourceGuard.GetStatus(),
 	}
 end
