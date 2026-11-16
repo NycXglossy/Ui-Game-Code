@@ -179,7 +179,9 @@ function Service:Clear(player: Player)
 	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	local userId = player.UserId
 	self.cache[userId] = nil
-	self.refreshInFlight[userId] = nil
+	-- Leave an outstanding lookup marked in-flight until it returns. The lookup
+	-- checks the original Player instance before publishing, preventing a rapid
+	-- rejoin from racing a second refresh for the same UserId.
 end
 
 function Service:GetStatus(): {[string]: any}
