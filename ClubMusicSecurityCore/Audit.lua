@@ -6,7 +6,7 @@ local Service={}; Service.__index=Service
 local ALLOWED={AdminAction=true,CatalogChange=true,SecurityEvent=true,Maintenance=true,Moderation=true}
 local MAX_ITEMS=200
 local MAX_PAYLOAD=24000
-local TTL=3600
+local TTL=1800
 local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderation" then 3 else if kind=="AdminAction" then 2 else 1 end
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Audit dependencies missing")
