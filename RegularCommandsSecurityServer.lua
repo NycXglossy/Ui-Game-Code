@@ -222,7 +222,6 @@ return function(_K: any)
 
 	Players.PlayerRemoving:Connect(function(player)
 		buckets[player.UserId] = nil
-		permissionCache[player.UserId] = nil
 		local prefix = tostring(player.UserId) .. ":"
 		for key in pairs(reportCooldowns) do
 			if string.sub(key, 1, #prefix) == prefix then reportCooldowns[key] = nil end
