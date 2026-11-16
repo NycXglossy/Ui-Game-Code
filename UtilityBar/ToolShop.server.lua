@@ -29,6 +29,8 @@ local shopRemote = remote :: RemoteFunction
 
 local loaded: {[number]: boolean} = {}
 local saving: {[number]: boolean} = {}
+local lastShopRequestAt: {[number]: number} = {}
+local SHOP_QUERY_COOLDOWN = 0.5
 
 local function getCoinsValue(player: Player): IntValue?
 	local stats = player:FindFirstChild("leaderstats")
@@ -89,9 +91,19 @@ Players.PlayerRemoving:Connect(function(player)
 	savePlayer(player)
 	loaded[player.UserId] = nil
 	saving[player.UserId] = nil
+	lastShopRequestAt[player.UserId] = nil
 end)
 
 shopRemote.OnServerInvoke = function(player: Player, operation: any)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
+		return {ok = false, message = "A connected player is required."}
+	end
+	local now = os.clock()
+	local previous = lastShopRequestAt[player.UserId] or 0
+	if now - previous < SHOP_QUERY_COOLDOWN then
+		return {ok = false, message = "Please wait before refreshing the shop."}
+	end
+	lastShopRequestAt[player.UserId] = now
 	if operation ~= "GetShop" then return {ok = false, message = "Unsupported shop request."} end
 	local coins = getCoinsValue(player)
 	return {
