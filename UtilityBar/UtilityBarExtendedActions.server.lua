@@ -7,6 +7,22 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
 local ServerStorage = game:GetService("ServerStorage")
 
+-- Reuse the server-only shared validator without adding a new polling service.
+local SanityValidation: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = core and core:IsA("Folder") and core:FindFirstChild("SanityValidation")
+	if module and module:IsA("ModuleScript") then
+		local ok, exported = pcall(require, module)
+		if ok and typeof(exported) == "table" and type(exported.ValidateDataTree) == "function" then
+			SanityValidation = exported
+		end
+	end
+	if not SanityValidation then
+		warn("[UtilityBar] Shared SanityValidation unavailable; bounded local request validation remains active.")
+	end
+end
+
 local REMOTE_FOLDER = "UtilityBarRemotes"
 local REMOTE_NAME = "ExecuteUtility"
 local COOLDOWN = 1.25
@@ -17,6 +33,47 @@ local sizeBaseline: {[number]: {humanoid: Humanoid, height: number, width: numbe
 local warnedMovementAuthorityMissing = false
 local warnedMovementAuthorityFailure = false
 local auraByPlayer: {[number]: {highlights: {Highlight}, connection: RBXScriptConnection?, character: Model}} = {}
+local ingressTokens = 36
+local ingressUpdatedAt = os.clock()
+local INGRESS_CAPACITY = 36
+local INGRESS_REFILL_PER_SECOND = 18
+
+local function consumeIngressBudget(now: number): boolean
+	local elapsed = math.max(0, now - ingressUpdatedAt)
+	ingressUpdatedAt = now
+	ingressTokens = math.min(INGRESS_CAPACITY, ingressTokens + elapsed * INGRESS_REFILL_PER_SECOND)
+	if ingressTokens < 1 then return false end
+	ingressTokens -= 1
+	return true
+end
+
+local function validateUtilityValue(value: any): boolean
+	local kind = typeof(value)
+	if kind == "nil" or kind == "boolean" then return true end
+	if kind == "number" then
+		return value == value and value > -math.huge and value < math.huge
+	end
+	if kind == "string" then return #value <= 64 end
+	if kind ~= "table" then return false end
+	if SanityValidation then
+		local ok = SanityValidation.ValidateDataTree(value, {maxDepth = 2, maxEntries = 8, maxStringLength = 64})
+		return ok == true
+	end
+	local count = 0
+	for key, child in pairs(value) do
+		count += 1
+		if count > 8 or typeof(key) ~= "string" or #key > 24 then return false end
+		local childType = typeof(child)
+		if childType == "string" then
+			if #child > 64 then return false end
+		elseif childType == "number" then
+			if child ~= child or child == math.huge or child == -math.huge then return false end
+		elseif childType ~= "boolean" then
+			return false
+		end
+	end
+	return true
+end
 
 local folder = ReplicatedStorage:FindFirstChild(REMOTE_FOLDER)
 if folder and not folder:IsA("Folder") then folder:Destroy(); folder = nil end
@@ -315,7 +372,12 @@ execute.OnServerInvoke = function(player: Player, actionName: any, value: any): 
 	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
 		return false, "A live player is required."
 	end
-	if typeof(actionName) ~= "string" then return false, "Invalid utility request." end
+	local now = os.clock()
+	-- A bounded per-server token bucket protects the validation and action path.
+	if not consumeIngressBudget(now) then return false, "Utility service is busy. Please try again shortly." end
+	if typeof(actionName) ~= "string" or #actionName < 1 or #actionName > 32 or not validateUtilityValue(value) then
+		return false, "Invalid utility request."
+	end
 	local allowed = actionName == "Mount" or actionName == "Size"
 		or actionName == "Clone" or actionName == "Aura" or actionName == "ClearAura"
 		or actionName == "LightingControl"
@@ -323,7 +385,6 @@ execute.OnServerInvoke = function(player: Player, actionName: any, value: any): 
 	if FEATURE_PASS_ATTRIBUTES[actionName] and not ownsFeaturePass(player, actionName) then
 		return false, "The matching Game Pass is required for this feature."
 	end
-	local now = os.clock()
 	if now - (lastRequest[player.UserId] or 0) < COOLDOWN then
 		return false, "Please wait before using another utility."
 	end
