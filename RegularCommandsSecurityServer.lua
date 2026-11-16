@@ -151,6 +151,14 @@ return function(_K: any)
 	local function authorityKey(targetUserId: number, property: string): string
 		return tostring(targetUserId) .. ":" .. property
 	end
+	Players.PlayerRemoving:Connect(function(player)
+		for key, entry in pairs(authorityEntries) do
+			if entry.actor == player.UserId or entry.target == player.UserId then
+				authorityEntries[key] = nil
+			end
+		end
+	end)
+
 	local authority = ServerStorage:FindFirstChild(AUTHORITY_NAME)
 	if authority and not authority:IsA("BindableFunction") then
 		warn("[Tiki Tide Security][Kohl's] TikiTideMovementAuthority exists with the wrong class; movement ledger unavailable.")
@@ -169,6 +177,12 @@ return function(_K: any)
 				or (typeof(value) ~= "boolean" and value ~= "DEFAULT" and not finiteNumber(value))
 				or typeof(origin) ~= "string" or #origin < 1 or #origin > 32 then
 				return false, "Invalid movement authorization record."
+			end
+			local actorPlayer = Players:GetPlayerByUserId(math.floor(actorId))
+			if not actorPlayer or actorPlayer.Parent ~= Players then return false, "Movement authority actor is not active." end
+			if targetId > 0 then
+				local targetPlayer = Players:GetPlayerByUserId(math.floor(targetId))
+				if not targetPlayer or targetPlayer.Parent ~= Players then return false, "Movement authority target is not active." end
 			end
 			local lifetime = if finiteNumber(ttl) then math.clamp(ttl, 5, 600) else 120
 			local now = os.clock()
@@ -270,6 +284,7 @@ return function(_K: any)
 			end
 			local value = if policy.valueArg then args[policy.valueArg] else nil
 			if policy.property == "JumpImpulse" then value = true end
+			if policy.property == "BodyScale" and value == nil then value = 1 end
 			if policy.property == "Flight" then value = command.definition.name ~= "unfly" end
 			if policy.property == "Frozen" then value = command.definition.name ~= "thaw" end
 			if value == nil then value = "DEFAULT" end
