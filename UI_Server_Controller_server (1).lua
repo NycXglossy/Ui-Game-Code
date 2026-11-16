@@ -1351,50 +1351,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
 			if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer")
 				or not player.IsPlaying then return false end
-			local isGlobalTransition = globalQueueMode
-			if isGlobalTransition then
-				if ControllerFunctions.pendingCrossfadeGlobalRevision < 0 then return false end
-				local queueHeadMatches = queue[1] ~= nil and queue[1].id == entry.id
-					and globalTrackRevision == ControllerFunctions.pendingCrossfadeGlobalRevision
-				if not queueHeadMatches and not ControllerFunctions.pendingCrossfadeGlobalCommitted then return false end
-				-- Re-read through the CAS even if a MessagingService snapshot already
-				-- announced the commit. This confirms no later skip/restart replaced
-				-- the prepared track before this server finishes its local handoff.
-				local callOk, didAdvance, state, message = ControllerFunctions.globalInvoke(
-					"AdvanceGlobalQueue", ControllerFunctions.pendingCrossfadeGlobalRevision, nil,
-					localCatalogRevision, entry.id
-				)
-				if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-				local committedEntry = if typeof(state) == "table" then state.current else nil
-				local committed = typeof(committedEntry) == "table"
-					and committedEntry.id == entry.id
-					and typeof(state.playback) == "table"
-					and tonumber(state.playback.trackRevision) > ControllerFunctions.pendingCrossfadeGlobalRevision
-				if not committed and syncGlobalQueueSnapshot then
-					local syncOk = syncGlobalQueueSnapshot()
-					committed = syncOk == true and ControllerFunctions.pendingCrossfadeGlobalCommitted == true
-				end
-				if not committed then
-					local failureText = string.lower(tostring(message or didAdvance or ""))
-					local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
-						or string.find(failureText, "temporarily", 1, true) ~= nil
-						or string.find(failureText, "budget", 1, true) ~= nil
-					if not globalQueueMode and queue[1] == entry then
-						-- Repeated snapshot failures have already moved this server to
-						-- local backup. Never split queues after a single failed commit.
-						isGlobalTransition = false
-						ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-						ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-						ControllerFunctions.pendingCrossfadeDeadline = 0
-					else
-						if not callOk then warn("[ClubMusic][Crossfade] Global queue commit unavailable: " .. tostring(didAdvance)) end
-						if didAdvance ~= true and message then
-							warn("[ClubMusic][Crossfade] Global queue did not commit the prepared entry: " .. tostring(message))
-						end
-						return false
-					end
-				end
-			elseif queue[1] ~= entry then
+			if queue[1] ~= entry then
 				return false
 			end
 
