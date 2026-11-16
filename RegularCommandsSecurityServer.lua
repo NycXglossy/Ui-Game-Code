@@ -19,7 +19,7 @@ return function(_K: any)
 	local AUTHORIZER_NAME = "ClubMusicAuthorizationResolver"
 	local AUTHORITY_NAME = "TikiTideMovementAuthority"
 
-	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, targetArg2: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?, budget: string?}} = {
+	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, targetArg2: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?, budget: string?, authorityTTL: number?}} = {
 		-- Verified movement/environment commands in the supplied Kohl's Admin export.
 		gravity = {permission = "GlobalConfig", property = "WorldGravity", valueArg = 1, global = true, authority = true},
 		starterspeed = {permission = "GlobalConfig", property = "StarterWalkSpeed", valueArg = 1, global = true, authority = true},
@@ -32,6 +32,7 @@ return function(_K: any)
 		freeze = {permission = "GlobalModeration", property = "Frozen", targetArg = 1, authority = true},
 		thaw = {permission = "GlobalModeration", property = "Frozen", targetArg = 1, authority = true},
 		bring = {permission = "GlobalModeration", property = "Teleport", targetArg = 1, authority = true},
+		fling = {permission = "GlobalModeration", property = "Fling", valueArg = 2, targetArg = 1, authority = true, limitProperty = "FlingStrength", authorityTTL = 5},
 		tp = {permission = "GlobalModeration", property = "Teleport", targetArg = 1, authority = true},
 		to = {permission = "GlobalModeration", property = "Teleport", targetSelf = true, authority = true},
 		place = {permission = "GlobalConfig", property = "TeleportPlace", targetArg = 1, auditKind = "AdminAction"},
@@ -81,6 +82,13 @@ return function(_K: any)
 		removelimbs = {permission = "GlobalModeration", property = "RemoveLimbs", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		clean = {permission = "GlobalConfig", property = "AdminCleanup", auditKind = "AdminAction", budget = "World"},
 		clearterrain = {permission = "GlobalConfig", property = "ClearTerrain", global = true, auditKind = "AdminAction", budget = "World"},
+		time = {permission = "GlobalConfig", property = "LightingTime", auditKind = "AdminAction", budget = "World"},
+		brightness = {permission = "GlobalConfig", property = "LightingBrightness", valueArg = 1, limitProperty = "LightingBrightness", auditKind = "AdminAction", budget = "World"},
+		colorshift = {permission = "GlobalConfig", property = "LightingColorShift", auditKind = "AdminAction", budget = "World"},
+		latitude = {permission = "GlobalConfig", property = "LightingLatitude", auditKind = "AdminAction", budget = "World"},
+		diffusescale = {permission = "GlobalConfig", property = "LightingDiffuseScale", auditKind = "AdminAction", budget = "World"},
+		exposure = {permission = "GlobalConfig", property = "LightingExposure", auditKind = "AdminAction", budget = "World"},
+		disco = {permission = "GlobalConfig", property = "DiscoLighting", auditKind = "AdminAction", budget = "World"},
 
 		-- Server-wide disruptive commands require the highest Tiki Tide permission.
 		serverlock = {permission = "GlobalConfig", property = "ServerLock", global = true, auditKind = "AdminAction", budget = "World"},
@@ -92,6 +100,7 @@ return function(_K: any)
 		-- Disable client-crashing/repeated-kill commands and arbitrary cross-server command strings.
 		crash = "This command is disabled by Tiki Tide security.",
 		loopkill = "This command is disabled by Tiki Tide security.",
+		loopfling = "Repeated fling commands are disabled by Tiki Tide security.",
 		script = "Arbitrary server script execution is disabled by Tiki Tide security.",
 		loadstring = "Arbitrary server script execution is disabled by Tiki Tide security.",
 		global = "Native global command strings are disabled; use dedicated Tiki Tide global controls.",
@@ -104,6 +113,8 @@ return function(_K: any)
 		JumpPower = {min = 0, max = 250},
 		BodyScale = {min = 0.1, max = 10},
 		FlightSpeed = {min = 0, max = 256},
+		FlingStrength = {min = 0.1, max = 5},
+		LightingBrightness = {min = 0, max = 10},
 	}
 
 	local function finiteNumber(value: any): boolean
@@ -194,7 +205,7 @@ return function(_K: any)
 	local AUTHORIZED_PROPERTIES = {
 		WorldGravity = true, StarterWalkSpeed = true, WalkSpeed = true, JumpPower = true,
 		JumpImpulse = true, PersonalGravity = true, BodyScale = true, Flight = true, Frozen = true,
-		JumpHeight = true, Anchored = true, Teleport = true,
+		JumpHeight = true, Anchored = true, Teleport = true, Fling = true,
 	}
 	local function authorityKey(targetUserId: number, property: string): string
 		return tostring(targetUserId) .. ":" .. property
@@ -339,6 +350,7 @@ return function(_K: any)
 
 			local value = if activePolicy.valueArg then args[activePolicy.valueArg] else nil
 			if activePolicy.property == "JumpImpulse" then value = true end
+			if activePolicy.property == "Fling" and value == nil then value = 1 end
 			if activePolicy.property == "BodyScale" and (value == nil or context.undo) then value = 1 end
 			if activePolicy.property == "Flight" then value = aliasName ~= "unfly" and not context.undo end
 			if activePolicy.property == "Frozen" then value = aliasName ~= "thaw" and aliasName ~= "unfreeze" and not context.undo end
@@ -349,7 +361,7 @@ return function(_K: any)
 				if activePolicy.authority == true then
 					local function registerAuthority(targetId: number, propertyValue: any)
 						local invokeOk, registered = pcall(function()
-							return (authority :: BindableFunction):Invoke("Register", actorId, targetId, activePolicy.property, propertyValue, "KohlsAdmin", 120)
+							return (authority :: BindableFunction):Invoke("Register", actorId, targetId, activePolicy.property, propertyValue, "KohlsAdmin", activePolicy.authorityTTL or 120)
 						end)
 						if (not invokeOk or registered ~= true) and not authorityRegistrationWarned then
 							authorityRegistrationWarned = true
@@ -425,6 +437,8 @@ return function(_K: any)
 		end
 		if policy.property == "JumpImpulse" then
 			value = true
+		elseif policy.property == "Fling" and value == nil then
+			value = 1
 		elseif policy.property == "Flight" or policy.property == "Frozen" then
 			value = commandName == "fly" or commandName == "freeze"
 		elseif value ~= nil and policy.authority == true and not finiteNumber(value) then
