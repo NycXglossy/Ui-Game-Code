@@ -52,7 +52,7 @@ This refreshes the player's current Roblox account avatar; it is not an outfit c
 The `UtilityBarExtendedActions.server.lua` script owns Mount, Size, Clone Companion, Aura, and Lighting Control through the allowlisted `UtilityBarRemotes.ExecuteUtility` RemoteFunction. The server validates each request, checks pass entitlements for paid features, applies a per-player cooldown, and limits lighting changes to explicitly tagged stage/club fixtures.
 
 - **Mount:** requires Game Pass `2087955619`, then opens its own panel and equips or unequips only a mount Tool already in the player's Backpack or Character. The Tool must be named `Mount` / `MountTool` or have the `UtilityMount` attribute set to true. The actual mount behavior and assets belong to that Tool.
-- **Size:** opens its own control panel with a 0.50×–5.00× adjustable slider and a 1.00× reset. The server clamps values and applies them relative to the character's captured R15 baseline; R6 avatars receive a clear unsupported message.
+- **Size:** opens its own control panel with a 0.50×–5.00× adjustable slider and a 1.00× reset. The server strictly validates the requested range and applies values relative to the character's captured R15 baseline; out-of-range values are rejected and R6 avatars receive a clear unsupported message.
 - **Clone Companion:** requires Game Pass `2088585676`, then opens its own panel and creates a temporary non-interactive character companion for 12 seconds. The server creates a non-interactive, non-colliding visual copy that follows beside the player and automatically removes it after 12 seconds. Repeated requests replace the player's previous clone.
 - **Aura:** opens three style tabs (Teal Glow, Royal Gold, Tiki Tide) and three target tabs (Character, Tools, Accessories). Apply uses server-owned Highlights; Clear Aura removes the active effect. Newly equipped Tools and Accessories receive the selected aura while it remains active.
 
@@ -62,10 +62,19 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 
 - The server accepts only the explicit action names (`Mount`, `Size`, `Clone`, `Aura`, `ClearAura`, and `LightingControl`); clients cannot supply target players, asset IDs, or arbitrary instances, and size values are clamped server-side.
 - Requests are throttled per player on the server.
-- Size values are clamped to 0.50×–5.00× and based on each character's captured baseline.
+- Size values outside 0.50×–5.00× are rejected and accepted values are based on each character's captured baseline.
+- The Size action is self-only; the server derives the target from the invoking Player and registers the applied BodyScale with the shared server-local `TikiTideMovementAuthority` ledger when the Kohl's security add-on is installed.
 - Clone scripts are removed and its parts cannot collide, touch, or be queried; clones expire automatically and are cleaned up when their owner leaves.
 - Aura instances are tracked per player and cleared when the player clears the effect, changes character, or leaves.
 - Refresh Outfit remains independently server-authoritative with its own cooldown.
+
+## Shared SecurityCore integration
+
+Install `RegularCommandsSecurityServer.lua` as a **ModuleScript** in `ServerScriptService > Kohl's Admin > Addons`. Keep the existing `KohlsAdmin_ClubMusic_Addon` installed separately. The new server-only add-on uses Kohl's `Process.addCommandFilter` enforcement API, checks the existing Tiki Tide server-side `GlobalModeration` / `GlobalConfig` permissions, and writes successful moderation/admin actions to the existing unified SecurityCore Audit API. It does not edit Kohl's core modules or create another MemoryStore map.
+
+The integration covers the exported built-in ban/unban, kick, mute/unmute, punish/unpunish, kill/hurt/health, stun/unstun, blind/unblind, movement, teleport, server-lock, shutdown, and global-command paths. Kohl's native role checks, target-rank checks, ban storage, and request flow remain in place. The built-in `crash` and `loopkill` commands are blocked by the security filter.
+
+The Utility Bar Size button remains an ordinary self-service feature; it does not require an admin role or a Game Pass. Its server-side size change registers with the same movement authority ledger so a future CharacterPhysicsGuard can distinguish authorized resizing from suspicious changes. The ledger is local to each server and creates no DataStore or MemoryStore records.
 
 ## Validation
 
@@ -81,7 +90,9 @@ The repository-side integration audit and static contract checks are complete. T
 - [ ] Confirm utility clicks fire the documented local event and do not issue music requests.
 - [ ] Install both server Scripts and verify Refresh Outfit updates only the requesting player's avatar.
 - [ ] Verify the Mount pass gate, then confirm Mount equips only a tagged/named mount Tool and reports clearly when none is installed.
-- [ ] Verify Size cycles on R15, restores the captured baseline, and safely rejects R6.
+- [ ] Verify Size applies only to the requesting player, accepts 0.50×–5.00×, rejects values outside that range, restores the captured baseline, registers BodyScale authority, and safely rejects R6.
+- [ ] Install `RegularCommandsSecurityServer.lua` as a Kohl's Admin server add-on; verify unauthorized moderation commands are denied, authorized ban/kick/mute actions still use Kohl's native handlers, successful actions appear in the unified SecurityCore Audit, and `crash` / `loopkill` are blocked.
+- [ ] Verify `:gravity`, `:starterspeed`, `:serverlock`, `:unserverlock`, `:shutdown`, and `:global` require the owner/co-owner SecurityCore permission.
 - [ ] Verify the Island Companion pass gate, then confirm Clone Companion is non-interactive, expires after 12 seconds, and is cleaned up on leave.
 - [ ] Verify Lighting Control requires its pass and its presets/restore action affect only StageClubLight-tagged fixtures.
 - [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
