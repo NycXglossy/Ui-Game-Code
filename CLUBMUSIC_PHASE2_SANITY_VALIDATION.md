@@ -48,7 +48,8 @@ The Security Core installer now includes `SanityValidation` before `TeleportVali
 - Tiki Tide Settings and Utility Bar request boundaries now have bounded local ingress validation; see CLUBMUSIC_PHASE4_TIKI_TIDE_UTILITY_REMOTES.md.
 - Other exposed server remotes still require a separate inventory and domain-specific integration.
 - Purchases & Receipt Security now has an initial integration; see CLUBMUSIC_PHASE5_PURCHASE_RECEIPT_SECURITY.md.
-- VIP/zone access, avatar/accessory, audio/animation, chat and social actions still require domain-specific integration.
+- Membership entitlements now route through the server-only `EntitlementAuthority`; see CLUBMUSIC_PHASE6_VIP_ZONE_ENTITLEMENT_SECURITY.md. The current repository snapshot contains no dedicated VIP-zone boundary/trigger script, so physical zone enforcement remains an integration task when those zone objects/scripts are identified.
+- Avatar/accessory, audio/animation, chat and social actions still require domain-specific integration.
 - Audit each state mutation for authorization immediately before execution, including after any yielding operation.
 - Continue Kohl's bring/tp/to integration only after the actual command implementation and argument/destination semantics are verified.
 
