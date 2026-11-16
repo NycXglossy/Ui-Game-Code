@@ -54,16 +54,38 @@ return function(_K: any)
 		return nil
 	end
 
-	local function authorize(userId: number, permission: string): boolean
-		local resolver = ServerStorage:FindFirstChild(AUTHORIZER_NAME)
-		if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then
-			return false
-		end
-		local ok, allowed = pcall(function()
-			return resolver:Invoke(userId, permission)
+	-- Prime trusted permission snapshots outside the synchronous command filter.
+	-- Process.addCommandFilter must not yield; expired/missing snapshots deny.
+	local permissionCache: {[number]: {GlobalModeration: boolean, GlobalConfig: boolean, expiresAt: number}} = {}
+	local function refreshAuthorization(player: Player)
+		task.spawn(function()
+			local resolver = ServerStorage:FindFirstChild(AUTHORIZER_NAME)
+			if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then
+				permissionCache[player.UserId] = nil
+				return
+			end
+			local moderationOk, moderation = pcall(function() return resolver:Invoke(player.UserId, "GlobalModeration") end)
+			local configOk, config = pcall(function() return resolver:Invoke(player.UserId, "GlobalConfig") end)
+			if player.Parent ~= Players then return end
+			permissionCache[player.UserId] = {
+				GlobalModeration = moderationOk and moderation == true,
+				GlobalConfig = configOk and config == true,
+				expiresAt = os.clock() + 15,
+			}
 		end)
-		return ok and allowed == true
 	end
+	local function authorize(userId: number, permission: string): boolean
+		local cached = permissionCache[userId]
+		return cached ~= nil and cached.expiresAt > os.clock() and cached[permission] == true
+	end
+	Players.PlayerAdded:Connect(refreshAuthorization)
+	for _, player in ipairs(Players:GetPlayers()) do refreshAuthorization(player) end
+	task.spawn(function()
+		while true do
+			task.wait(10)
+			for _, player in ipairs(Players:GetPlayers()) do refreshAuthorization(player) end
+		end
+	end)
 
 	-- Local per-server token bucket. It deliberately creates no MemoryStore entries.
 	local buckets: {[number]: {tokens: number, updatedAt: number}} = {}
@@ -111,7 +133,7 @@ return function(_K: any)
 			if not finiteNumber(actorId) or actorId < 1 or actorId % 1 ~= 0
 				or not finiteNumber(targetId) or targetId < 0 or targetId % 1 ~= 0
 				or typeof(property) ~= "string" or not AUTHORIZED_PROPERTIES[property]
-				or (typeof(value) ~= "boolean" and not finiteNumber(value))
+				or (typeof(value) ~= "boolean" and value ~= "DEFAULT" and not finiteNumber(value))
 				or typeof(origin) ~= "string" or #origin < 1 or #origin > 32 then
 				return false, "Invalid movement authorization record."
 			end
@@ -194,6 +216,7 @@ return function(_K: any)
 				end
 			end
 			local value = if policy.valueArg == 0 then false elseif policy.valueArg then args[policy.valueArg] else true
+			if value == nil then value = "DEFAULT" end
 			if command.alias == "unfly" or command.alias == "thaw" then value = false
 			elseif command.alias == "fly" or command.alias == "freeze" then value = true end
 			local actorId = actorUserId(context)
