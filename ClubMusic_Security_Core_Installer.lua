@@ -57,6 +57,26 @@ local bootstrapSource = [=[
 -- Starts the server-local, detection-only CharacterPhysicsGuard.
 local ServerStorage = game:GetService("ServerStorage")
 local core = ServerStorage:WaitForChild("ClubMusicSecurityCore")
+local movementModule = core:WaitForChild("MovementAuthority")
+local movementOk, movementExport = pcall(require, movementModule)
+if not movementOk or typeof(movementExport) ~= "table" or type(movementExport.Invoke) ~= "function" then
+	warn("[Tiki Tide][MovementAuthority] Module failed to load: " .. tostring(movementExport))
+	return
+end
+local authority = ServerStorage:FindFirstChild("TikiTideMovementAuthority")
+if authority and not authority:IsA("BindableFunction") then
+	warn("[Tiki Tide][MovementAuthority] TikiTideMovementAuthority exists with the wrong class.")
+	return
+end
+if not authority then
+	authority = Instance.new("BindableFunction")
+	authority.Name = "TikiTideMovementAuthority"
+	authority.Parent = ServerStorage
+end
+authority.OnInvoke = function(...)
+	return movementExport.Invoke(...)
+end
+
 local guardModule = core:WaitForChild("CharacterPhysicsGuard")
 local ok, exported = pcall(require, guardModule)
 if not ok or typeof(exported) ~= "table" or type(exported.new) ~= "function" then
