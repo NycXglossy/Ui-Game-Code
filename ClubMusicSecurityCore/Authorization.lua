@@ -48,6 +48,7 @@ function Service.new(dependencies: {[string]: any}?)
 		groupId = if validUserId(dependencies.groupId) then math.floor(dependencies.groupId) else GROUP_ID,
 		studioStaff = dependencies.studioStaff ~= false,
 		thresholds = thresholds,
+		staffUserIds = {},
 		onDenied = dependencies.onDenied,
 		cache = {},
 		refreshInFlight = {},
@@ -63,6 +64,49 @@ function Service.new(dependencies: {[string]: any}?)
 		denials = {},
 		deniedActions = 0,
 	}, Service)
+end
+
+function Service:Configure(dependencies: {[string]: any})
+	if typeof(dependencies) ~= "table" then return end
+	if validUserId(dependencies.groupId) then self.groupId = math.floor(dependencies.groupId) end
+	if typeof(dependencies.studioStaff) == "boolean" then self.studioStaff = dependencies.studioStaff end
+	if typeof(dependencies.thresholds) == "table" then self.thresholds = dependencies.thresholds end
+	if typeof(dependencies.staffUserIds) == "table" then
+		local configured = {}
+		for _, userId in ipairs(dependencies.staffUserIds) do
+			if validUserId(userId) then configured[math.floor(userId)] = true end
+		end
+		self.staffUserIds = configured
+	end
+end
+
+function Service:_rankName(level: number): string
+	if level >= 4 then return "OWNER" end
+	if level >= 3 then return "CO-OWNER" end
+	if level >= 2 then return "ADMIN" end
+	if level >= 1 then return "GROUP DJ" end
+	return "GUEST"
+end
+
+function Service:GetRank(player: Player): (string, number)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
+		return "GUEST", 0
+	end
+	if (RunService:IsStudio() and self.studioStaff) or self.staffUserIds[player.UserId] == true then
+		return "OWNER", 4
+	end
+	local cached = self.cache[player.UserId]
+	if not cached or cached.expiresAt <= os.clock() then
+		if cached then self.cache[player.UserId] = nil end
+		self:_scheduleRefresh(player)
+		return "GUEST", 0
+	end
+	return self:_rankName(cached.level), cached.level
+end
+
+function Service:GetLevel(player: Player): number
+	local _, level = self:GetRank(player)
+	return level
 end
 
 function Service:_levelForRank(rank: number): number
@@ -88,7 +132,7 @@ function Service:Refresh(player: Player): boolean
 	local level: number? = nil
 	local lookupError: any = nil
 
-	if RunService:IsStudio() and self.studioStaff then
+	if (RunService:IsStudio() and self.studioStaff) or self.staffUserIds[userId] == true then
 		level = 4
 	else
 		local ok, rank = pcall(function()
@@ -270,8 +314,9 @@ function Service.GetShared(dependencies: {[string]: any}?): any
 	if not sharedInstance then
 		sharedInstance = Service.new(dependencies)
 		sharedInstance:Start()
-	elseif typeof(dependencies) == "table" and type(dependencies.onDenied) == "function" then
-		sharedInstance:SetOnDenied(dependencies.onDenied)
+	elseif typeof(dependencies) == "table" then
+		sharedInstance:Configure(dependencies)
+		if type(dependencies.onDenied) == "function" then sharedInstance:SetOnDenied(dependencies.onDenied) end
 	end
 	return sharedInstance
 end
