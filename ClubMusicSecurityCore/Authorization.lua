@@ -23,6 +23,11 @@ local function validActor(actorUserId: any): boolean
 		and actorUserId % 1 == 0
 end
 
+local function validActor(actorUserId: any): boolean
+	return typeof(actorUserId) == "number" and actorUserId == actorUserId
+		and actorUserId > 0 and actorUserId < math.huge and actorUserId % 1 == 0
+end
+
 function Service.new(dependencies: {[string]: any})
 	assert(typeof(dependencies) == "table", "Authorization dependencies missing")
 	assert(type(dependencies.resolvePermission) == "function", "Trusted permission resolver is required")
@@ -33,6 +38,8 @@ function Service.new(dependencies: {[string]: any})
 		denied = 0,
 		lastError = nil,
 		started = false,
+		denials = {},
+		deniedActions = 0,
 	}, Service)
 end
 
@@ -42,10 +49,39 @@ function Service:Start(): boolean
 	return true
 end
 
+function Service:_recordDenied(actorUserId: any, permission: string)
+	if not validActor(actorUserId) then return end
+	local now=os.clock()
+	local key=tostring(math.floor(actorUserId))..":"..permission
+	local entry=self.denials[key]
+	if not entry then
+		local count=0
+		local oldestKey,oldestAt=nil,math.huge
+		for existingKey,value in pairs(self.denials) do
+			count+=1
+			if value.updated<oldestAt then oldestAt=value.updated; oldestKey=existingKey end
+		end
+		if count>=256 and oldestKey then self.denials[oldestKey]=nil end
+		entry={count=0,windowStart=now,updated=now,reportedAt=0}
+		self.denials[key]=entry
+	end
+	if now-entry.windowStart>60 then entry.count=0; entry.windowStart=now end
+	entry.count+=1
+	entry.updated=now
+	self.deniedActions+=1
+	if entry.count>=3 and now-entry.reportedAt>=60 then
+		entry.reportedAt=now
+		if type(self.dependencies.onDenied)=="function" then
+			pcall(self.dependencies.onDenied,math.floor(actorUserId),permission,entry.count)
+		end
+	end
+end
+
 function Service:Check(actorUserId: any, permission: any): (boolean, string?)
 	if not validActor(actorUserId) or typeof(permission) ~= "string"
 		or not ALLOWED_PERMISSIONS[permission] then
 		self.denied += 1
+		if typeof(permission)=="string" and ALLOWED_PERMISSIONS[permission] then self:_recordDenied(actorUserId,permission) end
 		return false, "Invalid actor or permission."
 	end
 
@@ -67,6 +103,7 @@ function Service:Check(actorUserId: any, permission: any): (boolean, string?)
 	end
 	if allowed ~= true then
 		self.denied += 1
+		self:_recordDenied(actorUserId,permission)
 		return false, "Permission denied."
 	end
 
@@ -89,6 +126,9 @@ function Service:GetStatus(): {[string]: any}
 		resolverAvailable = available,
 		checks = self.checks,
 		denied = self.denied,
+		deniedActions = self.deniedActions,
+		trackedDenialKeys = (function() local n=0; for _ in pairs(self.denials) do n+=1 end; return n end)(),
+		maxTrackedDenialKeys = 256,
 		lastError = self.lastError or availabilityError,
 		default = "Deny",
 	}
