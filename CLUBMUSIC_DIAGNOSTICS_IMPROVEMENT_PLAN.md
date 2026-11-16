@@ -143,3 +143,12 @@ This is a static compatibility pass, not proof that every consumer in all embedd
 - Confirmed PurchaseDiagnostic is bounded, rate-limited client telemetry and is explicitly not proof of a completed purchase.
 - Confirmed RequestAction remains a multiplexed security boundary and still needs action-by-action review. This is not a full repository remote audit.
 - No runtime or exploit-client verification has been performed. Keep the diagnostics exposure work in static-audit status until Studio tests confirm no diagnostic records or tracebacks are exposed.
+
+
+## RequestAction security audit update (2026-11-16)
+
+- Completed a static action-by-action review of the UI controller's multiplexed RequestAction handler.
+- Documented shared payload bounds, action allowlist, per-player/server budgets, and the authorization/validation checks for request, catalog, playlist, DJ, moderation, membership-reward, daily-reward, and title actions.
+- Confirmed DJ booth controls are owner/co-owner gated; moderation is admin gated with target hierarchy checks; membership rank rewards are owner-only.
+- Follow-up: verify SecurityCore level-1 mapping remains rank 150+ (not DJ rank 100), and test all privileged action groups in Studio across the staff hierarchy.
+- No runtime or exploit-client tests have been performed. This remains a static audit, not a repository-wide remote certification.
