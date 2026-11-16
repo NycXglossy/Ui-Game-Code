@@ -191,3 +191,36 @@ Other inspected diagnostics getters used by the UI bridge (`GetGlobalHealth`, `G
 - Run with SafeCall installed and absent; verify optional API presence is reported accurately and no core global feature depends on it.
 - Confirm no raw SafeCall tracebacks or client-originated diagnostics are exposed to players.
 
+
+
+## Third-pass: diagnostics exposure through the UI controller's client remotes
+
+**Scope:** static inspection of the current `UI_Server_Controller_server (1).lua` only. This is a diagnostics-exposure check, not a repository-wide RemoteEvent/RemoteFunction security audit.
+
+### Remote inventory observed in the controller
+
+| Remote | Direction / handler | Observed safeguards | Diagnostics exposure assessment |
+|---|---|---|---|
+| `RequestAction` | Client → server, `OnServerEvent` | Delegates to the central action handler inside `pcall`; the action handler remains the authority boundary for action validation, permission checks, and rate limits | No diagnostics payload is accepted by this event. Action-handler authorization still requires its own full action-by-action audit |
+| `PurchaseDiagnostic` | Client → server, `OnServerEvent` | Validates live Player, prompt type, positive integer item ID, allowed event shape; per-player limit of 12 events per 60 seconds; bounded local record buffer | Client reports are explicitly labeled unverified telemetry. They are not treated as receipt proof or used to grant purchases. Payload is reduced to bounded prompt-source / outcome text |
+| `GetState` | Client → server, `OnServerInvoke` | Live-player check, shared query token bucket, per-player cooldown, protected snapshot generation | Returns the player's normal UI snapshot; no Global Diagnostics snapshot or SafeCall traceback is returned by this handler |
+| `GetMusicCatalog` | Client → server, `OnServerInvoke` | Live-player check, global catalog token bucket, per-player cooldown, query/genre/offset/limit type and length validation, protected provider call | Catalog data only; no diagnostics records returned |
+| `GetMusicPlaylists` | Client → server, `OnServerInvoke` | Live-player check, shared query token bucket, per-player cooldown, guarded refresh | Playlist data only; no diagnostics records returned |
+| `StateChanged` | Server → clients | Server broadcast surface | Not a client request path; no diagnostic error payload was identified in this pass |
+| `Notice` | Server → client | Server notification surface | Not a client request path; no diagnostic error payload was identified in this pass |
+
+The server-only `ServerStorage.ClubMusicAdminBridge` is a BindableFunction, not a client RemoteFunction. Its handler validates a live Player and staff status before dispatch. The diagnostics commands use the server-side Global API bridge; no client remote was found that directly invokes `GetGlobalDiagnostics`, `GetGlobalSafeCallRecent`, `GetGlobalAudit`, or the Global API folder.
+
+### Confirmed positive controls
+
+- `PurchaseDiagnostic` records are marked as client-originated/unverified; ProcessReceipt remains the authoritative purchase completion path.
+- The controller's diagnostics module is optional-load guarded. A missing or invalid ErrorHandler falls back to built-in startup diagnostics rather than exposing the module's private state.
+- SafeCall recent records, including error/traceback fields, remain in the server-only Global API path in the inspected source.
+- The existing `GetGlobalAudit` normalization is present in the current branch's `adminBridgeGlobalCall`; it accepts the provider's direct table return without changing the provider contract.
+
+### Remaining limits / next audit boundary
+
+1. This pass did not inspect every LocalScript client caller, every other server script, embedded model, or third-party admin package. It therefore does not certify repository-wide remote coverage.
+2. `RequestAction` is a multiplexed event. Its individual action cases must be traced through `handleAction` before any statement can be made that every mutation has correct authorization, validation, and rate limiting.
+3. Continue the wider security remote inventory separately across UtilityBar, Tiki Tide Settings, Kohl's Admin adapter, and other server scripts. Do not modify third-party package internals as part of this diagnostics-only pass.
+4. Keep runtime tests outstanding: attempt to read diagnostics from an ordinary client, send malformed PurchaseDiagnostic telemetry, exceed its rate limit, and verify no traceback or private server snapshot reaches the client.
