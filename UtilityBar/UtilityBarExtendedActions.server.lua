@@ -312,6 +312,9 @@ local function setStageClubLighting(player: Player, request: any): (boolean, str
 end
 
 execute.OnServerInvoke = function(player: Player, actionName: any, value: any): (boolean, string)
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
+		return false, "A live player is required."
+	end
 	if typeof(actionName) ~= "string" then return false, "Invalid utility request." end
 	local allowed = actionName == "Mount" or actionName == "Size"
 		or actionName == "Clone" or actionName == "Aura" or actionName == "ClearAura"
