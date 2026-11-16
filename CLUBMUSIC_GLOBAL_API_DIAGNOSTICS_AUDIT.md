@@ -303,3 +303,14 @@ Reviewed `TikiTideSettings/TikiTideSettingsService.server.lua`:
 2. This pass did not inspect every UtilityBar / Settings client caller, every other server remote, or third-party package internals.
 3. Studio verification is still required for rank 100, 150, 200, 254, and 255; expired authorization cache; pass entitlement failures; and remote spam/malformed payloads.
 4. This remains a scoped static audit, not a repository-wide certification.
+
+
+## DJ Control Mode permission split (2026-11-16)
+
+Clarified and implemented the requested limited DJ role:
+
+- Rank 100+ DJs are authorized through SecurityCore's narrow `GlobalDJ` permission. They can enter/toggle DJ Control Mode and use playback controls (skip, pause/resume, restart).
+- Playlist rotation start/stop, queue reordering/removal, and queue clearing remain restricted to Owner/Co-owner (authorization levels 3+).
+- The main controller now exposes `canUseDJBooth` and `canManageDJBooth` separately in the player-state snapshot. `perm` remains the general staff level, so DJ rank 100 is not mislabeled as staff.
+- Authorization checks are server-side and fail closed if the SecurityCore cache is unavailable.
+- Studio/client verification is still outstanding. The UI renderer should be checked to ensure its Control Mode button uses `canUseDJBooth` rather than `perm >= 3`; do not infer that client visibility is already updated from the server snapshot alone.
