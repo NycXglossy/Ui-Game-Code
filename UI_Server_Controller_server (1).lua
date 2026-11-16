@@ -6179,7 +6179,50 @@ ControllerFunctions.syncTitleTagUnlocks = function(player: Player): boolean
 	return changed
 end
 
+-- Roblox-native ban history is separate from Tiki Tide's custom moderation store.
+-- This API is production-only and may yield/fail when Roblox services are unavailable.
+ControllerFunctions.checkNativeBanHistory = function(player: Player)
+	if RunService:IsStudio() then return end
+	local ok, banned, displayReason = pcall(function()
+		local pages = Players:GetBanHistoryAsync(player.UserId)
+		local currentPage = pages:GetCurrentPage()
+		local latestRecord = nil
+		local latestTimestamp = -math.huge
+		for _, record in ipairs(currentPage) do
+			if typeof(record) == "table" and typeof(record.StartTime) == "string"
+				and typeof(record.Ban) == "boolean" then
+				local parsed = DateTime.fromIsoDate(record.StartTime)
+				local timestamp = parsed.UnixTimestamp
+				if timestamp > latestTimestamp then
+					latestTimestamp = timestamp
+					latestRecord = record
+				end
+			end
+		end
+		if not latestRecord or latestRecord.Ban ~= true then return false, nil end
+		local duration = latestRecord.Duration
+		if typeof(duration) ~= "number" then error("Ban history returned an invalid duration") end
+		if duration == -1 then
+			return true, latestRecord.DisplayReason
+		end
+		if duration <= 0 then return false, nil end
+		local expiresAt = latestTimestamp + duration
+		return expiresAt > os.time(), latestRecord.DisplayReason
+	end)
+	if not ok then
+		warn("[Tiki Tide][NativeBanLookup] Roblox ban history unavailable for UserId "
+			.. tostring(player.UserId) .. ": " .. tostring(banned))
+		return
+	end
+	if banned == true and player.Parent == Players then
+		local reason = if typeof(displayReason) == "string" and #displayReason > 0
+			then displayReason else "You are banned from this experience."
+		player:Kick(reason)
+	end
+end
+
 ControllerFunctions.onJoin = function(player: Player)
+	task.spawn(ControllerFunctions.checkNativeBanHistory, player)
 	local enabledCallOk, globalServiceEnabled = ControllerFunctions.globalInvoke("IsEnabled")
 	local globalModerationRequired = not RunService:IsStudio()
 	local globalServiceReady = enabledCallOk and globalServiceEnabled == true
