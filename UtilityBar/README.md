@@ -103,6 +103,8 @@ The repository-side integration audit and static contract checks are complete. T
 - [ ] Install `RegularCommandsSecurityServer.lua` as a Kohl's Admin server add-on; verify unauthorized moderation, role, asset-grant, and world-control commands are denied; authorized commands still use Kohl's native handlers; audit events reach the unified SecurityCore Audit; and `script`, `loadstring`, `crash`, `loopkill`, `loopfling`, and `global` are blocked.
 - [ ] Verify `:gravity`, `:starterspeed`, `:role`, `:temprole`, `:unrole`, `:removemember`, `:give`, `:startergive`, `:gear`, `:btools`, `:insert`, `:clearterrain`, `:time`, `:brightness`, `:disco`, `:serverlock`, `:unserverlock`, `:shutdown`, and `:place` require the owner/co-owner SecurityCore permission; verify `:global` is blocked.
 - [ ] Verify `:announce`, `:unannounce`, `:hint`, `:message`, and `:fullmessage` require the `GlobalAnnouncement` permission and use their existing Kohl's broadcast handlers.
+- [ ] Verify `:fling` rejects strengths outside 0.1–5 and registers only a five-second Fling authority record; verify `:loopfling` and its aliases are blocked.
+- [ ] Verify audit events include actor, command alias, and target user IDs (up to eight IDs, with an overflow count); repeated denial reports are throttled.
 - [ ] Verify the Island Companion pass gate, then confirm Clone Companion is non-interactive, expires after 12 seconds, and is cleaned up on leave.
 - [ ] Verify Lighting Control requires its pass and its presets/restore action affect only StageClubLight-tagged fixtures.
 - [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
