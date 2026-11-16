@@ -604,10 +604,33 @@ local cachedSecurityBundle: any = nil
 local securityBundleLoadAttempted = false
 
 local function loadOptionalGlobalModule(moduleName: string): any?
-	-- Security implementations are bundled into one ModuleScript while each
-	-- exported service retains its original constructor and public method contract.
 	local securityExport = SECURITY_MODULE_EXPORTS[moduleName]
 	if securityExport then
+		-- Preferred layout: independently maintained private ModuleScripts under
+		-- ServerStorage/ClubMusicSecurityCore. A present-but-invalid split folder
+		-- fails closed instead of silently loading an outdated fallback.
+		local privateCore = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+		if privateCore then
+			if not privateCore:IsA("Folder") then
+				warn("[ClubMusic Global] Private security core has an invalid container type.")
+				return nil
+			end
+			local privateModule = privateCore:FindFirstChild(securityExport)
+			if not privateModule or not privateModule:IsA("ModuleScript") then
+				warn("[ClubMusic Global] Private security module is missing: " .. securityExport)
+				return nil
+			end
+			local moduleOk, exported = pcall(require, privateModule)
+			if not moduleOk or typeof(exported) ~= "table" or type(exported.new) ~= "function" then
+				warn("[ClubMusic Global] Private security module failed validation: " .. securityExport
+					.. "; error=" .. string.sub(tostring(exported), 1, 180))
+				return nil
+			end
+			return exported
+		end
+
+		-- Backward compatibility only: existing places without the split folder
+		-- continue to use the previously installed consolidated bundle.
 		if not securityBundleLoadAttempted then
 			securityBundleLoadAttempted = true
 			local bundleModule = ServerStorage:FindFirstChild("ClubMusic_Global_Security_Service")
@@ -617,15 +640,15 @@ local function loadOptionalGlobalModule(moduleName: string): any?
 				if bundleOk and typeof(bundle) == "table" then
 					cachedSecurityBundle = bundle
 				else
-					warn("[ClubMusic Global] Consolidated security bundle failed to load: " .. tostring(bundle))
+					warn("[ClubMusic Global] Legacy security bundle failed to load: " .. tostring(bundle))
 				end
 			else
-				warn("[ClubMusic Global] Consolidated security ModuleScript is missing under ServerStorage.")
+				warn("[ClubMusic Global] No split security core or legacy bundle exists under ServerStorage.")
 			end
 		end
 		local exported = if cachedSecurityBundle then cachedSecurityBundle[securityExport] else nil
 		if typeof(exported) ~= "table" or type(exported.new) ~= "function" then
-			warn("[ClubMusic Global] Consolidated security export is unavailable: " .. moduleName)
+			warn("[ClubMusic Global] Security export is unavailable: " .. moduleName)
 			return nil
 		end
 		return exported
