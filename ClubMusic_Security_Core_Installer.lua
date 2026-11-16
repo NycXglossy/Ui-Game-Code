@@ -7,8 +7,8 @@
 local HttpService = game:GetService("HttpService")
 local ServerStorage = game:GetService("ServerStorage")
 
-local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/e78b064a90c5e5db4edcdc172294d587099929e2/ClubMusicSecurityCore/"
-local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse"}
+local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/cec6e139c9bba7c06ab2b0f7fc3b63e6bed26293/ClubMusicSecurityCore/"
+local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 
 local staged = {}
