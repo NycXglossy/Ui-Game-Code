@@ -760,6 +760,8 @@ local sharedDependencies = {
 	allowStoreOperation = allowGlobalDataStoreOperation,
 	jobId = JOB_ID,
 	guid = function() return HttpService:GenerateGUID(false) end,
+	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
+	jsonDecode = function(value) return HttpService:JSONDecode(value) end,
 }
 globalConfigService = createOperationalService("ClubMusic_Global_Config_Service", sharedDependencies, {"Start", "GetStatus", "Get", "Set", "SetLocal"})
 
