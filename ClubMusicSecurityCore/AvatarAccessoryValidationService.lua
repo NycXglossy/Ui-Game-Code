@@ -12,11 +12,11 @@ local MAX_PARTS_PER_ACCESSORY = 32
 local MAX_HANDLE_AXIS = 30
 local ADD_WINDOW_SECONDS = 10
 local MAX_ADDITIONS_PER_WINDOW = 12
-local STATE_TTL_SECONDS = 30
 
 type PlayerState = {
 	character: Model?,
 	connections: {RBXScriptConnection},
+	characterConnections: {RBXScriptConnection},
 	appearanceReady: boolean,
 	additions: {number},
 	lastSignalAt: {[string]: number},
@@ -145,13 +145,24 @@ end
 function Service:_attachCharacter(player: Player, character: Model)
 	local previous = self.states[player.UserId]
 	if previous then
-		for _, connection in ipairs(previous.connections) do connection:Disconnect() end
+		for _, connection in ipairs(previous.characterConnections) do connection:Disconnect() end
+		table.clear(previous.characterConnections)
 	end
 
-	local state: PlayerState = {
-		character = character,
+	local state: PlayerState = previous or {
+		character = nil,
 		connections = {},
+		characterConnections = {},
 		appearanceReady = false,
+		additions = {},
+		lastSignalAt = {},
+		signals = 0,
+	}
+	state.character = character
+	state.characterConnections = {}
+	state.appearanceReady = false
+	state.additions = {}
+	state.lastSignalAt = {}
 		additions = {},
 		lastSignalAt = {},
 		signals = 0,
@@ -175,15 +186,16 @@ function Service:_attachCharacter(player: Player, character: Model)
 		end
 	end
 
-	table.insert(state.connections, character.ChildAdded:Connect(function(child)
+	table.insert(state.characterConnections, character.ChildAdded:Connect(function(child)
 		if child:IsA("Accessory") then
 			self:_inspectAccessory(player, child, state.appearanceReady)
 		end
 	end))
 
-	table.insert(state.connections, character.AncestryChanged:Connect(function(_, parent)
+	table.insert(state.characterConnections, character.AncestryChanged:Connect(function(_, parent)
 		if parent == nil and self.states[player.UserId] == state then
 			for _, connection in ipairs(state.connections) do connection:Disconnect() end
+			for _, connection in ipairs(state.characterConnections) do connection:Disconnect() end
 			self.states[player.UserId] = nil
 		end
 	end))
@@ -198,7 +210,7 @@ function Service:_attachCharacter(player: Player, character: Model)
 				attachAppearance()
 			end
 		end)
-		table.insert(state.connections, connection)
+		table.insert(state.characterConnections, connection)
 	end
 end
 
@@ -210,6 +222,7 @@ function Service:_attachPlayer(player: Player)
 	local state: PlayerState = {
 		character = nil,
 		connections = {characterConnection},
+		characterConnections = {},
 		appearanceReady = false,
 		additions = {},
 		lastSignalAt = {},
@@ -259,6 +272,7 @@ function Service:Stop()
 	table.clear(self.connections)
 	for _, state in pairs(self.states) do
 		for _, connection in ipairs(state.connections) do connection:Disconnect() end
+		for _, connection in ipairs(state.characterConnections) do connection:Disconnect() end
 	end
 	table.clear(self.states)
 	self.started = false
