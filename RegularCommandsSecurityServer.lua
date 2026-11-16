@@ -96,7 +96,7 @@ return function(_K: any)
 		shutdown = {permission = "GlobalConfig", property = "Shutdown", global = true, auditKind = "AdminAction", budget = "World"},
 	}
 
-	local BLOCKED_COMMANDS = {
+	local BLOCKED_COMMANDS: {[string]: string} = {
 		-- Disable client-crashing/repeated-kill commands and arbitrary cross-server command strings.
 		crash = "This command is disabled by Tiki Tide security.",
 		loopkill = "This command is disabled by Tiki Tide security.",
@@ -151,7 +151,11 @@ return function(_K: any)
 	end
 	local function authorize(userId: number, permission: string): boolean
 		local cached = permissionCache[userId]
-		return cached ~= nil and cached.expiresAt > os.clock() and cached[permission] == true
+		if not cached or cached.expiresAt <= os.clock() then return false end
+		if permission == "GlobalModeration" then return cached.GlobalModeration end
+		if permission == "GlobalAnnouncement" then return cached.GlobalAnnouncement end
+		if permission == "GlobalConfig" then return cached.GlobalConfig end
+		return false
 	end
 	Players.PlayerAdded:Connect(refreshAuthorization)
 	for _, player in ipairs(Players:GetPlayers()) do refreshAuthorization(player) end
@@ -165,7 +169,7 @@ return function(_K: any)
 	-- Small per-server buckets are split by risk class so routine moderation
 	-- cannot consume the budget reserved for privilege/world-changing operations.
 	-- This is synchronous, bounded by active players, and creates no MemoryStore entries.
-	local BUDGETS = {
+	local BUDGETS: {[string]: {capacity: number, refillPerSecond: number}} = {
 		Moderation = {capacity = 5, refillPerSecond = 0.5},
 		Privilege = {capacity = 2, refillPerSecond = 1 / 30},
 		Asset = {capacity = 2, refillPerSecond = 1 / 10},
