@@ -71,11 +71,6 @@ local CONFIG = {
 	-- "Enable Studio Access to API Services" is disabled. Set true only when
 	-- you intentionally want Studio to use the live DataStore.
 	StudioUseDataStore = false,
-	-- Playback and request queues are server-local in every environment.
-	-- Keep these flags false until a deliberately designed sync-only feature is reintroduced.
-	EnableGlobalQueue = false,
-	EnableGlobalPlaybackSync = false,
-	StudioUseGlobalQueue = false,
 
 	-- Modern AudioPlayer is the primary source; retain the legacy Sound only as a guarded recovery fallback.
 	UseModernAudioBackend = true,
@@ -756,24 +751,13 @@ local modernAudioStartToken = 0
 local queue: any = {}
 local queueManager: any = nil
 -- Retired permanently: all request queues and playback transitions are server-local.
-local globalQueueMode = false
 local enterLocalQueueBackup: ((string) -> ())? = nil
-local globalTrackRevision = 0
 -- Display hints may lead the authoritative snapshot, but must never advance
 -- queue ownership or the revision used by crossfade compare-and-swap.
-local globalMetadataHintRevision = -1
-ControllerFunctions.globalPlaybackEndTime = 0
-local localCatalogRevision = 0
-local syncGlobalQueueSnapshot: (() -> boolean)? = nil
-local refreshLocalCatalog: (() -> boolean)? = nil
-local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
 local nowPlaying: any = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
-ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-ControllerFunctions.pendingCrossfadeDeadline = 0
 local audioTransitionTrackToken = 0
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
@@ -1262,10 +1246,7 @@ ControllerFunctions.cancelAudioTransition = function(reason: string?)
 	end
 	pendingCrossfadeEntry = nil
 	pendingCrossfadeToken = -1
-	ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-	ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-	ControllerFunctions.pendingCrossfadeDeadline = 0
-	return true
+				return true
 end
 
 -- Destroy the optional coordinator explicitly during teardown. Cleanup invalidates
@@ -1322,9 +1303,6 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			return deck
 		end,
 		GetRemainingTime = function()
-			if globalQueueMode and ControllerFunctions.pendingCrossfadeGlobalRevision >= 0 and ControllerFunctions.pendingCrossfadeDeadline > 0 then
-				return math.max(0, ControllerFunctions.pendingCrossfadeDeadline - game:GetService("Workspace"):GetServerTimeNow())
-			end
 			if not nowPlaying then return 0 end
 			return math.max(0, (tonumber(nowPlaying.duration) or 0) - (tonumber(nowPlaying.elapsed) or 0))
 		end,
@@ -1440,10 +1418,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			end
 			audioSourceRevision += 1
 			ControllerFunctions.setNowPlaying(entry, true)
-			ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-			ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-			ControllerFunctions.pendingCrossfadeDeadline = 0
-			task.defer(function()
+												task.defer(function()
 				ControllerFunctions.topUpAuto()
 				publishState(nil)
 			end)
@@ -2149,16 +2124,10 @@ for _, moduleName in ipairs({
 	end
 	ControllerFunctions.ChildManagerModules[moduleName] = requireResult
 end
-ControllerFunctions.globalPlaybackEndTime = 0
-local globalRestartRevision = 0
 local autoQueueHold = false
 -- Queue mutations have their own revision, independent of playback transitions.
 -- This prevents delayed MessagingService snapshots from restoring an older queue.
-local globalQueueRevision = 0
 -- Catalog revision fences every shared enqueue/advance against stale local caches.
-local globalCatalogRevision = 0
-local globalCatalogChangeTrackId: string? = nil
-local globalCatalogChangeKind: string? = nil
 ControllerFunctions.refreshCatalogWhenReady = function(): boolean
 	-- The controller publishes its remote contract before the cross-server
 	-- invalidation listener is defined. A very early UI action waits briefly for
@@ -2170,17 +2139,9 @@ ControllerFunctions.refreshCatalogWhenReady = function(): boolean
 	end
 	return false
 end
-local globalQueueSyncBusy = false
-local globalQueueSnapshotFailureCount = 0
-local GLOBAL_QUEUE_SNAPSHOT_FAILURE_LIMIT = 3
-local globalQueueRefreshScheduled = false
-local globalPlaybackInitialized = false
 -- A newly joined server must align its audio deck once the asset is ready,
 -- even when that deck initially reports position 0 or is ahead of the snapshot.
-local globalAudioSyncPending = true
-local enqueueGlobalQueueBatch: (({QueueEntry}) -> (boolean, string?))? = nil
 local activePlaylistId: string? = nil
-local globalPlaylistRotationEnabled = false
 local activePlaylistName = ""
 local activePlaylistTracks: {Track} = {}
 local activePlaylistCursor = 1
@@ -3188,10 +3149,7 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	audioTransitionTrackToken += 1
 	pendingCrossfadeEntry = nil
 	pendingCrossfadeToken = -1
-	ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-	ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-	ControllerFunctions.pendingCrossfadeDeadline = 0
-	crossfadeAttemptedGeneration = -1
+				crossfadeAttemptedGeneration = -1
 	crossfadeBoundaryWaitGeneration = -1
 	autoQueueHold = false
 	nowPlaying.trackId = entry.trackId
@@ -5730,7 +5688,6 @@ local playlistManagerOk, playlistManager = pcall(childManagerModules.MusicPlayli
 		local trackIds = {}
 		for _, track in ipairs(activePlaylistTracks) do table.insert(trackIds, track.id) end
 		return {
-			active = activePlaylistId ~= nil or globalPlaylistRotationEnabled,
 			playlistId = activePlaylistId,
 			name = activePlaylistName,
 			cursor = activePlaylistCursor,
@@ -6072,7 +6029,6 @@ refreshLocalCatalog = function(): boolean
 	if not ok then warn("[ClubMusic] Catalog refresh failed: " .. tostring(err)) end
 	if refreshed then
 		lastCatalogRefreshAt = os.clock()
-		localCatalogRevision = globalCatalogRevision
 		publishState(nil)
 	end
 	return refreshed
@@ -6491,17 +6447,11 @@ task.spawn(function()
 				crossfadeAttemptedGeneration = currentGeneration
 				pendingCrossfadeEntry = nextEntry
 				pendingCrossfadeToken = audioTransitionTrackToken
-				ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-				ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-				ControllerFunctions.pendingCrossfadeDeadline = 0
-				local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
+																local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
 				if not started then
 					pendingCrossfadeEntry = nil
 					pendingCrossfadeToken = -1
-					ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-					ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-					ControllerFunctions.pendingCrossfadeDeadline = 0
-					warn("[ClubMusic][Crossfade] Automatic transition was not started; normal track advance remains available: " .. tostring(startError))
+																				warn("[ClubMusic][Crossfade] Automatic transition was not started; normal track advance remains available: " .. tostring(startError))
 				end
 			end
 		end
