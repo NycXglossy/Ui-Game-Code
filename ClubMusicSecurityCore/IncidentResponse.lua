@@ -51,10 +51,12 @@ function Service:Open(kind,summary,actorUserId,subjectUserId)
 		return true,existing.id,"Coalesced"
 	end
 	if now-self.lastWriteAt<1 then return false,"Incident write rate limited." end
-	local acquired,release=ResourceGuard.TryAcquire("IncidentWrite")
-	if not acquired then incrementPending(self,userId); return false,"LocalResourceLimit:IncidentWrite" end
+	local writeAcquired,releaseWrite=ResourceGuard.TryAcquire("MemoryStoreWrite")
+	if not writeAcquired then incrementPending(self,userId); return false,"LocalResourceLimit:MemoryStoreWrite" end
+	local incidentAcquired,releaseIncident=ResourceGuard.TryAcquire("IncidentWrite")
+	if not incidentAcquired then releaseWrite(); incrementPending(self,userId); return false,"LocalResourceLimit:IncidentWrite" end
 	local allowed,reason=StorageGuard.Allow("critical")
-	if not allowed then release(); incrementPending(self,userId); return false,reason end
+	if not allowed then releaseIncident(); releaseWrite(); incrementPending(self,userId); return false,reason end
 	local item
 	local ok,result=pcall(function()
 		return self.map:UpdateAsync(key,function(old)
@@ -76,7 +78,7 @@ function Service:Open(kind,summary,actorUserId,subjectUserId)
 			return nextItem
 		end,math.clamp(math.floor(tonumber(self.d.getTtlSeconds and self.d.getTtlSeconds()) or 1800),900,3600),os.time())
 	end)
-	release()
+	releaseIncident(); releaseWrite()
 	if not ok then self.lastError=tostring(result); StorageGuard.Failure(result); incrementPending(self,userId); return false,"Incident storage unavailable." end
 	StorageGuard.Success()
 	if item==nil then return false,"Incident snapshot exceeds the 5 KB safety limit." end
@@ -94,10 +96,12 @@ function Service:Resolve(id,actorUserId)
 	if self.d.authorize(actorUserId,"IncidentResponse")~=true then return false,"Incident response permission denied." end
 	local now=os.clock()
 	if now-self.lastWriteAt<1 then return false,"Incident write rate limited." end
-	local acquired,release=ResourceGuard.TryAcquire("IncidentWrite")
-	if not acquired then return false,"LocalResourceLimit:IncidentWrite" end
+	local writeAcquired,releaseWrite=ResourceGuard.TryAcquire("MemoryStoreWrite")
+	if not writeAcquired then return false,"LocalResourceLimit:MemoryStoreWrite" end
+	local incidentAcquired,releaseIncident=ResourceGuard.TryAcquire("IncidentWrite")
+	if not incidentAcquired then releaseWrite(); return false,"LocalResourceLimit:IncidentWrite" end
 	local allowed,reason=StorageGuard.Allow("critical")
-	if not allowed then release(); return false,reason end
+	if not allowed then releaseIncident(); releaseWrite(); return false,reason end
 	local ok,result=pcall(function()
 		local resolved=self.map:UpdateAsync(id,function(old)
 			if typeof(old)~="table" or old.state~="Open" then return old end
@@ -108,7 +112,7 @@ function Service:Resolve(id,actorUserId)
 		self.map:RemoveAsync(id)
 		return resolved
 	end)
-	release()
+	releaseIncident(); releaseWrite()
 	if not ok then self.lastError=tostring(result); StorageGuard.Failure(result); return false,"Incident storage unavailable." end
 	StorageGuard.Success()
 	if typeof(result)~="table" then return false,"Incident not found, already resolved, or resolution was not applied." end
