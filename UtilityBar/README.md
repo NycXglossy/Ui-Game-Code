@@ -92,7 +92,7 @@ The repository-side integration audit and static contract checks are complete. T
 - [ ] Verify the Mount pass gate, then confirm Mount equips only a tagged/named mount Tool and reports clearly when none is installed.
 - [ ] Verify Size applies only to the requesting player, accepts 0.50×–5.00×, rejects values outside that range, restores the captured baseline, registers BodyScale authority, and safely rejects R6.
 - [ ] Install `RegularCommandsSecurityServer.lua` as a Kohl's Admin server add-on; verify unauthorized moderation commands are denied, authorized ban/kick/mute actions still use Kohl's native handlers, successful actions appear in the unified SecurityCore Audit, and `crash` / `loopkill` are blocked.
-- [ ] Verify `:gravity`, `:starterspeed`, `:serverlock`, `:unserverlock`, and `:shutdown` require the owner/co-owner SecurityCore permission; verify `:global` is blocked.
+- [ ] Verify `:gravity`, `:starterspeed`, `:serverlock`, `:unserverlock`, `:shutdown`, and `:place` require the owner/co-owner SecurityCore permission; verify `:global` is blocked.
 - [ ] Verify the Island Companion pass gate, then confirm Clone Companion is non-interactive, expires after 12 seconds, and is cleaned up on leave.
 - [ ] Verify Lighting Control requires its pass and its presets/restore action affect only StageClubLight-tagged fixtures.
 - [ ] Verify Aura applies each style/target combination, Clear Aura removes it, and character respawn/leave cleans up effects.
