@@ -142,6 +142,17 @@ if not ok then
  error("Installation failed; previous release restored where possible: " .. tostring(installError))
 end
 
+-- Remove the obsolete resolver instance only after the new SecurityCore release is active.
+local legacyAuthorization = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
+if legacyAuthorization then
+ if legacyAuthorization:IsA("BindableFunction") then
+  legacyAuthorization:Destroy()
+  print("[Tiki Tide Security] Removed obsolete ClubMusicAuthorizationResolver BindableFunction.")
+ else
+  warn("[Tiki Tide Security] Legacy authorization object has an unexpected class; it was left untouched.")
+ end
+end
+
 print("[Tiki Tide Security] Installed " .. tostring(#MODULE_NAMES) .. " modules; release=" .. RELEASE_COMMIT)
 print("[Tiki Tide Security] Manifest: ServerStorage/" .. FOLDER_NAME .. "/InstallManifest")
 print("[Tiki Tide Security] Previous release retained under ServerStorage/" .. BACKUP_NAME)
