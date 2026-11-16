@@ -755,6 +755,7 @@ local modernAudioStartToken = 0
 -- Forward-declared state is shared with the early-created crossfade factory.
 local queue: any = {}
 local queueManager: any = nil
+-- Retired permanently: all request queues and playback transitions are server-local.
 local globalQueueMode = false
 local enterLocalQueueBackup: ((string) -> ())? = nil
 local globalTrackRevision = 0
@@ -4846,11 +4847,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, reason, "warn")
 			return false, reason
 		end
-		-- The global service disables legacy shared-queue mode when playback-only
-		-- sync is enabled. Stop using its shared snapshot on this server immediately.
-		if payload.enabled == true then
-			globalQueueMode = false
-		end
 		local syncState = ControllerFunctions.globalPlaybackSyncState
 		syncState.enabled = payload.enabled
 		if not payload.enabled then
@@ -6416,11 +6412,6 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 			return
 		end
 		syncState.enabled = message.enabled == true
-		if syncState.enabled then
-			-- The playback-only mode event also tells every peer controller to
-			-- leave legacy shared-queue mode; queues remain local from this point.
-			globalQueueMode = false
-		end
 		if not syncState.enabled then
 			syncState.isLeader = false
 			syncState.lastAppliedRevision = 0
