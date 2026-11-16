@@ -868,9 +868,15 @@ if diagnosticsModule then
 					then globalErrorHandler.GetStatus() else nil
 			end,
 			getMemoryStoreStatus = function() return {capacityLimited = memoryStoreCapacityLimited, lastCapacityError = memoryStoreCapacityError} end,
+			getAuthorizationStatus = function() return if globalAuthorizationService then globalAuthorizationService:GetStatus() else nil end,
+			getRateLimitStatus = function() return if globalRateLimitService then globalRateLimitService:GetStatus() else nil end,
+			getSecurityPolicyStatus = function() return if globalSecurityPolicyService then globalSecurityPolicyService:GetStatus() else nil end,
 			getSecurityMonitorStatus = function() return if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else nil end,
 			getMessageValidationStatus = function() return if globalMessageValidationService then globalMessageValidationService:GetStatus() else nil end,
 			getIdempotencyStatus = function() return if globalIdempotencyService then globalIdempotencyService:GetStatus() else nil end,
+			getAuditStatus = function() return if globalAuditService then globalAuditService:GetStatus() else nil end,
+			getEventLogStatus = function() return if globalEventLogService then globalEventLogService:GetStatus() else nil end,
+			getIncidentResponseStatus = function() return if globalIncidentResponseService then globalIncidentResponseService:GetStatus() else nil end,
 		})
 	end)
 	if createOk and instance and type(instance.Start) == "function"
