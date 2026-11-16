@@ -963,7 +963,7 @@ globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Securi
 	onAlert = function(signal, count)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", 0, signal, "threshold-reached:" .. tostring(count)) end
 	end,
-}, {"Start", "GetStatus", "Record"})
+}, {"Start", "GetStatus", "Record", "ForgetSubject"})
 if globalSecurityMonitorService then globalSecurityMonitorService:Start() end
 
 globalMessageValidationService = createOperationalService("ClubMusic_Global_Message_Validation_Service", {
@@ -1042,6 +1042,19 @@ ownConnection(globalEventBindable.Event:Connect(function(event)
 		elseif kind == "Moderation" then
 			pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", event.actorUserId, tostring(event.field or "moderation"), tostring(event.field or "moderation"))
 		end
+	end
+end))
+
+ownConnection(Players.PlayerRemoving:Connect(function(player)
+	local userId=tostring(player.UserId)
+	fallbackBuckets["user:"..userId]=nil
+	fallbackBuckets["state:"..userId]=nil
+	fallbackBuckets["audio:"..userId]=nil
+	for key in pairs(signalCounts) do
+		if string.sub(key,1,#userId+1)==userId..":" then signalCounts[key]=nil end
+	end
+	if globalSecurityMonitorService then
+		pcall(globalSecurityMonitorService.ForgetSubject,globalSecurityMonitorService,userId)
 	end
 end))
 
