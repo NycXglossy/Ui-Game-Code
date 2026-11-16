@@ -5422,7 +5422,6 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local _, globalOperational = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
 		local messaging = if typeof(globalOperational) == "table" and typeof(globalOperational.Messaging) == "table" then globalOperational.Messaging else {}
 		local memoryStore = if typeof(services.memoryStore) == "table" then services.memoryStore else {}
-		local memoryStoreError = tostring(memoryStore.lastCapacityError or "none recorded")
 		local lines = {
 			"ClubMusic Diagnostic Snapshot:",
 			"Generated: " .. os.date("!%Y-%m-%d %H:%M:%S UTC", tonumber(snapshot.generatedAt) or os.time()),
@@ -5446,9 +5445,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | failures " .. tostring(messaging.publishFailures or 0)
 				.. " | received " .. tostring(messaging.received or 0)
 				.. " | rejected " .. tostring(messaging.rejected or 0),
-			"Messaging last error: " .. string.sub(tostring(messaging.lastError or "none recorded"), 1, 240),
 			"MemoryStore limiter fallback: " .. tostring(memoryStore.capacityLimited == true),
-			"MemoryStore capacity error: " .. string.sub(memoryStoreError, 1, 300),
 			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s):",
 		}
 		for index = math.max(1, #purchaseDiagnosticEntries - 3), #purchaseDiagnosticEntries do
@@ -5473,20 +5470,16 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	end
 	if operation == "OperationalErrors" then
 		local ok, snapshot = ControllerFunctions.adminBridgeGlobalCall("GetGlobalDiagnostics")
-		if not ok or typeof(snapshot) ~= "table" then return false, tostring(snapshot or "Diagnostic history is unavailable.") end
-		if snapshot.errorHistoryAvailable ~= true then return true, "ClubMusic error history is unavailable; check whether ClubMusicErrorHandler is installed." end
-		local errors = if typeof(snapshot.recentErrors) == "table" then snapshot.recentErrors else {}
-		if #errors == 0 then return true, "No recent ClubMusic errors are recorded." end
-		local lines = {"Recent ClubMusic errors (metadata only):"}
-		for index = math.max(1, #errors - 7), #errors do
-			local item = errors[index]
-			if typeof(item) == "table" then
-				table.insert(lines, string.format("%s | %s / %s | repeats %s | %s",
-					tostring(item.id or "?"), tostring(item.subsystem or "?"), tostring(item.operation or "?"),
-					tostring(item.repeats or 0), os.date("!%H:%M:%S UTC", tonumber(item.timestamp) or os.time())))
-			end
+		if not ok or typeof(snapshot) ~= "table" then return false, "Diagnostic status is unavailable." end
+		local services = if typeof(snapshot.operationalServices) == "table" then snapshot.operationalServices else {}
+		local history = if typeof(services.errorHistory) == "table" then services.errorHistory else {}
+		if snapshot.errorHistoryAvailable ~= true then
+			return true, "Server-local ErrorHistory is unavailable. Detailed records remain server-side."
 		end
-		return true, string.sub(table.concat(lines, "\n"), 1, 1200)
+		return true, string.format(
+			"Server-local ErrorHistory: %s/%s records retained | %s total unique errors | %s repeated occurrences. Error messages and tracebacks are not sent to clients.",
+			tostring(history.count or 0), tostring(history.maxRecords or 50),
+			tostring(history.totalErrors or 0), tostring(history.totalRepeats or 0))
 	end
 	if operation == "OperationalMetrics" then
 		local ok, metrics = ControllerFunctions.adminBridgeGlobalCall("GetGlobalMetrics")
