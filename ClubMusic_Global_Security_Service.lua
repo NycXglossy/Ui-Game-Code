@@ -324,7 +324,7 @@ local function severity(signal)
 end
 function Service.new(d)
  assert(type(d)=="table" and type(d.isEnabled)=="function","Security monitor dependencies missing")
- local self=setmetatable({d=d,signals={},total=0,alerts=0,lastAlertAt=0,events={},eventHead=1,eventCount=0,written=0,
+ local self=setmetatable({d=d,signals={},total=0,alerts=0,lastAlertAt=0,events={},eventHead=1,eventCount=0,written=0,batchSequence=0,
   droppedLow=0,lastError=nil,flushRunning=false,lastFlushAt=0},Service)
  if d.memoryStoreService then self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalSecurityBatches_v1") end
  return self
@@ -407,8 +407,9 @@ function Service:_flush()
   if not ok or type(payload)~="string" or #payload>MAX_PAYLOAD then self.lastError="Security batch exceeds 16 KB ceiling."; return false end
  end
  local bucket=math.floor(os.time()/10)
+ self.batchSequence=(self.batchSequence%999)+1
  local job=string.sub(tostring(self.d.jobId or "server"),1,36)
- local key="TT:SEC:"..job..":"..tostring(bucket)
+ local key="TT:SEC:"..job..":"..tostring(bucket)..":"..tostring(self.batchSequence)
  if #key>64 then key=string.sub(key,1,64) end
  local writeOk,writeError=pcall(function() self.map:SetAsync(key,payload,600,os.time()) end)
  if not writeOk then self.lastError=tostring(writeError); StorageGuard.Failure(writeError); return false end
@@ -486,7 +487,7 @@ local TTL=3600
 local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderation" then 3 else if kind=="AdminAction" then 2 else 1 end
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Audit dependencies missing")
- local self=setmetatable({d=d,written=0,queued=0,droppedLow=0,lastError=nil,buffer={},bufferHead=1,bufferCount=0,lastFlushAt=0,
+ local self=setmetatable({d=d,written=0,queued=0,droppedLow=0,lastError=nil,buffer={},bufferHead=1,bufferCount=0,lastFlushAt=0,batchSequence=0,
   readCache={},readCacheAt={},flushRunning=false},Service)
  self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalAudit_v1")
  return self
@@ -548,8 +549,9 @@ function Service:_flush()
  end
  local bucket=math.floor(os.time()/30)
  local shard=(bucket%3)+1
+ self.batchSequence=(self.batchSequence%999)+1
  local job=string.sub(tostring(self.d.jobId or "server"),1,32)
- local key="TT:A:"..tostring(shard)..":"..job..":"..tostring(bucket)
+ local key="TT:A:"..tostring(shard)..":"..job..":"..tostring(bucket)..":"..tostring(self.batchSequence)
  if #key>64 then key=string.sub(key,1,64) end
  local writeOk,writeError=pcall(function() self.map:SetAsync(key,payload,TTL,os.time()) end)
  if not writeOk then
