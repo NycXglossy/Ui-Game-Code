@@ -28,6 +28,7 @@ function Service.new(options: {[string]: any}?)
 		connection = nil,
 		memoryThread = nil,
 		frameBuckets = {},
+		lastPruneSecond = -1,
 		lastFrameAt = 0,
 		memoryMb = nil,
 		memorySampleAt = nil,
@@ -51,8 +52,11 @@ function Service:_recordFrame(deltaTime: number)
 	bucket.max = math.max(bucket.max, deltaTime)
 	if deltaTime >= SLOW_FRAME_SECONDS then bucket.slow += 1 end
 	if deltaTime >= SEVERE_FRAME_SECONDS then bucket.severe += 1 end
-	for key in pairs(self.frameBuckets) do
-		if now - key > SAMPLE_WINDOW_SECONDS then self.frameBuckets[key] = nil end
+	if self.lastPruneSecond ~= second then
+		self.lastPruneSecond = second
+		for key in pairs(self.frameBuckets) do
+			if now - key > SAMPLE_WINDOW_SECONDS then self.frameBuckets[key] = nil end
+		end
 	end
 end
 
