@@ -314,3 +314,13 @@ Clarified and implemented the requested limited DJ role:
 - The main controller now exposes `canUseDJBooth` and `canManageDJBooth` separately in the player-state snapshot. `perm` remains the general staff level, so DJ rank 100 is not mislabeled as staff.
 - Authorization checks are server-side and fail closed if the SecurityCore cache is unavailable.
 - Studio/client verification is still outstanding. The UI renderer should be checked to ensure its Control Mode button uses `canUseDJBooth` rather than `perm >= 3`; do not infer that client visibility is already updated from the server snapshot alone.
+
+
+### Client UI permission projection follow-up
+
+The ClubMusic renderer now reads the explicit `canUseDJBooth` and `canManageDJBooth` fields from the server state snapshot:
+- Rank-100 DJs see DJ Booth playback controls and the Control Mode toggle.
+- Only Owner/Co-owner see queue move/remove/clear controls and elevated playlist management.
+- The Music tab also shows local playback controls to authorized DJs, while queue mutation controls remain elevated.
+- General `perm` continues to represent staff level; it is not used as a substitute for the DJ entitlement.
+- Runtime verification remains required for group ranks 100, 150, 200, 254, and 255.
