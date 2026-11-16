@@ -546,7 +546,7 @@ function Service:_flush()
  if not self.d.isEnabled() or self.bufferCount<1 then return false end
  local now=os.clock()
  if now-self.lastFlushAt<15 then return false end
- local allowed,reason=StorageGuard.Allow()
+ local allowed,reason=StorageGuard.Allow("low")
  if not allowed then self.lastError=reason; return false end
  local batch={}
  local count=math.min(100,self.bufferCount)
@@ -716,7 +716,7 @@ function Service:GetRecent(limit,moderatorUserId)
   local cached={}; for i,item in ipairs(self.readCache[cacheKey]) do if i>math.clamp(math.floor(tonumber(limit) or 20),1,50) then break end; table.insert(cached,table.clone(item)) end
   return true,cached
  end
- local allowed,reason=StorageGuard.Allow()
+ local allowed,reason=StorageGuard.Allow("low")
  if not allowed then self.lastError=reason; return false,{} end
  local ok,result=pcall(function() return self.map:GetRangeAsync(Enum.SortDirection.Descending,math.clamp(math.floor(tonumber(limit) or 20),1,50)) end)
  if not ok then self.lastError=tostring(result); StorageGuard.Failure(result); return false,{} end
