@@ -731,67 +731,18 @@ end)
 -- never create a second playback controller or mutate queue ownership.
 local globalRecoveryService: any = nil
 
--- Cross-server sync is verified with peer heartbeats, not inferred from DataStore access.
-local SYNC_HEARTBEAT_INTERVAL_SECONDS = 60
-local SYNC_HEARTBEAT_TIMEOUT_SECONDS = 180
-local syncHeartbeatTopic = CONFIG.Topics.Queue
-subscriptionStatus[syncHeartbeatTopic] = "Starting"
-local peerHeartbeats: {[string]: {seenAt: number, reportedAt: number}} = {}
-local hasSeenSyncPeer = false
+-- Global playback synchronization is retired; local queues do not require peer heartbeats.
 local lastQueueNotificationAt = 0
 local queueNotificationsReceived = 0
-local lastHeartbeatPublishAt = 0
 
 local function getGlobalSyncStatus(): {[string]: any}
-    local now = os.clock()
-    local peerCount = 0
-    local newestPeerAt = 0
-    for jobId, heartbeat in pairs(peerHeartbeats) do
-        if now - heartbeat.seenAt > SYNC_HEARTBEAT_TIMEOUT_SECONDS then
-            peerHeartbeats[jobId] = nil
-        else
-            peerCount += 1
-            newestPeerAt = math.max(newestPeerAt, heartbeat.reportedAt)
-        end
-    end
-
-    local subscription = subscriptionStatus[syncHeartbeatTopic] or "Starting"
-    local state = "Unverified"
-    local detail = "No other server heartbeat has been observed yet; cross-server sync is unverified."
-    if not SERVICE_ENABLED then
-        state = "Disabled"
-        detail = "Cross-server messaging is disabled in this server (Studio isolation or configuration)."
-    elseif subscription ~= "Active" then
-        state = if subscription == "Starting" then "Starting" else "Degraded"
-        detail = "Cross-server sync heartbeat subscription is " .. subscription .. "."
-    elseif lastHeartbeatPublishAt == 0 then
-        state = "Starting"
-        detail = "The first cross-server sync heartbeat has not been published yet."
-    elseif now - lastHeartbeatPublishAt > SYNC_HEARTBEAT_TIMEOUT_SECONDS then
-        state = "Degraded"
-        detail = "This server has not successfully published a sync heartbeat within "
-            .. tostring(SYNC_HEARTBEAT_TIMEOUT_SECONDS) .. " seconds."
-    elseif peerCount > 0 then
-        state = "Healthy"
-        detail = "Cross-server messaging is receiving heartbeats from " .. tostring(peerCount) .. " peer server(s)."
-    elseif hasSeenSyncPeer then
-        state = "Degraded"
-        detail = "Previously observed peer servers stopped sending sync heartbeats for more than "
-            .. tostring(SYNC_HEARTBEAT_TIMEOUT_SECONDS) .. " seconds."
-    end
-
-    return {
-        state = state,
-        detail = detail,
-        subscription = subscription,
-        peerCount = peerCount,
-        lastPeerHeartbeatAt = newestPeerAt,
-        lastHeartbeatPublishedAt = if lastHeartbeatPublishAt > 0 then os.time() - math.floor(now - lastHeartbeatPublishAt) else 0,
-        lastQueueNotificationAt = if lastQueueNotificationAt > 0 then os.time() - math.floor(now - lastQueueNotificationAt) else 0,
-        queueNotificationsReceived = queueNotificationsReceived,
-        heartbeatIntervalSeconds = SYNC_HEARTBEAT_INTERVAL_SECONDS,
-        heartbeatTimeoutSeconds = SYNC_HEARTBEAT_TIMEOUT_SECONDS,
-    }
+	return {
+		state = "Disabled",
+		detail = "Global playback synchronization and peer heartbeats are disabled; each server owns its local queue.",
+		peerCount = 0,
+		lastQueueNotificationAt = if lastQueueNotificationAt > 0 then os.time() - math.floor(os.clock() - lastQueueNotificationAt) else 0,
+		queueNotificationsReceived = queueNotificationsReceived,
+	}
 end
 
 -- Reuse the same per-server diagnostic handler used by the local UI controller.
@@ -1645,13 +1596,6 @@ end
 local function onQueueChanged(message)
 	local data = if typeof(message) == "table" then message.Data else nil
 	if not validEnvelope(data, "Queue") then return end
-	if data.kind == "ServerHeartbeat" then
-		if typeof(data.serverJob) ~= "string" or #data.serverJob < 1 or #data.serverJob > 64
-			or data.serverJob ~= data.senderJob or data.serverJob == JOB_ID then return end
-		peerHeartbeats[data.serverJob] = {seenAt = os.clock(), reportedAt = math.floor(data.at)}
-		hasSeenSyncPeer = true
-		return
-	end
 	if data.kind ~= "QueueChanged" or not finiteNumber(data.revision) then return end
 	if not unseen(data.id) then return end
 	-- The originating controller already applies the state returned by its
@@ -1745,13 +1689,6 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
 	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
 	subscribeWithRetry(CONFIG.Topics.Playback, onPlaybackChanged)
-	task.spawn(function()
-		while SERVICE_ENABLED do
-			local published = publishTopic(CONFIG.Topics.Queue, {kind = "ServerHeartbeat", serverJob = JOB_ID})
-			if published then lastHeartbeatPublishAt = os.clock() end
-			task.wait(SYNC_HEARTBEAT_INTERVAL_SECONDS)
-		end
-	end)
 else
 	if not CONFIG.Enabled then
 		warn("[ClubMusic Global] Cross-server service is disabled by CONFIG.Enabled=false; local UI controller remains fully functional.")
