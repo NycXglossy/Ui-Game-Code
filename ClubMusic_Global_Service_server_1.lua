@@ -53,6 +53,7 @@ local IS_STUDIO = RunService:IsStudio()
 local SERVICE_ENABLED = CONFIG.Enabled and (not IS_STUDIO or CONFIG.EnableInStudio)
 local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false)
 local globalDiagnosticsService: any = nil
+local globalServiceRegistry: any = nil
 local subscriptionStatus: {[string]: string} = {}
 local messagingPublishSuccess = 0
 local messagingPublishFailures = 0
@@ -752,11 +753,42 @@ bindFunction("GetGlobalSafeCallStatus", function()
 	print("[ClubMusic][SafeCall] Diagnostics helper ready; maxRecords=50.")
 end
 
+-- Optional server-local registry. It records status only; it never controls services.
+do
+	local module = ServerStorage:FindFirstChild("ClubMusic_Local_Service_Registry")
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new)
+			if createOk and typeof(instance) == "table"
+				and type(instance.Register) == "function"
+				and type(instance.SetStatus) == "function"
+				and type(instance.GetStatus) == "function" then
+				globalServiceRegistry = instance
+				pcall(instance.SetStatus, instance, "GlobalAPI", "Healthy", "ServerStorage.ClubMusicGlobalAPI is available.")
+			else
+				warn("[ClubMusic Diagnostics] Local service registry initialization failed: " .. tostring(instance))
+			end
+		else
+			warn("[ClubMusic Diagnostics] Local service registry could not be loaded: " .. tostring(exported))
+		end
+	else
+		warn("[ClubMusic Diagnostics] Optional ClubMusic_Local_Service_Registry ModuleScript is not installed.")
+	end
+end
+
+local function updateRegistryStatus(name: string, state: string, detail: string)
+	if globalServiceRegistry then
+		pcall(globalServiceRegistry.SetStatus, globalServiceRegistry, name, state, detail)
+	end
+end
+
 local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
 if diagnosticsModule then
 	local createOk, instance = pcall(function()
 		return diagnosticsModule.new({
 			isEnabled = function() return SERVICE_ENABLED end,
+			getRegistryStatus = function() return if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "Unavailable", scope = "ServerLocal", detail = "Registry module is not installed."} end,
 			apiFolder = apiFolder,
 				getSyncStatus = getGlobalSyncStatus,
 			getRecentErrors = function()
@@ -772,6 +804,7 @@ if diagnosticsModule then
 	if createOk and instance and type(instance.Start) == "function"
 		and type(instance.GetStatus) == "function" and type(instance.GetSnapshot) == "function" then
 		globalDiagnosticsService = instance
+		if globalServiceRegistry then pcall(globalServiceRegistry.Register, globalServiceRegistry, "Diagnostics", instance, {"Start", "Check", "GetStatus", "GetSnapshot", "GetMetrics"}, true) end
 		task.delay(4, function()
 			if globalDiagnosticsService == instance then
 				local startOk, startError = pcall(function() instance:Start() end)
@@ -788,22 +821,34 @@ end
 local function createOperationalService(moduleName: string, dependencies: {[string]: any}, requiredMethods: {string}): any?
 	-- These optional modules are cross-server infrastructure, not local playback
 	-- dependencies. Do not construct them in isolated Studio sessions.
-	if not SERVICE_ENABLED then return nil end
+	if not SERVICE_ENABLED then
+		updateRegistryStatus(moduleName, "Disabled", "Global service is disabled in this server.")
+		return nil
+	end
 	local module = loadOptionalGlobalModule(moduleName)
-	if not module then return nil end
+	if not module then
+		updateRegistryStatus(moduleName, "Unavailable", "Optional ModuleScript is not installed or failed to load.")
+		return nil
+	end
 	local ok, instance = pcall(function() return module.new(dependencies) end)
 	if not ok or typeof(instance) ~= "table" then
 		warn("[ClubMusic Global] Could not create " .. moduleName .. ": " .. tostring(instance))
+		updateRegistryStatus(moduleName, "Unavailable", "Service constructor failed.")
 		return nil
 	end
 	for _, methodName in ipairs(requiredMethods) do
 		if type(instance[methodName]) ~= "function" then
 			warn("[ClubMusic Global] " .. moduleName .. " is missing method " .. methodName)
+			updateRegistryStatus(moduleName, "Unavailable", "Required method missing: " .. methodName)
 			return nil
 		end
 	end
+	if globalServiceRegistry then
+		pcall(globalServiceRegistry.Register, globalServiceRegistry, moduleName, instance, requiredMethods, false)
+	end
 	return instance
 end
+
 
 local sharedDependencies = {
 	safeCall = globalSafeCall,
@@ -870,6 +915,7 @@ if authorizationModule and type(authorizationModule.GetShared) == "function" the
 		and type(instance.GetStatus) == "function"
 		and type(instance.Check) == "function" then
 		globalAuthorizationService = instance
+		if globalServiceRegistry then pcall(globalServiceRegistry.Register, globalServiceRegistry, "Authorization", instance, {"Start", "GetStatus", "Check"}, true) end
 		local authStartOk, authStartResult = pcall(instance.Start, instance)
 		if not authStartOk or authStartResult ~= true then
 			warn("[ClubMusic][Authorization] SecurityCore authorization failed to start; protected actions remain denied.")
