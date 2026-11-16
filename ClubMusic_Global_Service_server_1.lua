@@ -768,6 +768,11 @@ do
 				and type(instance.GetStatus) == "function" then
 				globalServiceRegistry = instance
 				pcall(instance.SetStatus, instance, "GlobalAPI", "Healthy", "ServerStorage.ClubMusicGlobalAPI is available.")
+			if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function" then
+				pcall(instance.Register, instance, "ErrorHistory", globalErrorHandler, {"Report", "GetRecentErrors", "GetStatus"}, true)
+			else
+				pcall(instance.SetStatus, instance, "ErrorHistory", "Unavailable", "ClubMusicErrorHandler is not installed.")
+			end
 			else
 				warn("[ClubMusic Diagnostics] Local service registry initialization failed: " .. tostring(instance))
 			end
@@ -857,6 +862,10 @@ if diagnosticsModule then
 			getRecentErrors = function()
 				if globalErrorHandler and type(globalErrorHandler.GetRecentErrors) == "function" then return globalErrorHandler.GetRecentErrors() end
 				return nil
+			end,
+			getErrorHistoryStatus = function()
+				return if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function"
+					then globalErrorHandler.GetStatus() else nil
 			end,
 			getMemoryStoreStatus = function() return {capacityLimited = memoryStoreCapacityLimited, lastCapacityError = memoryStoreCapacityError} end,
 			getSecurityMonitorStatus = function() return if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else nil end,
@@ -1172,6 +1181,7 @@ bindFunction("GetGlobalOperationalStatus", function()
 		Diagnostics = if globalDiagnosticsService then globalDiagnosticsService:GetStatus() else {state = "Unavailable"},
 		ServerHealth = if globalServerHealthService then globalServerHealthService:GetStatus() else {state = "NotInstalled"},
 		Watchdog = if globalLocalWatchdog then globalLocalWatchdog:GetStatus() else {state = "NotInstalled"},
+		ErrorHistory = if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function" then globalErrorHandler.GetStatus() else {state = "Unavailable"},
 		ServiceRegistry = if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "NotInstalled"},
 		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
 		Reconciliation = if globalStateReconciliationService then globalStateReconciliationService:GetStatus() else {state = "Unavailable"},
