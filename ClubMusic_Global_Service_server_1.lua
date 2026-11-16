@@ -33,6 +33,7 @@ local CONFIG = {
 	EnableInStudio = false,
 
 	Topics = {
+		Queue = "ClubMusic_Global_Queue_v1",
 		Announcements = "ClubMusic_Global_Announcements_v1",
 		Moderation = "ClubMusic_Global_Moderation_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
@@ -726,8 +727,6 @@ end)
 
 -- Optional operational services. They observe the existing global queue and
 -- never create a second playback controller or mutate queue ownership.
-local globalRecoveryService: any = nil
-
 -- Global playback synchronization is retired; local queues do not require peer heartbeats.
 local lastQueueNotificationAt = 0
 local queueNotificationsReceived = 0
