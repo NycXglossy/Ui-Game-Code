@@ -109,6 +109,18 @@ function Service:GetLevel(player: Player): number
 	return level
 end
 
+function Service:IsGroupMember(player: Player): boolean
+	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then return false end
+	if (RunService:IsStudio() and self.studioStaff) or self.staffUserIds[player.UserId] == true then return true end
+	local cached = self.cache[player.UserId]
+	if not cached or cached.expiresAt <= os.clock() then
+		if cached then self.cache[player.UserId] = nil end
+		self:_scheduleRefresh(player)
+		return false
+	end
+	return typeof(cached.groupRank) == "number" and cached.groupRank > 0
+end
+
 function Service:_levelForRank(rank: number): number
 	local t = self.thresholds
 	if rank >= t.Owner then return 4 end
@@ -123,6 +135,8 @@ function Service:Refresh(player: Player): boolean
 		return false
 	end
 	local userId = player.UserId
+	local existingCache = self.cache[userId]
+	if existingCache and existingCache.expiresAt > os.clock() then return true end
 	if self.refreshInFlight[userId] then return false end
 	local retryAt = self.retryAfter[userId]
 	if retryAt and retryAt > os.clock() then return false end
@@ -130,16 +144,19 @@ function Service:Refresh(player: Player): boolean
 	self.refreshInFlight[userId] = true
 	self.refreshes += 1
 	local level: number? = nil
+	local groupRank: number? = nil
 	local lookupError: any = nil
 
 	if (RunService:IsStudio() and self.studioStaff) or self.staffUserIds[userId] == true then
 		level = 4
+		groupRank = if self.staffUserIds[userId] == true then 0 else 255
 	else
 		local ok, rank = pcall(function()
 			return player:GetRankInGroup(self.groupId)
 		end)
 		if ok and typeof(rank) == "number" and rank == rank
 			and rank >= 0 and rank <= 255 and rank % 1 == 0 then
+			groupRank = rank
 			level = self:_levelForRank(rank)
 		else
 			lookupError = if ok then "Invalid group rank response." else rank
@@ -164,6 +181,7 @@ function Service:Refresh(player: Player): boolean
 	local now = os.clock()
 	self.cache[userId] = {
 		level = level,
+		groupRank = groupRank,
 		refreshedAt = now,
 		expiresAt = now + math.random(CACHE_MIN_SECONDS, CACHE_MAX_SECONDS),
 	}
