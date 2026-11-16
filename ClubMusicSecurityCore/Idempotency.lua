@@ -74,7 +74,7 @@ end
 function Service:GetStatus()
  return {state=if self.d.isEnabled() then "Ready" else "Disabled",reserved=self.reserved,
   duplicates=self.duplicates,localCacheHits=self.localHits,sharedChecks=self.sharedChecks,
-  keyStrategy="Direct transaction key",mapInitialized=self.map~=nil,recordBytes={min=100,max=250},storageGuard=StorageGuard.GetStatus(),resourceGuard=ResourceGuard.GetStatus()}
+  keyStrategy="Direct transaction key",scope="LocalByDefault",crossServerOptIn=true,mapInitialized=self.map~=nil,recordBytes={min=100,max=250},storageGuard=StorageGuard.GetStatus(),resourceGuard=ResourceGuard.GetStatus()}
 end
 function Service:Start() return true end
 function Service:Stop() table.clear(self.seenNonces) end
