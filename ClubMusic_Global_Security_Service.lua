@@ -388,7 +388,7 @@ function Service:_queue(signal,subject,count)
     return true
    end
   end
-  if #self.criticalEvents<CRITICAL_CAPACITY then
+  if #self.criticalEvents<CRITICAL_CAPACITY-1 then
    table.insert(self.criticalEvents,item)
   else
    -- Preserve critical occurrence counts during a flood without allowing
@@ -412,7 +412,7 @@ function Service:_queue(signal,subject,count)
   end
   table.insert(self.standardEvents,item)
  end
- if #self.criticalEvents+#self.standardEvents>=MAX_BATCH_EVENTS and not self.flushInFlight then
+ if #self.criticalEvents+#self.standardEvents>=25 and not self.flushInFlight then
   task.spawn(function() self:_flush() end)
  end
  return true
@@ -502,6 +502,7 @@ function Service:_flush()
  if #self.criticalEvents+#self.standardEvents<1 then return false end
  local now=os.clock()
  if now<self.retryAt then return false end
+ if self.lastFlushAt>0 and now-self.lastFlushAt<5 then return false end
  self.flushInFlight=true
  self.lastFlushAt=now
  local pending=self.pendingBatch
@@ -566,7 +567,7 @@ function Service:GetStatus()
   droppedLowSeverity=self.droppedLow,coalescedCritical=self.coalescedCritical,
   lastError=self.lastError,retryInSeconds=math.max(0,self.retryAt-os.clock()),
   eventsPerFlush={min=1,max=MAX_BATCH_EVENTS},payloadMaxBytes=MAX_PAYLOAD,
-  flushSeconds=FLUSH_INTERVAL,maxFlushesPerMinute=6,ttlSeconds=BATCH_TTL,
+  flushSeconds=FLUSH_INTERVAL,maxFlushesPerMinute=12,ttlSeconds=BATCH_TTL,
   batchIdempotency="UUID + 32-entry recent-send ring",
   automaticEnforcement=false,storageGuard=StorageGuard.GetStatus(),
  }
