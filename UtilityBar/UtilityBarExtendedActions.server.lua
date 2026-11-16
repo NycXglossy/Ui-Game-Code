@@ -5,6 +5,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CollectionService = game:GetService("CollectionService")
+local ServerStorage = game:GetService("ServerStorage")
 
 local REMOTE_FOLDER = "UtilityBarRemotes"
 local REMOTE_NAME = "ExecuteUtility"
@@ -40,10 +41,12 @@ local function getCharacter(player: Player): (Model?, Humanoid?)
 end
 
 local function setSize(player: Player, requestedFactor: any): (boolean, string)
-	if typeof(requestedFactor) ~= "number" or requestedFactor ~= requestedFactor then
-		return false, "Choose a valid character size."
+	if typeof(requestedFactor) ~= "number" or requestedFactor ~= requestedFactor
+		or requestedFactor == math.huge or requestedFactor == -math.huge
+		or requestedFactor < 0.5 or requestedFactor > 5 then
+		return false, "Character size must be between 0.5× and 5×."
 	end
-	local factor = math.clamp(requestedFactor, 0.5, 5)
+	local factor = requestedFactor
 	local character, humanoid = getCharacter(player)
 	if not character or not humanoid then return false, "Your character is not ready." end
 	local height = humanoid:FindFirstChild("BodyHeightScale")
@@ -64,6 +67,22 @@ local function setSize(player: Player, requestedFactor: any): (boolean, string)
 	width.Value = baseline.width * factor
 	depth.Value = baseline.depth * factor
 	head.Value = baseline.head * factor
+
+	-- Register this self-only, server-applied scale change with the shared
+	-- server-local movement authority ledger used by Kohl's Admin and the
+	-- future CharacterPhysicsGuard. No client-supplied target is accepted.
+	local authority = ServerStorage:FindFirstChild("TikiTideMovementAuthority")
+	if authority and authority:IsA("BindableFunction") then
+		local authorityOk, registered = pcall(function()
+			return authority:Invoke("Register", player.UserId, player.UserId, "BodyScale", factor, "UtilityBarSize", 120)
+		end)
+		if not authorityOk or registered ~= true then
+			warn("[UtilityBar] Size change applied, but MovementAuthority registration failed for userId " .. tostring(player.UserId))
+		end
+	else
+		warn("[UtilityBar] TikiTideMovementAuthority is unavailable; install the RegularCommandsSecurityServer add-on to enable movement authorization tracking.")
+	end
+
 	return true, string.format("Character size set to %.2f×.", factor)
 end
 
