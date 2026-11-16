@@ -864,8 +864,11 @@ local AUTH_RANK_LEVELS = {
 }
 local authRankCache: {[number]: {level: number, expiresAt: number}} = {}
 local authRankRefresh: {[number]: boolean} = {}
-local authNativeChecks = 0
-local authExternalChecks = 0
+
+Players.PlayerRemoving:Connect(function(player)
+	authRankCache[player.UserId] = nil
+	authRankRefresh[player.UserId] = nil
+end)
 
 local function resolveNativePermission(actorUserId: any, permission: any): boolean
 	if not finiteNumber(actorUserId) or actorUserId < 1 or actorUserId % 1 ~= 0
@@ -877,7 +880,6 @@ local function resolveNativePermission(actorUserId: any, permission: any): boole
 
 	-- Match the controller's StudioStaff=true setting for isolated Studio tests.
 	if RunService:IsStudio() then
-		authNativeChecks += 1
 		return true
 	end
 
@@ -895,7 +897,7 @@ local function resolveNativePermission(actorUserId: any, permission: any): boole
 			return player:GetRankInGroup(AUTH_GROUP_ID)
 		end)
 		authRankRefresh[player.UserId] = nil
-		if player.Parent ~= Players or not ok or not finiteNumber(rank) or rank < 0 or rank > 255 then
+		if player.Parent ~= Players or not ok or not finiteNumber(rank) or rank % 1 ~= 0 or rank < 0 or rank > 255 then
 			authRankCache[player.UserId] = nil
 			warn("[ClubMusic][Authorization] Native group-rank lookup failed; access denied.")
 			return false
@@ -916,13 +918,7 @@ local function resolveNativePermission(actorUserId: any, permission: any): boole
 			expiresAt = now + math.random(120, 300),
 		}
 	end
-	authNativeChecks += 1
 	return level >= AUTH_RANK_LEVELS[permission]
-end
-
-local function hasExternalAuthorizationResolver(): boolean
-	local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-	return resolver ~= nil and resolver:IsA("BindableFunction") and resolver.Parent == ServerStorage
 end
 
 local globalAuthorizationServiceResolver = function(actorUserId: any, permission: any): boolean
@@ -940,7 +936,6 @@ local globalAuthorizationServiceResolver = function(actorUserId: any, permission
 			.. tostring(permission) .. "; error=" .. string.sub(tostring(allowed), 1, 180))
 		return false
 	end
-	authExternalChecks += 1
 	return allowed == true
 end
 
