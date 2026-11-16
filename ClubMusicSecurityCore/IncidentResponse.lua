@@ -109,36 +109,36 @@ function Service:Open(kind,summary,actorUserId,subjectUserId)
 end
 
 function Service:Resolve(id,actorUserId)
-	if not self.d.isEnabled() or type(id)~="string" or #id<1 or #id>64 then return false,"Invalid incident ID." end
-	if self.d.authorize(actorUserId,"IncidentResponse")~=true then return false,"Incident response permission denied." end
-	local now=os.clock()
-	if now-self.lastWriteAt<1 then return false,"Incident write rate limited." end
-	local writeAcquired,releaseWrite=ResourceGuard.TryAcquire("MemoryStoreWrite")
-	if not writeAcquired then return false,"LocalResourceLimit:MemoryStoreWrite" end
-	local incidentAcquired,releaseIncident=ResourceGuard.TryAcquire("IncidentWrite")
-	if not incidentAcquired then releaseWrite(); return false,"LocalResourceLimit:IncidentWrite" end
-	local allowed,reason=StorageGuard.Allow("critical")
-	if not allowed then releaseIncident(); releaseWrite(); return false,reason end
-	local ok,result=pcall(function()
-		local resolved=self.map:UpdateAsync(id,function(old)
-			if typeof(old)~="table" or old.state~="Open" then return old end
-			local item=table.clone(old); item.state="Resolved"; item.resolvedAt=os.time(); item.resolvedBy=actorUserId
-			return item
-		end,3600,os.time())
-		if typeof(resolved)~="table" or resolved.state~="Resolved" or resolved.resolvedBy~=actorUserId then return nil end
-		self.map:RemoveAsync(id)
-		return resolved
-	end)
-	releaseIncident(); releaseWrite()
-	if not ok then self.lastError=tostring(result); StorageGuard.Failure(result); return false,"Incident storage unavailable." end
-	StorageGuard.Success()
-	if typeof(result)~="table" then return false,"Incident not found, already resolved, or resolution was not applied." end
-	self.lastWriteAt=now; self.resolved+=1; self.readCache={}; self.readCacheAt={}
-	if validUserId(result.userId) then self.activeByUser[result.userId]=nil end
-	if type(self.d.onChange)=="function" then pcall(self.d.onChange,"resolved",result) end
-	return true
+ if not self.d.isEnabled() or type(id)~="string" or #id<1 or #id>64 then return false,"Invalid incident ID." end
+ if self.d.authorize(actorUserId,"IncidentResponse")~=true then return false,"Incident response permission denied." end
+ local now=os.clock()
+ if now-self.lastWriteAt<1 then return false,"Incident write rate limited." end
+ local writeAcquired,releaseWrite=ResourceGuard.TryAcquire("MemoryStoreWrite")
+ if not writeAcquired then return false,"LocalResourceLimit:MemoryStoreWrite" end
+ local incidentAcquired,releaseIncident=ResourceGuard.TryAcquire("IncidentWrite")
+ if not incidentAcquired then releaseWrite(); return false,"LocalResourceLimit:IncidentWrite" end
+ local allowed,reason=StorageGuard.Allow("critical")
+ if not allowed then releaseIncident(); releaseWrite(); return false,reason end
+ local ok,result=pcall(function()
+  return self.map:UpdateAsync(id,function(old)
+   if typeof(old)~="table" or old.state~="Open" then return old end
+   local item=table.clone(old); item.state="Resolved"; item.resolvedAt=os.time(); item.resolvedBy=actorUserId
+   return item
+  end,3600,os.time())
+ end)
+ releaseIncident(); releaseWrite()
+ if not ok then self.lastError=tostring(result); StorageGuard.Failure(result); return false,"Incident storage unavailable." end
+ StorageGuard.Success()
+ if typeof(result)~="table" or result.state~="Resolved" or result.resolvedBy~=actorUserId then
+  return false,"Incident not found, already resolved, or resolution was not applied."
+ end
+ -- Retain the resolved snapshot until TTL expiry. A second RemoveAsync could fail
+ -- after the state update succeeds and falsely report the resolution as failed.
+ self.lastWriteAt=now; self.resolved+=1; self.readCache={}; self.readCacheAt={}
+ if validUserId(result.userId) then self.activeByUser[result.userId]=nil end
+ if type(self.d.onChange)=="function" then pcall(self.d.onChange,"resolved",result) end
+ return true
 end
-
 function Service:GetRecent(limit,moderatorUserId)
 	if not self.d.isEnabled() then return false,{} end
 	local cacheKey=tostring(if validUserId(moderatorUserId) then math.floor(moderatorUserId) else "server")
