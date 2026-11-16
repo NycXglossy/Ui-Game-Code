@@ -144,7 +144,7 @@ return function(_K: any)
 	local AUTHORIZED_PROPERTIES = {
 		WorldGravity = true, StarterWalkSpeed = true, WalkSpeed = true, JumpPower = true,
 		JumpImpulse = true, PersonalGravity = true, BodyScale = true, Flight = true, Frozen = true,
-		JumpHeight = true, Anchored = true,
+		JumpHeight = true, Anchored = true, Teleport = true,
 	}
 	local function authorityKey(targetUserId: number, property: string): string
 		return tostring(targetUserId) .. ":" .. property
@@ -266,8 +266,8 @@ return function(_K: any)
 			end
 			local value = if policy.valueArg then args[policy.valueArg] else nil
 			if policy.property == "JumpImpulse" then value = true end
-			if policy.property == "Flight" then value = command.alias ~= "unfly" end
-			if policy.property == "Frozen" then value = command.alias ~= "thaw" end
+			if policy.property == "Flight" then value = command.definition.name ~= "unfly" end
+			if policy.property == "Frozen" then value = command.definition.name ~= "thaw" end
 			if value == nil then value = "DEFAULT" end
 			local actorId = actorUserId(context)
 			if actorId then
