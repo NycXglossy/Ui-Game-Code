@@ -614,7 +614,7 @@ Bundle.IncidentResponse = (function()
 -- Per-user temporary incident snapshots. Writes are coalesced and locally rate-limited.
 local Service={}; Service.__index=Service
 local ALLOWED={SecurityAlert=true,ServiceDegraded=true,AbuseReport=true,ManualReview=true}
-local function validUserId(value) return type(value)=="number" and value>0 and value%1==0 and value<math.huge end
+local function validUserId(value) return type(value)=="number" and value>=0 and value%1==0 and value<math.huge end
 function Service.new(d)
  assert(type(d)=="table" and d.isEnabled and d.memoryStoreService and type(d.authorize)=="function","Incident response dependencies missing")
  return setmetatable({d=d,map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalIncidents_v1"),
