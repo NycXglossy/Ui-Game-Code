@@ -23,11 +23,6 @@ local function validActor(actorUserId: any): boolean
 		and actorUserId % 1 == 0
 end
 
-local function validActor(actorUserId: any): boolean
-	return typeof(actorUserId) == "number" and actorUserId == actorUserId
-		and actorUserId > 0 and actorUserId < math.huge and actorUserId % 1 == 0
-end
-
 function Service.new(dependencies: {[string]: any})
 	assert(typeof(dependencies) == "table", "Authorization dependencies missing")
 	assert(type(dependencies.resolvePermission) == "function", "Trusted permission resolver is required")
