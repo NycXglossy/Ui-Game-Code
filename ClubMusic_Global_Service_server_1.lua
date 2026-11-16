@@ -329,11 +329,9 @@ local function updateModeration(userId: number, field: string, value: any, actor
 	}
 	local published = publishTopic(CONFIG.Topics.Moderation, message)
 	if not published then warn("[ClubMusic Global] Moderation publish failed; periodic reconciliation remains active.") end
-	if globalAuditService then
-		pcall(globalAuditService.Record, globalAuditService, "Moderation", actorUserId,
-			tostring(userId), field .. "=" .. tostring(value) .. (if reason then " | " .. reason else ""))
-	end
-	globalEventBindable:Fire({kind = "Moderation", userId = userId, field = field, value = value, reason = reason})
+	-- The local event listener writes one audit record. Do not write here as well.
+	globalEventBindable:Fire({kind = "Moderation", userId = userId, field = field, value = value,
+		actorUserId = actorUserId, reason = reason, senderJob = JOB_ID})
 	return true
 end
 
@@ -1037,10 +1035,11 @@ ownConnection(globalEventBindable.Event:Connect(function(event)
 	if globalAuditService then
 		if kind == "DJ" then
 			pcall(globalAuditService.Record, globalAuditService, "AdminAction", event.actorUserId, tostring(event.command or "unknown"), tostring(event.command or "unknown"))
-		elseif kind == "Catalog" then
+		elseif kind == "Catalog" and (event.senderJob == nil or event.senderJob == JOB_ID) then
 			pcall(globalAuditService.Record, globalAuditService, "CatalogChange", 0, "catalog", "received")
-		elseif kind == "Moderation" then
-			pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", event.actorUserId, tostring(event.field or "moderation"), tostring(event.field or "moderation"))
+		elseif kind == "Moderation" and (event.senderJob == nil or event.senderJob == JOB_ID) then
+			pcall(globalAuditService.Record, globalAuditService, "Moderation", event.actorUserId,
+				tostring(event.userId or "unknown"), tostring(event.field or "moderation") .. "=" .. tostring(event.value))
 		end
 	end
 end))
@@ -1284,8 +1283,10 @@ local function onModeration(message)
 	local data = message.Data
 	if not validEnvelope(data, "Moderation") or data.kind ~= "Moderation" or not unseen(data.id) then return end
 	if not finiteNumber(data.userId) or (data.field ~= "globalBan" and data.field ~= "requestBlocked")
-		or typeof(data.value) ~= "boolean" then return end
-	globalEventBindable:Fire({kind = "Moderation", userId = data.userId, field = data.field, value = data.value, reason = cleanText(data.reason, CONFIG.MaxModerationReasonLength)})
+		or typeof(data.value) ~= "boolean" or not finiteNumber(data.actorUserId) or data.actorUserId < 1 then return end
+	globalEventBindable:Fire({kind = "Moderation", userId = data.userId, field = data.field, value = data.value,
+		actorUserId = math.floor(data.actorUserId), reason = cleanText(data.reason, CONFIG.MaxModerationReasonLength),
+		senderJob = data.senderJob})
 end
 
 local function onXPBoost(message)
