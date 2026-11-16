@@ -33,6 +33,8 @@ return function(_K: any)
 		thaw = {permission = "GlobalModeration", property = "Frozen", targetArg = 1, authority = true},
 		bring = {permission = "GlobalModeration", property = "Teleport", targetArg = 1, authority = true},
 		tp = {permission = "GlobalModeration", property = "Teleport", targetArg = 1, authority = true},
+		to = {permission = "GlobalModeration", property = "Teleport", targetSelf = true, authority = true},
+		place = {permission = "GlobalModeration", property = "TeleportPlace", targetArg = 1, auditKind = "Moderation"},
 
 		-- Native moderation enforcement commands retain Kohl's own role/target checks.
 		ban = {permission = "GlobalModeration", property = "Ban", targetArg = 1, auditKind = "Moderation"},
@@ -271,7 +273,10 @@ return function(_K: any)
 			local actorId = actorUserId(context)
 			if actorId then
 				if policy.authority == true then
-					if policy.global then
+					if policy.targetSelf then
+						local registerOk = (authority :: BindableFunction):Invoke("Register", actorId, actorId, policy.property, "DEFAULT", "KohlsAdmin", 120)
+						if registerOk ~= true then warn("[Tiki Tide Security][Kohl's] Could not register self-teleport authority.") end
+					elseif policy.global then
 						local globalValue = value
 						if globalValue == "DEFAULT" and policy.property == "WorldGravity" and context.env then globalValue = context.env.gravity end
 						local registerOk = (authority :: BindableFunction):Invoke("Register", actorId, 0, policy.property, globalValue, "KohlsAdmin", 120)
