@@ -152,7 +152,7 @@ local function cleanText(value: any, maxLength: number): string?
 end
 
 -- Cross-server announcements are filtered at the trusted publishing server.
--- Receivers can then rely on the signed-by-server MessagingService envelope and
+-- Receivers can then rely on the server-published, envelope-validated message and
 -- do not need to re-filter the same text independently in every destination server.
 local function filterAnnouncementText(value: any, actorUserId: number): string?
 	local clean = cleanText(value, CONFIG.MaxAnnouncementLength)
