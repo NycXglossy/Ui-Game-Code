@@ -2393,9 +2393,17 @@ ControllerFunctions.isAdmin = function(player: Player): boolean
 	return ControllerFunctions.getLevel(player) >= 2
 end
 
--- The DJ Booth is reserved for the configured OWNER and CO-OWNER ranks.
+-- Elevated booth management remains Owner/Co-owner only.
 ControllerFunctions.isDJBoothController = function(player: Player): boolean
 	return ControllerFunctions.getLevel(player) >= 3
+end
+
+-- Rank-100+ DJs may enter limited Control Mode and operate playback controls.
+-- This is deliberately separate from staff and elevated booth-management rights.
+ControllerFunctions.canUseDJBooth = function(player: Player): boolean
+	if not authorizationService or player.Parent ~= Players then return false end
+	local ok, allowed = pcall(authorizationService.Check, authorizationService, player.UserId, "GlobalDJ")
+	return ok and allowed == true
 end
 
 ControllerFunctions.passTier = function(player: Player): number
@@ -4629,7 +4637,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJSkip" then
-		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
+		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
 		if trustedAdminCommand == true and transitionInProgress then
 			return true, "A track transition is already being processed; no second skip was sent."
 		end
@@ -4644,7 +4652,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJPause" then
-		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
+		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
 		playbackControlRequestId += 1
@@ -4674,7 +4682,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJRestart" then
-		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
+		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		playbackControlRequestId += 1
 		local restartAsset = nowPlaying.soundId
@@ -4703,7 +4711,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJToggleLock" then
-		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
+		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
 		requestsLocked = not requestsLocked
 		ControllerFunctions.broadcast(if requestsLocked then "DJ Control Mode is ON. Normal player song requests are locked on this server." else "DJ Control Mode is OFF. Normal song requests are open on this server.", "info")
 		publishState(nil)
