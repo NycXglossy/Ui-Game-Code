@@ -228,13 +228,13 @@ local function classifyConfiguredPurchaseId(promptType: string, itemId: number):
 end
 
 purchaseDiagnosticRemote.OnServerEvent:Connect(function(player: Player, promptType: any, itemId: any, eventKind: any, payload: any)
-	if typeof(player) ~= "Instance" or player.Parent ~= Players
+	if not ControllerFunctions.isLiveRemotePlayer(player)
 		or (promptType ~= "GamePass" and promptType ~= "DeveloperProduct")
-		or typeof(itemId) ~= "number" or itemId <= 0 or itemId % 1 ~= 0 then
+		or typeof(itemId) ~= "number" or not (itemId > 0 and itemId <= 9007199254740991) or itemId % 1 ~= 0 then
 		return
 	end
 	local isLegacyCallback = typeof(eventKind) == "boolean"
-	local isPromptRequest = eventKind == "PromptRequested" and typeof(payload) == "string"
+	local isPromptRequest = eventKind == "PromptRequested" and typeof(payload) == "string" and #payload <= 128
 	local isPromptFinished = eventKind == "PromptFinished" and typeof(payload) == "boolean"
 	if not isLegacyCallback and not isPromptRequest and not isPromptFinished then return end
 
@@ -2330,6 +2330,32 @@ local requestsLocked = false
 local recentTracks: {string} = {}
 local lastAutoGenre = ""
 
+local sanityValidationService: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("SanityValidation") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table"
+			and type(exported.ValidateDataTree) == "function"
+			and type(exported.IsLivePlayer) == "function" then
+			sanityValidationService = exported
+		end
+	end
+	if not sanityValidationService then
+		warn("[ClubMusic][SanityValidation] Shared validator unavailable; bounded local remote validation remains active.")
+	end
+end
+
+ControllerFunctions.isLiveRemotePlayer = function(player: any): boolean
+	if sanityValidationService then
+		local ok, valid = pcall(sanityValidationService.IsLivePlayer, player)
+		return ok and valid == true
+	end
+	return typeof(player) == "Instance" and player:IsA("Player")
+		and player.Parent == Players and Players:GetPlayerByUserId(player.UserId) == player
+end
+
 local authorizationService: any = nil
 do
 	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
@@ -3990,6 +4016,16 @@ end
 -- tables before action-specific code can inspect or retain attacker-controlled data.
 ControllerFunctions.isBoundedPayload = function(payload: any): boolean
 	if typeof(payload) ~= "table" then return false end
+	-- Shared validation is deliberately capped to a tiny, shallow request tree.
+	-- The legacy field checks below remain as a compatibility contract for UI actions.
+	if sanityValidationService then
+		local ok, valid = pcall(sanityValidationService.ValidateDataTree, payload, {
+			maxDepth = 3,
+			maxEntries = 64,
+			maxStringLength = 1024,
+		})
+		if not ok or valid ~= true then return false end
+	end
 	local topCount = 0
 	for key, value in pairs(payload) do
 		topCount += 1
@@ -4174,16 +4210,20 @@ end
 -- Actions -----------------------------------------------------------------------------
 
 ControllerFunctions.handleAction = function(player: Player, action: any, payload: any, trustedAdminCommand: boolean?): (boolean?, string?)
-	if player.Parent ~= Players then return false, "The caller is no longer in this server." end
-	-- Validate the small, fixed remote contract before spending local rate-limit
-	-- capacity or processing attacker-controlled action values.
-	if not ControllerFunctions.isValidString(action, 32) or not ControllerFunctions.isBoundedPayload(payload) then return false, "Invalid action or payload." end
-	if ACTION_COOLDOWNS[action] == nil then return false, "That action is not supported." end
+	if not ControllerFunctions.isLiveRemotePlayer(player) then return false, "The caller is no longer in this server." end
 
-	-- Per-player + per-server throttles apply only to recognized, bounded actions.
+	-- Spend the cheap per-player/per-server ingress budget before walking any
+	-- attacker-controlled table. This bounds validation CPU under malformed spam.
 	local now = os.clock()
 	local userId = player.UserId
 	if not ControllerFunctions.consumeActionBudget(userId, now) then return false, "ClubMusic action rate limit reached. Try again shortly." end
+
+	-- Validate the fixed request contract only after the ingress budget is charged.
+	if not ControllerFunctions.isValidString(action, 32)
+		or not ControllerFunctions.isBoundedPayload(payload) then
+		return false, "Invalid action or payload."
+	end
+	if ACTION_COOLDOWNS[action] == nil then return false, "That action is not supported." end
 	-- Check every cooldown before recording timestamps. A rejected action must not
 	-- consume the cross-action interval and block an unrelated command immediately after it.
 	-- Keep trusted admin commands in a separate per-action cooldown lane.
@@ -4981,7 +5021,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 end
 
 catalogFunction.OnServerInvoke = function(player: Player, query: any, genreId: any, offset: any, limit: any)
-	if player.Parent ~= Players then return nil end
+	if not ControllerFunctions.isLiveRemotePlayer(player) then return nil end
 	local now = os.clock()
 	if not ControllerFunctions.consumeToken(globalCatalogQueryBucket, now, 1) then return nil end
 	-- Catalog browsing is a read-only lookup over the built-in in-memory
@@ -4994,8 +5034,8 @@ catalogFunction.OnServerInvoke = function(player: Player, query: any, genreId: a
 
 	if query ~= nil and (typeof(query) ~= "string" or #query > 48) then return nil end
 	if genreId ~= nil and (typeof(genreId) ~= "string" or #genreId > 24) then return nil end
-	if offset ~= nil and (typeof(offset) ~= "number" or offset ~= offset or offset % 1 ~= 0) then return nil end
-	if limit ~= nil and (typeof(limit) ~= "number" or limit ~= limit or limit % 1 ~= 0) then return nil end
+	if offset ~= nil and (typeof(offset) ~= "number" or offset ~= offset or offset % 1 ~= 0 or offset < 0 or offset > 10000) then return nil end
+	if limit ~= nil and (typeof(limit) ~= "number" or limit ~= limit or limit % 1 ~= 0 or limit < 1 or limit > 50) then return nil end
 
 	local ok, result = pcall(function()
 		return MusicCatalogService:GetCatalog(query or "", genreId or "", offset or 0, limit or 30)
@@ -5009,7 +5049,7 @@ end
 
 local lastPlaylistInvoke: {[number]: number} = {}
 playlistFunction.OnServerInvoke = function(player: Player)
-	if player.Parent ~= Players or not playlistStorageReady then return nil end
+	if not ControllerFunctions.isLiveRemotePlayer(player) or not playlistStorageReady then return nil end
 	local now = os.clock()
 	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
 	local previous = lastPlaylistInvoke[player.UserId] or 0
@@ -5024,7 +5064,7 @@ playlistFunction.OnServerInvoke = function(player: Player)
 end
 
 stateFunction.OnServerInvoke = function(player: Player)
-	if player.Parent ~= Players then return nil end
+	if not ControllerFunctions.isLiveRemotePlayer(player) then return nil end
 	local now = os.clock()
 	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
 	local previous = lastStateInvoke[player.UserId] or 0
