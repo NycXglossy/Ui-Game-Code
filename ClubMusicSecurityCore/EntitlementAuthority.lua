@@ -176,7 +176,7 @@ function Service:GetTier(player: Player, rewardedTier: any): (number, {[string]:
 end
 
 function Service:Clear(player: Player)
-	if not validPlayer(player) then return end
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 	local userId = player.UserId
 	self.cache[userId] = nil
 	self.refreshInFlight[userId] = nil
