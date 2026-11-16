@@ -6,6 +6,24 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+
+-- Shared structural validation is optional during staged rollout. The local
+-- fallback below remains shallow and bounded until the Security Core installer
+-- is deployed; no client payload is trusted for authority decisions.
+local SanityValidation: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = core and core:IsA("Folder") and core:FindFirstChild("SanityValidation")
+	if module and module:IsA("ModuleScript") then
+		local ok, exported = pcall(require, module)
+		if ok and typeof(exported) == "table" and type(exported.ValidateDataTree) == "function" then
+			SanityValidation = exported
+		end
+	end
+	if not SanityValidation then
+		warn("[Tiki Tide] Shared SanityValidation unavailable; bounded local request validation remains active.")
+	end
+end
 local TextService = game:GetService("TextService")
 
 -- Authorization is read directly from the shared SecurityCore singleton.
@@ -92,6 +110,45 @@ local settingsByUserId: {[number]: Settings} = {}
 local lastRequestAt: {[number]: number} = {}
 local lastBubbleAt: {[number]: number} = {}
 local lastAnnouncementAt = 0
+local ingressTokens = 48
+local ingressUpdatedAt = os.clock()
+local INGRESS_CAPACITY = 48
+local INGRESS_REFILL_PER_SECOND = 24
+
+local function consumeIngressBudget(now: number): boolean
+	local elapsed = math.max(0, now - ingressUpdatedAt)
+	ingressUpdatedAt = now
+	ingressTokens = math.min(INGRESS_CAPACITY, ingressTokens + elapsed * INGRESS_REFILL_PER_SECOND)
+	if ingressTokens < 1 then return false end
+	ingressTokens -= 1
+	return true
+end
+
+local function validateRequestPayload(payload: any): boolean
+	if typeof(payload) ~= "table" then return false end
+	if SanityValidation then
+		local ok = SanityValidation.ValidateDataTree(payload, {
+			maxDepth = 3,
+			maxEntries = 24,
+			maxStringLength = MAX_MESSAGE_LENGTH,
+		})
+		return ok == true
+	end
+	local count = 0
+	for key, value in pairs(payload) do
+		count += 1
+		if count > 24 or typeof(key) ~= "string" or #key > 32 then return false end
+		local kind = typeof(value)
+		if kind == "string" then
+			if #value > MAX_MESSAGE_LENGTH then return false end
+		elseif kind == "number" then
+			if value ~= value or value == math.huge or value == -math.huge then return false end
+		elseif kind ~= "boolean" then
+			return false
+		end
+	end
+	return true
+end
 local baseMovementByHumanoid: {[Humanoid]: {walkSpeed: number, jumpPower: number, useJumpPower: boolean}} = {}
 
 local function getSettings(player: Player): Settings
@@ -274,11 +331,12 @@ end
 
 local function handleRequest(player: Player, action: any, payload: any)
 	if player.Parent ~= Players then return fail("Player is no longer connected.") end
-	if typeof(action) ~= "string" or #action > 32 or typeof(payload) ~= "table" then
+	local now = os.clock()
+	-- Charge the cheap server-wide budget before walking attacker-controlled data.
+	if not consumeIngressBudget(now) then return fail("Settings service is busy. Please try again shortly.") end
+	if typeof(action) ~= "string" or #action < 1 or #action > 32 or not validateRequestPayload(payload) then
 		return fail("Invalid request.")
 	end
-
-	local now = os.clock()
 	local previous = lastRequestAt[player.UserId] or 0
 	if previous > 0 and now - previous < REQUEST_COOLDOWN then
 		return fail("Please wait before changing another setting.")
