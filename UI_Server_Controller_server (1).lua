@@ -4056,14 +4056,6 @@ ControllerFunctions.findTarget = function(actor: Player, userId: any): Player?
 end
 
 ControllerFunctions.purgeUserEntries = function(userId: number): number
-	if globalQueueMode then
-		local removedCount = 0
-		for _, entry in ipairs(queue) do if entry.source == "player" and entry.userId == userId then removedCount += 1 end end
-		local callOk, purged, state = ControllerFunctions.globalInvoke("PurgeGlobalUserQueueEntries", userId)
-		if callOk and purged == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state); return removedCount end
-		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		return 0
-	end
 	local removed = 0
 	for index = #queue, 1, -1 do
 		local entry = queue[index]
@@ -4293,17 +4285,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			if action == "PlaylistAddTrack" or action == "PlaylistRemoveTrack" or action == "PlaylistMoveTrack" then
 				ControllerFunctions.reloadActivePlaylist()
 			end
-			if globalQueueMode then
-				local rotationSynced, syncMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-				if rotationSynced then
-					ControllerFunctions.topUpAuto()
-				else
-					message = tostring(message) .. " Shared rotation update failed: " .. tostring(syncMessage)
-				end
-			else
-				ControllerFunctions.clearAutomaticQueue()
-				ControllerFunctions.topUpAuto()
-			end
+			ControllerFunctions.clearAutomaticQueue()
+			ControllerFunctions.topUpAuto()
 		end
 		notify(player, message, if ok then "ok" else "warn")
 		if ok then publishState(nil) end
@@ -4367,79 +4350,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local budgetReady = ControllerFunctions.waitForDataStoreBudget(5)
 		if not budgetReady then notify(player, "Shared DataStore budget is unavailable; catalog was not changed.", "warn"); return end
 		local trackId = "custom-" .. tostring(assetId)
-		local additionReserved = false
-		if globalQueueMode then
-			-- Serialize additions as well as removals. This prevents a restore/add
-			-- from racing a removal reservation for the same catalog ID.
-			local reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
-				"ReserveCatalogAddition", trackId, localCatalogRevision
-			)
-			if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
-			if reserveCallOk and reserved ~= true
-				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				ControllerFunctions.refreshCatalogWhenReady()
-				reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
-					"ReserveCatalogAddition", trackId, localCatalogRevision
-				)
-				if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
-			end
-			local alreadyReserved = reserveCallOk and reserved ~= true
-				and tostring(reserveMessage) == "Catalog addition is already reserved for this track."
-			if not reserveCallOk or (reserved ~= true and not alreadyReserved) then
-				notify(player, tostring(reserveMessage or "The shared catalog could not reserve this addition."), "warn")
-				return
-			end
-			additionReserved = true
-			if not ControllerFunctions.refreshCatalogWhenReady() then
-				notify(player, "Catalog addition is reserved globally, but the catalog could not be refreshed. Retry the audio addition after storage recovers.", "warn")
-				return
-			end
-			local existingTrack = TRACK_BY_ID[trackId]
-			if existingTrack then
-				if alreadyReserved then
-					local completeCallOk, completed, completeState, completeMessage = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
-					if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
-					if completeCallOk and completed == true then
-						notify(player, "The previously saved catalog addition was recovered and synchronized.", "ok")
-					else
-						notify(player, "The track is saved, but its shared addition reservation remains pending. Retry the addition to finish recovery.", "warn")
-					end
-				else
-					local completeCallOk, completed, completeState = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
-					if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
-					if not completeCallOk or completed ~= true then
-						notify(player, "That track is already in the catalog; reservation cleanup is pending.", "warn")
-					else
-						notify(player, "That audio is already in the catalog.", "warn")
-					end
-				end
-				return
-			end
-		end
-
+		local saved, message = MusicCatalogService:AddCustomTrack
 		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId, artworkAssetId)
-		if not saved and globalQueueMode and tostring(message) == "That audio was added by another server already. Refresh the catalog." then
-			if ControllerFunctions.refreshCatalogWhenReady() and TRACK_BY_ID[trackId] then
-				saved = true
-				message = "Track was added by another server; shared catalog state recovered."
-			end
-		end
 		if not saved then
-			if globalQueueMode and additionReserved then
-				local uncertain = tostring(message) == "Catalog save failed. Try again later."
-					or tostring(message) == "The catalog update could not be confirmed; refresh and retry."
-				if not uncertain then
-					local releaseCallOk, released, releaseState = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
-					if typeof(releaseState) == "table" then ControllerFunctions.applyGlobalQueueState(releaseState) end
-					if not releaseCallOk or released ~= true then
-						warn("[ClubMusic] Could not release rejected catalog addition reservation.")
-					end
-				else
-					notify(player, tostring(message) .. " The shared addition reservation remains active so stale servers cannot queue this ID. Retry the audio addition to recover.", "warn")
-					return
-				end
-			end
 			notify(player, message, "warn")
 			return
 		end
@@ -4449,16 +4362,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			TRACK_BY_ID[trackId] = track
 			if not table.find(ALL_TRACK_IDS, trackId) then table.insert(ALL_TRACK_IDS, trackId) end
 			table.sort(ALL_TRACK_IDS)
-		end
-		if globalQueueMode and additionReserved then
-			local completeCallOk, completed, completeState, completeMessage = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
-			if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
-			if not completeCallOk or completed ~= true then
-				warn("[ClubMusic] Catalog addition saved but shared reservation finalization is pending: " .. tostring(completeMessage))
-				notify(player, "Track saved. Shared addition finalization is pending; retry the audio addition to finish safely.", "warn")
-				publishState(nil)
-				return
-			end
 		end
 		local publishOk, published = ControllerFunctions.globalInvoke("PublishCatalogChange")
 		if not publishOk or published ~= true then
@@ -4475,149 +4378,43 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isValidString(trackId, 32) or not string.match(trackId, "^custom%-%d+$") then
 			notify(player, "Only a valid staff-added catalog track ID can be removed.", "warn"); return
 		end
-		local initialTrack = TRACK_BY_ID[trackId]
-		if initialTrack and initialTrack.assetId == nil then
+		local track = TRACK_BY_ID[trackId]
+		if not track or track.assetId == nil then
 			notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
 		end
 		if not catalogStorageReady or not ControllerFunctions.waitForDataStoreBudget(5) then
 			notify(player, "Catalog storage is unavailable; track was not removed.", "warn"); return
 		end
-
-		local track = TRACK_BY_ID[trackId]
-		if globalQueueMode and not track then
-			-- A missing local record is valid only for an interrupted removal.
-			-- Refresh once so stale caches are not mistaken for completed deletion.
-			if syncGlobalQueueSnapshot and not syncGlobalQueueSnapshot() then
-				notify(player, "The shared catalog state could not be verified; track was not removed.", "warn"); return
-			end
-			if ControllerFunctions.refreshCatalogWhenReady() then track = TRACK_BY_ID[trackId] end
-			if not track and not (globalCatalogChangeTrackId == trackId and globalCatalogChangeKind == "remove") then
-				notify(player, "Custom catalog track not found.", "warn"); return
+		if nowPlaying.trackId == trackId then
+			notify(player, "That track is currently playing. Remove it after playback ends.", "warn"); return
+		end
+		for _, queued in ipairs(queue) do
+			if queued.trackId == trackId then
+				notify(player, "That track is queued. Remove it from the queue first.", "warn"); return
 			end
 		end
-		if not globalQueueMode then
-			if not track or track.assetId == nil then
-				notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
-			end
-			if nowPlaying.trackId == trackId then
-				notify(player, "That track is currently playing. Remove it after playback ends.", "warn"); return
-			end
-			for _, queued in ipairs(queue) do
-				if queued.trackId == trackId then
-					notify(player, "That track is queued. Remove it from the queue first.", "warn"); return
-				end
-			end
-		else
-			-- Reserve the ID atomically in the same DataStore used by every global
-			-- enqueue/advance. This closes the read-queue-then-delete race.
-			local reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
-				"ReserveCatalogRemoval", trackId, localCatalogRevision
-			)
-			if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
-			if reserveCallOk and reserved ~= true
-				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				ControllerFunctions.refreshCatalogWhenReady()
-				reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
-					"ReserveCatalogRemoval", trackId, localCatalogRevision
-				)
-				if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
-			end
-			local alreadyReserved = reserveCallOk and reserved ~= true
-				and tostring(reserveMessage) == "Catalog removal is already reserved for this track."
-			if not reserveCallOk or (reserved ~= true and not alreadyReserved) then
-				notify(player, tostring(reserveMessage or "The shared catalog could not reserve this removal."), "warn")
-				return
-			end
-			-- Refresh after the reservation's revision bump. If this server stopped
-			-- after deleting the catalog record but before finalizing, a retry sees
-			-- the missing record and safely completes the existing reservation.
-			if not ControllerFunctions.refreshCatalogWhenReady() then
-				notify(player, "Removal is reserved globally, but the catalog could not be refreshed. Retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
-				return
-			end
-			track = TRACK_BY_ID[trackId]
-			if track and track.assetId == nil then
-				local releaseCallOk, released, releaseState = ControllerFunctions.globalInvoke("CompleteCatalogRemoval", trackId)
-				if typeof(releaseState) == "table" then ControllerFunctions.applyGlobalQueueState(releaseState) end
-				if not releaseCallOk or released ~= true then
-					warn("[ClubMusic] Could not release an invalid catalog removal reservation.")
-				end
-				notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
-			end
-		end
-
-		local removed = false
-		local message = "Track removed from the shared catalog."
-		if track then
-			removed, message = MusicCatalogService:RemoveCustomTrack(trackId)
-			if not removed and globalQueueMode then
-				-- UpdateAsync can report an error after its write outcome becomes
-				-- uncertain. Re-read before deciding whether to keep the reservation.
-				if MusicCatalogService:Refresh() then
-					if MusicCatalogService:GetTrackById(trackId) == nil then
-						removed = true
-						message = "Catalog removal was already committed; shared reservation recovered."
-					end
-				end
-			end
-		else
-			-- A missing local record is acceptable only when this is a reserved
-			-- global retry and the authoritative catalog refresh confirmed absence.
-			removed = globalQueueMode == true
-		end
+		local removed, message = MusicCatalogService:RemoveCustomTrack(trackId)
 		if not removed then
-			if globalQueueMode then
-				notify(player, tostring(message) .. " The shared removal reservation remains active to prevent stale servers from queueing this track. Retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
-			else
-				notify(player, message, "warn")
-			end
+			notify(player, tostring(message or "Catalog track could not be removed."), "warn")
 			return
 		end
-
 		TRACK_BY_ID[trackId] = nil
 		for index, id in ipairs(ALL_TRACK_IDS) do
 			if id == trackId then table.remove(ALL_TRACK_IDS, index); break end
 		end
-		local rotationReady = true
-		if activePlaylistId or (globalQueueMode and globalPlaylistRotationEnabled) then
+		if activePlaylistId then
 			for index = #activePlaylistTracks, 1, -1 do
 				if activePlaylistTracks[index].id == trackId then table.remove(activePlaylistTracks, index) end
 			end
 			activePlaylistCursor = math.clamp(activePlaylistCursor, 1, math.max(1, #activePlaylistTracks))
-			if globalQueueMode then
-				local rotationSynced, syncMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-				if not rotationSynced then
-					rotationReady = false
-					warn("[ClubMusic] Removed catalog track locally, but shared playlist rotation sync failed: " .. tostring(syncMessage))
-				end
-			else
-				ControllerFunctions.clearAutomaticQueue()
-				ControllerFunctions.topUpAuto()
-			end
+			ControllerFunctions.clearAutomaticQueue()
+			ControllerFunctions.topUpAuto()
 		end
-
-		if globalQueueMode then
-			if not rotationReady then
-				notify(player, "Catalog record is removed, but the shared playlist rotation is not synchronized. The safety reservation remains active; retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
-				publishState(nil)
-				return
-			end
-			local completeCallOk, completed, completeState, completeMessage = ControllerFunctions.globalInvoke("CompleteCatalogRemoval", trackId)
-			if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
-			if not completeCallOk or completed ~= true then
-				warn("[ClubMusic] Catalog record removed but shared reservation finalization is pending: " .. tostring(completeMessage))
-				notify(player, "Catalog record removed. Shared reservation finalization is pending; retry the catalog removal from the staff catalog UI for this same track to finish safely.", "warn")
-				publishState(nil)
-				return
-			end
-		end
-
 		local publishOk, published = ControllerFunctions.globalInvoke("PublishCatalogChange")
 		if not publishOk or published ~= true then
 			warn("[ClubMusic] Catalog removal saved locally; cross-server invalidation publish failed.")
 		end
-		notify(player, message, "ok")
+		notify(player, tostring(message or "Track removed from the catalog."), "ok")
 		publishState(nil)
 		return
 	end
@@ -4670,15 +4467,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 		local vip = ControllerFunctions.isVip(player)
 		local entry = ControllerFunctions.makeEntry(track, "player", player)
-		if globalQueueMode then
-			local queued: boolean = false
-			local queueError: string? = "Global queue is not ready."
-			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
-			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
-		else
-			queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
-			requestCounts[player.UserId] = count + 1
-		end
+		queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
+		requestCounts[player.UserId] = count + 1
 		lastRequestAt[player.UserId] = now
 		notify(player, if vip and CONFIG.VipPriority then "Requested with VIP priority!" else "Track requested!", "ok")
 		publishState(nil)
@@ -4767,15 +4557,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			genre = "Creator Hub Audio",
 		}, "player", player)
 		entry.soundId = "rbxassetid://" .. tostring(assetId)
-		if globalQueueMode then
-			local queued: boolean = false
-			local queueError: string? = "Global queue is not ready."
-			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
-			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
-		else
-			queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
-			requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
-		end
+		queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
+		requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
 		lastRequestAt[player.UserId] = recheckNow
 		notify(player, "Audio queued: " .. titleOrError, "ok")
 		publishState(nil)
@@ -4832,36 +4615,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	-- Staff ----------------------------------------------------------------------------
 
 	if action == "DJToggleGlobalPlaybackSync" then
-		if not CONFIG.EnableGlobalPlaybackSync then
-			return false, "Global playback synchronization is disabled. Each server has its own playback and request queue."
-		end
-		if ControllerFunctions.getLevel(player) < 3 then
-			return false, "Global playback sync settings are restricted to the Owner and Co-Owner."
-		end
-		if typeof(payload.enabled) ~= "boolean" then return false, "Choose whether global playback sync should be enabled." end
-		local callOk, accepted, result = ControllerFunctions.globalInvoke(
-			"SetGlobalPlaybackSyncEnabled", payload.enabled, player.UserId
-		)
-		if not callOk or accepted ~= true then
-			local reason = tostring(result or accepted or "The global playback setting could not be saved.")
-			notify(player, reason, "warn")
-			return false, reason
-		end
-		local syncState = ControllerFunctions.globalPlaybackSyncState
-		syncState.enabled = payload.enabled
-		if not payload.enabled then
-			syncState.isLeader = false
-			syncState.leaderJobId = nil
-		end
-		syncState.authorityReady = true
-		syncState.statusError = nil
-		publishState(nil)
-		local message = if payload.enabled
-			then "Global playback sync enabled. Each server keeps its own request queue."
-			else "Global playback sync disabled. Each server continues with its local playback and queue."
-		notify(player, message, "ok")
-		return true, message
+		return false, "Global playback synchronization has been retired. Each server has its own playback and request queue."
 	end
+
 
 	if action == "DJPlayPlaylist" then
 		if not ControllerFunctions.isDJBoothController(player) then notify(player, "The DJ Booth is restricted to the Owner and Co-Owner.", "warn"); return end
@@ -4884,14 +4640,13 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		local id = payload.queueId
 		if not ControllerFunctions.isValidString(id, 64) then return end
-		if globalQueueMode then
-			local callOk, moved, state = ControllerFunctions.globalInvoke("MoveUpGlobalQueueEntry", id)
-			if callOk and moved == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state)
-			elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		else
-			local index = ControllerFunctions.findQueueIndex(id)
-			if index and index > 1 then queue[index], queue[index - 1] = queue[index - 1], queue[index] end
-		end
+		local index = ControllerFunctions.findQueueIndex(id)
+		if index and index > 1 then queue[index], queue[index - 1] = queue[index - 1], queue[index] end
+		publishState(nil)
+		return
+	end
+
+	if action == "DJRemove" then
 		publishState(nil)
 		return
 	end
@@ -4900,18 +4655,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		local id = payload.queueId
 		if not ControllerFunctions.isValidString(id, 64) then return false, "A valid queue entry ID is required." end
-		if globalQueueMode then
-			local callOk, removed, state, message = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntry", id)
-			if callOk and removed == true then
-				if typeof(state) == "table" and not ControllerFunctions.applyGlobalQueueState(state) and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				if typeof(state) ~= "table" and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				ControllerFunctions.topUpAuto()
-				publishState(nil)
-				return true, "Queued track removed."
-			end
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			return false, tostring(message or "Queue entry was not found or the shared queue is unavailable.")
-		end
+		local index = ControllerFunctions.findQueueIndex(id)
 		local index = ControllerFunctions.findQueueIndex(id)
 		if not index then return false, "Queue entry was not found. Run ;cmqueue to refresh the IDs." end
 		local removedEntry = queueManager:RemoveAt(index, true)
@@ -4925,9 +4669,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		if trustedAdminCommand == true and transitionInProgress then
 			return true, "A track transition is already being processed; no second skip was sent."
-		end
-		if globalQueueMode then
-			return false, "Local DJ controls are waiting for the local-queue migration; the shared queue was not changed."
 		end
 		local advanced, transitionError = ControllerFunctions.advance()
 		if not advanced then
@@ -4990,9 +4731,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJClearQueue" then
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
-		if globalQueueMode then
-			return false, "Local DJ controls are waiting for the local-queue migration; the shared queue was not changed."
-		end
 		ControllerFunctions.cancelAudioTransition("queue-clear")
 		queueManager:Clear(true)
 		autoQueueHold = true
@@ -5021,9 +4759,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		end
 
 		local globalWriteOk = true
-		-- In playback-only mode request moderation is scoped to this server's
-		-- local queue; do not mirror the decision into the global moderation store.
-		if not RunService:IsStudio() and ControllerFunctions.globalPlaybackSyncState.enabled ~= true then
+		if not RunService:IsStudio() then
 			local callOk, persisted = ControllerFunctions.globalInvoke("SetRequestBlocked", target.UserId, payload.blocked, player.UserId)
 			globalWriteOk = callOk and persisted == true
 		end
@@ -5442,12 +5178,11 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local currentArtist = if typeof(nowPlaying.artist) == "string" then nowPlaying.artist else ""
 		local playbackLabel = if playbackPaused then "PAUSED" else "PLAYING"
 		local requestLabel = if requestsLocked then "LOCKED" else "OPEN"
-		local queueModeLabel = if globalQueueMode then "GLOBAL" else "LOCAL"
 		local queueCount = #queue
 		local elapsed = math.max(0, math.floor(tonumber(nowPlaying.elapsed) or 0))
 		local duration = math.max(0, math.floor(tonumber(nowPlaying.duration) or 0))
 		local trackLabel = currentTitle .. (if currentArtist ~= "" then " — " .. currentArtist else "")
-		return true, string.sub(string.format("ClubMusic: %s | %s | Requests %s | Queue %d (%s) | %ds/%ds", trackLabel, playbackLabel, requestLabel, queueCount, queueModeLabel, elapsed, duration), 1, 450)
+		return true, string.sub(string.format("ClubMusic: %s | %s | Requests %s | Local queue %d | %ds/%ds", trackLabel, playbackLabel, requestLabel, queueCount, elapsed, duration), 1, 450)
 	end
 	if operation == "DJSessionStatus" then
 		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
@@ -5493,12 +5228,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, "DJ session ended."
 	end
 	if operation == "Queue" then
-		if globalQueueMode and (not syncGlobalQueueSnapshot or not syncGlobalQueueSnapshot()) then
-			return false, "The shared queue could not be refreshed. Try ;cmqueue again shortly."
-		end
 		local total = #queue
-		if total == 0 then return true, "ClubMusic queue is empty (" .. (if globalQueueMode then "GLOBAL" else "LOCAL") .. ")." end
-		local lines = {string.format("ClubMusic queue (%s) — %d queued:", if globalQueueMode then "GLOBAL" else "LOCAL", total)}
+		if total == 0 then return true, "This server's ClubMusic queue is empty." end
+		local lines = {string.format("This server's ClubMusic queue — %d queued:", total)}
 		local shown = math.min(total, 6)
 		for index = 1, shown do
 			local entry = queue[index]
@@ -5556,13 +5288,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
 		ControllerFunctions.blockedTrackCache[trackId] = {blocked = mode == "on", checkedAt = os.clock()}
 		if mode == "on" then
-			if globalQueueMode then
-				local purgeOk, purged, state = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntriesForTrack", trackId)
-				if not purgeOk or purged ~= true then
-					return false, "Track was blocked, but the shared queue purge could not be confirmed. Retry ;cmblocktrack " .. trackId .. " on."
-				end
-				if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-			end
+			for index = #queue, 1, -1 do
 			for index = #queue, 1, -1 do
 				if queue[index].trackId == trackId then queueManager:RemoveAt(index, true) end
 			end
@@ -6009,7 +5735,7 @@ local playlistManagerOk, playlistManager = pcall(childManagerModules.MusicPlayli
 			name = activePlaylistName,
 			cursor = activePlaylistCursor,
 			trackIds = trackIds,
-			global = globalQueueMode,
+			global = false,
 		}
 	end,
 	StartRotation = function(player: Player, playlistId: any)
@@ -6336,22 +6062,10 @@ refreshLocalCatalog = function(): boolean
 		-- Catalog invalidation can remove tracks referenced by an active playlist.
 		-- Rebuild the in-memory playable view without mutating the saved playlist:
 		-- stale IDs remain available if a track is restored in a later catalog sync.
-		if globalQueueMode then
-			-- The shared rotation is authoritative in global mode; re-read it
-			-- against the refreshed local catalog instead of replacing it with
-			-- this server's possibly stale playlist copy.
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			-- A removed track can leave a rotation with no locally playable IDs.
-			-- Disable that stale rotation so an empty queue can fall back to Auto DJ.
-			if globalPlaylistRotationEnabled and not activePlaylistId then
-				local rotationSynced, rotationMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-				if not rotationSynced then
-					warn("[ClubMusic] Could not clear a playlist rotation with no playable catalog tracks: " .. tostring(rotationMessage))
-				end
-			end
-		elseif activePlaylistId then
+		if activePlaylistId then
 			ControllerFunctions.reloadActivePlaylist()
 		end
+
 		refreshed = true
 	end)
 	catalogRefreshBusy = false
@@ -6364,130 +6078,18 @@ refreshLocalCatalog = function(): boolean
 	return refreshed
 end
 
-ControllerFunctions.applyGlobalPlaybackControl = function(command: string, payload: any): boolean
-	-- When the shared queue is active, its playback snapshot is authoritative.
-	-- The legacy playbackControl store is a separate compatibility path; applying
-	-- its delayed reconciliation events here could overwrite a newer queue pause
-	-- or restart with stale state.
-	if globalQueueMode or ControllerFunctions.globalPlaybackSyncState.enabled == true then return false end
-	-- Playback revisions are monotonic integer sequence numbers. Reject malformed
-	-- fractional/unsafe values instead of silently rounding them into a valid revision.
-	if typeof(payload) ~= "table" or not ControllerFunctions.isFiniteNumber(payload.revision)
-		or payload.revision < 1 or payload.revision % 1 ~= 0
-		or payload.revision > 9007199254740991 then return false end
-	local revision = payload.revision
-	if revision <= lastGlobalPlaybackRevision then return false end
-	if command == "SetPlaybackPaused" then
-		if typeof(payload.paused) ~= "boolean" then return false end
-		ControllerFunctions.cancelAudioTransition(if payload.paused then "global-pause" else "global-resume")
-		playbackPaused = payload.paused
-		if ControllerFunctions.isFiniteNumber(payload.position) then
-			nowPlaying.elapsed = math.clamp(payload.position, 0, nowPlaying.duration)
-		end
-		pcall(function()
-			local audio = ControllerFunctions.getAudioSnapshot()
-			if audio.ready and ControllerFunctions.isFiniteNumber(payload.position) then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
-			if playbackPaused then ControllerFunctions.pauseAudio() else ControllerFunctions.resumeAudio() end
-		end)
-	elseif command == "Restart" then
-		ControllerFunctions.cancelAudioTransition("global-restart")
-		nowPlaying.elapsed = 0
-		playbackPaused = false
-		ControllerFunctions.startServerMusic(nowPlaying.soundId)
-	else
-		return false
-	end
-	lastGlobalPlaybackRevision = revision
-	return true
-end
+-- Cross-server playback controls are retired; local playback controls are handled by DJ actions.
+
 
 ControllerFunctions.handleGlobalMessage = function(message: any)
 	if typeof(message) ~= "table" then return end
-	if message.kind == "PlaybackSyncModeChanged" then
-		local syncState = ControllerFunctions.globalPlaybackSyncState
-		if not CONFIG.EnableGlobalPlaybackSync then
-			syncState.enabled = false
-			syncState.isLeader = false
-			syncState.leaderJobId = nil
-			return
-		end
-		syncState.enabled = message.enabled == true
-		if not syncState.enabled then
-			syncState.isLeader = false
-			syncState.lastAppliedRevision = 0
-		elseif not globalQueueMode then
-			task.defer(function()
-				local ok, readOk, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
-				if ok and readOk == true then ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot) end
-			end)
-		end
-		return
-	end
-	if message.kind == "PlaybackChanged" and ControllerFunctions.globalPlaybackSyncState.enabled == true then
-		task.defer(function()
-			local ok, readOk, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
-			if ok and readOk == true then ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot) end
-		end)
-		return
-	end
-	if message.kind == "QueueChanged" and globalQueueMode then
-		-- A committed transition carries a small, service-validated metadata hint.
-		-- Apply it immediately for responsive title/duration UI, then reconcile
-		-- playback and the complete queue from the authoritative DataStore snapshot.
-		local hint = message.trackHint
-		if typeof(hint) == "table" and typeof(hint.trackId) == "string"
-			and typeof(hint.title) == "string" and typeof(hint.artist) == "string"
-			and ControllerFunctions.isFiniteNumber(hint.duration) and hint.duration >= 1
-			and ControllerFunctions.isFiniteNumber(hint.trackRevision)
-			and hint.trackRevision > math.max(globalTrackRevision, globalMetadataHintRevision)
-			and hint.trackRevision % 1 == 0 then
-			-- This is presentation-only. Do not change nowPlaying.trackId,
-			-- soundId, globalTrackRevision, or audio sync state here: those belong
-			-- to the authoritative snapshot/CAS and crossfade OnCommit path.
-			globalMetadataHintRevision = math.floor(hint.trackRevision)
-			nowPlaying.title = hint.title
-			nowPlaying.artist = hint.artist
-			nowPlaying.genre = tostring(hint.genre or "Unknown")
-			nowPlaying.duration = math.max(1, hint.duration)
-			nowPlaying.elapsed = 0
-			nowPlaying.dj = if hint.source == "playlist" then "Playlist: " .. activePlaylistName else "Automated Selector"
-			nowPlaying.source = tostring(hint.source or "auto")
-			nowPlaying.requestedBy = tostring(hint.requestedBy or "Auto DJ")
-			nowPlaying.vip = hint.vip == true
-			ControllerFunctions.publishPlaybackState()
-		end
-		-- Coalesce same-tick queue notifications, but do not add a fixed debounce
-		-- to track transitions. A skip must refresh title/duration on peer servers
-		-- as soon as the authoritative snapshot can be read.
-		if not globalQueueRefreshScheduled then
-			globalQueueRefreshScheduled = true
-			task.defer(function()
-				-- MessagingService is only an invalidation hint. If a transient
-				-- DataStore read fails, retry the read with short backoff instead
-				-- of leaving this server's HUD mirror stale until the slow poll.
-				local retryDelays = {0, 1, 3}
-				for attempt, delaySeconds in ipairs(retryDelays) do
-					if delaySeconds > 0 then task.wait(delaySeconds) end
-					if not globalQueueMode or not syncGlobalQueueSnapshot then break end
-					if syncGlobalQueueSnapshot() then break end
-					if attempt == #retryDelays then
-						warn("[ClubMusic] Global queue refresh remained unavailable after retry attempts; periodic reconciliation will retry.")
-					end
-				end
-				globalQueueRefreshScheduled = false
-			end)
-		end
-		return
-	end
+	-- Playback sync and shared-queue notifications are retired; only global
+	-- moderation, catalog invalidation, announcements, and XP events are consumed.
 	if message.kind == "TrackModeration" and typeof(message.trackId) == "string" and typeof(message.blocked) == "boolean" then
 		if message.senderJob == game.JobId then return end
 		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
 		ControllerFunctions.blockedTrackCache[message.trackId] = {blocked = message.blocked, checkedAt = os.clock()}
 		if message.blocked ~= true then return end
-		if globalQueueMode then
-			local purgeOk, purged, state = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntriesForTrack", message.trackId)
-			if purgeOk and purged == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-		end
 		for index = #queue, 1, -1 do
 			if queue[index].trackId == message.trackId then queueManager:RemoveAt(index, true) end
 		end
@@ -6501,7 +6103,6 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 	if message.kind == "Catalog" then
 		if os.clock() - lastCatalogRefreshAt < 3 then return end
 		task.spawn(function()
-			if globalQueueMode and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			ControllerFunctions.refreshCatalogWhenReady()
 		end)
 		return
@@ -6821,29 +6422,7 @@ task.spawn(function()
 		-- Require a short stable stop, then attempt one in-place resume from the
 		-- captured playhead before allowing the queue watchdog to advance.
 		local audio = ControllerFunctions.getAudioSnapshot()
-		-- Retry a joining/newly-transitioned server's first global alignment as soon
-		-- as its legacy Sound reports loaded. Do not wait for the slower queue
-		-- snapshot poll; a failed early seek must not leave this deck behind.
-		if globalQueueMode and globalAudioSyncPending and not playbackPaused
-			and not audioReloadInProgress and audio.ready and audio.asset == nowPlaying.soundId
-			and nowPlaying.soundId ~= "" then
-			local crossfadeManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
-			if not (crossfadeManager and crossfadeManager.active == true) then
-				local targetPosition = nowPlaying.elapsed
-				if ControllerFunctions.globalPlaybackEndTime > 0 then
-					local remainingGlobal = math.max(0, ControllerFunctions.globalPlaybackEndTime
-						- game:GetService("Workspace"):GetServerTimeNow())
-					targetPosition = math.clamp(nowPlaying.duration - remainingGlobal, 0, nowPlaying.duration)
-				end
-				local alignCallOk, alignOk = pcall(function()
-					return ControllerFunctions.seekAudio(targetPosition)
-				end)
-				if alignCallOk and alignOk ~= false then
-					globalAudioSyncPending = false
-					audio = ControllerFunctions.getAudioSnapshot()
-				end
-			end
-		end
+		if playbackPaused or audioReloadInProgress or nowPlaying.trackId == ""
 		if playbackPaused or audioReloadInProgress or nowPlaying.trackId == "" or nowPlaying.soundId == ""
 			or audio.playing == true then
 			ControllerFunctions.stoppedAudioGeneration = -1
@@ -6892,9 +6471,6 @@ task.spawn(function()
 		if not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
 			local remaining = nowPlaying.duration - nowPlaying.elapsed
-			if globalQueueMode and ControllerFunctions.globalPlaybackEndTime > 0 then
-				remaining = math.max(0, ControllerFunctions.globalPlaybackEndTime - game:GetService("Workspace"):GetServerTimeNow())
-			end
 			local managers = ControllerFunctions.ChildManagers
 			local crossfade = managers and managers.Crossfade
 			local nextEntry = queue[1]
@@ -6905,29 +6481,7 @@ task.spawn(function()
 			-- Start preparation any time before the track ends. The coordinator itself waits
 			-- until the fade window; a strict duration-plus-one gate can miss the window
 			-- when the one-second playback clock lands exactly on its boundary.
-			-- Before preparing a shared transition, reconcile this server's queue
-			-- head and playback revision against the authoritative global snapshot.
-			-- A stale local mirror must never choose a different incoming song.
-			if globalQueueMode and crossfade and not crossfade.destroyed and not crossfade.active
-				and crossfadeAttemptedGeneration ~= currentGeneration
-				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
-				and remaining > 0 then
-				local snapshotFresh = syncGlobalQueueSnapshot ~= nil and syncGlobalQueueSnapshot()
-				if snapshotFresh then
-					currentGeneration = playbackGeneration
-					shouldAdvance = not playbackPaused and nowPlaying.trackId ~= ""
-						and nowPlaying.elapsed >= nowPlaying.duration
-					remaining = math.max(0, ControllerFunctions.globalPlaybackEndTime
-						- game:GetService("Workspace"):GetServerTimeNow())
-					nextEntry = queue[1]
-					nextAsset = if typeof(nextEntry) == "table"
-						then (nextEntry.soundId or CONFIG.SoundIds[nextEntry.trackId] or "") else ""
-					validNextAsset = typeof(nextAsset) == "string" and #nextAsset <= 64
-						and string.match(nextAsset, "^rbxassetid://%d+$") ~= nil
-				else
-					validNextAsset = false
-				end
-			end
+			if crossfade and not crossfade.destroyed and not crossfade.active
 			if crossfade and not crossfade.destroyed and not crossfade.active
 				and crossfadeAttemptedGeneration ~= currentGeneration
 				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
@@ -6937,9 +6491,9 @@ task.spawn(function()
 				crossfadeAttemptedGeneration = currentGeneration
 				pendingCrossfadeEntry = nextEntry
 				pendingCrossfadeToken = audioTransitionTrackToken
-				ControllerFunctions.pendingCrossfadeGlobalRevision = if globalQueueMode then globalTrackRevision else -1
+				ControllerFunctions.pendingCrossfadeGlobalRevision = -1
 				ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-				ControllerFunctions.pendingCrossfadeDeadline = if globalQueueMode then ControllerFunctions.globalPlaybackEndTime else 0
+				ControllerFunctions.pendingCrossfadeDeadline = 0
 				local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
 				if not started then
 					pendingCrossfadeEntry = nil
