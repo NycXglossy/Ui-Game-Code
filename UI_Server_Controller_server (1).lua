@@ -2291,7 +2291,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	CatalogAddAudio = 10, CatalogRemoveTrack = 2,
 	PlaylistCreate = 2, PlaylistDelete = 1, PlaylistAddTrack = 0.5, PlaylistRemoveTrack = 0.5, PlaylistMoveTrack = 0.5,
 	DJPlayPlaylist = 2, DJStopPlaylist = 1,
-	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1, DJToggleGlobalPlaybackSync = 1,
+	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
 	ModBlockUser = 0.5, ModSetPassTier = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, BuyTitleTag = 1, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
 	SaveTitleSlot = CONFIG.SaveTitleCooldownSeconds, SelectTitleSlot = 0.3,
@@ -3173,13 +3173,6 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	if ControllerFunctions.publishPlaybackState then ControllerFunctions.publishPlaybackState() end
 end
 
--- Global playback synchronization is retired; playback state is server-local.
-ControllerFunctions.globalPlaybackSyncState = {
-	enabled = false, isLeader = false, revision = 0, trackRevision = 0,
-	lastAppliedRevision = 0, lastStatusAt = 0, lastErrorAt = 0,
-	leaderJobId = nil, authorityReady = false, statusError = nil,
-}
-
 -- Global queue state reconciliation is retired; the local queue is authoritative.
 
 -- Global queue synchronization helpers were retired; queue maintenance is local.
@@ -3312,14 +3305,6 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		vip = vip,
 		customTitleUnlocked = ControllerFunctions.hasTikiTideAccess(player),
 		queue = safeQueue,
-		globalPlaybackSync = {
-			enabled = ControllerFunctions.globalPlaybackSyncState.enabled == true,
-			isLeader = ControllerFunctions.globalPlaybackSyncState.isLeader == true,
-			leaderJobId = ControllerFunctions.globalPlaybackSyncState.leaderJobId,
-			authorityReady = ControllerFunctions.globalPlaybackSyncState.authorityReady == true,
-			error = ControllerFunctions.globalPlaybackSyncState.statusError,
-			localQueueIsolated = true,
-		},
 		nowPlaying = {
 			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
 			genre = nowPlaying.genre, duration = nowPlaying.duration, elapsed = nowPlaying.elapsed,
