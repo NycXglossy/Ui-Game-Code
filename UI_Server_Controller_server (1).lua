@@ -3753,162 +3753,32 @@ enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
 end
 
 ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, string?)
-	-- Every transition is synchronous and generation-checked. This prevents the
-	-- duration clock and playback watchdog from advancing the same track twice.
+	-- Server-local queue only. Generation checks prevent the playback clock and
+	-- watchdog from advancing the same track twice.
 	if transitionInProgress then return false, "A track transition is already in progress." end
 	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then
 		return false, "The current track changed before the transition started."
 	end
-	if ControllerFunctions.globalPlaybackSyncState.enabled == true
-		and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
-		return false, "Global playback is controlled by the elected DJ server. This server's queue remains local."
-	end
 	ControllerFunctions.cancelAudioTransition("advance")
 	transitionInProgress = true
-	if globalQueueMode then
-		-- Always release the transition lock, including when fallback selection,
-		-- state synchronization, or post-transition queue maintenance throws.
-		local branchOk, advanced, reason = pcall(function(): (boolean, string?)
-			-- A queue snapshot carries the catalog epoch. Refresh stale local catalog
-			-- data before choosing a fallback so removed IDs are never replayed.
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			if localCatalogRevision ~= globalCatalogRevision then
-				if not ControllerFunctions.refreshCatalogWhenReady() then
-					return false, "The shared catalog is updating; track transition will retry."
-				end
-			end
-			if globalPlaylistRotationEnabled and not activePlaylistId then
-				local rotationSynced, rotationMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-				if not rotationSynced then
-					return false, "The shared playlist rotation is still recovering: " .. tostring(rotationMessage)
-				end
-			end
-			-- Build one fallback entry for this transition. Retrying a stale revision
-			-- must not consume additional playlist cursor positions or pick new tracks.
-			local playlistFallback = ControllerFunctions.nextPlaylistTrack()
-			local autoFallback = if playlistFallback then nil else ControllerFunctions.pickAutoTrack()
-			if not playlistFallback and not autoFallback then
-				return false, "No playable catalog tracks are available for the shared transition."
-			end
-			local fallback = if playlistFallback
-				then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil)
-				else ControllerFunctions.makeEntry(autoFallback :: Track, "auto", nil)
-			local function attemptGlobalAdvance(): (boolean, string?)
-				local expectedRevision = globalTrackRevision
-				local callOk, didAdvance, state, message = ControllerFunctions.globalInvoke(
-					"AdvanceGlobalQueue", expectedRevision, fallback, localCatalogRevision
-				)
-				if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-				if callOk and didAdvance == true and typeof(state) == "table" then
-					return true, nil
-				end
-				return false, tostring(message or (if callOk then "The shared queue rejected the transition." else "The shared queue service is unavailable."))
-			end
-			local didAdvance, failureReason = attemptGlobalAdvance()
-			if not didAdvance and failureReason == "The automatic fallback track was recently played; select another track." then
-				-- Another server advanced shared recent history after this server
-				-- selected its fallback. Refresh authoritative history and retry
-				-- once with a newly selected candidate; never relax repeat guards.
-				if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot() then
-					local refreshedPlaylistTrack = ControllerFunctions.nextPlaylistTrack()
-					local refreshedAutoTrack = if refreshedPlaylistTrack then nil else ControllerFunctions.pickAutoTrack()
-					if refreshedPlaylistTrack or refreshedAutoTrack then
-						fallback = if refreshedPlaylistTrack
-							then ControllerFunctions.makeEntry(refreshedPlaylistTrack, "playlist", nil)
-							else ControllerFunctions.makeEntry(refreshedAutoTrack :: Track, "auto", nil)
-						didAdvance, failureReason = attemptGlobalAdvance()
-					end
-				end
-			end
-			if not didAdvance and failureReason == "Catalog changed on another server; refresh and retry." then
-				-- The reservation/revision may have committed after the preflight
-				-- snapshot. Reconcile the catalog, then retry once with the refreshed
-				-- playlist cursor or a new Auto DJ fallback if the old ID disappeared.
-				if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-					and ControllerFunctions.refreshCatalogWhenReady() then
-					if not isPlayableTrack(TRACK_BY_ID[fallback.trackId]) then
-						local refreshedPlaylistTrack = ControllerFunctions.nextPlaylistTrack()
-						local refreshedAutoTrack = if refreshedPlaylistTrack then nil else ControllerFunctions.pickAutoTrack()
-						if not refreshedPlaylistTrack and not refreshedAutoTrack then
-							return false, "No playable catalog tracks are available after catalog refresh."
-						end
-						fallback = if refreshedPlaylistTrack
-							then ControllerFunctions.makeEntry(refreshedPlaylistTrack, "playlist", nil)
-							else ControllerFunctions.makeEntry(refreshedAutoTrack :: Track, "auto", nil)
-					end
-					didAdvance, failureReason = attemptGlobalAdvance()
-				end
-			end
-			-- A stale revision means another server has already won this transition.
-			-- Refresh and accept that authoritative advance instead of issuing a
-			-- second skip against the newly-current track (which would double-skip).
-			if not didAdvance and failureReason == "Track already advanced by another server." then
-				local previousRevision = globalTrackRevision
-				local refreshed = false
-				-- Snapshot sync may already be running in another event callback.
-				for refreshAttempt = 1, 10 do
-					if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-						and globalTrackRevision > previousRevision then
-						refreshed = true
-						break
-					end
-					task.wait(0.1)
-				end
-				if refreshed then
-					didAdvance, failureReason = true, nil
-				else
-					failureReason = "The shared track changed, but this server could not confirm the newer snapshot. Please retry."
-				end
-			end
-			-- Keep the transition lock scoped to the authoritative CAS and any
-			-- required stale-revision confirmation. Queue replenishment and the
-			-- follow-up snapshot can yield on DataStore work, so they must run only
-			-- after the lock is released.
-			return didAdvance, failureReason
-		end)
-		transitionInProgress = false
-		if not branchOk then
-			local failure = "Global track transition failed unexpectedly: " .. tostring(advanced)
-			warn("[ClubMusic] " .. failure)
-			return false, failure
-		end
-		if not advanced then
-			warn("[ClubMusic] Global transition was not applied: " .. tostring(reason))
-			local failureText = string.lower(tostring(reason or ""))
-			local storageFailure = string.find(failureText, "unavailable", 1, true) ~= nil
-				or string.find(failureText, "temporarily", 1, true) ~= nil
-			-- Reconcile first. A transient write error or a single failed read
-			-- must not make this server advance independently of the global queue.
-			if syncGlobalQueueSnapshot and globalQueueMode then syncGlobalQueueSnapshot() end
-			if storageFailure and not globalQueueMode then
-				-- The snapshot failure threshold has been reached; local playback
-				-- is now the deliberate outage fallback.
-				return ControllerFunctions.advance(expectedGeneration)
-			end
-			return false, reason
-		end
-		local maintenanceOk, maintenanceError = pcall(function()
-			ControllerFunctions.topUpAuto()
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		end)
-		if not maintenanceOk then
-			warn("[ClubMusic] Track advanced, but post-transition queue maintenance failed: " .. tostring(maintenanceError))
-		end
-		return true, nil
-	end
 	local ok, err = pcall(function()
 		local nextEntry = queueManager:PopNext()
 		if not nextEntry then
-			local autoTrack = ControllerFunctions.pickAutoTrack()
-			if not autoTrack then error("No playable catalog tracks are available for the next transition.") end
-			nextEntry = ControllerFunctions.makeEntry(autoTrack, "auto", nil)
+			local playlistTrack = ControllerFunctions.nextPlaylistTrack()
+			local autoTrack = if playlistTrack then nil else ControllerFunctions.pickAutoTrack()
+			if not playlistTrack and not autoTrack then
+				error("No playable catalog tracks are available for the next transition.")
+			end
+			nextEntry = if playlistTrack
+				then ControllerFunctions.makeEntry(playlistTrack, "playlist", nil)
+				else ControllerFunctions.makeEntry(autoTrack :: Track, "auto", nil)
 		end
 		ControllerFunctions.setNowPlaying(nextEntry :: QueueEntry)
 		ControllerFunctions.topUpAuto()
 	end)
 	transitionInProgress = false
 	if not ok then
-		warn("[ClubMusic] Track transition failed: " .. tostring(err))
+		warn("[ClubMusic] Local track transition failed: " .. tostring(err))
 		return false, "The local track transition failed."
 	end
 	return true, nil
@@ -3923,175 +3793,8 @@ else
 	warn("[ClubMusic] Startup held: the catalog contains no playable audio tracks.")
 end
 
--- Shared queue authority is intentionally disabled. Every server starts and remains
--- on its own local request queue; no global queue snapshot or handoff is attempted.
-task.spawn(function()
-	if not CONFIG.EnableGlobalQueue then
-		print("[ClubMusic] Local-queue mode is active in this server; shared queue authority is disabled.")
-		return
-	end
-	if RunService:IsStudio() and not CONFIG.StudioUseGlobalQueue then
-		print("[ClubMusic] Studio local-queue mode is active; shared queue handoff is disabled.")
-		return
-	end
-	local enabledCallOk, enabled = false, false
-	for _ = 1, 30 do
-		enabledCallOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
-		if enabledCallOk then break end
-		task.wait(2)
-	end
-	if not enabledCallOk or enabled ~= true then return end
-	globalQueueMode = true
-	local readOk = false
-	for snapshotAttempt = 1, GLOBAL_QUEUE_SNAPSHOT_FAILURE_LIMIT do
-		readOk = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot() or false
-		if readOk or not globalQueueMode then break end
-		task.wait(snapshotAttempt)
-	end
-	if not readOk then
-		-- The snapshot helper enters local backup only after the repeated-failure
-		-- threshold; until then this server retains global authority.
-		return
-	end
-	if localCatalogRevision ~= globalCatalogRevision then
-		if not ControllerFunctions.refreshCatalogWhenReady() then
-			warn("[ClubMusic] Catalog revision could not be synchronized; global queue writes remain blocked on this server.")
-			return
-		end
-	end
-	if globalPlaylistRotationEnabled and not activePlaylistId then
-		local rotationSynced, rotationMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-		if not rotationSynced then
-			warn("[ClubMusic] Empty global playlist rotation could not be cleared: " .. tostring(rotationMessage))
-			return
-		end
-	end
-	if nowPlaying.trackId == "" then
-		local playlistFallback = ControllerFunctions.nextPlaylistTrack()
-		local autoFallback = if playlistFallback then nil else ControllerFunctions.pickAutoTrack()
-		if playlistFallback or autoFallback then
-			local fallback = if playlistFallback
-				then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil)
-				else ControllerFunctions.makeEntry(autoFallback :: Track, "auto", nil)
-			local callOk, advanced, state = ControllerFunctions.globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback, localCatalogRevision)
-			if callOk and advanced == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state)
-			elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		else
-			warn("[ClubMusic] Global startup is waiting for a playable catalog track.")
-		end
-	end
-	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-	ControllerFunctions.topUpAuto()
-end)
-
--- Global queue recovery is disabled with global queue authority.
-task.spawn(function()
-	if not CONFIG.EnableGlobalQueue then return end
-	while script.Parent do
-		task.wait(20 + math.random(0, 10))
-		if not globalQueueMode then
-			local enabledOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
-			if enabledOk and enabled == true then
-				globalQueueMode = true
-				local recovered = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-				if recovered then
-					print("[ClubMusic] Global queue recovered; this server rejoined synchronized playback.")
-					if localCatalogRevision ~= globalCatalogRevision then
-						ControllerFunctions.refreshCatalogWhenReady()
-					end
-					ControllerFunctions.topUpAuto()
-				else
-					globalQueueMode = false
-				end
-			end
-		end
-	end
-end)
-
--- Optional playback-only sync. This path never calls the global queue APIs.
--- Followers reconcile the playback snapshot; only the elected leader may advance its local queue.
-task.spawn(function()
-	local syncState = ControllerFunctions.globalPlaybackSyncState
-	if not CONFIG.EnableGlobalPlaybackSync then
-		syncState.enabled = false
-		syncState.isLeader = false
-		syncState.leaderJobId = nil
-		syncState.authorityReady = false
-		return
-	end
-	while script.Parent do
-		local enabledOk, enabledStatus, status = ControllerFunctions.globalInvoke("GetGlobalPlaybackSyncStatus")
-		if enabledOk and enabledStatus == true and typeof(status) == "table"
-			and status.syncEnabled == true and not globalQueueMode then
-			syncState.enabled = true
-			local wasLeader = syncState.isLeader == true
-			local previousStatus = table.concat({tostring(syncState.enabled), tostring(syncState.isLeader), tostring(syncState.leaderJobId), tostring(syncState.authorityReady), tostring(syncState.statusError)}, "|")
-			syncState.leaderJobId = if typeof(status.leaderJobId) == "string" then status.leaderJobId else nil
-			syncState.authorityReady = status.enabled == true and status.error == nil
-			syncState.statusError = if typeof(status.error) == "string" then string.sub(status.error, 1, 120) else nil
-			-- The global service owns the lease-renewal loop; the controller only
-			-- observes its status to avoid duplicate MemoryStore writes per server.
-			syncState.isLeader = status.isLeader == true
-			local currentStatus = table.concat({tostring(syncState.enabled), tostring(syncState.isLeader), tostring(syncState.leaderJobId), tostring(syncState.authorityReady), tostring(syncState.statusError)}, "|")
-			if previousStatus ~= currentStatus then publishState(nil) end
-			if syncState.isLeader then
-				local snapshotOk, snapshotRead, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
-				if snapshotOk and snapshotRead == true and typeof(snapshot) == "table" then
-					if typeof(snapshot.current) == "table" then
-						if not wasLeader or nowPlaying.trackId ~= snapshot.current.trackId then
-							ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot, true)
-						end
-						syncState.revision = tonumber(snapshot.revision) or syncState.revision
-						syncState.trackRevision = tonumber(snapshot.trackRevision) or syncState.trackRevision
-					elseif nowPlaying.trackId ~= "" then
-						ControllerFunctions.commitGlobalPlaybackSync("leader-initialization")
-					end
-				end
-			else
-				local snapshotOk, snapshotRead, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
-				if snapshotOk and snapshotRead == true then
-					ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot)
-				end
-			end
-		elseif enabledOk and enabledStatus == true and typeof(status) == "table" and status.syncEnabled ~= true then
-			syncState.enabled = false
-			syncState.isLeader = false
-			syncState.leaderJobId = nil
-			syncState.authorityReady = status.enabled == true and status.error == nil
-			syncState.statusError = if typeof(status.error) == "string" then string.sub(status.error, 1, 120) else nil
-			publishState(nil)
-		elseif not enabledOk then
-			-- A transient service failure must not cause followers to start their own track.
-			syncState.isLeader = false
-			syncState.authorityReady = false
-			syncState.statusError = "Global playback status unavailable."
-			publishState(nil)
-		end
-		task.wait(8)
-	end
-end)
-
--- MessagingService is the primary fast invalidation path. Periodic snapshots
--- repair missed notifications so a server cannot remain on a different song for
--- a full minute or more. Keep the interval at roughly three reads per minute per
--- server to limit shared DataStore traffic; empty startup playback retries faster.
-task.spawn(function()
-	while script.Parent do
-		local recoveringPlayback = globalQueueMode and nowPlaying.trackId == ""
-		task.wait(if recoveringPlayback then 5 + math.random(0, 5) else 20 + math.random(0, 5))
-		if globalQueueMode then
-			local synchronized = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-			if synchronized and nowPlaying.trackId == "" then
-				-- Use the controller's generation-checked transition path. It owns
-				-- the transition lock, authoritative CAS, snapshot application, and
-				-- post-transition queue refill; do not issue a parallel raw advance.
-				ControllerFunctions.advance(globalTrackRevision)
-			end
-			-- Queue refill is performed by the server that wins the atomic track transition.
-			-- Periodic repair only refreshes missed state notifications; it must not make every server race to refill.
-		end
-	end
-end)
+-- Global queue and playback-sync startup/recovery loops have been retired.
+-- Each server runs its own local queue and playback clock.
 
 -- Skip voting ---------------------------------------------------------------------
 
