@@ -83,6 +83,9 @@ function Service:Record(name: any, value: any, latencySeconds: any): boolean
 end
 
 function Service:_readStatus(name: string, callback: any): {[string]: any}
+	if type(callback) ~= "function" then
+		return {state = "NotInstalled", detail = name .. " probe is not installed.", available = false}
+	end
 	local ok, result = safeRead(callback)
 	if ok and typeof(result) == "table" then return cloneTable(result) end
 	return statusFallback(name, if ok then nil else (name .. " status callback failed."))
@@ -131,8 +134,9 @@ function Service:Check(): boolean
 		apiOk = ok and result == true
 	end
 	local queueModule = self.d.queueModule
-	local queueOk = false
-	if typeof(queueModule) == "Instance" then
+	local queueConfigured = queueModule ~= nil
+	local queueOk = not queueConfigured
+	if queueConfigured and typeof(queueModule) == "Instance" then
 		local ok, result = pcall(function()
 			return queueModule:IsA("ModuleScript") and queueModule.Parent ~= nil
 		end)
@@ -147,7 +151,7 @@ function Service:Check(): boolean
 
 	local issues = {}
 	if not apiOk then table.insert(issues, "Global API folder is unavailable.") end
-	if not queueOk then table.insert(issues, "Global queue module is unavailable.") end
+	if queueConfigured and not queueOk then table.insert(issues, "Configured global queue module is unavailable.") end
 	for _, entry in ipairs({{name = "Recovery", data = recovery}, {name = "ServiceRegistry", data = registry},
 		{name = "ServerHealth", data = serverHealth}, {name = "Watchdog", data = watchdog}}) do
 		local state = tostring(entry.data.state or "Unavailable")
@@ -175,14 +179,15 @@ function Service:Check(): boolean
 		state = state,
 		detail = detail,
 		localState = localState,
-		localDetail = if localState == "Healthy" then "Local API and queue dependencies are available."
-			else "One or more local service dependencies are unavailable.",
+		localDetail = if localState ~= "Healthy" then "One or more configured local service dependencies are unavailable."
+			elseif queueConfigured then "Local API and configured queue dependency are available."
+			else "Local API is available; no separate global queue ModuleScript is configured.",
 		serviceState = "Enabled",
 		recoveryState = tostring(recovery.state or "Unavailable"),
 		recoveryDetail = tostring(recovery.detail or recovery.state or "Recovery status is unavailable."),
 		syncState = "LocalOnly",
 		syncDetail = "Diagnostics are server-local; cross-server peer state is intentionally not collected.",
-		checks = {Api = apiOk, QueueModule = queueOk},
+		checks = {Api = apiOk, QueueModule = queueOk, QueueModuleConfigured = queueConfigured},
 		serviceRegistry = registry,
 		serverHealth = serverHealth,
 		watchdog = watchdog,
@@ -241,7 +246,7 @@ function Service:GetSnapshot(): {[string]: any}
 		serviceEnabled = enabledOk and enabled == true,
 		healthAvailable = true,
 		health = self:GetStatus(),
-		recoveryAvailable = recovery.state ~= "Unavailable",
+		recoveryAvailable = recovery.state ~= "Unavailable" and recovery.state ~= "NotInstalled",
 		recovery = recovery,
 		syncStatus = sync,
 		errorHistoryAvailable = errorsAvailable,
