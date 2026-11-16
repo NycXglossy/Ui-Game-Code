@@ -111,15 +111,19 @@ function Service:Start(): boolean
 		self:_recordFrame(deltaTime)
 	end)
 	self.samplerThread = task.spawn(function()
+		local nextMemory = 0
 		local nextPing = 0
 		while self.running do
-			self:_sampleMemory()
 			local now = os.clock()
+			if now >= nextMemory then
+				self:_sampleMemory()
+				nextMemory = now + MEMORY_SAMPLE_SECONDS
+			end
 			if now >= nextPing then
 				self:_samplePing()
 				nextPing = now + PING_SAMPLE_SECONDS
 			end
-			task.wait(MEMORY_SAMPLE_SECONDS)
+			task.wait(1)
 		end
 	end)
 	return true
