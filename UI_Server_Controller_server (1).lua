@@ -5063,20 +5063,30 @@ local GLOBAL_PERMISSION_LEVELS = {
 	SecurityPolicy = 3,
 	IncidentResponse = 3,
 }
-authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): boolean
+authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): any
 	if typeof(actorUserId) ~= "number" or actorUserId < 1 or actorUserId % 1 ~= 0
 		or typeof(permission) ~= "string" then
 		return false
 	end
-	local requiredLevel = GLOBAL_PERMISSION_LEVELS[permission]
-	if not requiredLevel then return false end
 	local player = Players:GetPlayerByUserId(math.floor(actorUserId))
 	if not player or player.Parent ~= Players then return false end
 
 	-- getLevel uses the 120-300 second server-local verified rank cache.
 	-- It refreshes only after expiry; a concurrent/failed refresh returns Guest,
 	-- so an unavailable role lookup can never grant a sensitive operation.
-	return ControllerFunctions.getLevel(player) >= requiredLevel
+	local level = ControllerFunctions.getLevel(player)
+	if permission == "KohlsAdminSnapshot" then
+		-- One local resolver call supplies the small, fixed permission set required
+		-- by the Kohl's command filter instead of separate calls per permission.
+		return {
+			GlobalModeration = level >= (GLOBAL_PERMISSION_LEVELS.GlobalModeration or math.huge),
+			GlobalAnnouncement = level >= (GLOBAL_PERMISSION_LEVELS.GlobalAnnouncement or math.huge),
+			GlobalConfig = level >= (GLOBAL_PERMISSION_LEVELS.GlobalConfig or math.huge),
+		}
+	end
+	local requiredLevel = GLOBAL_PERMISSION_LEVELS[permission]
+	if not requiredLevel then return false end
+	return level >= requiredLevel
 end
 
 -- Kohl's Admin security bridge helpers. Global security operations are checked by
