@@ -92,6 +92,8 @@ return function(_K: any)
 		-- Disable client-crashing/repeated-kill commands and arbitrary cross-server command strings.
 		crash = "This command is disabled by Tiki Tide security.",
 		loopkill = "This command is disabled by Tiki Tide security.",
+		script = "Arbitrary server script execution is disabled by Tiki Tide security.",
+		loadstring = "Arbitrary server script execution is disabled by Tiki Tide security.",
 		global = "Native global command strings are disabled; use dedicated Tiki Tide global controls.",
 	}
 
@@ -380,7 +382,8 @@ return function(_K: any)
 		if typeof(command) ~= "table" or typeof(command.definition) ~= "table" then return true end
 		local commandName = string.lower(tostring(command.alias or command.definition.name or ""))
 		local definitionName = string.lower(tostring(command.definition.name or ""))
-		if BLOCKED_COMMANDS[commandName] then
+		local blockedReason = BLOCKED_COMMANDS[commandName] or BLOCKED_COMMANDS[definitionName]
+		if blockedReason then
 			local actorId = actorUserId(command)
 			if actorId then
 				task.spawn(function()
@@ -391,7 +394,7 @@ return function(_K: any)
 					end
 				end)
 			end
-			return false, BLOCKED_COMMANDS[commandName]
+			return false, blockedReason
 		end
 		local policy = POLICY[commandName] or POLICY[definitionName]
 		if not policy then return true end
