@@ -56,13 +56,13 @@ return function(_K: any)
 		serverlock = {permission = "GlobalConfig", property = "ServerLock", global = true, auditKind = "AdminAction"},
 		unserverlock = {permission = "GlobalConfig", property = "ServerUnlock", global = true, auditKind = "AdminAction"},
 		shutdown = {permission = "GlobalConfig", property = "Shutdown", global = true, auditKind = "AdminAction"},
-		global = {permission = "GlobalConfig", property = "GlobalCommand", global = true, auditKind = "AdminAction"},
 	}
 
 	local BLOCKED_COMMANDS = {
 		-- These built-ins intentionally hang/crash a target client or repeatedly kill them.
 		crash = "This command is disabled by Tiki Tide security.",
 		loopkill = "This command is disabled by Tiki Tide security.",
+		global = "Native global command strings are disabled; use dedicated Tiki Tide global controls.",
 	}
 
 	local VALUE_LIMITS: {[string]: {min: number, max: number}} = {
@@ -251,7 +251,7 @@ return function(_K: any)
 			local args = table.pack(...)
 			local result = table.pack(original(context, table.unpack(args, 1, args.n)))
 			local targets: {Player} = {}
-			local targetCount = 0
+			local targetCount = if policy.targetSelf then 1 else 0
 			local targetArg = policy.targetArg
 			if targetArg then
 				local rawTargets = args[targetArg]
