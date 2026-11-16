@@ -6,6 +6,23 @@ local ResourceGuard = require(script.Parent:WaitForChild("ResourceGuard"))
 local Service={}; Service.__index=Service
 local ALLOWED={SecurityAlert=true,ServiceDegraded=true,AbuseReport=true,ManualReview=true}
 local LOCAL_INDEX_CAP=256
+local READ_CACHE_CAPACITY=32
+local function cacheRead(self,key,value,now)
+	if self.readCache[key]==nil then
+		local count=0
+		local oldestKey,oldestAt=nil,math.huge
+		for existingKey,stamp in pairs(self.readCacheAt) do
+			count+=1
+			if stamp<oldestAt then oldestAt=stamp; oldestKey=existingKey end
+		end
+		if count>=READ_CACHE_CAPACITY and oldestKey then
+			self.readCache[oldestKey]=nil
+			self.readCacheAt[oldestKey]=nil
+		end
+	end
+	self.readCache[key]=value
+	self.readCacheAt[key]=now
+end
 local function validUserId(value)
 	return type(value)=="number" and value>=0 and value%1==0 and value<math.huge
 end
@@ -146,7 +163,7 @@ function Service:GetRecent(limit,moderatorUserId)
 	StorageGuard.Success()
 	local out={}
 	for _,entry in ipairs(result) do if typeof(entry.value)=="table" then table.insert(out,table.clone(entry.value)) end end
-	self.readCache[cacheKey]=out; self.readCacheAt[cacheKey]=now
+	cacheRead(self,cacheKey,out,now)
 	return true,out
 end
 
