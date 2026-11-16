@@ -1,122 +1,195 @@
 --!strict
--- Lightweight, server-local diagnostics. No MemoryStore/DataStore writes and no control actions.
+-- Server-local diagnostics coordinator.
+-- Observation only: no DataStore, MemoryStore, MessagingService, remotes, or control actions.
+-- Optional subsystem failures are represented as unavailable/degraded data and never
+-- prevent the owning ClubMusic services from starting.
+
 local Service = {}
 Service.__index = Service
 
-function Service.new(dependencies)
-	assert(type(dependencies) == "table" and type(dependencies.isEnabled) == "function", "Diagnostics dependencies missing")
+local MAX_METRICS = 64
+local MAX_ERROR_RECORDS = 20
+local CHECK_INTERVAL_SECONDS = 60
+
+local function safeRead(callback: any, ...)
+	if type(callback) ~= "function" then return false, nil end
+	local ok, result = pcall(callback, ...)
+	if not ok then return false, nil end
+	return true, result
+end
+
+local function cloneTable(value: any): any
+	if typeof(value) ~= "table" then return value end
+	local result = {}
+	for key, item in pairs(value) do
+		result[key] = if typeof(item) == "table" then table.clone(item) else item
+	end
+	return result
+end
+
+local function statusFallback(label: string, detail: string?): {[string]: any}
+	return {
+		state = "Unavailable",
+		detail = detail or (label .. " status is unavailable."),
+		available = false,
+	}
+end
+
+function Service.new(dependencies: {[string]: any})
+	assert(typeof(dependencies) == "table" and type(dependencies.isEnabled) == "function",
+		"Diagnostics dependencies missing")
 	return setmetatable({
 		d = dependencies,
 		running = false,
 		status = {
 			state = "Starting",
-			detail = "Waiting for the first lightweight diagnostics pass.",
+			detail = "Waiting for the first local diagnostics pass.",
 			localState = "Starting",
 			localDetail = "Initial check pending.",
 			serviceState = "Starting",
 			recoveryState = "Starting",
 			recoveryDetail = "Recovery status is not available yet.",
-			syncState = "Starting",
-			syncDetail = "Synchronization status is not available yet.",
+			syncState = "LocalOnly",
+			syncDetail = "Diagnostics are isolated to this server.",
 			updatedAt = os.time(),
 		},
 		metrics = {},
 		lastSignature = "",
+		lastCheckAt = 0,
+		lastCheckError = nil,
 	}, Service)
 end
 
-function Service:Record(name, value, latencySeconds)
-	if type(name) ~= "string" or #name == 0 or #name > 48 then return false end
+function Service:Record(name: any, value: any, latencySeconds: any): boolean
+	if typeof(name) ~= "string" or #name == 0 or #name > 48
+		or not string.match(name, "^[%w_:%-%.]+$") then return false end
 	local amount = if type(value) == "number" and value == value and value >= 0 and value < math.huge then value else 1
-	if self.metrics[name] == nil then
+	local item = self.metrics[name]
+	if item == nil then
 		local metricCount = 0
 		for _ in pairs(self.metrics) do metricCount += 1 end
-		if metricCount >= 64 then return false end
+		if metricCount >= MAX_METRICS then return false end
+		item = {count = 0, latencyCount = 0, latencyTotal = 0, latencyMax = 0}
 	end
-	local item = self.metrics[name] or {count = 0, latencyCount = 0, latencyTotal = 0, latencyMax = 0}
 	item.count = math.min(1000000000, item.count + amount)
-	if type(latencySeconds) == "number" and latencySeconds == latencySeconds and latencySeconds >= 0 and latencySeconds <= 120 then
+	if type(latencySeconds) == "number" and latencySeconds == latencySeconds
+		and latencySeconds >= 0 and latencySeconds <= 120 then
 		item.latencyCount += 1
-		item.latencyTotal += latencySeconds
+		item.latencyTotal = math.min(1000000000, item.latencyTotal + latencySeconds)
 		item.latencyMax = math.max(item.latencyMax, latencySeconds)
 	end
 	self.metrics[name] = item
 	return true
 end
 
-function Service:Check()
-	local enabledOk, enabled = pcall(self.d.isEnabled)
-	if not enabledOk or enabled ~= true then
+function Service:_readStatus(name: string, callback: any): {[string]: any}
+	local ok, result = safeRead(callback)
+	if ok and typeof(result) == "table" then return cloneTable(result) end
+	return statusFallback(name, if ok then nil else (name .. " status callback failed."))
+end
+
+function Service:Check(): boolean
+	local enabledOk, enabled = safeRead(self.d.isEnabled)
+	if not enabledOk then
 		self.status = {
-			state = "Disabled", detail = "Global service is disabled in this server.",
-			localState = "Disabled", localDetail = "Global service is disabled.",
-			serviceState = "Disabled", recoveryState = "Disabled", recoveryDetail = "Not running.",
-			syncState = "Disabled", syncDetail = "Cross-server service is disabled.",
+			state = "Degraded",
+			detail = "Global service enabled state could not be read.",
+			localState = "Healthy",
+			localDetail = "Diagnostics coordinator is running locally.",
+			serviceState = "Unknown",
+			recoveryState = "Unavailable",
+			recoveryDetail = "Recovery status is unavailable.",
+			syncState = "LocalOnly",
+			syncDetail = "Diagnostics do not use cross-server synchronization.",
 			updatedAt = os.time(),
 		}
+		return false
+	end
+	if enabled ~= true then
+		self.status = {
+			state = "Disabled",
+			detail = "Cross-server ClubMusic services are disabled in this server.",
+			localState = "Healthy",
+			localDetail = "Local diagnostics remain available.",
+			serviceState = "Disabled",
+			recoveryState = "Disabled",
+			recoveryDetail = "Global recovery is not running.",
+			syncState = "LocalOnly",
+			syncDetail = "Diagnostics are isolated to this server.",
+			updatedAt = os.time(),
+		}
+		self.lastCheckAt = os.clock()
 		return true
 	end
 
-	local checks = {}
 	local apiFolder = self.d.apiFolder
-	checks.Api = apiFolder ~= nil and apiFolder.Parent == game:GetService("ServerStorage")
+	local apiOk = false
+	if typeof(apiFolder) == "Instance" then
+		local ok, result = pcall(function()
+			return apiFolder.Parent == game:GetService("ServerStorage")
+		end)
+		apiOk = ok and result == true
+	end
 	local queueModule = self.d.queueModule
-	checks.QueueModule = queueModule ~= nil and queueModule:IsA("ModuleScript") and queueModule.Parent ~= nil
+	local queueOk = false
+	if typeof(queueModule) == "Instance" then
+		local ok, result = pcall(function()
+			return queueModule:IsA("ModuleScript") and queueModule.Parent ~= nil
+		end)
+		queueOk = ok and result == true
+	end
 
-	local recovery
-	if type(self.d.getRecoveryStatus) == "function" then
-		local ok, result = pcall(self.d.getRecoveryStatus)
-		if ok and typeof(result) == "table" then recovery = result end
-	end
-	local sync
-	if type(self.d.getSyncStatus) == "function" then
-		local ok, result = pcall(self.d.getSyncStatus)
-		if ok and typeof(result) == "table" then sync = result end
-	end
+	local recovery = self:_readStatus("Recovery", self.d.getRecoveryStatus)
+	local sync = self:_readStatus("Synchronization", self.d.getSyncStatus)
+	local registry = self:_readStatus("ServiceRegistry", self.d.getRegistryStatus)
+	local serverHealth = self:_readStatus("ServerHealth", self.d.getServerHealthStatus)
+	local watchdog = self:_readStatus("Watchdog", self.d.getWatchdogStatus)
 
 	local issues = {}
-	for name, ok in pairs(checks) do
-		if ok ~= true then table.insert(issues, name .. " dependency is unavailable.") end
-	end
-	local pending = {}
-	local recoveryState = if recovery then tostring(recovery.state or "Unavailable") else "Unavailable"
-	local recoveryDetail = if recovery then tostring(recovery.detail or recoveryState) else "Recovery status is unavailable."
-	if recoveryState == "Starting" or recoveryState == "Unavailable" then
-		table.insert(pending, recoveryDetail)
-	elseif recoveryState ~= "Healthy" and recoveryState ~= "Disabled" then
-		table.insert(issues, "Recovery: " .. recoveryDetail)
+	if not apiOk then table.insert(issues, "Global API folder is unavailable.") end
+	if not queueOk then table.insert(issues, "Global queue module is unavailable.") end
+	for _, entry in ipairs({{name = "Recovery", data = recovery}, {name = "ServiceRegistry", data = registry},
+		{name = "ServerHealth", data = serverHealth}, {name = "Watchdog", data = watchdog}}) do
+		local state = tostring(entry.data.state or "Unavailable")
+		if state == "Degraded" or state == "Unhealthy" or state == "Failed" then
+			table.insert(issues, entry.name .. ": " .. tostring(entry.data.detail or state))
+		end
 	end
 
-	local syncState = if sync then tostring(sync.state or "Unavailable") else "Unavailable"
-	local syncDetail = if sync then tostring(sync.detail or syncState) else "Synchronization status is unavailable."
-	if syncState == "Starting" or syncState == "Unverified" or syncState == "Unavailable" then
-		table.insert(pending, syncDetail)
-	elseif syncState ~= "Healthy" and syncState ~= "Disabled" then
-		table.insert(issues, "Synchronization: " .. syncDetail)
+	local pending = {}
+	for _, entry in ipairs({{name = "Recovery", data = recovery}, {name = "ServiceRegistry", data = registry},
+		{name = "ServerHealth", data = serverHealth}, {name = "Watchdog", data = watchdog}}) do
+		local state = tostring(entry.data.state or "Unavailable")
+		if state == "Starting" or state == "Unavailable" then
+			table.insert(pending, entry.name .. " status is " .. string.lower(state) .. ".")
+		end
 	end
 
 	local state = if #issues > 0 then "Degraded" elseif #pending > 0 then "Starting" else "Healthy"
 	local detail = if #issues > 0 then table.concat(issues, "; ")
 		elseif #pending > 0 then table.concat(pending, "; ")
-		else "Core service dependencies and current synchronization status are healthy."
-	local localState = if checks.Api and checks.QueueModule then "Healthy" else "Degraded"
-	local localDetail = if localState == "Healthy" then "Local service dependencies are available."
-		else "One or more local service dependencies are unavailable."
+		else "Local diagnostics dependencies and available health probes are healthy."
+	local localState = if apiOk and queueOk then "Healthy" else "Degraded"
 
 	self.status = {
 		state = state,
 		detail = detail,
 		localState = localState,
-		localDetail = localDetail,
-		serviceState = if enabled then "Enabled" else "Disabled",
-		recoveryState = recoveryState,
-		recoveryDetail = recoveryDetail,
-		syncState = syncState,
-		syncDetail = syncDetail,
-		syncStatus = sync,
-		checks = checks,
+		localDetail = if localState == "Healthy" then "Local API and queue dependencies are available."
+			else "One or more local service dependencies are unavailable.",
+		serviceState = "Enabled",
+		recoveryState = tostring(recovery.state or "Unavailable"),
+		recoveryDetail = tostring(recovery.detail or recovery.state or "Recovery status is unavailable."),
+		syncState = "LocalOnly",
+		syncDetail = "Diagnostics are server-local; cross-server peer state is intentionally not collected.",
+		checks = {Api = apiOk, QueueModule = queueOk},
+		serviceRegistry = registry,
+		serverHealth = serverHealth,
+		watchdog = watchdog,
 		updatedAt = os.time(),
 	}
+	self.lastCheckAt = os.clock()
+	self.lastCheckError = nil
 	local signature = state .. "|" .. detail
 	if signature ~= self.lastSignature then
 		self.lastSignature = signature
@@ -125,63 +198,79 @@ function Service:Check()
 	return state ~= "Degraded"
 end
 
-function Service:GetStatus()
-	local result = table.clone(self.status)
-	if typeof(self.status.syncStatus) == "table" then result.syncStatus = table.clone(self.status.syncStatus) end
-	if typeof(self.status.checks) == "table" then result.checks = table.clone(self.status.checks) end
-	return result
+function Service:GetStatus(): {[string]: any}
+	return cloneTable(self.status)
 end
 
-function Service:GetMetrics()
+function Service:GetMetrics(): {[string]: any}
 	local counters = {}
-	for name, values in pairs(self.metrics) do counters[name] = table.clone(values) end
-	return {state = "Healthy", scope = "ServerLocal", counters = counters, updatedAt = os.time()}
-end
-
-function Service:GetSnapshot()
-	local recovery = nil
-	if type(self.d.getRecoveryStatus) == "function" then
-		local ok, result = pcall(self.d.getRecoveryStatus)
-		if ok and typeof(result) == "table" then recovery = result end
-	end
-	local errors, errorsAvailable = {}, false
-	if type(self.d.getRecentErrors) == "function" then
-		local ok, result = pcall(self.d.getRecentErrors)
-		if ok and typeof(result) == "table" then
-			errorsAvailable = true
-			for index = math.max(1, #result - 19), #result do
-				if typeof(result[index]) == "table" then table.insert(errors, table.clone(result[index])) end
-			end
-		end
+	local structuredCounters = {}
+	for name, values in pairs(self.metrics) do
+		structuredCounters[name] = table.clone(values)
+		counters[name] = values.count
 	end
 	return {
+		state = "Healthy",
+		scope = "ServerLocal",
+		counters = structuredCounters,
+		aggregate = {scope = "ServerLocal", counters = counters},
+		updatedAt = os.time(),
+	}
+end
+
+function Service:GetSnapshot(): {[string]: any}
+	local recovery = self:_readStatus("Recovery", self.d.getRecoveryStatus)
+	local sync = self:_readStatus("Synchronization", self.d.getSyncStatus)
+	local errors, errorsAvailable = {}, false
+	local errorsOk, recent = safeRead(self.d.getRecentErrors)
+	if errorsOk and typeof(recent) == "table" then
+		errorsAvailable = true
+		local first = math.max(1, #recent - MAX_ERROR_RECORDS + 1)
+		for index = first, #recent do
+			if typeof(recent[index]) == "table" then table.insert(errors, table.clone(recent[index])) end
+		end
+	end
+	local enabledOk, enabled = safeRead(self.d.isEnabled)
+	local serviceRegistry = self:_readStatus("ServiceRegistry", self.d.getRegistryStatus)
+	local serverHealth = self:_readStatus("ServerHealth", self.d.getServerHealthStatus)
+	local watchdog = self:_readStatus("Watchdog", self.d.getWatchdogStatus)
+	local metrics = self:GetMetrics()
+
+	return {
 		generatedAt = os.time(),
-		serviceEnabled = self.d.isEnabled(),
+		serviceEnabled = enabledOk and enabled == true,
 		healthAvailable = true,
 		health = self:GetStatus(),
-		recoveryAvailable = recovery ~= nil,
+		recoveryAvailable = recovery.state ~= "Unavailable",
 		recovery = recovery,
-		syncStatus = if type(self.d.getSyncStatus) == "function" then self.d.getSyncStatus() else nil,
+		syncStatus = sync,
 		errorHistoryAvailable = errorsAvailable,
 		recentErrors = errors,
+		metrics = metrics,
 		operationalServices = {
-			memoryStore = if type(self.d.getMemoryStoreStatus) == "function" then self.d.getMemoryStoreStatus() else nil,
+			memoryStore = self:_readStatus("MemoryStore", self.d.getMemoryStoreStatus),
 			diagnostics = self:GetStatus(),
-			securityMonitor = if type(self.d.getSecurityMonitorStatus) == "function" then self.d.getSecurityMonitorStatus() else nil,
-			messageValidation = if type(self.d.getMessageValidationStatus) == "function" then self.d.getMessageValidationStatus() else nil,
-			idempotency = if type(self.d.getIdempotencyStatus) == "function" then self.d.getIdempotencyStatus() else nil,
+			serviceRegistry = serviceRegistry,
+			serverHealth = serverHealth,
+			watchdog = watchdog,
+			securityMonitor = self:_readStatus("SecurityMonitor", self.d.getSecurityMonitorStatus),
+			messageValidation = self:_readStatus("MessageValidation", self.d.getMessageValidationStatus),
+			idempotency = self:_readStatus("Idempotency", self.d.getIdempotencyStatus),
 		},
 	}
 end
 
-function Service:Start()
+function Service:Start(): boolean
 	if self.running then return false end
 	self.running = true
 	task.spawn(function()
 		while self.running do
 			local ok, err = pcall(self.Check, self)
-			if not ok then warn("[ClubMusic Diagnostics] Check failed: " .. tostring(err)) end
-			task.wait(60)
+			if not ok then
+				self.lastCheckError = string.sub(tostring(err), 1, 240)
+				warn("[ClubMusic Diagnostics] Check failed: " .. self.lastCheckError)
+			end
+			task.wait(CHECK_INTERVAL_SECONDS)
 		end
 	end)
 	return true
