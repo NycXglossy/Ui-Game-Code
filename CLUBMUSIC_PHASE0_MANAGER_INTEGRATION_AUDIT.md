@@ -29,21 +29,21 @@ The current `UI_Server_Controller` remains the verified authority for:
 
 The adapter modules must not introduce a second authoritative copy of these states. The queue, playback, skip-vote, and playlist adapters should continue delegating to controller callbacks unless a separately reviewed migration explicitly transfers ownership.
 
-## Legacy Music System distinction
+## Legacy Music System retirement status
 
-The repository also contains a root-level legacy `Music System` script that creates a separate `MusicRemotes` folder and requires child modules from its own script hierarchy. Its role checks use a separate `RoleSystem` contract. Repository source alone cannot establish whether this script and its child modules are currently installed in the published place.
+The canonical `CLUBMUSIC_MUSIC_INTEGRATION_2026-11-08.md` guide confirms that the original standalone `Music System` has been retired from the intended active runtime architecture. Its behavior has been integrated into the secured ClubMusic controller and services; the original standalone script, its `MusicRemotes` transport, and its separate `RoleSystem` remain reference-only source assets.
 
-Do not merge its remotes or manager state with `ClubMusicRemotes`, and do not delete or disable it until the live place hierarchy and client references have been checked. The current diagnostics/security update does not migrate this legacy system.
+The old script would recreate a competing `MusicRemotes` system if manually installed. Do not install it or its legacy child modules. This is an architectural/runtime retirement, not deletion of every old source file from GitHub. The published place still needs a hierarchy check to ensure it matches the documented secured layout.
 
 ## Required steps to finish Phase 0
 
 - [ ] Inspect the live Roblox place hierarchy and confirm whether the five manager modules are installed, and where.
-- [ ] Confirm whether the legacy `Music System` and `MusicRemotes` are active, unused, or still required by a client UI.
+- [ ] Confirm the live place follows the integration guide and does not contain a separately installed legacy `Music System` / `MusicRemotes` transport.
 - [ ] Compare installed ModuleScript source with this branch; do not infer deployment from repository filenames.
 - [ ] Confirm the controller remains the only authority for queue, playback, skip-vote, and playlist-rotation state.
 - [ ] Check initialization, duplicate connections, cleanup, and failure behavior in Studio.
 - [ ] Regression-test request, playback, skip-vote, playlist, DJ, and admin controls after any hierarchy change.
-- [ ] Only then decide whether any adapter migration or legacy decommissioning is necessary.
+- [ ] Keep the standalone legacy source reference-only; consider deleting/archive cleanup separately only if desired.
 
 ## Verification boundary
 
