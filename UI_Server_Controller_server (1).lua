@@ -4309,7 +4309,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local budgetReady = ControllerFunctions.waitForDataStoreBudget(5)
 		if not budgetReady then notify(player, "Shared DataStore budget is unavailable; catalog was not changed.", "warn"); return end
 		local trackId = "custom-" .. tostring(assetId)
-		local saved, message = MusicCatalogService:AddCustomTrack
 		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId, artworkAssetId)
 		if not saved then
 			notify(player, message, "warn")
@@ -6379,7 +6378,6 @@ task.spawn(function()
 		-- Require a short stable stop, then attempt one in-place resume from the
 		-- captured playhead before allowing the queue watchdog to advance.
 		local audio = ControllerFunctions.getAudioSnapshot()
-		if playbackPaused or audioReloadInProgress or nowPlaying.trackId == ""
 		if playbackPaused or audioReloadInProgress or nowPlaying.trackId == "" or nowPlaying.soundId == ""
 			or audio.playing == true then
 			ControllerFunctions.stoppedAudioGeneration = -1
@@ -6439,7 +6437,6 @@ task.spawn(function()
 			-- until the fade window; a strict duration-plus-one gate can miss the window
 			-- when the one-second playback clock lands exactly on its boundary.
 			if crossfade and not crossfade.destroyed and not crossfade.active
-			if crossfade and not crossfade.destroyed and not crossfade.active
 				and crossfadeAttemptedGeneration ~= currentGeneration
 				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
 				and remaining > 0
@@ -6448,11 +6445,11 @@ task.spawn(function()
 				crossfadeAttemptedGeneration = currentGeneration
 				pendingCrossfadeEntry = nextEntry
 				pendingCrossfadeToken = audioTransitionTrackToken
-																local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
+				local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
 				if not started then
 					pendingCrossfadeEntry = nil
 					pendingCrossfadeToken = -1
-																				warn("[ClubMusic][Crossfade] Automatic transition was not started; normal track advance remains available: " .. tostring(startError))
+					warn("[ClubMusic][Crossfade] Automatic transition was not started; normal track advance remains available: " .. tostring(startError))
 				end
 			end
 		end
