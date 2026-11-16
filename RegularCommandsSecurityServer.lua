@@ -19,7 +19,7 @@ return function(_K: any)
 	local AUTHORIZER_NAME = "ClubMusicAuthorizationResolver"
 	local AUTHORITY_NAME = "TikiTideMovementAuthority"
 
-	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, global: boolean?, authority: boolean?, auditKind: string?}} = {
+	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?}} = {
 		-- Verified movement/environment commands in the supplied Kohl's Admin export.
 		gravity = {permission = "GlobalConfig", property = "WorldGravity", valueArg = 1, global = true, authority = true},
 		starterspeed = {permission = "GlobalConfig", property = "StarterWalkSpeed", valueArg = 1, global = true, authority = true},
@@ -27,14 +27,14 @@ return function(_K: any)
 		jumppower = {permission = "GlobalModeration", property = "JumpPower", valueArg = 2, targetArg = 1, authority = true},
 		jump = {permission = "GlobalModeration", property = "JumpImpulse", targetArg = 1, authority = true},
 		size = {permission = "GlobalModeration", property = "BodyScale", valueArg = 2, targetArg = 1, authority = true},
-		fly = {permission = "GlobalModeration", property = "Flight", targetArg = 1, authority = true},
+		fly = {permission = "GlobalModeration", property = "Flight", valueArg = 2, targetArg = 1, authority = true, limitProperty = "FlightSpeed"},
 		unfly = {permission = "GlobalModeration", property = "Flight", targetArg = 1, authority = true},
 		freeze = {permission = "GlobalModeration", property = "Frozen", targetArg = 1, authority = true},
 		thaw = {permission = "GlobalModeration", property = "Frozen", targetArg = 1, authority = true},
 		bring = {permission = "GlobalModeration", property = "Teleport", targetArg = 1, authority = true},
 		tp = {permission = "GlobalModeration", property = "Teleport", targetArg = 1, authority = true},
 		to = {permission = "GlobalModeration", property = "Teleport", targetSelf = true, authority = true},
-		place = {permission = "GlobalModeration", property = "TeleportPlace", targetArg = 1, auditKind = "Moderation"},
+		place = {permission = "GlobalConfig", property = "TeleportPlace", targetArg = 1, auditKind = "AdminAction"},
 
 		-- Native moderation enforcement commands retain Kohl's own role/target checks.
 		ban = {permission = "GlobalModeration", property = "Ban", targetArg = 1, auditKind = "Moderation"},
@@ -71,6 +71,7 @@ return function(_K: any)
 		WalkSpeed = {min = 0, max = 100},
 		JumpPower = {min = 0, max = 250},
 		BodyScale = {min = 0.1, max = 10},
+		FlightSpeed = {min = 0, max = 256},
 	}
 
 	local function finiteNumber(value: any): boolean
@@ -340,15 +341,17 @@ return function(_K: any)
 		end
 
 		local value = getNumericArgument(command, policy.valueArg)
+		local limitProperty = policy.limitProperty or policy.property
+		local limits = VALUE_LIMITS[limitProperty]
+		if value ~= nil and limits and (not finiteNumber(value) or value < limits.min or value > limits.max) then
+			return false, string.format("The requested %s value is outside the permitted range.", limitProperty)
+		end
 		if policy.property == "JumpImpulse" then
 			value = true
 		elseif policy.property == "Flight" or policy.property == "Frozen" then
 			value = commandName == "fly" or commandName == "freeze"
-		elseif value ~= nil and policy.authority == true then
-			local limits = VALUE_LIMITS[policy.property]
-			if not finiteNumber(value) or (limits and (value < limits.min or value > limits.max)) then
-				return false, string.format("The requested %s value is outside the permitted range.", policy.property)
-			end
+		elseif value ~= nil and policy.authority == true and not finiteNumber(value) then
+			return false, string.format("The requested %s value is invalid.", policy.property)
 		end
 
 		wrapHandler(command, policy)
