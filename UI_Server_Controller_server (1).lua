@@ -2319,8 +2319,14 @@ ControllerFunctions.releaseProfileWriteLock = function(userId: number)
 	profileWriteLocks[userId] = nil
 end
 
--- Session-only moderation / VIP / vote state
-local rankCache: {[number]: {rank: string, level: number}} = {}
+-- Session-only moderation / VIP / vote state.
+-- Group/configured staff roles are verified on join and cached locally; routine
+-- permission checks never query DataStoreService or MemoryStoreService.
+local rankCache: {[number]: {rank: string, level: number, refreshedAt: number, expiresAt: number}} = {}
+local rankRefreshInFlight: {[number]: boolean} = {}
+local rankRetryAfter: {[number]: number} = {}
+local RANK_CACHE_MIN_TTL_SECONDS = 120
+local RANK_CACHE_MAX_TTL_SECONDS = 300
 local vipPass: {[number]: boolean} = {}
 local vvipPass: {[number]: boolean} = {}
 local tikiTidePass: {[number]: boolean} = {}
@@ -2349,20 +2355,57 @@ ControllerFunctions.computeRank = function(player: Player): (string, number)
 	return "GUEST", 0
 end
 
--- Yields (group lookups). Never call from the per-second loop.
-ControllerFunctions.refreshRank = function(player: Player)
-	local rank, level = ControllerFunctions.computeRank(player)
-	rankCache[player.UserId] = { rank = rank, level = level }
+-- This is the only routine rank refresh path. It runs on PlayerAdded and only
+-- again after the bounded local cache expires. Concurrent checks fail closed
+-- while a refresh is already yielding on Roblox's group-rank API.
+ControllerFunctions.refreshRank = function(player: Player): boolean
+	if player.Parent ~= Players then return false end
+	local userId = player.UserId
+	if rankRefreshInFlight[userId] then return false end
+	rankRefreshInFlight[userId] = true
+	local ok, rank, level = pcall(ControllerFunctions.computeRank, player)
+	rankRefreshInFlight[userId] = nil
+	if not ok or typeof(rank) ~= "string" or typeof(level) ~= "number"
+		or level < 0 or level > 4 or level % 1 ~= 0 then
+		rankRetryAfter[userId] = os.clock() + 15
+		warn("[ClubMusic][Authorization] Rank refresh failed; privileged checks remain denied until retry.")
+		return false
+	end
+	local now = os.clock()
+	local ttl = math.random(RANK_CACHE_MIN_TTL_SECONDS, RANK_CACHE_MAX_TTL_SECONDS)
+	rankCache[userId] = {
+		rank = rank,
+		level = level,
+		refreshedAt = now,
+		expiresAt = now + ttl,
+	}
+	rankRetryAfter[userId] = nil
+	return true
+end
+
+local function getFreshRankCache(player: Player)
+	local userId = player.UserId
+	local now = os.clock()
+	local cached = rankCache[userId]
+	if cached and cached.expiresAt > now then return cached end
+	if rankRefreshInFlight[userId] or (rankRetryAfter[userId] and rankRetryAfter[userId] > now) then
+		return nil
+	end
+	if ControllerFunctions.refreshRank(player) then
+		return rankCache[userId]
+	end
+	return nil
 end
 
 ControllerFunctions.getRank = function(player: Player): string
-	local cached = rankCache[player.UserId]
+	local cached = getFreshRankCache(player)
 	return if cached then cached.rank else "GUEST"
 end
 
--- Permission level: 0 guest, 1 GROUP DJ, 2 ADMIN, 3 CO-OWNER, 4 OWNER
+-- Permission level: 0 guest, 1 GROUP DJ, 2 ADMIN, 3 CO-OWNER, 4 OWNER.
+-- Expired or unavailable role data never grants a privileged permission.
 ControllerFunctions.getLevel = function(player: Player): number
-	local cached = rankCache[player.UserId]
+	local cached = getFreshRankCache(player)
 	return if cached then cached.level else 0
 end
 
@@ -5020,49 +5063,19 @@ local GLOBAL_PERMISSION_LEVELS = {
 	IncidentResponse = 3,
 }
 authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): boolean
-	print("[ClubMusic][Authorization] Resolver entered; actor=" .. tostring(actorUserId)
-		.. "; permission=" .. tostring(permission))
 	if typeof(actorUserId) ~= "number" or actorUserId < 1 or actorUserId % 1 ~= 0
 		or typeof(permission) ~= "string" then
-		warn("[ClubMusic][Authorization] Resolver rejected malformed actor or permission.")
 		return false
 	end
 	local requiredLevel = GLOBAL_PERMISSION_LEVELS[permission]
-	if not requiredLevel then
-		warn("[ClubMusic][Authorization] Resolver rejected unknown permission=" .. permission)
-		return false
-	end
+	if not requiredLevel then return false end
 	local player = Players:GetPlayerByUserId(math.floor(actorUserId))
-	if not player or player.Parent ~= Players then
-		warn("[ClubMusic][Authorization] Resolver could not find active player; actor=" .. tostring(actorUserId))
-		return false
-	end
+	if not player or player.Parent ~= Players then return false end
 
-	-- Prefer the server-verified rank cache, but do not let a stale/empty cache
-	-- in this resolver instance reject a player whose live group rank is valid.
-	local cachedLevel = ControllerFunctions.getLevel(player)
-	if cachedLevel >= requiredLevel then return true end
-
-	-- This path runs only for explicit privileged operations, never in a heartbeat.
-	-- computeRank rechecks configured owner IDs and the Roblox group rank directly;
-	-- a failed group lookup safely returns Guest and remains denied.
-	local rankOk, rankName, liveLevel = pcall(ControllerFunctions.computeRank, player)
-	if not rankOk or typeof(liveLevel) ~= "number" then
-		warn("[ClubMusic][Authorization] Rank refresh failed for permission=" .. permission
-			.. "; cachedLevel=" .. tostring(cachedLevel))
-		return false
-	end
-	if liveLevel < requiredLevel then
-		warn("[ClubMusic][Authorization] Permission denied; permission=" .. permission
-			.. "; cachedLevel=" .. tostring(cachedLevel)
-			.. "; verifiedLevel=" .. tostring(liveLevel)
-			.. "; rank=" .. tostring(rankName))
-		return false
-	end
-
-	-- Refresh this controller instance's cache after the successful live check.
-	rankCache[player.UserId] = {rank = rankName, level = liveLevel}
-	return true
+	-- getLevel uses the 120-300 second server-local verified rank cache.
+	-- It refreshes only after expiry; a concurrent/failed refresh returns Guest,
+	-- so an unavailable role lookup can never grant a sensitive operation.
+	return ControllerFunctions.getLevel(player) >= requiredLevel
 end
 
 -- Kohl's Admin security bridge helpers. Global security operations are checked by
@@ -6225,6 +6238,8 @@ Players.PlayerRemoving:Connect(function(player)
 	reloadNonce[userId] = nil
 	pendingAudio[userId] = nil
 	rankCache[userId] = nil
+	rankRefreshInFlight[userId] = nil
+	rankRetryAfter[userId] = nil
 	vipPass[userId] = nil
 	vvipPass[userId] = nil
 	tikiTidePass[userId] = nil
