@@ -27,7 +27,6 @@ local CONFIG = {
 		Moderation = "ClubMusic_Global_Moderation_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
-
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -786,16 +785,16 @@ if globalMaintenanceService then globalMaintenanceService:Start() end
 local globalAuthorizationServiceResolver = function(actorUserId: any, permission: any): boolean
 	local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
 	if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then
-		warn("[ClubMusic][PlaybackSync Auth] Resolver dependency could not find the expected ServerStorage BindableFunction.")
+		warn("[ClubMusic][Authorization] Resolver dependency could not find the expected ServerStorage BindableFunction.")
 		return false
 	end
 	local ok, allowed = pcall(function() return resolver:Invoke(actorUserId, permission) end)
 	if not ok then
-		warn("[ClubMusic][PlaybackSync Auth] Resolver Invoke failed; actor=" .. tostring(actorUserId)
+		warn("[ClubMusic][Authorization] Resolver Invoke failed; actor=" .. tostring(actorUserId)
 			.. "; permission=" .. tostring(permission) .. "; error=" .. string.sub(tostring(allowed), 1, 180))
 		return false
 	end
-	print("[ClubMusic][PlaybackSync Auth] Resolver returned; actor=" .. tostring(actorUserId)
+	print("[ClubMusic][Authorization] Resolver returned; actor=" .. tostring(actorUserId)
 		.. "; permission=" .. tostring(permission) .. "; allowed=" .. tostring(allowed))
 	return allowed == true
 end
@@ -811,7 +810,7 @@ if authorizationModule then
 				local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
 				local available = resolver ~= nil and resolver:IsA("BindableFunction")
 					and resolver.Parent == ServerStorage
-				print("[ClubMusic][PlaybackSync Auth] Resolver availability checked; available="
+				print("[ClubMusic][Authorization] Resolver availability checked; available="
 					.. tostring(available) .. "; class=" .. tostring(if resolver then resolver.ClassName else "missing"))
 				return available
 			end,
@@ -824,11 +823,11 @@ if authorizationModule then
 		and type(instance.Check) == "function" then
 		globalAuthorizationService = instance
 	else
-		warn("[ClubMusic][PlaybackSync Auth] Separate authorization ModuleScript could not be constructed: "
+		warn("[ClubMusic][Authorization] Separate authorization ModuleScript could not be constructed: "
 			.. tostring(instance))
 	end
 else
-	warn("[ClubMusic][PlaybackSync Auth] Separate authorization ModuleScript was not found under ServerStorage.")
+	warn("[ClubMusic][Authorization] Separate authorization ModuleScript was not found under ServerStorage.")
 end
 if not globalAuthorizationService then
 	-- Keep a strict built-in fallback if the separately installed module is absent
@@ -867,16 +866,16 @@ if not globalAuthorizationService then
 			return {state = "Fallback", checks = self.checks, denied = self.denied, default = "Deny"}
 		end,
 	}
-	warn("[ClubMusic][PlaybackSync Auth] Using built-in fail-closed authorization adapter.")
+	warn("[ClubMusic][Authorization] Using built-in fail-closed authorization adapter.")
 end
 local authStartOk, authStartResult = pcall(globalAuthorizationService.Start, globalAuthorizationService)
-print("[ClubMusic][PlaybackSync Auth] Authorization service loaded; startOk=" .. tostring(authStartOk)
+print("[ClubMusic][Authorization] Authorization service loaded; startOk=" .. tostring(authStartOk)
 	.. "; startResult=" .. tostring(authStartResult))
 authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
-	print("[ClubMusic][PlaybackSync Auth] Authorization check requested; actor=" .. tostring(actorUserId)
+	print("[ClubMusic][Authorization] Authorization check requested; actor=" .. tostring(actorUserId)
 		.. "; permission=" .. tostring(permission) .. "; servicePresent=" .. tostring(globalAuthorizationService ~= nil))
 	if not globalAuthorizationService then
-		warn("[ClubMusic][PlaybackSync Auth] Authorization check denied because the service instance is missing.")
+		warn("[ClubMusic][Authorization] Authorization check denied because the service instance is missing.")
 		return false
 	end
 	-- Use a statement rather than a conditional expression here: the authorization
@@ -891,10 +890,10 @@ authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
 			globalAuthorizationService, actorUserId, permission)
 	end
 	if not ok then
-		warn("[ClubMusic][PlaybackSync Auth] Authorization Check threw an error: " .. string.sub(tostring(allowed), 1, 180))
+		warn("[ClubMusic][Authorization] Authorization Check threw an error: " .. string.sub(tostring(allowed), 1, 180))
 		return false
 	end
-	print("[ClubMusic][PlaybackSync Auth] Authorization Check returned; allowed=" .. tostring(allowed))
+	print("[ClubMusic][Authorization] Authorization Check returned; allowed=" .. tostring(allowed))
 	return allowed == true
 end
 
