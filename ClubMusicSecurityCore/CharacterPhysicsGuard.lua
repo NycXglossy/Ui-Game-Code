@@ -17,7 +17,7 @@ local SIGNAL_COOLDOWN = 10
 local SCALE_EPSILON = 0.08
 local LIMITS = {
 	WalkSpeed = {min = 0, max = 100},
-	JumpPower = {min = 0, max = 250},
+	JumpPower = {min = 0, max = 300},
 	JumpHeight = {min = 0, max = 100},
 	WorldGravity = {min = 0, max = 500},
 	BodyScale = {min = 0.1, max = 10},
