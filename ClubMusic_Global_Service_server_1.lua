@@ -354,7 +354,7 @@ publishTopic = function(topic: string, payload: {[string]: any}): boolean
 	if globalAuditService then
 		if payload.kind == "DJ" then
 			pcall(globalAuditService.Record, globalAuditService, "AdminAction", payload.actorUserId, tostring(payload.command), tostring(payload.command))
-		elseif payload.kind == "Catalog" then
+		elseif payload.kind == "Catalog" and typeof(payload.trackId) ~= "string" then
 			pcall(globalAuditService.Record, globalAuditService, "CatalogChange", 0, "catalog", "invalidate")
 		end
 	end
