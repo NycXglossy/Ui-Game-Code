@@ -755,6 +755,7 @@ local enterLocalQueueBackup: ((string) -> ())? = nil
 -- Display hints may lead the authoritative snapshot, but must never advance
 -- queue ownership or the revision used by crossfade compare-and-swap.
 local nowPlaying: any = nil
+local refreshLocalCatalog: (() -> boolean)? = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
