@@ -103,6 +103,29 @@ local function hasClubPermission(player: Player, permission: string): boolean
 	return ok and allowed == true
 end
 
+local movementAuthorityWarningShown = false
+local function registerMovementAuthority(actorUserId: number, targetUserId: number, property: string, value: any, origin: string)
+	local authority = ServerStorage:FindFirstChild("TikiTideMovementAuthority")
+	if not authority or not authority:IsA("BindableFunction") or authority.Parent ~= ServerStorage then
+		if not movementAuthorityWarningShown then
+			movementAuthorityWarningShown = true
+			warn("[Tiki Tide] MovementAuthority is unavailable; approved settings changes will be observed as unverified.")
+		end
+		return false
+	end
+	local ok, registered = pcall(function()
+		return authority:Invoke("Register", actorUserId, targetUserId, property, value, origin, 120)
+	end)
+	if not ok or registered ~= true then
+		if not movementAuthorityWarningShown then
+			movementAuthorityWarningShown = true
+			warn("[Tiki Tide] MovementAuthority registration failed for " .. property .. ".")
+		end
+		return false
+	end
+	return true
+end
+
 local function filterBroadcastText(player: Player, raw: any): string?
 	if typeof(raw) ~= "string" then return nil end
 	local trimmed = string.match(raw, "^%s*(.-)%s*$") or ""
@@ -133,6 +156,8 @@ local function applyMovement(player: Player)
 	humanoid.WalkSpeed = math.clamp(settings.walkSpeed, 20, 100)
 	humanoid.UseJumpPower = true
 	humanoid.JumpPower = math.clamp(settings.jumpPower, 80, 300)
+	registerMovementAuthority(player.UserId, player.UserId, "WalkSpeed", humanoid.WalkSpeed, "TikiTideSettings")
+	registerMovementAuthority(player.UserId, player.UserId, "JumpPower", humanoid.JumpPower, "TikiTideSettings")
 end
 
 local function applyMovementWhenReady(player: Player, character: Model)
@@ -164,6 +189,8 @@ local function revokeTikiTideState(player: Player)
 		humanoid.WalkSpeed = baseline.walkSpeed
 		humanoid.UseJumpPower = baseline.useJumpPower
 		humanoid.JumpPower = baseline.jumpPower
+		registerMovementAuthority(player.UserId, player.UserId, "WalkSpeed", humanoid.WalkSpeed, "TikiTideSettingsReset")
+		registerMovementAuthority(player.UserId, player.UserId, "JumpPower", humanoid.JumpPower, "TikiTideSettingsReset")
 		baseMovementByHumanoid[humanoid] = nil
 	end
 end
@@ -294,6 +321,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 			return fail("Administrator configuration permission is no longer available.")
 		end
 		workspace.Gravity = math.clamp(gravity, 20, 192.62)
+		registerMovementAuthority(player.UserId, 0, "WorldGravity", workspace.Gravity, "TikiTideSettings")
 		return {ok = true, message = "Server gravity updated.", data = snapshot(player)}
 	elseif action == "BubbleBroadcast" then
 		if not hasClubPermission(player, "GlobalAnnouncement") then return fail("Administrator announcement permission is required.") end
