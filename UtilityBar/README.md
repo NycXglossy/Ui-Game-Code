@@ -73,9 +73,9 @@ Mount requires an existing mount Tool; this update does not invent or import a t
 Install `RegularCommandsSecurityServer.lua` as a **ModuleScript** in `ServerScriptService > Kohl's Admin > Addons`. Keep the existing `KohlsAdmin_ClubMusic_Addon` installed separately. The server-only add-on uses Kohl's synchronous `Process.addCommandFilter` enforcement point and the existing Tiki Tide authorization resolver. It does not modify Kohl's core modules or create another ban store, audit store, MemoryStore map, or persistent rate-limit bucket.
 
 Permission levels:
-- `GlobalModeration`: player moderation, movement, teleport, respawn/refresh, and private hints
+- `GlobalModeration`: player moderation, movement, teleport, respawn/refresh, private hints, forcefield, incognito, and team changes
 - `GlobalAnnouncement`: persistent cross-server announcements and server broadcasts
-- `GlobalConfig`: role/permission changes, tool/asset grants, building tools, world cleanup, terrain clearing, server lock, place teleport, and shutdown
+- `GlobalConfig`: role/permission and leaderstat changes, tool/asset grants, building tools, world cleanup, terrain clearing, world-lighting changes, server lock, place teleport, and shutdown
 
 Additional protected built-ins include `role/rank`, `temprole/temprank`, `unrole/removerole`, `removemember`, `give`, `startergive`, `starterremove`, `copytools`, `gear`, `btools/build/f3x`, `insert/ins`, `announce/unannounce`, `hint`, `message`, `fullmessage`, `privatehint`, `respawn/spawn`, `refresh/re`, `clean`, `clearterrain`, `fling`, `forcefield`, `incognito`, `team/teamrespawn`, `change` (leaderstat edits), and world-lighting controls (`time`, `brightness`, `colorshift`, `latitude`, `diffusescale`, `exposure`, and `disco`). Kohl's native role hierarchy, target-rank checks, command request flow, and native ban storage remain in place. Fling uses a short five-second movement authorization window and a bounded strength range.
 
