@@ -2351,6 +2351,7 @@ do
 			if sharedOk and typeof(instance) == "table"
 				and type(instance.GetRank) == "function"
 				and type(instance.GetLevel) == "function"
+				and type(instance.IsGroupMember) == "function"
 				and type(instance.Refresh) == "function" then
 				authorizationService = instance
 			end
