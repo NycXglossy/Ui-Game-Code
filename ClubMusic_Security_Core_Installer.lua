@@ -7,7 +7,7 @@
 local HttpService = game:GetService("HttpService")
 local ServerStorage = game:GetService("ServerStorage")
 
-local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/f38106f79324fd18350e87bd23a0021af1eb66f3/ClubMusicSecurityCore/"
+local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/6b259de9b92652c4f74c2d6bfc3767bca13fe769/ClubMusicSecurityCore/"
 local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 
