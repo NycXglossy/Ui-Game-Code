@@ -190,3 +190,23 @@ Static review extended the diagnostics/security boundary across the Global Servi
 **Static-audit boundary:** this is a wider scoped review, not proof that every embedded model, installer, third-party package, or remote in the repository has been enumerated. GitHub code search did not provide an indexed remote inventory for the working branch. Kohl's Admin internals remain out of scope; maintain the separate adapter only.
 
 **Still required before sign-off:** Studio and published-server tests for malformed/oversized payloads, remote spam, authorization-cache expiry/unavailability, permission revocation during yielding operations, replay/invalid cross-server messages, and attempts by ordinary clients to access diagnostics. Legacy diagnostic code must not be retired until all consumers are migrated and runtime tests pass.
+
+
+## Seventh-pass text-source inventory and release gate (2026-11-16)
+
+- Enumerated the current branch tree and reviewed text-based Lua/Luau remote declarations and handlers across ClubMusic, Tiki Tide Settings, UtilityBar, and the legacy music script.
+- Added live-player and post-yield connection checks to the avatar-refresh RemoteFunction.
+- Added live-player validation and a 0.5-second per-player cooldown to the read-only ToolShop query RemoteFunction.
+- Confirmed that Tiki Tide Settings Broadcast is server-to-client only in the inspected service.
+- Identified the separate legacy `Music System` / `MusicRemotes` family. It has a fixed action allowlist and legacy RoleSystem/rate-limit checks, but it is not governed by the current SecurityCore authorization contract. Its deployed status must be checked in the live place before installation or decommissioning.
+- Found the five manager source files in the current repository. They are adapters/helpers and do not prove that the old controller's queue/playback/skip/playlist state has been migrated. The Phase 0 audit has been updated to reflect the actual source availability and integration boundary.
+- Added `CLUBMUSIC_DIAGNOSTICS_MASTER_RELEASE_REGISTER.md` as the single current record of implementation, remote inventory, exclusions, runtime tests, and release criteria.
+
+### Remaining release blockers
+
+1. Run the full Studio and published-server verification matrix in the master release register. These tests cannot be completed from GitHub source alone.
+2. Inspect the live Roblox place hierarchy and confirm whether the separate legacy `Music System` and its `MusicRemotes` are active, unused, or required by an older UI.
+3. Review binary `.rbxm`/`.rbxmx` assets and embedded third-party packages, or explicitly keep them excluded from this scoped audit. Kohl's Admin internals remain out of scope; review only the separate adapter.
+4. Confirm the exact branch commit installed in the test place before any production rollout.
+
+**Release status:** Static text-source work is updated; runtime and live-place verification are pending. Do not install or call the diagnostics/security update production-ready until the blockers above are closed.
