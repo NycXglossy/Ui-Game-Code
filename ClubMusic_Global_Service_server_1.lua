@@ -38,7 +38,7 @@ local CONFIG = {
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
 		Queue = "ClubMusic_Global_Queue_v1",
-		Playback = "ClubMusic_Global_Playback_v1",
+
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -990,157 +990,33 @@ globalConfigService = createOperationalService("ClubMusic_Global_Config_Service"
 
 if globalConfigService then globalConfigService:Start() end
 
--- Playback-only authority is separate from MusicGlobalQueueService by design.
--- The feature is opt-in and remains inactive until the shared config enables it.
-local playbackAuthorityModule = loadOptionalGlobalModule("MusicGlobalPlaybackAuthority")
-local globalPlaybackAuthority: any = nil
-local playbackSyncEnabled = false
-local playbackAuthorityLastError: string? = nil
-if playbackAuthorityModule and SERVICE_ENABLED then
-	local createOk, instance = pcall(function()
-		return playbackAuthorityModule.new({
-			safeCall = globalSafeCall,
-			dataStoreService = DataStoreService,
-			memoryStoreService = MemoryStoreService,
-			jobId = JOB_ID,
-			guid = function() return HttpService:GenerateGUID(false) end,
-			publish = function(payload)
-				publishTopic(CONFIG.Topics.Playback, payload)
-			end,
-		})
-	end)
-	if createOk and instance and type(instance.Start) == "function" then
-		local startOk, started, startError = pcall(instance.Start, instance)
-		if startOk and started == true then
-			globalPlaybackAuthority = instance
-		else
-			warn("[ClubMusic Global] Playback-only authority unavailable: " .. tostring(startError or started))
-		end
-	else
-		warn("[ClubMusic Global] Could not construct playback-only authority: " .. tostring(instance))
-	end
-end
-
+-- Global playback sync has been retired. Keep status/toggle endpoints as
+-- compatibility stubs so older controller copies fail closed without leases.
 bindFunction("GetGlobalPlaybackSyncStatus", function()
-	local status = if globalPlaybackAuthority then globalPlaybackAuthority:GetStatus() else {enabled = false, error = "Playback authority module unavailable."}
-	status.syncEnabled = playbackSyncEnabled
-	status.lastServiceError = playbackAuthorityLastError
-	status.localQueueIsolated = true
-	return true, status
+	return true, {
+		enabled = false,
+		syncEnabled = false,
+		localQueueIsolated = true,
+		state = "Disabled",
+		error = "Global playback synchronization has been retired; playback is local to each server.",
+	}
 end)
 
 bindFunction("GetGlobalPlaybackSnapshot", function()
-	if not playbackSyncEnabled or not globalPlaybackAuthority then return false, nil, "Playback-only global sync is disabled or unavailable." end
-	return globalPlaybackAuthority:GetSnapshot()
+	return false, nil, "Global playback synchronization is disabled."
 end)
 
 bindFunction("AcquireGlobalPlaybackLeadership", function()
-	if not playbackSyncEnabled or not globalPlaybackAuthority then return false, nil, "Playback-only global sync is disabled or unavailable." end
-	return globalPlaybackAuthority:AcquireOrRenewLeadership()
+	return false, nil, "Global playback synchronization is disabled."
 end)
 
-bindFunction("CommitGlobalPlaybackSnapshot", function(snapshot: any, expectedRevision: any)
-	if not playbackSyncEnabled or not globalPlaybackAuthority then return false, nil, "Playback-only global sync is disabled or unavailable." end
-	return globalPlaybackAuthority:CommitPlayback(snapshot, expectedRevision)
+bindFunction("CommitGlobalPlaybackSnapshot", function()
+	return false, nil, "Global playback synchronization is disabled."
 end)
 
-bindFunction("SetGlobalPlaybackSyncEnabled", function(enabled: any, actorUserId: any)
-	if typeof(enabled) ~= "boolean" then
-		warn("[ClubMusic][PlaybackSync Auth] Rejected: enabled value is not boolean.")
-		return false, "Invalid playback sync setting."
-	end
-	if not finiteNumber(actorUserId) or actorUserId < 1 or actorUserId % 1 ~= 0 then
-		warn("[ClubMusic][PlaybackSync Auth] Rejected: actorUserId is invalid; type=" .. typeof(actorUserId))
-		return false, "Invalid authorization actor."
-	end
-	local authorized = authorizeGlobalActor(actorUserId, "GlobalConfig")
-	if not authorized then
-		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-		local resolverState = if not resolver then "missing" elseif not resolver:IsA("BindableFunction") then "wrong-class:" .. resolver.ClassName else "present"
-		warn("[ClubMusic][PlaybackSync Auth] Permission denied; actor=" .. tostring(actorUserId)
-			.. "; permission=GlobalConfig; resolver=" .. resolverState
-			.. "; playerOnThisServer=" .. tostring(Players:GetPlayerByUserId(math.floor(actorUserId)) ~= nil))
-		return false, "Global playback sync authorization failed. Check the server Output for PlaybackSync Auth diagnostics."
-	end
-	if not SERVICE_ENABLED then
-		local detail = if IS_STUDIO and not CONFIG.EnableInStudio
-			then "Cross-server playback sync is disabled in Studio isolation (EnableInStudio=false). Publish the experience and test with multiple live servers."
-			else "Cross-server playback sync is disabled by the global service configuration."
-		warn("[ClubMusic][PlaybackSync] Toggle rejected: " .. detail)
-		return false, detail
-	end
-	if not globalConfigService then
-		warn("[ClubMusic][PlaybackSync] Toggle rejected: shared config service failed to initialize while cross-server services are enabled.")
-		return false, "Shared config service failed to initialize. Check the startup diagnostics for ClubMusic_Global_Config_Service."
-	end
-	-- Playback-only sync owns Now Playing across servers but must never coexist
-	-- with the legacy shared request queue. Disable legacy queue mode persistently
-	-- before enabling playback sync; keep it disabled when playback sync is later turned off.
-	if enabled then
-		local queueOk, queueResult = globalConfigService:Set("legacyGlobalQueueEnabled", false, math.floor(actorUserId))
-		if not queueOk then return false, queueResult end
-	end
-	local ok, result = globalConfigService:Set("playbackSyncEnabled", enabled, math.floor(actorUserId))
-	if not ok then return false, result end
-	playbackSyncEnabled = enabled
-	if not enabled and globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
-	publishTopic(CONFIG.Topics.Playback, {kind = "PlaybackSyncModeChanged", enabled = enabled})
-	return true, result
+bindFunction("SetGlobalPlaybackSyncEnabled", function()
+	return false, "Global playback synchronization has been retired; each server plays independently."
 end)
-
--- Each server observes the shared opt-in flag. Only the current lease holder
--- renews leadership; no local queue data is ever sent to this authority.
-task.spawn(function()
-	local retryDelay = 8
-	while SERVICE_ENABLED do
-		local cycleOk, cycleError = pcall(function()
-			if not globalConfigService then
-				playbackAuthorityLastError = "Shared config service unavailable."
-				return
-			end
-			local enabled = globalConfigService:Get("playbackSyncEnabled") == true
-			if enabled ~= playbackSyncEnabled then
-				playbackSyncEnabled = enabled
-				if not enabled and globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
-			end
-			if playbackSyncEnabled then
-				if not globalPlaybackAuthority then
-					playbackAuthorityLastError = "Playback authority module unavailable."
-					return
-				end
-				local acquired, leaseOrLeader, acquireError = globalPlaybackAuthority:AcquireOrRenewLeadership()
-				if not acquired then
-					local message = tostring(acquireError or "Leadership is not currently available.")
-					-- A healthy peer holding the lease is the normal follower state,
-					-- not a backend outage. Surface only actual authority failures.
-					if string.find(message, "Another server currently owns global playback", 1, true) then
-						playbackAuthorityLastError = nil
-					else
-						playbackAuthorityLastError = message
-					end
-				else
-					playbackAuthorityLastError = nil
-				end
-			end
-		end)
-		if not cycleOk then
-			playbackAuthorityLastError = tostring(cycleError)
-			warn("[ClubMusic Global] Playback authority reconciliation failed safely: " .. playbackAuthorityLastError)
-			task.wait(retryDelay)
-			retryDelay = math.min(30, retryDelay * 2)
-		else
-			retryDelay = 8
-			task.wait(8)
-		end
-	end
-	if globalPlaybackAuthority then
-		local releaseOk, releaseResult = pcall(globalPlaybackAuthority.ReleaseLeadership, globalPlaybackAuthority)
-		if not releaseOk or releaseResult ~= true then
-			warn("[ClubMusic Global] Playback leadership release failed; lease will expire naturally.")
-		end
-	end
-end)
-
 
 local auditDependencies = table.clone(sharedDependencies)
 auditDependencies.isEnabled = function()
@@ -1638,21 +1514,6 @@ local function onQueueChanged(message)
 	})
 end
 
-local function onPlaybackChanged(message)
-	local data = if typeof(message) == "table" then message.Data else nil
-	if not validEnvelope(data, "Playback") or not unseen(data.id) then return end
-	if data.kind == "PlaybackChanged" then
-		if not finiteNumber(data.revision) or data.revision < 0 then return end
-		globalEventBindable:Fire({
-			kind = "PlaybackChanged",
-			revision = math.floor(data.revision),
-			trackRevision = if finiteNumber(data.trackRevision) then math.floor(data.trackRevision) else 0,
-			senderJob = data.senderJob,
-		})
-
-	end
-end
-
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	task.spawn(function()
@@ -1688,7 +1549,6 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
 	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
-	subscribeWithRetry(CONFIG.Topics.Playback, onPlaybackChanged)
 else
 	if not CONFIG.Enabled then
 		warn("[ClubMusic Global] Cross-server service is disabled by CONFIG.Enabled=false; local UI controller remains fully functional.")
