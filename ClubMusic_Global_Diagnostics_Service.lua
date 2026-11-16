@@ -18,12 +18,28 @@ local function safeRead(callback: any, ...)
 	return true, result
 end
 
-local function cloneTable(value: any): any
+local function cloneTable(value: any, depth: number?, seen: {[any]: any}?): any
 	if typeof(value) ~= "table" then return value end
+	local level = depth or 0
+	if level >= 6 then return "<depth-limit>" end
+	local visited = seen or {}
+	if visited[value] then return "<cycle>" end
 	local result = {}
+	visited[value] = result
+	local count = 0
 	for key, item in pairs(value) do
-		result[key] = if typeof(item) == "table" then table.clone(item) else item
+		count += 1
+		if count > 256 then result.truncated = true; break end
+		local safeKey = if typeof(key) == "string" or typeof(key) == "number" then key else tostring(key)
+		if typeof(item) == "table" then
+			result[safeKey] = cloneTable(item, level + 1, visited)
+		elseif typeof(item) == "string" then
+			result[safeKey] = string.sub(item, 1, 2048)
+		elseif typeof(item) == "number" or typeof(item) == "boolean" then
+			result[safeKey] = item
+		end
 	end
+	visited[value] = nil
 	return result
 end
 
@@ -164,7 +180,7 @@ function Service:Check(): boolean
 	for _, entry in ipairs({{name = "Recovery", data = recovery}, {name = "ServiceRegistry", data = registry},
 		{name = "ServerHealth", data = serverHealth}, {name = "Watchdog", data = watchdog}}) do
 		local state = tostring(entry.data.state or "Unavailable")
-		if state == "Starting" or state == "Unavailable" then
+		if state == "Starting" or state == "Unavailable" or state == "NotInstalled" then
 			table.insert(pending, entry.name .. " status is " .. string.lower(state) .. ".")
 		end
 	end
@@ -174,11 +190,21 @@ function Service:Check(): boolean
 		elseif #pending > 0 then table.concat(pending, "; ")
 		else "Local diagnostics dependencies and available health probes are healthy."
 	local localState = if apiOk and queueOk then "Healthy" else "Degraded"
+	local performanceState = if serverHealth.state == "Unavailable" or serverHealth.state == "NotInstalled"
+		then "NotInstalled" else tostring(serverHealth.state or "Unknown")
+	local watchdogState = if watchdog.state == "Unavailable" or watchdog.state == "NotInstalled"
+		then "NotInstalled" else tostring(watchdog.state or "Unknown")
 
 	self.status = {
 		state = state,
 		detail = detail,
 		localState = localState,
+		crossServerState = if enabled == true then "Enabled" else "Disabled",
+		crossServerDetail = if enabled == true
+			then "Reports this server's global-service availability only; no peer-server diagnostics are collected."
+			else "Cross-server services are disabled in this server.",
+		performanceState = performanceState,
+		watchdogState = watchdogState,
 		localDetail = if localState ~= "Healthy" then "One or more configured local service dependencies are unavailable."
 			elseif queueConfigured then "Local API and configured queue dependency are available."
 			else "Local API is available; no separate global queue ModuleScript is configured.",
@@ -204,7 +230,12 @@ function Service:Check(): boolean
 end
 
 function Service:GetStatus(): {[string]: any}
-	return cloneTable(self.status)
+	local status = cloneTable(self.status)
+	status.lastCheckAgeSeconds = if self.lastCheckAt > 0
+		then math.max(0, os.clock() - self.lastCheckAt) else nil
+	status.lastCheckError = self.lastCheckError
+	status.checkIntervalSeconds = CHECK_INTERVAL_SECONDS
+	return status
 end
 
 function Service:GetMetrics(): {[string]: any}
@@ -215,7 +246,7 @@ function Service:GetMetrics(): {[string]: any}
 		counters[name] = values.count
 	end
 	return {
-		state = "Healthy",
+		state = "Available",
 		scope = "ServerLocal",
 		counters = structuredCounters,
 		aggregate = {scope = "ServerLocal", counters = counters},
@@ -241,17 +272,22 @@ function Service:GetSnapshot(): {[string]: any}
 	local watchdog = self:_readStatus("Watchdog", self.d.getWatchdogStatus)
 	local metrics = self:GetMetrics()
 
+	local health = self:GetStatus()
+	local healthAvailable = typeof(health) == "table"
+		and health.state ~= "Unavailable" and health.state ~= "NotInstalled"
+	local metricsAvailable = typeof(metrics) == "table" and metrics.state == "Available"
 	return {
 		generatedAt = os.time(),
 		serviceEnabled = enabledOk and enabled == true,
-		healthAvailable = true,
-		health = self:GetStatus(),
+		healthAvailable = healthAvailable,
+		health = health,
 		recoveryAvailable = recovery.state ~= "Unavailable" and recovery.state ~= "NotInstalled",
 		recovery = recovery,
 		syncStatus = sync,
 		errorHistoryAvailable = errorsAvailable,
 		recentErrors = errors,
 		metrics = metrics,
+		metricsAvailable = metricsAvailable,
 		operationalServices = {
 			memoryStore = self:_readStatus("MemoryStore", self.d.getMemoryStoreStatus),
 			diagnostics = self:GetStatus(),
