@@ -56,7 +56,7 @@ This register distinguishes source implementation, static review, and runtime ve
 | Remote | Direction | Purpose / boundary |
 |---|---|---|
 | `RefreshOwnAvatar` | Client → server | Own-avatar refresh; 15-second cooldown, live-player guard, and post-yield connection/character checks. |
-| `UtilityBarActions` | Client → server | Extended utility actions; live-player guard, allowlist, server-owned entitlement checks, cooldown, and bounded values. |
+| `ExecuteUtility` | Client → server | Extended utility actions; live-player guard, allowlist, server-owned entitlement checks, cooldown, and bounded values. |
 | `ToolShop` | Client → server | Read-only `GetShop` query; live-player guard and 0.5-second per-player cooldown. |
 
 ### Legacy MusicRemotes — separate legacy path, not certified for release
