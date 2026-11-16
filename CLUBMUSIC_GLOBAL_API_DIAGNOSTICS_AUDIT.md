@@ -258,3 +258,48 @@ The server-only `ServerStorage.ClubMusicAdminBridge` is a BindableFunction, not 
 4. A number of rejected action branches return silently or notify rather than returning a structured false result. This is not an authorization bypass by itself, but it limits observability and should be considered separately from diagnostics exposure.
 5. This is a static source review. It does not inspect every service method's internal validation, all client UI callers, or other remotes in UtilityBar / Tiki Tide Settings / Kohl's Admin. Do not infer complete repository-wide remote coverage.
 6. Studio test matrix: attempt every privileged action as guest, DJ-only, moderator, admin, co-owner, and owner; test equal/higher-rank targets; malformed payloads; rapid repeats; failed Global moderation persistence; and confirm no diagnostic snapshots or tracebacks are returned to clients.
+
+
+## Fifth-pass: SecurityCore rank separation and UtilityBar / Tiki Tide Settings remotes
+
+### Authorization correction
+
+Static review confirmed the prior rank projection treated GroupDJ rank 100 as authorization level 1. Because the main UI controller's `isStaff` projection uses level >= 1, a DJ could be classified as general staff. Corrected the shared SecurityCore rank mapping:
+
+- GroupDJ threshold remains rank 100, but no longer elevates the general authorization level.
+- Moderator threshold is explicitly rank 150 and maps to level 1.
+- Admin remains rank 200 / level 2; Co-owner rank 254 / level 3; Owner rank 255 / level 4.
+- `GlobalDJ` is handled as a narrow permission: a cached group rank >= 100 (or higher staff level) may pass it, without granting the DJ general staff status.
+- Rank label for level 1 is now `MODERATOR`.
+- Authorization remains cache-only and fail-closed when the rank cache is missing/expired.
+- Updated `ClubMusic_Security_Core_Installer.lua` to fetch Authorization from commit `01889b884a8bc689b5d7bc90e1d15703f8fea304`.
+
+### UtilityBar RemoteFunction
+
+Reviewed `UtilityBar/UtilityBarExtendedActions.server.lua`:
+
+- Fixed action allowlist; one shared 1.25-second per-player cooldown.
+- Mount, Clone Companion, and Stage/Club Lighting require server-set entitlement attributes; client-supplied pass IDs/ownership are not accepted.
+- Size is range-checked (0.5x–5x), uses R15 scale values, and registers self-only movement authority.
+- Aura preset/target values are allowlisted; lighting presets are allowlisted and restricted to tagged `StageClubLight` objects.
+- Added a live-player guard at the RemoteFunction entry point.
+- **Open follow-up:** Size does not yet appear in the feature-pass attribute map. A dedicated Size Changer pass should only be enforced after its actual pass ID and server-owned entitlement attribute are configured; do not guess an ID.
+
+### Tiki Tide Settings RemoteFunction / RemoteEvent
+
+Reviewed `TikiTideSettings/TikiTideSettingsService.server.lua`:
+
+- Request handler validates live player, action string and table payload, then applies a per-player cooldown.
+- All settings actions require server-owned Tiki Tide entitlement.
+- Teleport checks target validity and recipient consent; moderation override uses SecurityCore GlobalModeration and rechecks after authorization resolution.
+- Gravity changes require GlobalConfig plus Tiki Tide entitlement, with reauthorization adjacent to mutation.
+- Bubble and server announcements require GlobalAnnouncement, Roblox text filtering, cooldowns, and reauthorization after filtering yields.
+- Broadcast RemoteEvent is server-to-client only in this service.
+- The service fails closed when SecurityCore Authorization cannot be loaded.
+
+### Remaining caveats
+
+1. The DJ-only permission path is now separate in SecurityCore, but the actual client/server DJ Booth entry and control-mode toggle must still be traced to verify rank 100+ receives booth access while owner/co-owner-only control mode remains protected.
+2. This pass did not inspect every UtilityBar / Settings client caller, every other server remote, or third-party package internals.
+3. Studio verification is still required for rank 100, 150, 200, 254, and 255; expired authorization cache; pass entitlement failures; and remote spam/malformed payloads.
+4. This remains a scoped static audit, not a repository-wide certification.
