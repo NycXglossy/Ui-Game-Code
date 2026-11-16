@@ -1037,7 +1037,8 @@ ownConnection(globalEventBindable.Event:Connect(function(event)
 			pcall(globalAuditService.Record, globalAuditService, "AdminAction", event.actorUserId, tostring(event.command or "unknown"), tostring(event.command or "unknown"))
 		elseif kind == "Catalog" and (event.senderJob == nil or event.senderJob == JOB_ID) then
 			pcall(globalAuditService.Record, globalAuditService, "CatalogChange", 0, "catalog", "received")
-		elseif kind == "Moderation" and (event.senderJob == nil or event.senderJob == JOB_ID) then
+		elseif kind == "Moderation" and event.source ~= "reconciliation"
+			and (event.senderJob == nil or event.senderJob == JOB_ID) then
 			pcall(globalAuditService.Record, globalAuditService, "Moderation", event.actorUserId,
 				tostring(event.userId or "unknown"), tostring(event.field or "moderation") .. "=" .. tostring(event.value))
 		end
@@ -1375,7 +1376,7 @@ ownThread(task.spawn(function()
 					else
 						player:SetAttribute("GlobalModerationPending", false)
 					end
-					globalEventBindable:Fire({kind = "Moderation", userId = player.UserId, field = "requestBlocked", value = data.requestBlocked == true})
+					globalEventBindable:Fire({kind = "Moderation", userId = player.UserId, field = "requestBlocked", value = data.requestBlocked == true, source = "reconciliation"})
 				end
 				task.wait(1.1)
 			end
