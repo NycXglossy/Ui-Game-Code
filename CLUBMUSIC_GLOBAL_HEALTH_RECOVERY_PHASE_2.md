@@ -72,21 +72,34 @@ Static source verification confirms:
 No Roblox Studio runtime or live multi-server test was run by the assistant. In a dedicated test server, invoke the BindableFunction from a temporary trusted server Script and confirm that it returns health/recovery data without changing queue or playback state.
 
 
-## Cross-server synchronization verification
+## Local-only diagnostics boundary
 
-The health monitor now distinguishes shared-storage health from MessagingService synchronization health.
+Diagnostics are intentionally scoped to the current Roblox server process.
 
-- Each enabled server publishes a small `ServerHeartbeat` message every 60 seconds on the existing global queue topic, `ClubMusic_Global_Queue_v1`.
-- The existing queue-topic subscriber recognizes heartbeat messages separately from `QueueChanged` notifications; heartbeat messages do not invalidate queue snapshots or trigger playback changes.
-- The monitor tracks whether the queue-topic subscription is active, whether heartbeat publishing succeeds, and whether peer-server heartbeats arrive.
-- A peer is considered stale after 180 seconds without a heartbeat.
-- If a peer was previously observed and all peer heartbeats go stale, sync status becomes `Degraded`. If no peer has ever been observed, sync is `Unverified`, not falsely reported as confirmed healthy or definitively broken. This is expected when only one server is running.
-- A failed queue-topic subscription or repeated heartbeat publish failure is reported as `Degraded`.
+- No diagnostic heartbeat is published through MessagingService.
+- No peer-server presence, health, metrics, or error history is collected.
+- No diagnostic data is stored in DataStore or MemoryStore.
+- Diagnostics do not issue kicks, restarts, queue repairs, or other control actions.
+- No diagnostic details or server error records are exposed through client remotes.
+- Existing cross-server features (such as moderation notifications and shared configuration) continue to operate independently; diagnostics only report the local server's view of their status.
 
-The health monitor exposes `syncState` and `syncStatus` in `GetGlobalHealth`, and the diagnostics response includes a top-level `syncStatus`. The API folder also publishes `SyncStatus` and `SyncPeerCount` attributes.
+The current GetGlobalDiagnostics snapshot remains a trusted server-to-server-script BindableFunction under ServerStorage. It is read-only and returns a point-in-time view.
 
-The heartbeat checks the same MessagingService topic used for queue invalidation, so a peer heartbeat confirms that the queue-topic subscription is receiving messages. It does not guarantee that every individual queue event is delivered; DataStore remains authoritative and the existing snapshot reconciliation path remains the correctness mechanism.
+## Follow-on diagnostics improvements
 
-## Phase 2 verification additions
+The next implementation stages are:
 
-Static source verification confirms the queue-topic heartbeat is separate from queue mutation handling, peer heartbeats are time-bounded, the subscription state is tracked, and sync state is surfaced through health and diagnostics. No Roblox Studio runtime or multi-server test was run by the assistant.
+1. Harden and consolidate the diagnostics coordinator and preserve existing query APIs.
+2. Add a bounded, server-local service registry.
+3. Add local ServerHealth probes for heartbeat, memory, and frame stability.
+4. Add an observational Watchdog for Auto DJ, queue progress, moderation, and recovery progress.
+5. Expand local metrics and bounded ErrorHistory, correlating error IDs with health/watchdog state.
+6. Update the trusted admin snapshot to display the new fields without exposing raw errors to clients.
+7. Add a separate opt-in ClientDiagnostics component for client-side FPS, memory, ping, and frame spikes; client reports remain untrusted telemetry.
+8. Retire obsolete diagnostic implementations only after all consumers have migrated.
+
+No diagnostics component may become an enforcement authority or a dependency of SecurityCore.
+
+## Verification
+
+The coordinator and registry changes are statically inspected and committed. Roblox Studio runtime testing is still required. Test the same-server BindableFunction, ensure the snapshot stays read-only, and confirm that disabling or removing an optional probe reports NotInstalled/Unavailable rather than falsely marking the whole service unhealthy.
