@@ -278,10 +278,10 @@ function Service:Reserve(operationId,ttlSeconds,crossServer)
    if created<oldestAt then oldestKey,oldestAt=key,created end
   end
  end
- if localCount>=512 and oldestKey then self.seenNonces[oldestKey]=nil end
  if self.seenNonces[operationId] then
   self.localHits+=1; self.duplicates+=1; return false,"Duplicate operation."
  end
+ if localCount>=512 and oldestKey then self.seenNonces[oldestKey]=nil end
  local ttl=math.clamp(math.floor(tonumber(ttlSeconds) or 120),60,300)
  -- A purely local action never queries MemoryStore.
  if crossServer~=true then
