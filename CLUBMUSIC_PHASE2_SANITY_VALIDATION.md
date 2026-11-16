@@ -44,7 +44,7 @@ The Security Core installer now includes `SanityValidation` before `TeleportVali
 
 ## Required next integrations
 
-- Apply the shared data-tree and field validators at the main UI remote ingress and any other exposed server remotes, without breaking existing action-specific contracts.
+- Main ClubMusic UI remote ingress has received its first integration; see CLUBMUSIC_PHASE3_REMOTE_INGRESS.md. Other exposed server remotes still require a separate inventory and integration.
 - Apply the standard to purchases, VIP/zone access, avatar/accessory, audio/animation, chat and social actions.
 - Audit each state mutation for authorization immediately before execution, including after any yielding operation.
 - Continue Kohl's bring/tp/to integration only after the actual command implementation and argument/destination semantics are verified.
