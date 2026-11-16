@@ -2321,9 +2321,7 @@ end
 
 -- Session-only moderation / VIP / vote state.
 -- All group-rank authorization and caching is owned by SecurityCore.Authorization.
-local vipPass: {[number]: boolean} = {}
-local vvipPass: {[number]: boolean} = {}
-local tikiTidePass: {[number]: boolean} = {}
+local entitlementAuthority: any = nil
 local blockedUsers: {[number]: boolean} = {}
 local skipVotes: {[number]: boolean} = {}
 local requestsLocked = false
@@ -2388,6 +2386,35 @@ do
 	end
 end
 
+-- Membership entitlement decisions are centralized separately from staff authorization.
+-- This service reuses Authorization's group cache and keeps bounded, session-only pass results.
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("EntitlementAuthority") else nil
+	if module and module:IsA("ModuleScript") and authorizationService then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new, {
+				authorization = authorizationService,
+				passIds = {
+					vip = CONFIG.VipGamePassId,
+					vvip = CONFIG.VvipGamePassId,
+					tikiTide = CONFIG.TikiTidePassId,
+				},
+			})
+			if createOk and typeof(instance) == "table"
+				and type(instance.GetTier) == "function"
+				and type(instance.Refresh) == "function"
+				and type(instance.Clear) == "function" then
+				entitlementAuthority = instance
+			end
+		end
+	end
+	if not entitlementAuthority then
+		warn("[ClubMusic][Entitlements] EntitlementAuthority unavailable; paid/group membership access is fail-closed.")
+	end
+end
+
 -- Rank names, levels and refreshes are projections of the single SecurityCore cache.
 ControllerFunctions.computeRank = function(player: Player): (string, number)
 	if not authorizationService then return "GUEST", 0 end
@@ -2433,16 +2460,22 @@ ControllerFunctions.canUseDJBooth = function(player: Player): boolean
 end
 
 ControllerFunctions.passTier = function(player: Player): number
-	local userId = player.UserId
-	-- The configured OWNER receives every membership tier. Other staff permissions
-	-- remain separate. Group members receive VIP, while owner-issued rank-up rewards
-	-- persist on the player's profile and can raise them through VVIP and Tiki Tide.
-	if ControllerFunctions.getLevel(player) >= 4 then return 3 end
-	local profile = profiles[userId]
-	local groupTier = if vipPass[userId] == true then 1 else 0
-	local paidTier = if tikiTidePass[userId] == true then 3 elseif vvipPass[userId] == true then 2 elseif vipPass[userId] == true then 1 else 0
+	local profile = profiles[player.UserId]
 	local rewardedTier = if profile then math.clamp(profile.rewardedPassTier, 0, 3) else 0
-	return math.max(groupTier, paidTier, rewardedTier)
+	if entitlementAuthority then
+		local ok, tier = pcall(entitlementAuthority.GetTier, entitlementAuthority, player, rewardedTier)
+		if ok and typeof(tier) == "number" then return math.clamp(math.floor(tier), 0, 3) end
+	end
+	-- Preserve owner and profile-awarded access during a staged module outage;
+	-- paid/group access is never reconstructed from client attributes.
+	if ControllerFunctions.getLevel(player) >= 4 then return 3 end
+	return rewardedTier
+end
+
+ControllerFunctions.isGroupMember = function(player: Player): boolean
+	if not authorizationService or player.Parent ~= Players then return false end
+	local ok, member = pcall(authorizationService.IsGroupMember, authorizationService, player)
+	return ok and member == true
 end
 
 ControllerFunctions.isVip = function(player: Player): boolean
@@ -2497,19 +2530,14 @@ ControllerFunctions.refreshPersonalPasses = function(player: Player)
 	player:SetAttribute("PersonalXPMultiplier", if ownsPersonal4x then 4 elseif ownsPersonal2x then 2 else 1)
 end
 
-ControllerFunctions.refreshVip = function(player: Player)
-	local userId = player.UserId
-	-- Membership in the configured Roblox group grants the base VIP tier.
-	-- Failed group lookups fail closed; the next rank/VIP refresh can retry.
-	local isGroupMember = authorizationService ~= nil
-		and authorizationService:IsGroupMember(player) == true
-	local ownsVip = ControllerFunctions.ownsGamePass(userId, CONFIG.VipGamePassId)
-	local ownsVvip = ControllerFunctions.ownsGamePass(userId, CONFIG.VvipGamePassId)
-	local ownsTikiTide = ControllerFunctions.ownsGamePass(userId, CONFIG.TikiTidePassId)
-	vipPass[userId] = isGroupMember or ownsVip
-	vvipPass[userId] = ownsVvip
-	tikiTidePass[userId] = ownsTikiTide
-	-- Group membership grants VIP; paid passes and owner-issued rewards can raise the tier.
+ControllerFunctions.refreshVip = function(player: Player, force: boolean?): boolean
+	if not entitlementAuthority or player.Parent ~= Players then return false end
+	local ok, refreshed = pcall(entitlementAuthority.Refresh, entitlementAuthority, player, force == true)
+	if not ok then
+		warn("[ClubMusic][Entitlements] Membership refresh failed; previous verified pass state is retained where available.")
+		return false
+	end
+	return refreshed == true
 end
 
 ControllerFunctions.requestLimitFor = function(player: Player): number
@@ -3449,7 +3477,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 				vip = ControllerFunctions.isVip(other),
 				passTier = ControllerFunctions.passTier(other),
 				rewardedPassTier = if profiles[other.UserId] then profiles[other.UserId].rewardedPassTier else 0,
-				groupMember = vipPass[other.UserId] == true,
+				groupMember = ControllerFunctions.isGroupMember(other),
 				blocked = blockedUsers[other.UserId] == true,
 				requests = requestCounts[other.UserId] or 0,
 				canMod = ControllerFunctions.canModerate(player, other),
@@ -6296,9 +6324,7 @@ Players.PlayerRemoving:Connect(function(player)
 	lastReloadAt[userId] = nil
 	reloadNonce[userId] = nil
 	pendingAudio[userId] = nil
-	vipPass[userId] = nil
-	vvipPass[userId] = nil
-	tikiTidePass[userId] = nil
+	if entitlementAuthority then pcall(entitlementAuthority.Clear, entitlementAuthority, player) end
 	blockedUsers[userId] = nil
 	local voteManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.SkipVote
 	if voteManager then
