@@ -59,7 +59,7 @@ return function(_K: any)
 	}
 
 	local BLOCKED_COMMANDS = {
-		-- These built-ins intentionally hang/crash a target client or repeatedly kill them.
+		-- Disable client-crashing/repeated-kill commands and arbitrary cross-server command strings.
 		crash = "This command is disabled by Tiki Tide security.",
 		loopkill = "This command is disabled by Tiki Tide security.",
 		global = "Native global command strings are disabled; use dedicated Tiki Tide global controls.",
@@ -212,6 +212,7 @@ return function(_K: any)
 		return false, "Unknown movement authority operation."
 	end
 
+	local auditUnavailableWarned = false
 	local function logAction(command: any, policy: any, targets: {Player}, value: any, targetCount: number)
 		local id = actorUserId(command)
 		local valueText = if value == nil then "default" elseif typeof(value) == "boolean" then tostring(value) else tostring(value)
@@ -235,7 +236,8 @@ return function(_K: any)
 				end)
 				if not ok then warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit invocation failed for command=" .. commandName) end
 			end)
-		else
+		elseif not auditUnavailableWarned then
+			auditUnavailableWarned = true
 			warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit API unavailable; Kohl's command log remains the fallback.")
 		end
 	end
