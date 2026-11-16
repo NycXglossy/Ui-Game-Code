@@ -3690,12 +3690,11 @@ end
 local processedReceipts: {[string]: boolean} = {}
 local processedReceiptOrder: {string?} = table.create(512)
 local processedReceiptCursor = 0
-local processedReceiptCount = 0
 local function rememberProcessedReceipt(receiptId: string)
 	if processedReceipts[receiptId] then return end
 	processedReceiptCursor = (processedReceiptCursor % 512) + 1
 	local evicted = processedReceiptOrder[processedReceiptCursor]
-	if evicted then processedReceipts[evicted] = nil else processedReceiptCount += 1 end
+	if evicted then processedReceipts[evicted] = nil end
 	processedReceiptOrder[processedReceiptCursor] = receiptId
 	processedReceipts[receiptId] = true
 end
