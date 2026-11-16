@@ -2999,8 +2999,32 @@ ControllerFunctions.insertIndex = function(tier: number): number
 	return lastPlayer + 1
 end
 
-ControllerFunctions.isTrackBlocked = function(_trackId: string): boolean
-	return false
+ControllerFunctions.isTrackBlocked = function(trackId: string): boolean
+	if typeof(trackId) ~= "string" or #trackId < 1 or #trackId > 64
+		or not string.match(trackId, "^[%w%-_]+$") then return true end
+
+	local cache = ControllerFunctions.blockedTrackCache or {}
+	ControllerFunctions.blockedTrackCache = cache
+	local now = os.clock()
+	local cached = cache[trackId]
+	-- Moderation decisions are cached per server to avoid a DataStore read for
+	-- every queue/catalog check. MessagingService updates this cache immediately.
+	if typeof(cached) == "table" and typeof(cached.blocked) == "boolean"
+		and typeof(cached.checkedAt) == "number" and now - cached.checkedAt < 300 then
+		return cached.blocked
+	end
+
+	local callOk, blocked, lookupOk = ControllerFunctions.globalInvoke("IsTrackBlocked", trackId)
+	if callOk and lookupOk == true and typeof(blocked) == "boolean" then
+		cache[trackId] = {blocked = blocked, checkedAt = now}
+		return blocked
+	end
+
+	-- Studio isolation intentionally permits local testing without the global
+	-- moderation backend. In live servers, an unknown moderation decision fails
+	-- closed; a previously cached block also remains effective during outages.
+	if cached and cached.blocked == true then return true end
+	return not RunService:IsStudio()
 end
 
 ControllerFunctions.pickAutoTrack = function(): Track?
