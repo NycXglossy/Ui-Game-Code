@@ -3,6 +3,7 @@
 -- This module never accepts client-created tickets and never enforces punishment.
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local SanityValidation = require(script.Parent:WaitForChild("SanityValidation"))
 
 local TeleportValidationService = {}
 
@@ -36,21 +37,16 @@ local ticketCount = 0
 local started = false
 local signalCallback: ((string, number, string) -> ())? = nil
 
-local function finiteNumber(value: number): boolean
-	return value == value and value > -math.huge and value < math.huge
+local function finiteNumber(value: any): boolean
+	return SanityValidation.IsFiniteNumber(value)
 end
 
 local function validPosition(position: any): boolean
-	if typeof(position) ~= "Vector3" then return false end
-	return finiteNumber(position.X) and finiteNumber(position.Y) and finiteNumber(position.Z)
-		and math.abs(position.X) <= WORLD_LIMIT
-		and math.abs(position.Y) <= WORLD_LIMIT
-		and math.abs(position.Z) <= WORLD_LIMIT
+	return SanityValidation.IsVector3(position, WORLD_LIMIT)
 end
 
 local function livePlayer(player: any): boolean
-	return typeof(player) == "Instance" and player:IsA("Player")
-		and player.Parent == Players and Players:GetPlayerByUserId(player.UserId) == player
+	return SanityValidation.IsLivePlayer(player)
 end
 
 local function characterReady(player: Player): (Model?, BasePart?)
