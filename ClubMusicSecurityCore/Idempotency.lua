@@ -1,5 +1,6 @@
 --!strict
 local StorageGuard = require(script.Parent:WaitForChild("StorageGuard"))
+local ResourceGuard = require(script.Parent:WaitForChild("ResourceGuard"))
 
 -- Local-first idempotency. Shared atomic reservations are opt-in for cross-server actions.
 local Service={}; Service.__index=Service
@@ -37,8 +38,10 @@ function Service:Reserve(operationId,ttlSeconds,crossServer)
  if now-self.sharedWindowAt>=1 then self.sharedWindowAt=now; self.sharedWindowCount=0 end
  if self.sharedWindowCount>=2 then return false,"Cross-server idempotency check rate limited." end
  self.sharedWindowCount+=1
+ local acquired,release=ResourceGuard.TryAcquire("MemoryStoreWrite")
+ if not acquired then return false,"LocalResourceLimit:MemoryStoreWrite" end
  local allowed,reason=StorageGuard.Allow("critical")
- if not allowed then return false,reason end
+ if not allowed then release(); return false,reason end
  local token=self.d.guid()
  local key="TT:IDEM:"..operationId
  if #key>64 then return false,"Idempotency key exceeds 64 characters." end
@@ -49,10 +52,12 @@ function Service:Reserve(operationId,ttlSeconds,crossServer)
    return {token=token,createdAt=os.time(),action=string.sub(operationId,1,48)}
   end,ttl)
  end)
+ release()
  if not ok then
   self.lastError=tostring(result); StorageGuard.Failure(result)
   return false,"Idempotency storage unavailable."
  end
+ StorageGuard.Success()
  if typeof(result)=="table" and result.token==token then
   self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),createdClock=now,bytes=160}
   self.reserved+=1; self.lastError=nil; return true,"Reserved"
@@ -64,7 +69,7 @@ end
 function Service:GetStatus()
  return {state=if self.d.isEnabled() then "Ready" else "Disabled",reserved=self.reserved,
   duplicates=self.duplicates,localCacheHits=self.localHits,sharedChecks=self.sharedChecks,
-  keyStrategy="Direct transaction key",recordBytes={min=100,max=250},storageGuard=StorageGuard.GetStatus()}
+  keyStrategy="Direct transaction key",recordBytes={min=100,max=250},storageGuard=StorageGuard.GetStatus(),resourceGuard=ResourceGuard.GetStatus()}
 end
 function Service:Start() return true end
 function Service:Stop() table.clear(self.seenNonces) end
