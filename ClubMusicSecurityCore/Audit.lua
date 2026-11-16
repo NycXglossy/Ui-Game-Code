@@ -3,10 +3,10 @@ local StorageGuard = require(script.Parent:WaitForChild("StorageGuard"))
 
 -- Local bounded audit queue; compact JSON batches are written to sharded expiring keys.
 local Service={}; Service.__index=Service
-local ALLOWED={AdminAction=true,CatalogChange=true,SecurityEvent=true,Maintenance=true,Moderation=true}
+local ALLOWED={AdminAction=true,CatalogChange=true,SecurityEvent=true,Maintenance=true,Moderation=true,OperationalEvent=true}
 local MAX_ITEMS=200
 local MAX_PAYLOAD=24000
-local TTL=1800
+local TTL=900
 local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderation" then 3 else if kind=="AdminAction" then 2 else 1 end
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Audit dependencies missing")
@@ -46,6 +46,18 @@ function Service:Record(kind,actorUserId,target,action)
  local record={kind=kind,actorUserId=actor,target=if type(target)=="string" then string.sub(target,1,32) else "",
   action=if type(action)=="string" then string.sub(action,1,32) else "",jobId=self.d.jobId,at=os.time(),
   severity=severity(kind)}
+ return self:_enqueue(record)
+end
+function Service:RecordEvent(kind,detail,eventSeverity)
+ if not self.d.isEnabled() or type(kind)~="string" or #kind<1 or #kind>48 then return false end
+ local severityName=if type(eventSeverity)=="string" and #eventSeverity<=16 then eventSeverity else "Info"
+ local normalized=string.lower(severityName)
+ local category=if normalized=="critical" or normalized=="error" or normalized=="warning" then "SecurityEvent" else "OperationalEvent"
+ local record={
+  kind=category,eventType=string.sub(kind,1,48),
+  detail=if type(detail)=="string" then string.sub(detail,1,120) else string.sub(tostring(detail or ""),1,120),
+  severity=severityName,actorUserId=0,target="",action="",jobId=self.d.jobId,at=os.time(),
+ }
  return self:_enqueue(record)
 end
 function Service:_flush()
