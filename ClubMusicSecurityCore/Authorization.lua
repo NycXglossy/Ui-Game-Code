@@ -44,7 +44,7 @@ end
 function Service.new(dependencies: {[string]: any}?)
 	dependencies = if typeof(dependencies) == "table" then dependencies else {}
 	local thresholds = if typeof(dependencies.thresholds) == "table" then dependencies.thresholds else DEFAULT_THRESHOLDS
-	return setmetatable({
+	local instance = setmetatable({
 		groupId = if validUserId(dependencies.groupId) then math.floor(dependencies.groupId) else GROUP_ID,
 		studioStaff = dependencies.studioStaff ~= false,
 		thresholds = thresholds,
@@ -64,6 +64,8 @@ function Service.new(dependencies: {[string]: any}?)
 		denials = {},
 		deniedActions = 0,
 	}, Service)
+	instance:Configure(dependencies)
+	return instance
 end
 
 function Service:Configure(dependencies: {[string]: any})
@@ -137,7 +139,11 @@ function Service:Refresh(player: Player): boolean
 	local userId = player.UserId
 	local existingCache = self.cache[userId]
 	if existingCache and existingCache.expiresAt > os.clock() then return true end
-	if self.refreshInFlight[userId] then return false end
+	if self.refreshInFlight[userId] then
+		while self.refreshInFlight[userId] and player.Parent == Players do task.wait(0.05) end
+		local refreshed = self.cache[userId]
+		return player.Parent == Players and refreshed ~= nil and refreshed.expiresAt > os.clock()
+	end
 	local retryAt = self.retryAfter[userId]
 	if retryAt and retryAt > os.clock() then return false end
 
