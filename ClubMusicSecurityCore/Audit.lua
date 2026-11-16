@@ -42,7 +42,7 @@ function Service:_enqueue(record)
    local level=severity(self.buffer[index].kind)
    if level<lowestSeverity then lowestOffset,lowestSeverity=offset,level end
   end
-  if lowestOffset and lowestSeverity<3 then
+  if lowestOffset and lowestSeverity<severity(record.kind) then
    local rebuilt={}
    for offset=1,self.bufferCount do
     if offset~=lowestOffset then
