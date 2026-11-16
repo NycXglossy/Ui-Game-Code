@@ -24,6 +24,9 @@ type Ticket = {
 	actorUserId: number,
 	targetUserId: number,
 	destination: Vector3,
+	sourcePosition: Vector3,
+	character: Model,
+	root: BasePart,
 	origin: string,
 	createdAt: number,
 	expiresAt: number,
@@ -105,10 +108,14 @@ function TeleportValidationService.Begin(actor: any, target: any, destination: a
 	if not livePlayer(actor) or not livePlayer(target) then return nil, "Teleport participants are not active." end
 	if typeof(origin) ~= "string" or not ALLOWED_ORIGINS[origin] then return nil, "Teleport origin is not authorized." end
 	if not validPosition(destination) then return nil, "Teleport destination is invalid or outside world bounds." end
-	local _, targetRoot = characterReady(target)
-	if not targetRoot then return nil, "Target character is not ready." end
-	local _, actorRoot = characterReady(actor)
-	if actor == target and not actorRoot then return nil, "Teleporting character is not ready." end
+	local targetCharacter, targetRoot = characterReady(target)
+	if not targetCharacter or not targetRoot then return nil, "Target character is not ready." end
+	if actor == target then
+		local actorCharacter, actorRoot = characterReady(actor)
+		if actorCharacter ~= targetCharacter or actorRoot ~= targetRoot then
+			return nil, "Teleporting character is not ready."
+		end
+	end
 
 	local lifetime = if finiteNumber(ttl) then math.clamp(ttl, 1, MAX_TTL) else DEFAULT_TTL
 	local now = os.clock()
@@ -121,6 +128,9 @@ function TeleportValidationService.Begin(actor: any, target: any, destination: a
 		actorUserId = actor.UserId,
 		targetUserId = target.UserId,
 		destination = destination,
+		sourcePosition = targetRoot.Position,
+		character = targetCharacter,
+		root = targetRoot,
 		origin = origin,
 		createdAt = now,
 		expiresAt = now + lifetime,
@@ -131,7 +141,7 @@ end
 
 -- Complete consumes the ticket whether the observed destination matches or not.
 -- This prevents retries/replays from reusing an authorization record.
-function TeleportValidationService.Complete(ticketId: any, actor: any, target: any, observedPosition: any): (boolean, string?)
+function TeleportValidationService.Complete(ticketId: any, actor: any, target: any): (boolean, string?)
 	if typeof(ticketId) ~= "string" or #ticketId > 64 then return false, "Invalid teleport ticket." end
 	local ticket = tickets[ticketId]
 	if not ticket then return false, "Teleport ticket is missing or already consumed." end
@@ -147,6 +157,12 @@ function TeleportValidationService.Complete(ticketId: any, actor: any, target: a
 		emit("TeleportTicketIdentityMismatch", ticket.targetUserId, ticket.origin)
 		return false, "Teleport authorization participant mismatch."
 	end
+	local currentCharacter, currentRoot = characterReady(target)
+	if currentCharacter ~= ticket.character or currentRoot ~= ticket.root then
+		emit("TeleportCharacterChanged", ticket.targetUserId, ticket.origin)
+		return false, "Teleport character changed before verification."
+	end
+	local observedPosition = currentRoot.Position
 	if not validPosition(observedPosition) then
 		emit("TeleportObservedPositionInvalid", ticket.targetUserId, ticket.origin)
 		return false, "Observed teleport position is invalid."
