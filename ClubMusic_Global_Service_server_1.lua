@@ -527,39 +527,20 @@ bindFunction("PublishCatalogChange", function()
 	return publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
 end)
 
-bindFunction("GetGlobalPlaybackControl", function()
-	if not SERVICE_ENABLED then return nil, false end
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	if not shared or not allowed then return nil, false end
-	local ok, state = pcall(function() return globalControlStore:GetAsync("playbackControl") end)
-	if not ok then return nil, false end
-	if typeof(state) == "table" and finiteNumber(state.revision)
-		and (state.command == "SetPlaybackPaused" or state.command == "Restart")
-		and typeof(state.paused) == "boolean" then
-		return {revision = math.floor(state.revision), command = state.command, paused = state.paused}, true
-	end
-	return nil, true
-end)
-
 bindFunction("IsEnabled", function()
 	-- Reports availability of global moderation/configuration services only.
 	-- Queue/playback modes are permanently local and no longer gate this check.
 	return SERVICE_ENABLED
 end)
 
--- Optional operational services. They observe the existing global queue and
--- never create a second playback controller or mutate queue ownership.
--- Global playback synchronization is retired; local queues do not require peer heartbeats.
-local lastQueueNotificationAt = 0
-local queueNotificationsReceived = 0
-
+-- Diagnostics expose the local-only playback architecture without maintaining
+-- cross-server playback state or peer heartbeats.
 local function getGlobalSyncStatus(): {[string]: any}
 	return {
-		state = "Disabled",
-		detail = "Global playback synchronization and peer heartbeats are disabled; each server owns its local queue.",
+		state = "LocalOnly",
+		detail = "Each server owns its own playback and request queue.",
 		peerCount = 0,
-		lastQueueNotificationAt = if lastQueueNotificationAt > 0 then os.time() - math.floor(os.clock() - lastQueueNotificationAt) else 0,
-		queueNotificationsReceived = queueNotificationsReceived,
+		queueNotificationsReceived = 0,
 	}
 end
 
@@ -743,8 +724,8 @@ if diagnosticsModule then
 	end
 end
 
--- Operational services are optional modules and fail independently. They observe or
--- coordinate shared state; none of them owns playback or the global queue controller.
+-- Operational services are optional modules and fail independently. They manage
+-- shared configuration, moderation, security, and bounded diagnostics only.
 local function createOperationalService(moduleName: string, dependencies: {[string]: any}, requiredMethods: {string}): any?
 	-- These optional modules are cross-server infrastructure, not local playback
 	-- dependencies. Do not construct them in isolated Studio sessions.
@@ -777,34 +758,6 @@ local sharedDependencies = {
 globalConfigService = createOperationalService("ClubMusic_Global_Config_Service", sharedDependencies, {"Start", "GetStatus", "Get", "Set", "SetLocal"})
 
 if globalConfigService then globalConfigService:Start() end
-
--- Global playback sync has been retired. Keep status/toggle endpoints as
--- compatibility stubs so older controller copies fail closed without leases.
-bindFunction("GetGlobalPlaybackSyncStatus", function()
-	return true, {
-		enabled = false,
-		syncEnabled = false,
-		localQueueIsolated = true,
-		state = "Disabled",
-		error = "Global playback synchronization has been retired; playback is local to each server.",
-	}
-end)
-
-bindFunction("GetGlobalPlaybackSnapshot", function()
-	return false, nil, "Global playback synchronization is disabled."
-end)
-
-bindFunction("AcquireGlobalPlaybackLeadership", function()
-	return false, nil, "Global playback synchronization is disabled."
-end)
-
-bindFunction("CommitGlobalPlaybackSnapshot", function()
-	return false, nil, "Global playback synchronization is disabled."
-end)
-
-bindFunction("SetGlobalPlaybackSyncEnabled", function()
-	return false, "Global playback synchronization has been retired; each server plays independently."
-end)
 
 local auditDependencies = table.clone(sharedDependencies)
 auditDependencies.isEnabled = function()
