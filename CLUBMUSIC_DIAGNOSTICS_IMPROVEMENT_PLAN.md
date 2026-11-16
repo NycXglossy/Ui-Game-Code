@@ -198,14 +198,14 @@ Static review extended the diagnostics/security boundary across the Global Servi
 - Added live-player and post-yield connection checks to the avatar-refresh RemoteFunction.
 - Added live-player validation and a 0.5-second per-player cooldown to the read-only ToolShop query RemoteFunction.
 - Confirmed that Tiki Tide Settings Broadcast is server-to-client only in the inspected service.
-- Identified the separate legacy `Music System` / `MusicRemotes` family. It has a fixed action allowlist and legacy RoleSystem/rate-limit checks, but it is not governed by the current SecurityCore authorization contract. Its deployed status must be checked in the live place before installation or decommissioning.
+- Confirmed from `CLUBMUSIC_MUSIC_INTEGRATION_2026-11-08.md` that the standalone legacy `Music System` and its `MusicRemotes` transport are reference-only, not runtime dependencies, and must not be installed alongside the secured controller. The current controller owns the migrated behavior. The live place should be checked for conformance, but the source file's presence in GitHub is not evidence of active deployment.
 - Found the five manager source files in the current repository. They are adapters/helpers and do not prove that the old controller's queue/playback/skip/playlist state has been migrated. The Phase 0 audit has been updated to reflect the actual source availability and integration boundary.
 - Added `CLUBMUSIC_DIAGNOSTICS_MASTER_RELEASE_REGISTER.md` as the single current record of implementation, remote inventory, exclusions, runtime tests, and release criteria.
 
 ### Remaining release blockers
 
 1. Run the full Studio and published-server verification matrix in the master release register. These tests cannot be completed from GitHub source alone.
-2. Inspect the live Roblox place hierarchy and confirm whether the separate legacy `Music System` and its `MusicRemotes` are active, unused, or required by an older UI.
+2. Confirm the live Roblox place follows the secured integration guide and does not contain a separately installed legacy `Music System` / `MusicRemotes` transport.
 3. Review binary `.rbxm`/`.rbxmx` assets and embedded third-party packages, or explicitly keep them excluded from this scoped audit. Kohl's Admin internals remain out of scope; review only the separate adapter.
 4. Confirm the exact branch commit installed in the test place before any production rollout.
 
