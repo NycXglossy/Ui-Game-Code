@@ -5,7 +5,6 @@
 local Watchdog = {}
 Watchdog.__index = Watchdog
 
-local MAX_PROBES = 8
 local MAX_DETAIL = 140
 
 local DEFAULT_PROBES = {
@@ -89,7 +88,7 @@ function Watchdog:GetStatus(): {[string]: any}
 		if probe.expected then
 			if not probe.lastAt then
 				state = if now - self.startedAt < 30 then "Starting" else "Unavailable"
-				if state == "Unavailable" then table.insert(pending, name .. " has not reported progress.") end
+				table.insert(pending, name .. " has not reported progress (" .. string.lower(state) .. ").")
 			elseif not probe.lastHealthy then
 				state = "Degraded"
 				table.insert(issues, name .. ": " .. probe.lastDetail)
