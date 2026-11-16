@@ -1013,6 +1013,18 @@ local function ownThread(thread)
 	return thread
 end
 if lifecycleJanitor then
+	lifecycleJanitor:Add(function()
+		for _,service in pairs({
+			Audit=globalAuditService,
+			EventLog=globalEventLogService,
+			SecurityMonitor=globalSecurityMonitorService,
+			Idempotency=globalIdempotencyService,
+			IncidentResponse=globalIncidentResponseService,
+			Diagnostics=globalDiagnosticsService,
+		}) do
+			if service and type(service.Stop)=="function" then pcall(service.Stop,service) end
+		end
+	end,true)
 	ownConnection(script.Destroying:Connect(function()
 		lifecycleJanitor:Cleanup()
 	end))
