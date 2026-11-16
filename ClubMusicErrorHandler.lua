@@ -1,36 +1,71 @@
 --!strict
--- Centralized, bounded diagnostics for ClubMusic server-side failures.
--- This module reports errors; it does not swallow failures or change subsystem behavior.
+-- Bounded, server-local ClubMusic error history.
+-- Reporting only: it never retries, repairs, authorizes, or changes subsystem behavior.
 
 local ClubMusicErrorHandler = {}
 
 local MAX_RECORDS = 50
+local MAX_DEDUPE_KEYS = 100
 local DEDUPE_WINDOW_SECONDS = 10
+local MAX_SUBSYSTEM = 64
+local MAX_OPERATION = 96
+local MAX_MESSAGE = 1200
+local MAX_TRACEBACK = 6000
+
 local nextErrorId = 0
-local records: {{id: string, at: number, subsystem: string, operation: string, message: string, traceback: string}} = {}
+local totalErrors = 0
+local totalRepeats = 0
+local records: {{[string]: any}} = {}
 local recentByKey: {[string]: {at: number, id: string, repeats: number}} = {}
 local reporter: ((any) -> ())? = nil
+local lastErrorAt: number? = nil
 
--- Optional telemetry bridge. The reporter receives metadata only and is always
--- isolated from the original error path; reporting failures never replace errors.
 function ClubMusicErrorHandler.SetReporter(callback: any): boolean
-	if callback ~= nil and typeof(callback) ~= "function" then
-		return false
-	end
+	if callback ~= nil and typeof(callback) ~= "function" then return false end
 	reporter = callback
 	return true
 end
 
-local function safeString(value: any): string
+local function safeString(value: any, limit: number?): string
 	local ok, result = pcall(tostring, value)
-	return if ok then string.sub(result, 1, 1200) else "<unprintable error>"
+	if not ok then return "<unprintable error>" end
+	result = string.gsub(result, "[%c]", " ")
+	return string.sub(result, 1, limit or MAX_MESSAGE)
+end
+
+local function safeContextPath(context: Instance?): string
+	if not context then return "<none>" end
+	local ok, result = pcall(function() return context:GetFullName() end)
+	return if ok then safeString(result, 240) else "<context unavailable>"
+end
+
+local function findRecord(errorId: string): {[string]: any}?
+	for index = #records, 1, -1 do
+		if records[index].id == errorId then return records[index] end
+	end
+	return nil
+end
+
+local function pruneDedupe(now: number)
+	for key, value in pairs(recentByKey) do
+		if now - value.at >= DEDUPE_WINDOW_SECONDS then recentByKey[key] = nil end
+	end
+	local count = 0
+	for _ in pairs(recentByKey) do count += 1 end
+	while count > MAX_DEDUPE_KEYS do
+		local oldestKey = nil
+		local oldestAt = math.huge
+		for key, value in pairs(recentByKey) do
+			if value.at < oldestAt then oldestAt = value.at; oldestKey = key end
+		end
+		if not oldestKey then break end
+		recentByKey[oldestKey] = nil
+		count -= 1
+	end
 end
 
 function ClubMusicErrorHandler.DescribeChildren(parent: Instance?): string
-	if not parent then
-		return "<parent is nil>"
-	end
-
+	if not parent then return "<parent is nil>" end
 	local ok, childrenOrError = pcall(function()
 		local names = {}
 		for _, child in ipairs(parent:GetChildren()) do
@@ -39,52 +74,70 @@ function ClubMusicErrorHandler.DescribeChildren(parent: Instance?): string
 		table.sort(names)
 		return names
 	end)
-
 	if not ok then
-		return "<unable to enumerate children: " .. safeString(childrenOrError) .. ">"
+		return "<unable to enumerate children: " .. safeString(childrenOrError, 180) .. ">"
 	end
 	return if #childrenOrError > 0 then table.concat(childrenOrError, ", ") else "<no direct children>"
 end
 
 function ClubMusicErrorHandler.Report(subsystem: string, operation: string, err: any, context: Instance?): string
-	local message = safeString(err)
-	local contextPath = if context then safeString(context:GetFullName()) else "<none>"
-	local key = subsystem .. "|" .. operation .. "|" .. message .. "|" .. contextPath
+	local safeSubsystem = safeString(subsystem, MAX_SUBSYSTEM)
+	local safeOperation = safeString(operation, MAX_OPERATION)
+	local message = safeString(err, MAX_MESSAGE)
+	local contextPath = safeContextPath(context)
+	local key = safeSubsystem .. "|" .. safeOperation .. "|" .. message .. "|" .. contextPath
 	local now = os.clock()
-	local recent = recentByKey[key]
+	pruneDedupe(now)
 
+	local recent = recentByKey[key]
 	if recent and now - recent.at < DEDUPE_WINDOW_SECONDS then
+		recent.at = now
 		recent.repeats += 1
+		totalRepeats += 1
+		local existing = findRecord(recent.id)
+		if existing then
+			existing.repeats = recent.repeats
+			existing.lastSeenAt = os.time()
+		end
 		return recent.id
 	end
 
 	nextErrorId += 1
+	totalErrors += 1
 	local errorId = "CM-" .. tostring(nextErrorId)
-	local trace = debug.traceback("[ClubMusic] " .. subsystem .. " / " .. operation .. ": " .. message, 2)
+	local traceOk, traceResult = pcall(function()
+		return debug.traceback("[ClubMusic] " .. safeSubsystem .. " / " .. safeOperation .. ": " .. message, 2)
+	end)
+	local trace = if traceOk then safeString(traceResult, MAX_TRACEBACK) else "<traceback unavailable>"
+	local wallTime = os.time()
 	local record = {
 		id = errorId,
 		at = now,
-		subsystem = subsystem,
-		operation = operation,
+		timestamp = wallTime,
+		lastSeenAt = wallTime,
+		scope = "ServerLocal",
+		subsystem = safeSubsystem,
+		operation = safeOperation,
 		message = message,
+		context = contextPath,
 		traceback = trace,
+		repeats = 0,
 	}
 	table.insert(records, record)
-	if #records > MAX_RECORDS then
-		table.remove(records, 1)
-	end
+	if #records > MAX_RECORDS then table.remove(records, 1) end
 	recentByKey[key] = {at = now, id = errorId, repeats = 0}
+	lastErrorAt = wallTime
 
-	local detail = "[ClubMusic][Error][" .. errorId .. "] " .. subsystem .. " / " .. operation
-		.. " | Context=" .. contextPath .. " | " .. message
-	pcall(warn, detail)
+	pcall(warn, "[ClubMusic][Error][" .. errorId .. "] " .. safeSubsystem .. " / " .. safeOperation
+		.. " | Context=" .. contextPath .. " | " .. message)
 	pcall(warn, trace)
 	if reporter then
 		pcall(reporter, {
 			id = errorId,
-			at = now,
-			subsystem = string.sub(safeString(subsystem), 1, 64),
-			operation = string.sub(safeString(operation), 1, 96),
+			timestamp = wallTime,
+			scope = "ServerLocal",
+			subsystem = safeSubsystem,
+			operation = safeOperation,
 		})
 	end
 	return errorId
@@ -97,14 +150,11 @@ function ClubMusicErrorHandler.SafeRequire(moduleScript: Instance?, label: strin
 	end
 	if not moduleScript:IsA("ModuleScript") then
 		local id = ClubMusicErrorHandler.Report(
-			"ModuleLoader",
-			"Validate " .. label,
-			"Expected ModuleScript; found " .. moduleScript.ClassName,
-			moduleScript
+			"ModuleLoader", "Validate " .. label,
+			"Expected ModuleScript; found " .. moduleScript.ClassName, moduleScript
 		)
 		return false, "Expected ModuleScript; found " .. moduleScript.ClassName, id
 	end
-
 	local ok, result = pcall(require, moduleScript)
 	if not ok then
 		local id = ClubMusicErrorHandler.Report("ModuleLoader", "Require " .. label, result, moduleScript)
@@ -115,10 +165,25 @@ end
 
 function ClubMusicErrorHandler.GetRecentErrors(): {any}
 	local copy = {}
-	for index, record in ipairs(records) do
-		copy[index] = table.clone(record)
-	end
+	for index, record in ipairs(records) do copy[index] = table.clone(record) end
 	return copy
+end
+
+function ClubMusicErrorHandler.GetStatus(): {[string]: any}
+	local dedupeCount = 0
+	for _ in pairs(recentByKey) do dedupeCount += 1 end
+	return {
+		state = "Healthy",
+		scope = "ServerLocal",
+		count = #records,
+		maxRecords = MAX_RECORDS,
+		dedupeKeys = dedupeCount,
+		maxDedupeKeys = MAX_DEDUPE_KEYS,
+		totalErrors = totalErrors,
+		totalRepeats = totalRepeats,
+		lastErrorAt = lastErrorAt,
+		updatedAt = os.time(),
+	}
 end
 
 return ClubMusicErrorHandler

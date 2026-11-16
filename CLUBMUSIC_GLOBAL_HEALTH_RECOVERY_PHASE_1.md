@@ -1,69 +1,41 @@
-# ClubMusic Global Health and Recovery — Phase 1
+# ClubMusic Global Health and Recovery — Historical Phase 1 Notes
 
-## Scope
+> Historical design record. The standalone Global Health and Global Recovery ModuleScripts described in the original version of this document are not present in the current repository branch. Do not create or install copies from this document.
 
-Adds operational visibility and bounded recovery checks to the existing cross-server ClubMusic service. This phase does not add another playback controller, queue owner, or persistent queue schema.
+## Current implementation
 
-## Files
+The current branch consolidates diagnostics into these server-local components:
 
-- `ClubMusic_Global_Health_Service.lua` — ModuleScript for service-health reporting.
-- `ClubMusic_Global_Recovery_Service.lua` — ModuleScript for retrying transient authoritative queue reads.
-- `ClubMusic_Global_Service_server_1.lua` — existing ServerScriptService Script, updated to load and start both modules, expose a health query, and forward operational failures to `ClubMusicErrorHandler`.
+- `ClubMusic_Global_Diagnostics_Service.lua` — coordinator and read-only snapshot.
+- `ClubMusic_Local_Service_Registry.lua` — bounded local service availability registry.
+- `ClubMusic_Server_Health_Service.lua` — local Heartbeat and process-memory observations.
+- `ClubMusic_Local_Watchdog_Service.lua` — local progress pulses for Playback, AutoDJ, Queue, Moderation, and Recovery.
+- `ClubMusicErrorHandler.lua` — bounded local error history and duplicate aggregation.
+- `ClubMusic_Global_Service_server_1.lua` — wires the modules into the existing ServerStorage BindableFunction API.
+- `UI_Server_Controller_server (1).lua` — reports local playback/queue/moderation progress and provides an authorized admin summary.
 
-## Installation
+See `CLUBMUSIC_DIAGNOSTICS_IMPROVEMENT_PLAN.md` for the current installation and verification checklist.
 
-1. Replace the existing `ClubMusic_Global_Service_server_1` Script in ServerScriptService with the updated file.
-2. Add `ClubMusic_Global_Health_Service` as a ModuleScript directly under ServerStorage.
-3. Add `ClubMusic_Global_Recovery_Service` as a ModuleScript directly under ServerStorage.
-4. Keep the existing `MusicGlobalQueueService` ModuleScript directly under ServerStorage.
-5. Do not add a second copy of the global service Script or the local UI controller.
-6. Keep `EnableInStudio = false` unless intentionally testing cross-server behavior in a separate test universe.
+## Historical safety decisions retained
 
-Deploy the three code files together. The new modules are optional-load guarded: if either is missing or fails to load, the existing global queue service continues to initialize and logs the operational-service problem.
+- Diagnostics never owns queue or playback state.
+- Diagnostics never retries storage operations or performs recovery.
+- Error reporting is optional and cannot block service startup.
+- Error history is bounded and local to the current server process.
+- A failed backend read is not treated as proof that a player is banned.
+- A pending catalog reservation is not cleared, expired, or rewritten by diagnostics.
+- Detailed error records and tracebacks remain server-side.
 
-## Health reporting
+## Current recovery boundary
 
-The health module checks:
-- Whether the existing cross-server service is enabled.
-- Whether the existing Global API folder and GlobalEvent are available.
-- Whether the existing global queue module is present as a ModuleScript.
-- Whether the recovery coordinator reports healthy storage, a transient failure, or a pending catalog reservation.
+There is no standalone Global Recovery ModuleScript in the current branch. Playback recovery remains inside the existing controller-owned playback watchdog. The diagnostics Watchdog only observes and reports progress; it does not trigger that recovery path.
 
-It writes these attributes on `ServerStorage.ClubMusicGlobalAPI`:
-- `HealthStatus`
-- `HealthDetail`
-- `HealthUpdatedAt`
-- `RecoveryStatus`
+The diagnostic Recovery probe reports `NotInstalled` until an explicit local recovery status provider is wired. This is not itself a failure and does not block ClubMusic startup.
 
-The existing API folder also exposes a `GetGlobalHealth` BindableFunction. It returns a success boolean and a health-status table when the monitor is available.
+## Local-only diagnostics constraint
 
-## Recovery behavior and safety boundaries
-
-The recovery coordinator:
-- Uses the existing shared DataStore budget gate before probing.
-- Invalidates only the short-lived local snapshot cache before retrying an authoritative queue read.
-- Retries transient storage failures with bounded exponential backoff from 30 seconds up to 180 seconds.
-- Reports pending catalog add/remove reservations for operator visibility.
-
-It intentionally does **not** clear, expire, or rewrite a pending catalog reservation. A reservation may represent a catalog write that committed just before a server stopped. Resume the original catalog add/remove operation using the existing catalog workflow; do not manually edit the global queue DataStore.
-
-The recovery module never plays audio, advances playback, enqueues entries, or changes queue ownership.
+No diagnostic heartbeat, peer-server registry, cross-server metrics, or cross-server error aggregation is permitted. Existing cross-server ClubMusic features continue independently, while diagnostics reports only the current server's local observations.
 
 ## Verification
 
-- GitHub files were fetched after commit and their resulting blob hashes were confirmed.
-- Static source checks confirmed both modules exist, the existing global service wires them optionally, the health query is registered, and the recovery module contains no queue mutation or reservation-clearing path.
-- No Roblox Studio runtime or live multi-server test was run by the assistant. Verify in a dedicated test universe before publishing.
-
-
-## Error-handler integration
-
-The existing `ServerStorage.ClubMusicErrorHandler` is loaded optionally by the global service. The same ModuleScript instance is shared by `require()` within each server process, so health and recovery diagnostics enter the same bounded local error history used by the UI controller on that server.
-
-- Health reports a transition into a degraded health state.
-- Recovery reports a transition into a degraded shared-storage probe state.
-- Repeated identical states are not reported every polling cycle; each service reports only when its state/detail signature changes.
-- The error handler remains a reporting sink. It does not start recovery, and recovery does not call back into the error handler for a retry decision.
-- If the error handler is absent or fails, the global service falls back to `warn()`; the operational services remain optional and must not block startup.
-
-This history is per server process, not a cross-server central database. Cross-server aggregation is not added in this phase.
+The current coordinator, registry, ServerHealth, Watchdog, and ErrorHistory sources have been statically inspected and committed. Roblox Studio and published-server runtime testing remain required.

@@ -1,19 +1,22 @@
 -- ClubMusic audio ModuleScript installer
+-- All six modules are pinned to the same audited branch snapshot (8edd537a30f002e39bd437a6d77f74e5ce66c2c6).
+-- Playback and queues are server-local; this package does not install global queue/playback services.
 -- Run this entire script once in Roblox Studio's Command Bar (View > Command Bar).
 -- Requires Game Settings > Security > Allow HTTP Requests.
--- This installs source modules only; it does NOT switch the live playback backend.
+-- This installs source modules only; it does NOT update the controller or renderer scripts.
+-- Install all matching branch revisions together in a stopped test place before starting playback.
 
 local HttpService = game:GetService("HttpService")
 local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local modules = {
-    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8198d36/ClubMusicAudioBackend.luau"},
-    {name = "ClubMusicAudioCrossfadeManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/652c5b3/ClubMusicAudioCrossfadeManager.luau"},
-    {name = "ClubMusicAudioQualityProfiles", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/9334b4a/ClubMusicAudioQualityProfiles.luau"},
-    {name = "ClubMusicDJSessionManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/e6286dc/ClubMusicDJSessionManager.luau"},
-    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/353f021/ClubMusicPlayerPreferences.luau"},
-    {name = "ClubMusicSpatialAudioGraph", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/1fc0871/ClubMusicSpatialAudioGraph.luau"},
+    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicAudioBackend.luau"},
+    {name = "ClubMusicAudioCrossfadeManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicAudioCrossfadeManager.luau"},
+    {name = "ClubMusicAudioQualityProfiles", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicAudioQualityProfiles.luau"},
+    {name = "ClubMusicDJSessionManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicDJSessionManager.luau"},
+    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicPlayerPreferences.luau"},
+    {name = "ClubMusicSpatialAudioGraph", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicSpatialAudioGraph.luau"},
 }
 
 local destinations = {
@@ -66,4 +69,5 @@ end
 
 print("[ClubMusic] Installed 5 server ModuleScripts in ServerStorage/" .. folders.server)
 print("[ClubMusic] Installed 1 client ModuleScript in ReplicatedStorage/" .. folders.client)
-print("[ClubMusic] Existing playback remains unchanged. Do not delete ServerMusicSound or MusicGroup.")
+print("[ClubMusic] Install this package with the matching controller and UI_Renderer from the same branch snapshot.")
+print("[ClubMusic] Keep ServerMusicSound and MusicGroup only as temporary bootstrap/fallback compatibility objects until Studio validation passes.")

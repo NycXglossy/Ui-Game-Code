@@ -111,6 +111,7 @@ return function(_K: any)
 		OperationalErrors = true, OperationalMetrics = true, OperationalSecurityLog = true,
 		OperationalServers = true, OperationalRateLimit = true, OperationalConfig = true,
 		OperationalRecovery = true, OperationalReconcile = true,
+		PurchaseDiagnostics = true,
 	}
 	game:GetService("Players").PlayerRemoving:Connect(function(player: Player)
 		lastInspectionAt[player.UserId] = nil
@@ -179,13 +180,27 @@ return function(_K: any)
 		end
 
 		local successMessage = if typeof(message) == "string" then message else "ClubMusic action submitted."
-		-- Read-only commands have no ClubMusic state-change Notice, so display
-		-- their result through Kohl's Admin's supported informational toast API.
-		if operation == "Status" or operation == "Queue" or operation == "OperationalCatalogRefresh"
-			or operation == "RequestMute" or operation == "ClearUserQueue" or operation == "EmergencyLock"
-			or operation == "TrackBlock" or operation == "ForceStop" or operation == "ModerationHistory"
-			or operation == "DJSessionStatus" or operation == "DJSessionStart"
-			or operation == "DJSessionHandoff" or operation == "DJSessionEnd" then
+		-- These commands return their useful result through the bridge rather than
+		-- the normal ClubMusic state-change Notice. Always surface that result to
+		-- the invoking staff member, including security and operational snapshots.
+		local DISPLAY_RESULT_OPERATIONS: {[string]: boolean} = {
+			Status = true, Queue = true, ModerationHistory = true,
+			SecurityStatus = true, SecurityIncidents = true, SecurityIncidentOpen = true,
+			SecurityIncidentResolve = true, SecurityPolicy = true, SecurityPolicySet = true,
+			OperationalCatalogRefresh = true, OperationalHealth = true,
+			OperationalDiagnostics = true, OperationalServices = true,
+			OperationalErrors = true, OperationalMetrics = true,
+			OperationalSecurityLog = true, OperationalServers = true,
+			OperationalRateLimit = true, OperationalConfig = true,
+			OperationalRecovery = true, OperationalReconcile = true,
+			PurchaseDiagnostics = true,
+			OperationalMaintenance = true,
+			RequestMute = true, ClearUserQueue = true, EmergencyLock = true,
+			TrackBlock = true, ForceStop = true,
+			DJSessionStatus = true, DJSessionStart = true,
+			DJSessionHandoff = true, DJSessionEnd = true,
+		}
+		if DISPLAY_RESULT_OPERATIONS[operation] == true then
 			local notifyOk, notifyError = pcall(function()
 				_K.Remote.Notify:Fire(caller, {
 					From = caller.UserId,
@@ -201,6 +216,11 @@ return function(_K: any)
 	end
 
 	local function register(name: string, description: string, group: string, operation: string, aliases: {string}?, argumentDefinitions: {any}?)
+		-- This is a shared addon: register the same definitions on both sides so
+		-- Kohl's Admin can populate client autocomplete, validation, and Commands UI.
+		-- The run callback is dispatched and revalidated on the server. The server-only
+		-- BindableFunction plus ClubMusic's independent staff/admin checks remain the
+		-- authorization boundary; client registration does not grant command access.
 		_K.Registry.registerCommand(_K, {
 			name = name,
 			aliases = aliases,
@@ -257,6 +277,7 @@ return function(_K: any)
 	-- Read-only operational diagnostics and controlled maintenance tools.
 	register("clubmusic-health", "Show local and cross-server ClubMusic health.", "Administration", "OperationalHealth", {"cmhealth", "cmaudiohealth"})
 	register("clubmusic-diagnostics", "Show a safe ClubMusic diagnostic snapshot.", "Administration", "OperationalDiagnostics", {"cmdiagnostics"})
+	register("clubmusic-purchasediagnostics", "Show recent purchase prompt and receipt diagnostics.", "Administration", "PurchaseDiagnostics", {"cmpurchases"})
 	register("clubmusic-services", "List ClubMusic operational and security service states.", "Administration", "OperationalServices", {"cmservices", "cmglobalstatus"})
 	register("clubmusic-errors", "Show recent ClubMusic error IDs and subsystem metadata.", "Administration", "OperationalErrors", {"cmerrors"})
 	register("clubmusic-metrics", "Show ClubMusic queue, playback, and service metrics.", "Administration", "OperationalMetrics", {"cmmetrics"})

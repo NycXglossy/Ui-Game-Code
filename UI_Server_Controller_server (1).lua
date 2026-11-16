@@ -29,7 +29,7 @@ local SoundService = game:GetService("SoundService")
 local HttpService = game:GetService("HttpService")
 
 local CONFIG = {
-	GroupId = 0, -- Set to the Roblox group ID for rank/group features.
+	GroupId = 500470662, -- Roblox group used for rank/group features.
 	RankThresholds = { Owner = 255, CoOwner = 254, Admin = 200, GroupDJ = 100 },
 
 	-- Extra staff without needing a group (treated as OWNER).
@@ -38,21 +38,21 @@ local CONFIG = {
 	-- Set to false to test the normal guest experience in Studio.
 	StudioStaff = true,
 
-	-- VIP: any ONE of these grants VIP. Staff are always VIP. Staff can also grant temporary VIP in the DJ booth.
-	VipGamePassId = 0,       -- Configure your VIP Game Pass ID.
-	VvipGamePassId = 0,      -- Configure your VVIP Game Pass ID.
-	TikiTideSultanPassId = 0,-- Configure your Tiki Tide Sultan Game Pass ID.
-	VipGroupRank = 0,        -- Group rank that counts as VIP (0 = disabled; needs GroupId).
-	VipPriority = true,      -- Pass holders receive tiered request priority.
+	-- Paid Game Passes remain available alongside group VIP and owner-issued free rewards.
+	-- Set each ID to its matching Roblox Game Pass before publishing; 0 disables that purchase tier.
+	VipGamePassId = 2089785323,
+	VvipGamePassId = 2089263330,
+	TikiTidePassId = 2087955353,
+	VipPriority = true,      -- VIP and higher membership tiers receive queue priority.
 
 	MaxRequestsPerPlayer = 2,
 	VipMaxRequestsPerPlayer = 4,
 	VvipMaxRequestsPerPlayer = 6,
-	SultanMaxRequestsPerPlayer = 8,
+	TikiTideMaxRequestsPerPlayer = 8,
 	RequestCooldownSeconds = 8,
 	VipCooldownSeconds = 3,
 	VvipCooldownSeconds = 2,
-	SultanCooldownSeconds = 1,
+	TikiTideCooldownSeconds = 1,
 	MaxQueueSize = 40,         -- Max PLAYER requests waiting at once.
 
 	AutoQueueTarget = 3,       -- Auto DJ keeps at least this many tracks visible in the queue.
@@ -72,8 +72,8 @@ local CONFIG = {
 	-- you intentionally want Studio to use the live DataStore.
 	StudioUseDataStore = false,
 
-	-- Keep the legacy Sound as the default until the modern AudioPlayer route is validated in Studio.
-	UseModernAudioBackend = false,
+	-- Modern AudioPlayer is the primary source; retain the legacy Sound only as a guarded recovery fallback.
+	UseModernAudioBackend = true,
 	CrossfadeDurationSeconds = 4,
 	CrossfadePrepareLeadSeconds = 14,
 
@@ -102,17 +102,67 @@ local CONFIG = {
 	ProfileSaveQueueDelaySeconds = 0.25,
 	XPPerMinute = 10,
 	XPPerLevel = 100,
-	XPBoost2xProductId = 0,
-	XPBoost4xProductId = 0,
+	XPBoost2xProductId = 3731386650,
+	XPBoost4xProductId = 3731387153,
+	-- Permanent personal XP Game Passes; these do not replace global Developer Products.
+	PersonalXP2xPassId = 2088891595,
+	PersonalXP4xPassId = 2089053637,
+	MountPassId = 2087955619,
+	CompanionPassId = 2088585676,
+	StageClubLightingPassId = 2088315619,
 	GlobalDataStoreBurst = 30,
 	GlobalDataStoreRefillPerSecond = 3,
 	RestrictAudioToAllowlist = false,           -- true = only IDs listed below can be requested.
 	AllowedAudioAssetIds = {} :: {number},
 
 	-- Title slots: slot 1 is free, slots 2 and 3 are Developer Products. 0 = not configured.
-	TitleSlotProductIds = { [2] = 0, [3] = 0 } :: {[number]: number},
+	TitleSlotProductIds = { [2] = 3731392651, [3] = 3731394060 } :: {[number]: number},
 	TitleSlotPrices = { [2] = 99, [3] = 199 } :: {[number]: number}, -- Display only; set to match the products.
 }
+
+
+-- Marketplace diagnostics: inspect configured paid IDs without blocking server startup.
+-- This reports Roblox's catalog metadata; it does not alter purchases or receipts.
+task.spawn(function()
+	local configured = {
+		{ label = "VIP Game Pass", id = CONFIG.VipGamePassId, infoType = Enum.InfoType.GamePass },
+		{ label = "VVIP Game Pass", id = CONFIG.VvipGamePassId, infoType = Enum.InfoType.GamePass },
+		{ label = "Tiki Tide Game Pass", id = CONFIG.TikiTidePassId, infoType = Enum.InfoType.GamePass },
+		{ label = "2x Personal XP Game Pass", id = CONFIG.PersonalXP2xPassId, infoType = Enum.InfoType.GamePass },
+		{ label = "4x Personal XP Game Pass", id = CONFIG.PersonalXP4xPassId, infoType = Enum.InfoType.GamePass },
+		{ label = "Island Mount Game Pass", id = CONFIG.MountPassId, infoType = Enum.InfoType.GamePass },
+		{ label = "Island Companion Game Pass", id = CONFIG.CompanionPassId, infoType = Enum.InfoType.GamePass },
+		{ label = "Stage & Club Lighting Game Pass", id = CONFIG.StageClubLightingPassId, infoType = Enum.InfoType.GamePass },
+		{ label = "2x XP Developer Product", id = CONFIG.XPBoost2xProductId, infoType = Enum.InfoType.Product },
+		{ label = "4x XP Developer Product", id = CONFIG.XPBoost4xProductId, infoType = Enum.InfoType.Product },
+		{ label = "Title Slot 2 Developer Product", id = CONFIG.TitleSlotProductIds[2], infoType = Enum.InfoType.Product },
+		{ label = "Title Slot 3 Developer Product", id = CONFIG.TitleSlotProductIds[3], infoType = Enum.InfoType.Product },
+	}
+	for _, entry in ipairs(configured) do
+		if typeof(entry.id) ~= "number" or entry.id <= 0 then
+			warn(string.format("[ClubMusic][MarketplaceCheck] %s has an invalid/unconfigured ID.", entry.label))
+			continue
+		end
+		local ok, info = pcall(function()
+			return MarketplaceService:GetProductInfo(entry.id, entry.infoType)
+		end)
+		if not ok or typeof(info) ~= "table" then
+			warn(string.format("[ClubMusic][MarketplaceCheck] LOOKUP_FAILED | %s | ID=%d | Error=%s",
+				entry.label, entry.id, string.sub(tostring(info), 1, 220)))
+			continue
+		end
+		local creator = if typeof(info.Creator) == "table" then info.Creator else {}
+		local creatorType = tostring(creator.CreatorType or "unknown")
+		local creatorId = tostring(creator.CreatorTargetId or creator.Id or "unknown")
+		local saleStatus = if info.IsForSale == true then "ON_SALE" elseif info.IsForSale == false then "NOT_FOR_SALE" else "UNKNOWN"
+		local price = tostring(info.PriceInRobux or info.Price or "not-returned")
+		local name = tostring(info.Name or info.ProductName or "unnamed")
+		print(string.format(
+			"[ClubMusic][MarketplaceCheck] LOOKUP_OK | %s | ID=%d | Name=%s | CreatorType=%s | CreatorId=%s | Sale=%s | Price=%s | ExpectedGroup=%d",
+			entry.label, entry.id, name, creatorType, creatorId, saleStatus, price, CONFIG.GroupId
+		))
+	end
+end)
 
 -- Publish the remote contract before loading storage modules so clients can
 -- wait safely even when catalog initialization is delayed.
@@ -138,6 +188,79 @@ local noticeRemote = ControllerFunctions.getOrCreate(remotes, "RemoteEvent", "No
 local stateFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetState") :: RemoteFunction
 local catalogFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
 local playlistFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
+
+-- Bounded, server-local purchase telemetry. Client prompt outcomes are explicitly
+-- marked as unverified telemetry; only ProcessReceipt entries are server-authoritative.
+local purchaseDiagnosticRemote = ControllerFunctions.getOrCreate(remotes, "RemoteEvent", "PurchaseDiagnostic") :: RemoteEvent
+local purchaseDiagnosticEntries: {any} = {}
+local purchaseDiagnosticRate: {[number]: {windowAt: number, count: number}} = {}
+local PURCHASE_DIAGNOSTIC_CAPACITY = 30
+local function recordPurchaseDiagnostic(source: string, userId: number, itemId: number, outcome: string, detail: string?)
+	table.insert(purchaseDiagnosticEntries, {
+		at = os.time(),
+		source = source,
+		userId = userId,
+		itemId = itemId,
+		outcome = string.sub(outcome, 1, 48),
+		detail = string.sub(tostring(detail or ""), 1, 140),
+	})
+	while #purchaseDiagnosticEntries > PURCHASE_DIAGNOSTIC_CAPACITY do
+		table.remove(purchaseDiagnosticEntries, 1)
+	end
+end
+
+local function classifyConfiguredPurchaseId(promptType: string, itemId: number): string
+	if promptType == "GamePass" then
+		if itemId == CONFIG.VipGamePassId or itemId == CONFIG.VvipGamePassId or itemId == CONFIG.TikiTidePassId
+			or itemId == CONFIG.PersonalXP2xPassId or itemId == CONFIG.PersonalXP4xPassId
+			or itemId == CONFIG.MountPassId or itemId == CONFIG.CompanionPassId
+			or itemId == CONFIG.StageClubLightingPassId then
+			return "ConfiguredClubMusicGamePass"
+		end
+	elseif itemId == CONFIG.XPBoost2xProductId or itemId == CONFIG.XPBoost4xProductId
+		or itemId == CONFIG.TitleSlotProductIds[2] or itemId == CONFIG.TitleSlotProductIds[3]
+		or itemId == 3731488823 or itemId == 3731489572 or itemId == 3731490154
+		or itemId == 3731490513 or itemId == 3731490937 or itemId == 3731491257
+		or itemId == 3731491679 then
+		return "ConfiguredClubMusicDeveloperProduct"
+	end
+	return "UnrecognizedByClubMusicConfig"
+end
+
+purchaseDiagnosticRemote.OnServerEvent:Connect(function(player: Player, promptType: any, itemId: any, eventKind: any, payload: any)
+	if typeof(player) ~= "Instance" or player.Parent ~= Players
+		or (promptType ~= "GamePass" and promptType ~= "DeveloperProduct")
+		or typeof(itemId) ~= "number" or itemId <= 0 or itemId % 1 ~= 0 then
+		return
+	end
+	local isLegacyCallback = typeof(eventKind) == "boolean"
+	local isPromptRequest = eventKind == "PromptRequested" and typeof(payload) == "string"
+	local isPromptFinished = eventKind == "PromptFinished" and typeof(payload) == "boolean"
+	if not isLegacyCallback and not isPromptRequest and not isPromptFinished then return end
+
+	local now = os.clock()
+	local rate = purchaseDiagnosticRate[player.UserId]
+	if not rate or now - rate.windowAt >= 60 then
+		rate = {windowAt = now, count = 0}
+		purchaseDiagnosticRate[player.UserId] = rate
+	end
+	if rate.count >= 12 then return end
+	rate.count += 1
+
+	local idClass = classifyConfiguredPurchaseId(promptType, itemId)
+	if isPromptRequest then
+		recordPurchaseDiagnostic("ClientPromptRequestUnverified", player.UserId, itemId, "PromptRequested",
+			promptType .. " | source=" .. string.sub(payload, 1, 48) .. " | " .. idClass .. "; request telemetry only")
+	else
+		local wasPurchased = if isLegacyCallback then eventKind else payload
+		recordPurchaseDiagnostic("ClientPromptUnverified", player.UserId, itemId,
+			if wasPurchased then "PromptReportedPurchased" else "PromptClosedWithoutPurchase",
+			promptType .. " prompt callback | " .. idClass .. "; client telemetry is not proof of a completed transaction")
+	end
+end)
+Players.PlayerRemoving:Connect(function(player: Player)
+	purchaseDiagnosticRate[player.UserId] = nil
+end)
 
 local ServerStorage = game:GetService("ServerStorage")
 -- Keep the established lowercase alias for existing storage-module loaders.
@@ -249,10 +372,16 @@ local musicValidation = MusicValidationService.new({
 end)
 remotes:SetAttribute("StartupStage", "InitializingStorage")
 
-type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string?, artworkAssetId: number? }
+type Track = { id: string, genreId: string, title: string, artist: string, duration: number, genre: string, assetId: number?, soundId: string?, artworkAssetId: number?, placeholder: boolean? }
 
 local TRACK_BY_ID: {[string]: Track} = {}
 local ALL_TRACK_IDS: {string} = {}
+
+local function isPlayableTrack(track: Track?): boolean
+	if not track or track.placeholder == true then return false end
+	local soundId = track.soundId or CONFIG.SoundIds[track.id]
+	return typeof(soundId) == "string" and soundId ~= ""
+end
 
 local TAGS: {[string]: boolean} = {
 	vip = true, party = true, wave = true, tiki = true, sunset = true, bass = true, island = true,
@@ -613,24 +742,23 @@ local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGrou
 local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
 local activeAudioSource: any = { kind = "Sound", instance = musicSound }
 local audioSourceRevision = 0
-local modernAudioMigrationAttempted = false
+local modernAudioMigrationSucceeded = false
+local modernAudioMigrationInProgress = false
+local modernAudioMigrationNextAttemptAt = 0
+local modernAudioMigrationFailureCount = 0
+local modernAudioStartToken = 0
 -- Forward-declared state is shared with the early-created crossfade factory.
 local queue: any = {}
 local queueManager: any = nil
-local globalQueueMode = false
-local globalTrackRevision = 0
-ControllerFunctions.globalPlaybackEndTime = 0
-local localCatalogRevision = 0
-local syncGlobalQueueSnapshot: (() -> boolean)? = nil
-local refreshLocalCatalog: (() -> boolean)? = nil
-local enqueueGlobalQueueEntry: ((QueueEntry) -> (boolean, string?))? = nil
+-- Retired permanently: all request queues and playback transitions are server-local.
+local enterLocalQueueBackup: ((string) -> ())? = nil
+-- Display hints may lead the authoritative snapshot, but must never advance
+-- queue ownership or the revision used by crossfade compare-and-swap.
 local nowPlaying: any = nil
+local refreshLocalCatalog: (() -> boolean)? = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
-ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-ControllerFunctions.pendingCrossfadeDeadline = 0
 local audioTransitionTrackToken = 0
 
 -- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
@@ -666,6 +794,9 @@ ControllerFunctions.bindActiveAudioPlayingSignal = function()
 		activeAudioPlayingConnection = nil
 	end
 	local source = activeAudioSource
+	-- Publish the authoritative source type so clients apply SoundGroup volume
+	-- only while the guarded legacy Sound fallback is actually active.
+	SoundService:SetAttribute("ClubMusicAudioSourceKind", if source.kind == "Backend" then "AudioPlayer" else "Sound")
 	local signalInstance = if source.kind == "Backend" and source.backend
 		then source.backend:GetPlayer() else source.instance
 	if typeof(signalInstance) == "Instance" then
@@ -679,7 +810,10 @@ ControllerFunctions.bindActiveAudioPlayingSignal = function()
 end
 
 local playbackPaused = false
-local lastGlobalPlaybackRevision = 0
+local audioReloadInProgress = false
+-- Prevent out-of-order persistence replies from an earlier pause/resume/restart
+-- overwriting a newer local control action on the same track.
+local playbackControlRequestId = 0
 
 -- One controller-owned source contract. The legacy Sound remains the active
 -- implementation until every route is migrated and a Studio cutover is validated.
@@ -694,16 +828,24 @@ ControllerFunctions.getAudioSnapshot = function()
 			local ok, value = pcall(function() return backend[methodName](backend) end)
 			return if ok then value else fallback
 		end
-		local player = read("GetPlayer", nil)
-		local asset = ""
-		if player then pcall(function() asset = tostring(player.Asset) end) end
+		local asset = read("GetAsset", "")
+		if typeof(asset) ~= "string" then asset = "" end
+		if asset == "" then
+			local player = read("GetPlayer", nil)
+			if player then pcall(function() asset = tostring(player.Asset) end) end
+		end
+		local function finiteNonNegative(value: any): number
+			local numberValue = tonumber(value)
+			if numberValue == nil or numberValue ~= numberValue or numberValue == math.huge or numberValue == -math.huge then return 0 end
+			return math.max(0, numberValue)
+		end
 		return {
 			kind = "AudioPlayer",
 			ready = read("IsReady", false) == true,
 			playing = read("IsPlaying", false) == true,
 			paused = playbackPaused,
-			position = math.max(0, tonumber(read("GetTimePosition", 0)) or 0),
-			length = math.max(0, tonumber(read("GetTimeLength", 0)) or 0),
+			position = finiteNonNegative(read("GetTimePosition", 0)),
+			length = finiteNonNegative(read("GetTimeLength", 0)),
 			asset = asset,
 		}
 	end
@@ -721,6 +863,32 @@ ControllerFunctions.getAudioSnapshot = function()
 		asset = sound.SoundId,
 	}
 end
+-- Per-track loudness trim for the 11 Club Exclusives. A 1.5 multiplier is a
+-- first-pass +50% boost. It is applied before the fader so crossfade gain and
+-- the player's MusicGroup master-volume preference remain independent.
+local TRACK_VOLUME_TRIM_OVERRIDES: {[string]: number} = {
+	["custom-100919684616729"] = 1.5, -- CROWN OF THE NIGHT
+	["custom-99973341792058"] = 1.5, -- Midnight Lucid
+	["custom-137104933242988"] = 1.5, -- Empire of Stone
+	["custom-84266261446965"] = 1.5, -- Anvil_of_Ruin
+	["custom-85420661204078"] = 1.5, -- Code in the Smoke
+	["custom-134987433423089"] = 1.5, -- Rich Lifestyle
+	["custom-92952858514774"] = 1.5, -- Metallic Chaos Within Magic Theory
+	["custom-117388170134707"] = 1.5, -- Steel Collision
+	["custom-86468432953052"] = 1.5, -- Fallen Star Blues
+	["custom-126526272193872"] = 1.5, -- Winter Between Us
+	["custom-96399574470852"] = 1.5, -- Terminal Frequency
+}
+local function getTrackVolumeTrim(trackId: string?): number
+	if typeof(trackId) ~= "string" then return 1 end
+	local configured = TRACK_VOLUME_TRIM_OVERRIDES[trackId]
+	if not ControllerFunctions.isFiniteNumber(configured) or configured <= 0 then return 1 end
+	-- Sound.Volume and AudioPlayer.Volume both support values above 1, but
+	-- clamp the shared per-track trim to their documented 0..10 range.
+	return math.clamp(configured, 0.01, 10)
+end
+ControllerFunctions.getTrackVolumeTrim = getTrackVolumeTrim
+
 -- Gain is owned by the active source. Keep the crossfade/profile contract
 -- backend-neutral so a transition never assumes the outgoing deck is at 100%.
 ControllerFunctions.getAudioGain = function(sourceOverride: any?): (boolean, number)
@@ -734,7 +902,10 @@ ControllerFunctions.getAudioGain = function(sourceOverride: any?): (boolean, num
 	end
 	local sound = source.instance
 	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false, 0 end
-	local value = sound.Volume
+	-- Legacy Sound.Volume carries the per-track trim as well as the fader.
+	-- Expose only the normalized 0..1 fader value to crossfade management.
+	local trim = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or ""))
+	local value = sound.Volume / trim
 	if not ControllerFunctions.isFiniteNumber(value) or value < 0 or value > 1 then return false, 0 end
 	return true, value
 end
@@ -748,8 +919,34 @@ ControllerFunctions.setAudioGain = function(value: number, sourceOverride: any?)
 	end
 	local sound = source.instance
 	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
-	local ok = pcall(function() sound.Volume = value end)
+	local trim = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or ""))
+	local ok = pcall(function() sound.Volume = value * trim end)
 	return ok
+end
+
+-- Track-specific playback-rate corrections. CROWN OF THE NIGHT's uploaded
+-- source is already time-stretched by 9% with pitch preserved, so Roblox must
+-- play that asset at normal speed rather than applying another 1.09 multiplier.
+local TRACK_PLAYBACK_SPEED_OVERRIDES: {[string]: number} = {
+	["custom-100919684616729"] = 1.0,
+}
+ControllerFunctions.setAudioPlaybackSpeed = function(value: number): boolean
+	if not ControllerFunctions.isFiniteNumber(value) or value < 0.5 or value > 2 then return false end
+	local source = activeAudioSource
+	if typeof(source) ~= "table" then return false end
+	if source.kind == "Backend" and source.backend then
+		local ok, result = pcall(function() return source.backend:SetPlaybackSpeed(value) end)
+		return ok and result ~= false
+	end
+	local sound = source.instance
+	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
+	local ok = pcall(function() sound.PlaybackSpeed = value end)
+	return ok
+end
+ControllerFunctions.applyTrackPlaybackSpeed = function(trackId: string): boolean
+	local speed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId]
+	if speed == nil then return true end
+	return ControllerFunctions.setAudioPlaybackSpeed(speed)
 end
 
 ControllerFunctions.setAudioAsset = function(asset: string)
@@ -785,7 +982,8 @@ ControllerFunctions.pauseAudio = function()
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Pause() end
 	source.instance:Pause()
-	return true, nil
+	local position = source.instance.TimePosition
+	return true, nil, if ControllerFunctions.isFiniteNumber(position) then math.max(0, position) else nil
 end
 ControllerFunctions.resumeAudio = function()
 	audioSourceRevision += 1
@@ -797,11 +995,11 @@ end
 
 -- Replace the canonical source only after a prepared backend is ready and can
 -- start silently. On any failure, restore the previous source and playhead.
--- This seam is intentionally not called during startup; Studio cutover testing
--- is still required before any production enablement.
+-- The controller invokes this after the first valid track starts; the legacy
+-- Sound remains available only as a guarded bootstrap/emergency fallback.
 ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, string?)
 	if typeof(candidate) ~= "table" then return false, "A prepared audio backend is required." end
-	for _, methodName in ipairs({ "IsReady", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetAsset", "SetGain", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
+	for _, methodName in ipairs({ "IsReady", "GetReadinessSnapshot", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetAsset", "SetGain", "SetPlaybackSpeed", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
 		if typeof(candidate[methodName]) ~= "function" then return false, "Audio backend is missing " .. methodName .. "." end
 	end
 	local playerOk, player = pcall(function() return candidate:GetPlayer() end)
@@ -870,6 +1068,13 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 		candidateCleanup()
 		return false, "Incoming audio backend could not load the current asset."
 	end
+	local trackId = tostring(nowPlaying and nowPlaying.trackId or "")
+	local playbackSpeed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId] or 1
+	local speedOk, speedResult = pcall(function() return candidate:SetPlaybackSpeed(playbackSpeed) end)
+	if not speedOk or speedResult == false then
+		candidateCleanup()
+		return false, "Incoming audio backend could not apply the current track playback speed."
+	end
 
 	local deadline = os.clock() + 8
 	local ready = false
@@ -878,13 +1083,21 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 			candidateCleanup()
 			return false, "Playback changed while the incoming backend was loading."
 		end
-		local readyOk, readyValue = pcall(function() return candidate:IsReady() end)
-		if readyOk and readyValue == true then ready = true; break end
+		local readinessOk, readiness = pcall(function() return candidate:GetReadinessSnapshot() end)
+		if readinessOk and typeof(readiness) == "table"
+			and readiness.ready == true
+			and readiness.asset == asset
+			and typeof(readiness.length) == "number"
+			and ControllerFunctions.isFiniteNumber(readiness.length)
+			and readiness.length > 0 then
+			ready = true
+			break
+		end
 		task.wait(0.1)
 	end
 	if not ready then
 		candidateCleanup()
-		return false, "Incoming audio backend did not become ready before the handoff timeout."
+		return false, "Incoming audio backend did not become ready with a valid duration before the handoff timeout."
 	end
 	if not outgoingStillCurrent() then
 		candidateCleanup()
@@ -895,6 +1108,36 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 	if not playOk or playResult == false then
 		candidateCleanup()
 		return false, "Incoming audio backend could not start for handoff."
+	end
+	-- AudioPlayer:Play can return before its playback state is observable.
+	-- Keep the candidate muted and the legacy source authoritative until the
+	-- new deck reports IsPlaying; abandon the cutover if it never starts.
+	local startDeadline = os.clock() + 2
+	local candidatePlaying = false
+	while os.clock() < startDeadline do
+		if not outgoingStillCurrent() then
+			candidateCleanup()
+			return false, "Playback changed while the incoming backend was starting."
+		end
+		local playingOk, playingValue = pcall(function() return candidate:IsPlaying() end)
+		if playingOk and playingValue == true then
+			candidatePlaying = true
+			break
+		end
+		task.wait(0.05)
+	end
+	if not candidatePlaying then
+		candidateCleanup()
+		return false, "Incoming audio backend did not enter the playing state; legacy playback was kept."
+	end
+	-- Confirm the decoder still owns the intended asset after Play reports
+	-- IsPlaying; stale/empty readiness must never be committed as the new source.
+	local finalReadinessOk, finalReadiness = pcall(function() return candidate:GetReadinessSnapshot() end)
+	if not finalReadinessOk or typeof(finalReadiness) ~= "table"
+		or finalReadiness.ready ~= true or finalReadiness.asset ~= asset
+		or not ControllerFunctions.isFiniteNumber(finalReadiness.length) or finalReadiness.length <= 0 then
+		candidateCleanup()
+		return false, "Incoming audio readiness changed during startup; legacy playback was kept."
 	end
 	if wasPaused then
 		local pauseOk, pauseResult = pcall(function() return candidate:Pause() end)
@@ -938,38 +1181,54 @@ end
 
 ControllerFunctions.bindActiveAudioPlayingSignal()
 
--- Optional one-time migration after the first valid track starts. Disabled by
--- default; if preparation or handoff fails, adoptAudioBackend cleans the
--- candidate and the canonical Sound continues without interruption.
+-- Enabled one-time migration after the first valid track starts. If preparation
+-- or handoff fails, adoptAudioBackend cleans the candidate and the guarded
+-- bootstrap Sound continues until a later bounded retry succeeds.
 ControllerFunctions.tryModernAudioBackendMigration = function()
-	if not CONFIG.UseModernAudioBackend or modernAudioMigrationAttempted then return false end
-	modernAudioMigrationAttempted = true
+	if not CONFIG.UseModernAudioBackend or modernAudioMigrationSucceeded or modernAudioMigrationInProgress then return false end
+	if os.clock() < modernAudioMigrationNextAttemptAt then return false end
+	modernAudioMigrationInProgress = true
+
+	local function finish(success: boolean, message: string?): boolean
+		modernAudioMigrationInProgress = false
+		if success then
+			modernAudioMigrationSucceeded = true
+			modernAudioMigrationFailureCount = 0
+			modernAudioMigrationNextAttemptAt = 0
+			return true
+		end
+		modernAudioMigrationFailureCount += 1
+		-- A transient module/load/readiness failure must not permanently strand
+		-- this server on legacy Sound. Retry on a later track with bounded backoff.
+		local delaySeconds = math.min(60, 5 * (2 ^ math.min(modernAudioMigrationFailureCount - 1, 4)))
+		modernAudioMigrationNextAttemptAt = os.clock() + delaySeconds
+		if message then warn("[ClubMusic][AudioBackend] " .. message .. " Legacy Sound remains active; retrying in " .. tostring(delaySeconds) .. "s.") end
+		return false
+	end
+
 	local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
 	if not backendModule or not backendModule:IsA("ModuleScript") then
-		warn("[ClubMusic][AudioBackend] Modern backend is enabled but its ModuleScript is missing; legacy Sound remains active.")
-		return false
+		return finish(false, "Modern backend ModuleScript is missing.")
 	end
 	local requireOk, BackendClass = pcall(require, backendModule)
 	if not requireOk or typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
-		warn("[ClubMusic][AudioBackend] Modern backend could not be loaded; legacy Sound remains active.")
-		return false
+		return finish(false, "Modern backend module could not be loaded.")
 	end
 	local createOk, candidate = pcall(BackendClass.new, {
 		Name = "ClubMusicMainAudioBackend",
 		Parent = SoundService,
+		Volume = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or "")),
 		InitialGain = 0,
 	})
 	if not createOk or typeof(candidate) ~= "table" then
-		warn("[ClubMusic][AudioBackend] Modern backend could not be constructed; legacy Sound remains active.")
-		return false
+		return finish(false, "Modern backend could not be constructed.")
 	end
 	local adopted, message = ControllerFunctions.adoptAudioBackend(candidate)
 	if not adopted then
-		warn("[ClubMusic][AudioBackend] Safe handoff was rejected; legacy Sound remains active: " .. tostring(message))
-		return false
+		return finish(false, "Safe handoff was rejected: " .. tostring(message))
 	end
 	print("[ClubMusic][AudioBackend] Modern AudioPlayer is now the controller-owned main source.")
-	return true
+	return finish(true, nil)
 end
 
 -- One controller-owned cancellation seam for a future dual-deck transition.
@@ -987,10 +1246,7 @@ ControllerFunctions.cancelAudioTransition = function(reason: string?)
 	end
 	pendingCrossfadeEntry = nil
 	pendingCrossfadeToken = -1
-	ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-	ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-	ControllerFunctions.pendingCrossfadeDeadline = 0
-	return true
+				return true
 end
 
 -- Destroy the optional coordinator explicitly during teardown. Cleanup invalidates
@@ -1036,12 +1292,17 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 	local transitionRevision = nil
 	local context = {
 		CreateDeck = function()
-			return BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService"), InitialGain = 0 })
+			local deck = BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService"), InitialGain = 0 })
+			local incomingTrackId = if typeof(pendingCrossfadeEntry) == "table"
+				then tostring(pendingCrossfadeEntry.trackId or "") else ""
+			local player = deck:GetPlayer()
+			if player then
+				local trim = getTrackVolumeTrim(incomingTrackId)
+				if ControllerFunctions.isFiniteNumber(trim) then player.Volume = math.clamp(trim, 0.01, 10) end
+			end
+			return deck
 		end,
 		GetRemainingTime = function()
-			if globalQueueMode and ControllerFunctions.pendingCrossfadeGlobalRevision >= 0 and ControllerFunctions.pendingCrossfadeDeadline > 0 then
-				return math.max(0, ControllerFunctions.pendingCrossfadeDeadline - game:GetService("Workspace"):GetServerTimeNow())
-			end
 			if not nowPlaying then return 0 end
 			return math.max(0, (tonumber(nowPlaying.duration) or 0) - (tonumber(nowPlaying.elapsed) or 0))
 		end,
@@ -1069,64 +1330,10 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
 			if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer")
 				or not player.IsPlaying then return false end
-			local isGlobalTransition = globalQueueMode
-			if isGlobalTransition then
-				if ControllerFunctions.pendingCrossfadeGlobalRevision < 0 then return false end
-				local queueHeadMatches = queue[1] ~= nil and queue[1].id == entry.id
-					and globalTrackRevision == ControllerFunctions.pendingCrossfadeGlobalRevision
-				if not queueHeadMatches and not ControllerFunctions.pendingCrossfadeGlobalCommitted then return false end
-				-- Re-read through the CAS even if a MessagingService snapshot already
-				-- announced the commit. This confirms no later skip/restart replaced
-				-- the prepared track before this server finishes its local handoff.
-				local callOk, didAdvance, state, message = ControllerFunctions.globalInvoke(
-					"AdvanceGlobalQueue", ControllerFunctions.pendingCrossfadeGlobalRevision, nil,
-					localCatalogRevision, entry.id
-				)
-				if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-				local committedEntry = if typeof(state) == "table" then state.current else nil
-				local committed = typeof(committedEntry) == "table"
-					and committedEntry.id == entry.id
-					and typeof(state.playback) == "table"
-					and tonumber(state.playback.trackRevision) > ControllerFunctions.pendingCrossfadeGlobalRevision
-				if not committed and syncGlobalQueueSnapshot then
-					local syncOk = syncGlobalQueueSnapshot()
-					committed = syncOk == true and ControllerFunctions.pendingCrossfadeGlobalCommitted == true
-				end
-				if not committed then
-					if not callOk then warn("[ClubMusic][Crossfade] Global queue commit unavailable: " .. tostring(didAdvance)) end
-					if didAdvance ~= true and message then
-						warn("[ClubMusic][Crossfade] Global queue did not commit the prepared entry: " .. tostring(message))
-					end
-					return false
-				end
-			elseif queue[1] ~= entry then
+			if queue[1] ~= entry then
 				return false
 			end
 
-			-- If the global CAS has committed but a local source operation fails,
-			-- continue the authoritative track on the existing controller source.
-			-- The manager will treat this as a completed fallback and will not leak
-			-- the already-prepared incoming deck.
-			local function recoverCommittedGlobalTrack(): boolean
-				if not isGlobalTransition then return false end
-				activeAudioSource = outgoing
-				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
-				local baseGain = tonumber(ControllerFunctions.crossfadeOutgoingBaseGain) or 1
-				pcall(function() ControllerFunctions.setAudioGain(math.clamp(baseGain, 0, 1), outgoing) end)
-				ControllerFunctions.setNowPlaying(entry, true)
-				local fallbackAsset = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
-				ControllerFunctions.startServerMusic(fallbackAsset)
-				pcall(function() incoming:Stop() end)
-				local cleanupOk, cleanupResult = pcall(function() return incoming:Cleanup() end)
-				if not cleanupOk or cleanupResult == false then
-					warn("[ClubMusic][Crossfade] Incoming deck cleanup failed after global fallback.")
-				end
-				task.defer(function()
-					ControllerFunctions.topUpAuto()
-					publishState(nil)
-				end)
-				return true
-			end
 
 			-- Stop the outgoing source before changing ownership. If it cannot be
 			-- stopped, leave the old source authoritative so Cancel can restore gain.
@@ -1136,16 +1343,41 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				then math.max(0, tonumber(outgoingSnapshot.position) or 0) else 0
 			local stopOk, stopResult = pcall(function()
 				if outgoing.kind == "Backend" and outgoing.backend then
-					return outgoing.backend:Stop()
+					-- Stop the retired AudioPlayer before ownership changes; Cleanup
+					-- below then destroys its complete output graph.
+					local stopped, stopError = outgoing.backend:Stop()
+					if stopped == false then error(tostring(stopError or "Outgoing AudioPlayer did not stop.")) end
+					return true
 				elseif outgoing.kind == "Sound" and outgoing.instance
 					and outgoing.instance:IsA("Sound") then
-					outgoing.instance:Stop()
-					return not outgoing.instance.IsPlaying
+					-- Sound can retain a short decoded tail after Stop(). Hard-mute
+					-- the retired deck first, then stop and rewind it so no buffered
+					-- fragment leaks over the newly committed AudioPlayer.
+					local sound = outgoing.instance
+					local soundParent = sound.Parent
+					-- Mute before stopping so the retired legacy deck cannot remain
+					-- audible while clients process the replicated stop/position update.
+					sound.Volume = 0
+					sound:Stop()
+					sound.TimePosition = 0
+					sound:Stop()
+					-- A small delayed reassertion closes an intermittent replication/
+					-- decoder-tail race observed at the end of otherwise successful fades.
+					-- Do not touch it if another path has already made this Sound active again.
+					task.delay(0.15, function()
+						if sound.Parent and sound.Parent == soundParent and activeAudioSource ~= outgoing then
+							pcall(function()
+								sound.Volume = 0
+							sound:Stop()
+							sound.TimePosition = 0
+						end)
+						end
+					end)
+					return not sound.IsPlaying
 				end
 				return false
 			end)
 			if not stopOk or stopResult == false then
-				if recoverCommittedGlobalTrack() then return true end
 				return false
 			end
 
@@ -1168,15 +1400,11 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return false
 			end
 
-			-- Local mode owns a mutable queue table. Global mode has already
-			-- committed the exact entry through the shared DataStore CAS above.
-			local popOk, popped = true, entry
-			if not isGlobalTransition then
-				popOk, popped = pcall(function()
-					if not queueManager then return nil end
-					return queueManager:PopNext()
-				end)
-			end
+			-- Crossfade completion consumes the prepared entry from this server's queue.
+			local popOk, popped = pcall(function()
+				if not queueManager then return nil end
+				return queueManager:PopNext()
+			end)
 			if not popOk or popped ~= entry then
 				activeAudioSource = outgoing
 				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
@@ -1190,10 +1418,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			end
 			audioSourceRevision += 1
 			ControllerFunctions.setNowPlaying(entry, true)
-			ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-			ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-			ControllerFunctions.pendingCrossfadeDeadline = 0
-			task.defer(function()
+												task.defer(function()
 				ControllerFunctions.topUpAuto()
 				publishState(nil)
 			end)
@@ -1250,26 +1475,433 @@ ControllerFunctions.stopServerMusic = function()
 	ControllerFunctions.refreshActiveMusicSoundCount()
 end
 
+-- Start modern AudioPlayer first. The legacy Sound is started only if the
+-- modern module, decoder, or playback verification fails. A monotonically
+-- increasing token prevents a late decoder completion from replacing a newer track.
 ControllerFunctions.startServerMusic = function(soundId: any)
+	local retiredSource = activeAudioSource
 	ControllerFunctions.stopServerMusic()
+	-- New-track startup owns a fresh candidate. Park the controller on the
+	-- guarded Sound fallback while that candidate loads, and retire the stopped
+	-- previous backend so the active-source contract never points at a dead deck.
+	if retiredSource.kind == "Backend" and retiredSource.backend then
+		pcall(function() retiredSource.backend:Cleanup() end)
+	end
+	activeAudioSource = { kind = "Sound", instance = musicSound }
+	ControllerFunctions.bindActiveAudioPlayingSignal()
+	modernAudioStartToken += 1
+	local startToken = modernAudioStartToken
+	local startRevision = audioSourceRevision
 	if typeof(soundId) ~= "string" or #soundId > 64
 		or not string.match(soundId, "^rbxassetid://%d+$") then
 		ControllerFunctions.setAudioAsset("")
 		return
 	end
-	local setOk, setError = ControllerFunctions.setAudioAsset(soundId)
-	if setOk == false then warn("[ClubMusic] Server audio asset could not be assigned: " .. tostring(setError)); return end
-	local seekOk, seekError = ControllerFunctions.seekAudio(0)
-	if seekOk == false then warn("[ClubMusic] Server audio position could not be reset: " .. tostring(seekError)); return end
-	local ok, err = pcall(function()
-		ControllerFunctions.playAudio()
-		if playbackPaused then ControllerFunctions.pauseAudio() end
-	end)
-	if not ok then
-		warn("[ClubMusic] Server playback could not start: " .. tostring(err))
+
+	local trackId = tostring(nowPlaying and nowPlaying.trackId or "")
+	local trim = getTrackVolumeTrim(trackId)
+	local playbackSpeed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId] or 1
+	local wasPaused = playbackPaused == true
+
+	local function isCurrentStart(): boolean
+		return modernAudioStartToken == startToken
+			and audioSourceRevision == startRevision
+			and activeAudioSource.kind == "Sound"
+			and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
 	end
+
+	local function startLegacyFallback(reason: string?)
+		if not isCurrentStart() then return end
+		local fallbackOk, fallbackError = pcall(function()
+			musicSound.SoundId = soundId
+			musicSound.Volume = math.clamp(trim, 0.01, 10)
+			musicSound.PlaybackSpeed = playbackSpeed
+			musicSound.TimePosition = 0
+			musicSound:Play()
+			if wasPaused then musicSound:Pause() end
+		end)
+		if not fallbackOk then
+			warn("[ClubMusic] Both modern startup and legacy fallback failed: " .. tostring(fallbackError))
+			return
+		end
+		ControllerFunctions.bindActiveAudioPlayingSignal()
+		if reason then
+			warn("[ClubMusic][AudioBackend] Modern-first startup failed; guarded Sound fallback started: " .. reason)
+			task.defer(ControllerFunctions.tryModernAudioBackendMigration)
+		end
+	end
+
+	if not CONFIG.UseModernAudioBackend then
+		startLegacyFallback(nil)
+		return
+	end
+
+	task.spawn(function()
+		local candidate: any = nil
+		local function discardCandidate()
+			if candidate then
+				pcall(function() candidate:Stop() end)
+				pcall(function() candidate:Cleanup() end)
+				candidate = nil
+			end
+		end
+		local ok, failure = pcall(function()
+			local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
+			if not backendModule or not backendModule:IsA("ModuleScript") then
+				error("Modern backend ModuleScript is missing.")
+			end
+			local BackendClass = require(backendModule)
+			if typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
+				error("Modern backend module has an invalid constructor.")
+			end
+			candidate = BackendClass.new({
+				Name = "ClubMusicMainAudioBackend",
+				Parent = SoundService,
+				Volume = math.clamp(trim, 0.01, 10),
+				PlaybackSpeed = playbackSpeed,
+				InitialGain = 0,
+			})
+			if typeof(candidate) ~= "table" then error("Modern backend could not be constructed.") end
+			local assetOk, assetError = candidate:SetAsset(soundId)
+			if assetOk ~= true then error(tostring(assetError or "Modern backend rejected the track asset.")) end
+
+			local readyDeadline = os.clock() + 8
+			local ready = false
+			repeat
+				if not isCurrentStart() then return "stale" end
+				local readiness = candidate:GetReadinessSnapshot()
+				ready = typeof(readiness) == "table"
+					and readiness.ready == true
+					and readiness.asset == soundId
+					and ControllerFunctions.isFiniteNumber(readiness.length)
+					and readiness.length > 0
+				if not ready then task.wait(0.1) end
+			until ready or os.clock() >= readyDeadline
+			if not ready then error("Modern AudioPlayer decoder did not become ready within 8 seconds.") end
+
+			local startPosition = math.max(0, tonumber(nowPlaying and nowPlaying.elapsed) or 0)
+			local played, playError = candidate:Play(nil, startPosition)
+			if played ~= true then error(tostring(playError or "Modern AudioPlayer failed to start.")) end
+			local playDeadline = os.clock() + 2
+			local playing = false
+			repeat
+				if not isCurrentStart() then return "stale" end
+				playing = candidate:IsPlaying() == true
+				if not playing then task.wait(0.05) end
+			until playing or os.clock() >= playDeadline
+			if not playing then error("Modern AudioPlayer did not enter the playing state.") end
+			local finalReadiness = candidate:GetReadinessSnapshot()
+			if typeof(finalReadiness) ~= "table" or finalReadiness.ready ~= true
+				or finalReadiness.asset ~= soundId or finalReadiness.length <= 0 then
+				error("Modern AudioPlayer readiness changed during startup.")
+			end
+			if wasPaused then
+				local paused, pauseError = candidate:Pause()
+				if paused ~= true then error(tostring(pauseError or "Modern AudioPlayer could not preserve pause state.")) end
+			end
+			if not isCurrentStart() then return "stale" end
+			local gainOk, gainError = candidate:SetGain(1)
+			if gainOk ~= true then error(tostring(gainError or "Modern AudioPlayer gain could not be enabled.")) end
+
+			local previousSource = activeAudioSource
+			activeAudioSource = { kind = "Backend", backend = candidate }
+			candidate = nil
+			ControllerFunctions.bindActiveAudioPlayingSignal()
+			pcall(function()
+				musicSound:Stop()
+				musicSound.TimePosition = 0
+			end)
+			if previousSource.kind == "Backend" and previousSource.backend then
+				pcall(function() previousSource.backend:Cleanup() end)
+			end
+			modernAudioMigrationSucceeded = true
+			modernAudioMigrationFailureCount = 0
+			modernAudioMigrationNextAttemptAt = 0
+			print("[ClubMusic][AudioBackend] Modern AudioPlayer started as the primary track source.")
+		end)
+		discardCandidate()
+		if ok and failure == "stale" then
+			-- Expected cancellation: never warn or invoke legacy recovery for an
+			-- obsolete track. If only the same track's playhead/pause revision
+			-- changed, retry with the latest controller state.
+			if modernAudioStartToken == startToken
+				and activeAudioSource.kind == "Sound"
+				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
+				and audioSourceRevision ~= startRevision then
+				task.defer(ControllerFunctions.startServerMusic, soundId)
+			end
+		elseif not ok then
+			-- A seek/pause or other controller action may legitimately revise the
+			-- active Sound while the candidate is loading. Retry the same current
+			-- track with the latest playhead/pause state instead of falling silent.
+			if modernAudioStartToken == startToken
+				and activeAudioSource.kind == "Sound"
+				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
+				and audioSourceRevision ~= startRevision then
+				task.defer(ControllerFunctions.startServerMusic, soundId)
+			else
+				startLegacyFallback(tostring(failure))
+			end
+		end
+	end)
 end
 
+-- Restart the already-loaded asset in place. Avoid reassigning SoundId and
+-- reapplying track gain/speed on every restart; those operations are needed for
+-- track changes, not for replaying the current deck.
+ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, string?)
+	if typeof(soundId) ~= "string" or #soundId > 64
+		or not string.match(soundId, "^rbxassetid://%d+$") then
+		return false, "The current track has no valid audio asset."
+	end
+	-- Read only the two properties restart actually needs. A full snapshot also
+	-- queries readiness, duration, and playhead, adding work to a latency-sensitive
+	-- button path without changing the restart decision.
+	local source = activeAudioSource
+	local sourceAsset = ""
+	local sourcePlaying = false
+	local stateOk = pcall(function()
+		if source.kind == "Backend" and source.backend then
+			sourceAsset = source.backend:GetAsset()
+			sourcePlaying = source.backend:IsPlaying()
+		elseif source.instance and source.instance:IsA("Sound") then
+			sourceAsset = source.instance.SoundId
+			sourcePlaying = source.instance.IsPlaying
+		end
+	end)
+	if not stateOk then return false, "The current audio source state could not be read safely." end
+	if sourceAsset ~= soundId then
+		ControllerFunctions.startServerMusic(soundId)
+		return true, nil
+	end
+
+	-- Reset the active playhead in place instead of Stop -> Seek -> Play.
+	-- Stopping a loaded source can force the decoder to reinitialize and adds
+	-- avoidable latency. If the source was paused/stopped, start it after seeking.
+	local seekOk, seekResult, seekError = pcall(ControllerFunctions.seekAudio, 0)
+	if not seekOk or seekResult == false then
+		return false, tostring(seekError or seekResult or "The current audio source could not be reset.")
+	end
+	if sourcePlaying ~= true then
+		local playOk, playResult, playError = pcall(ControllerFunctions.playAudio)
+		if not playOk or playResult == false then
+			return false, tostring(playError or playResult or "The current audio source could not be restarted.")
+		end
+	end
+	return true, nil
+end
+
+-- Rebuild a failed modern deck without falling back to legacy Sound playback.
+-- The queue and authoritative track clock remain untouched; only the audio graph
+-- is replaced after the new AudioPlayer is loaded, positioned, and verified.
+local function rebuildModernAudioBackend(source: any, asset: string, position: number,
+	expectedTrackId: string, expectedTransitionToken: number): (boolean, string?)
+	if typeof(source) ~= "table" or source.kind ~= "Backend" or typeof(source.backend) ~= "table" then
+		return false, "Modern audio recovery requires the controller-owned AudioPlayer backend."
+	end
+	local expectedRevision = audioSourceRevision
+	local wasPaused = playbackPaused == true
+	local gainOk, outgoingGain = ControllerFunctions.getAudioGain(source)
+	if not gainOk then
+		outgoingGain = 1
+	end
+	local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
+	if not backendModule or not backendModule:IsA("ModuleScript") then
+		return false, "Modern audio recovery module is unavailable."
+	end
+	local requireOk, BackendClass = pcall(require, backendModule)
+	if not requireOk or typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
+		return false, "Modern audio recovery module could not be loaded."
+	end
+	local createOk, candidate = pcall(BackendClass.new, {
+		Name = "ClubMusicMainAudioBackendRecovery",
+		Parent = SoundService,
+		Volume = getTrackVolumeTrim(expectedTrackId),
+		InitialGain = 0,
+	})
+	if not createOk or typeof(candidate) ~= "table" then
+		return false, "A replacement modern AudioPlayer graph could not be created."
+	end
+	local function abandon(message: string): (boolean, string?)
+		pcall(function() candidate:Stop() end)
+		pcall(function() candidate:Cleanup() end)
+		return false, message
+	end
+	local selected, selectError = candidate:SetAsset(asset)
+	if selected ~= true then return abandon(tostring(selectError or "Replacement AudioPlayer rejected the current asset.")) end
+	local speed = TRACK_PLAYBACK_SPEED_OVERRIDES[expectedTrackId] or 1
+	local speedSet, speedError = candidate:SetPlaybackSpeed(speed)
+	if speedSet ~= true then return abandon(tostring(speedError or "Replacement AudioPlayer rejected playback speed.")) end
+
+	local deadline = os.clock() + 8
+	local readiness = nil
+	repeat
+		task.wait(0.1)
+		local readOk, state = pcall(function() return candidate:GetReadinessSnapshot() end)
+		if readOk and typeof(state) == "table" and state.ready == true
+			and state.asset == asset and ControllerFunctions.isFiniteNumber(state.length) and state.length > 0 then
+			readiness = state
+			break
+		end
+	until os.clock() >= deadline
+	if not readiness then return abandon("Replacement AudioPlayer did not become ready within 8 seconds.") end
+
+	local target = math.clamp(position, 0, math.max(0, readiness.length - 0.5))
+	local seeked, seekError = candidate:Seek(target)
+	if seeked ~= true then return abandon(tostring(seekError or "Replacement AudioPlayer could not restore the playhead.")) end
+	if wasPaused then
+		local paused, pauseError = candidate:Pause()
+		if paused ~= true then return abandon(tostring(pauseError or "Replacement AudioPlayer could not preserve pause state.")) end
+	else
+		local started, startError = candidate:Play()
+		if started ~= true then return abandon(tostring(startError or "Replacement AudioPlayer could not start.")) end
+		local startDeadline = os.clock() + 2
+		repeat
+			task.wait(0.05)
+		until candidate:IsPlaying() or os.clock() >= startDeadline
+		if not candidate:IsPlaying() then return abandon("Replacement AudioPlayer did not enter the playing state.") end
+	end
+	local gainSet, gainError = candidate:SetGain(math.clamp(outgoingGain, 0, 1))
+	if gainSet ~= true then return abandon(tostring(gainError or "Replacement AudioPlayer could not restore output gain.")) end
+
+	if activeAudioSource ~= source or audioSourceRevision ~= expectedRevision
+		or tostring(nowPlaying.trackId or "") ~= expectedTrackId
+		or audioTransitionTrackToken ~= expectedTransitionToken
+		or playbackPaused ~= wasPaused then
+		return abandon("Playback changed while modern audio recovery was preparing.")
+	end
+
+	activeAudioSource = { kind = "Backend", backend = candidate }
+	ControllerFunctions.bindActiveAudioPlayingSignal()
+	pcall(function() source.backend:Cleanup() end)
+	print("[ClubMusic][AudioBackend] Recovered playback with a replacement modern AudioPlayer.")
+	return true, nil
+end
+
+-- Recover the current server-local audio source without changing queue ownership,
+-- track identity, or the authoritative playback clock. This is deliberately blocked
+-- during a crossfade so a manual recovery cannot interrupt a deck handoff.
+local function performReloadServerMusic(): (boolean, string?)
+	local asset = nowPlaying.soundId or CONFIG.SoundIds[nowPlaying.trackId] or ""
+	if typeof(asset) ~= "string" or #asset > 64
+		or not string.match(asset, "^rbxassetid://%d+$") then
+		return false, "There is no playable audio asset for the current track."
+	end
+	if playbackPaused and activeAudioSource.kind ~= "Backend" then
+		return false, "Legacy playback is paused; resume it before reloading audio."
+	end
+	local managers = ControllerFunctions.ChildManagers
+	local crossfade = managers and managers.Crossfade
+	if crossfade and crossfade.active then
+		return false, "Please wait for the current crossfade to finish before reloading audio."
+	end
+
+	local source = activeAudioSource
+	local snapshot = ControllerFunctions.getAudioSnapshot()
+	if (typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable") and source.kind ~= "Backend" then
+		return false, "The active audio source is unavailable."
+	end
+	local duration = math.max(1, tonumber(nowPlaying.duration) or 1)
+	local position = if typeof(snapshot) == "table" and ControllerFunctions.isFiniteNumber(snapshot.position)
+		then snapshot.position else math.max(0, tonumber(nowPlaying.elapsed) or 0)
+	position = math.clamp(position, 0, math.max(0, duration - 0.5))
+	local expectedTrackId = tostring(nowPlaying.trackId or "")
+	local expectedTransitionToken = audioTransitionTrackToken
+
+	if source.kind == "Backend" and source.backend then
+		-- AudioPlayer reload must reselect the asset and wait for its decoder;
+		-- Stop/Seek/Play on the same selection is not a reliable recovery.
+		local reloadCallOk, reloaded, reloadError = pcall(function()
+			return source.backend:Reload(position)
+		end)
+		if not reloadCallOk or reloaded ~= true then
+			local recovered, recoveryError = rebuildModernAudioBackend(
+				source, asset, position, expectedTrackId, expectedTransitionToken
+			)
+			if recovered then return true, nil end
+			return false, tostring(recoveryError or reloadError or reloaded or "The modern audio decoder could not be recovered.")
+		end
+	elseif source.kind == "Sound" and source.instance and source.instance:IsA("Sound") then
+		local sound = source.instance
+		if sound.Parent == nil then return false, "The active audio Sound is no longer available." end
+
+		-- Force Roblox to discard the current decoder selection even when the
+		-- SoundId is unchanged. A same-ID assignment alone does not guarantee
+		-- recovery from a stuck/silent decoder.
+		local resetOk, resetError = pcall(function()
+			sound:Stop()
+			sound.SoundId = ""
+		end)
+		if not resetOk then return false, "The audio decoder could not be reset: " .. tostring(resetError) end
+		task.wait()
+		local assignOk, assignError = pcall(function() sound.SoundId = asset end)
+		if not assignOk then return false, "The current track asset could not be reselected: " .. tostring(assignError) end
+
+		local loadDeadline = os.clock() + 8
+		local loaded = false
+		repeat
+			task.wait(0.1)
+			loaded = sound.Parent ~= nil and sound.SoundId == asset
+				and sound.IsLoaded == true and ControllerFunctions.isFiniteNumber(sound.TimeLength)
+				and sound.TimeLength > 0
+		until loaded or os.clock() >= loadDeadline
+		if not loaded then
+			return false, "The audio asset did not finish decoding within 8 seconds. Please try reload again."
+		end
+
+		if not ControllerFunctions.applyTrackPlaybackSpeed(expectedTrackId) then
+			return false, "The current track playback speed could not be restored."
+		end
+		-- Clamp against the freshly decoded duration, not only catalog metadata.
+		position = math.clamp(position, 0, math.max(0, sound.TimeLength - 0.5))
+		local seekOk, seekError = pcall(function() sound.TimePosition = position end)
+		if not seekOk then return false, "The current track position could not be restored: " .. tostring(seekError) end
+		local seekDeadline = os.clock() + 1
+		local actualPosition = -1
+		repeat
+			task.wait(0.05)
+			actualPosition = sound.TimePosition
+		until ControllerFunctions.isFiniteNumber(actualPosition)
+			and math.abs(actualPosition - position) <= 1.5 or os.clock() >= seekDeadline
+		if not ControllerFunctions.isFiniteNumber(actualPosition) or math.abs(actualPosition - position) > 1.5 then
+			return false, "The audio decoder did not accept the restored track position."
+		end
+		local playOk, playError = pcall(function() sound:Play() end)
+		if not playOk then return false, "The audio source could not resume: " .. tostring(playError) end
+	else
+		return false, "The active audio source does not support reload recovery."
+	end
+
+	-- Confirm actual playback and fence out a track change that occurred while
+	-- the decoder was loading. Never report success for a stale source.
+	local resumeDeadline = os.clock() + 3
+	repeat
+		task.wait(0.1)
+		if activeAudioSource ~= source or tostring(nowPlaying.trackId or "") ~= expectedTrackId
+			or audioTransitionTrackToken ~= expectedTransitionToken or playbackPaused then
+			return false, "The current track changed during reload; no stale playback state was committed."
+		end
+		local stateOk, current = pcall(ControllerFunctions.getAudioSnapshot)
+		if stateOk and typeof(current) == "table" and current.playing == true
+			and current.asset == asset then
+			return true, nil
+		end
+	until os.clock() >= resumeDeadline
+	return false, "The audio source did not resume after reloading. Please try again."
+end
+
+ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
+	if audioReloadInProgress then
+		return false, "An audio reload is already in progress."
+	end
+	audioReloadInProgress = true
+	local callOk, recovered, recoveryError = pcall(performReloadServerMusic)
+	audioReloadInProgress = false
+	if not callOk then
+		return false, "Audio reload failed safely: " .. tostring(recovered)
+	end
+	return recovered == true, recoveryError
+end
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
@@ -1284,7 +1916,7 @@ if not receiptHashOk then
 	error("[ClubMusic] ClubMusic_ReceiptHash failed to load: " .. tostring(receiptHashResult))
 end
 local ReceiptHash = receiptHashResult
-local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI") or ServerStorage:WaitForChild("ClubMusicGlobalAPI", 15)
+local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 ControllerFunctions.globalInvoke = function(name: string, ...: any): any
 	-- Re-resolve on every call so the bridge recovers if its separate Script starts late.
 	if not globalApi or globalApi.Parent ~= ServerStorage or not globalApi:IsA("Folder") then
@@ -1393,6 +2025,7 @@ type Profile = {
 	unlockedSlots: number,
 	activeSlot: number,
 	showCustomTitle: boolean,
+	rewardedPassTier: number,
 	glowsticks: number,
 	skipTokens: number,
 	neonTrail: boolean,
@@ -1491,16 +2124,10 @@ for _, moduleName in ipairs({
 	end
 	ControllerFunctions.ChildManagerModules[moduleName] = requireResult
 end
-ControllerFunctions.globalPlaybackEndTime = 0
-local globalRestartRevision = 0
 local autoQueueHold = false
 -- Queue mutations have their own revision, independent of playback transitions.
 -- This prevents delayed MessagingService snapshots from restoring an older queue.
-local globalQueueRevision = 0
 -- Catalog revision fences every shared enqueue/advance against stale local caches.
-local globalCatalogRevision = 0
-local globalCatalogChangeTrackId: string? = nil
-local globalCatalogChangeKind: string? = nil
 ControllerFunctions.refreshCatalogWhenReady = function(): boolean
 	-- The controller publishes its remote contract before the cross-server
 	-- invalidation listener is defined. A very early UI action waits briefly for
@@ -1512,12 +2139,9 @@ ControllerFunctions.refreshCatalogWhenReady = function(): boolean
 	end
 	return false
 end
-local globalQueueSyncBusy = false
-local globalQueueRefreshScheduled = false
-local globalPlaybackInitialized = false
-local enqueueGlobalQueueBatch: (({QueueEntry}) -> (boolean, string?))? = nil
+-- A newly joined server must align its audio deck once the asset is ready,
+-- even when that deck initially reports position 0 or is ahead of the snapshot.
 local activePlaylistId: string? = nil
-local globalPlaylistRotationEnabled = false
 local activePlaylistName = ""
 local activePlaylistTracks: {Track} = {}
 local activePlaylistCursor = 1
@@ -1571,6 +2195,10 @@ end
 local globalActionBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalActionBurst, CONFIG.GlobalActionRefillPerSecond)
 local globalAudioBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalAudioBurst, CONFIG.GlobalAudioRefillPerSecond)
 local globalStateQueryBucket = ControllerFunctions.newTokenBucket(30, 15)
+-- Read-only catalog browsing gets an isolated budget so GetState traffic or
+-- temporary global security-service pressure cannot starve catalog visibility.
+-- This does not authorize mutations; all writes still pass their security gates.
+local globalCatalogQueryBucket = ControllerFunctions.newTokenBucket(30, 15)
 local globalDataStoreBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalDataStoreBurst, CONFIG.GlobalDataStoreRefillPerSecond)
 local perPlayerActionBuckets: {[number]: TokenBucket} = {}
 
@@ -1585,12 +2213,8 @@ ControllerFunctions.consumeToken = function(bucket: TokenBucket, now: number, co
 end
 
 ControllerFunctions.waitForDataStoreBudget = function(maxWaitSeconds: number): boolean
-	local sharedStoreCallOk, sharedStoreAllowed = ControllerFunctions.globalInvoke("ConsumeDataStoreBudget")
-	if RunService:IsStudio() then
-		if sharedStoreCallOk and sharedStoreAllowed == false then return false end
-	else
-		if not sharedStoreCallOk or sharedStoreAllowed ~= true then return false end
-	end
+	-- DataStore operations use a bounded per-server token bucket. Persistent
+	-- storage remains server-owned; no MemoryStore call is required for budgeting.
 	local startedAt = os.clock()
 	while true do
 		if ControllerFunctions.consumeToken(globalDataStoreBucket, os.clock(), 1) then return true end
@@ -1668,7 +2292,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	PlaylistCreate = 2, PlaylistDelete = 1, PlaylistAddTrack = 0.5, PlaylistRemoveTrack = 0.5, PlaylistMoveTrack = 0.5,
 	DJPlayPlaylist = 2, DJStopPlaylist = 1,
 	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
-	ModBlockUser = 0.5, ModSetVip = 0.5, ModPurgeUser = 0.5,
+	ModBlockUser = 0.5, ModSetPassTier = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, BuyTitleTag = 1, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
 	SaveTitleSlot = CONFIG.SaveTitleCooldownSeconds, SelectTitleSlot = 0.3,
 	ClearTitleSlot = 0.5, SetTitleVisible = 0.3,
@@ -1695,52 +2319,70 @@ ControllerFunctions.releaseProfileWriteLock = function(userId: number)
 	profileWriteLocks[userId] = nil
 end
 
--- Session-only moderation / VIP / vote state
-local rankCache: {[number]: {rank: string, level: number}} = {}
+-- Session-only moderation / VIP / vote state.
+-- All group-rank authorization and caching is owned by SecurityCore.Authorization.
 local vipPass: {[number]: boolean} = {}
 local vvipPass: {[number]: boolean} = {}
-local sultanPass: {[number]: boolean} = {}
-local tempVip: {[number]: boolean} = {}
+local tikiTidePass: {[number]: boolean} = {}
 local blockedUsers: {[number]: boolean} = {}
 local skipVotes: {[number]: boolean} = {}
 local requestsLocked = false
 local recentTracks: {string} = {}
 local lastAutoGenre = ""
 
--- Ranks, permissions and VIP -------------------------------------------------
-
-ControllerFunctions.computeRank = function(player: Player): (string, number)
-	for _, id in ipairs(CONFIG.StaffUserIds) do
-		if id == player.UserId then return "OWNER", 4 end
+local authorizationService: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("Authorization") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.GetShared) == "function" then
+			local sharedOk, instance = pcall(exported.GetShared, {
+				groupId = CONFIG.GroupId,
+				studioStaff = CONFIG.StudioStaff,
+				staffUserIds = CONFIG.StaffUserIds,
+				thresholds = {
+					GroupDJ = CONFIG.RankThresholds.GroupDJ,
+					Admin = CONFIG.RankThresholds.Admin,
+					CoOwner = CONFIG.RankThresholds.CoOwner,
+					Owner = CONFIG.RankThresholds.Owner,
+				},
+			})
+			if sharedOk and typeof(instance) == "table"
+				and type(instance.GetRank) == "function"
+				and type(instance.GetLevel) == "function"
+				and type(instance.IsGroupMember) == "function"
+				and type(instance.Refresh) == "function" then
+				authorizationService = instance
+			end
+		end
 	end
-	if CONFIG.StudioStaff and RunService:IsStudio() then return "OWNER", 4 end
-	if CONFIG.GroupId <= 0 then return "GUEST", 0 end
-
-	local ok, rank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
-	if not ok or typeof(rank) ~= "number" then return "GUEST", 0 end
-	local t = CONFIG.RankThresholds
-	if rank >= t.Owner then return "OWNER", 4 end
-	if rank >= t.CoOwner then return "CO-OWNER", 3 end
-	if rank >= t.Admin then return "ADMIN", 2 end
-	if rank >= t.GroupDJ then return "GROUP DJ", 1 end
-	return "GUEST", 0
+	if not authorizationService then
+		warn("[ClubMusic][Authorization] SecurityCore Authorization is unavailable; rank-based privileges are fail-closed.")
+	end
 end
 
--- Yields (group lookups). Never call from the per-second loop.
-ControllerFunctions.refreshRank = function(player: Player)
-	local rank, level = ControllerFunctions.computeRank(player)
-	rankCache[player.UserId] = { rank = rank, level = level }
+-- Rank names, levels and refreshes are projections of the single SecurityCore cache.
+ControllerFunctions.computeRank = function(player: Player): (string, number)
+	if not authorizationService then return "GUEST", 0 end
+	return authorizationService:GetRank(player)
+end
+
+ControllerFunctions.refreshRank = function(player: Player): boolean
+	if not authorizationService or player.Parent ~= Players then return false end
+	local ok, refreshed = pcall(authorizationService.Refresh, authorizationService, player)
+	return ok and refreshed == true
 end
 
 ControllerFunctions.getRank = function(player: Player): string
-	local cached = rankCache[player.UserId]
-	return if cached then cached.rank else "GUEST"
+	if not authorizationService then return "GUEST" end
+	local rank = authorizationService:GetRank(player)
+	return rank
 end
 
--- Permission level: 0 guest, 1 GROUP DJ, 2 ADMIN, 3 CO-OWNER, 4 OWNER
 ControllerFunctions.getLevel = function(player: Player): number
-	local cached = rankCache[player.UserId]
-	return if cached then cached.level else 0
+	if not authorizationService then return 0 end
+	return authorizationService:GetLevel(player)
 end
 
 ControllerFunctions.isStaff = function(player: Player): boolean
@@ -1751,15 +2393,22 @@ ControllerFunctions.isAdmin = function(player: Player): boolean
 	return ControllerFunctions.getLevel(player) >= 2
 end
 
+-- The DJ Booth is reserved for the configured OWNER and CO-OWNER ranks.
+ControllerFunctions.isDJBoothController = function(player: Player): boolean
+	return ControllerFunctions.getLevel(player) >= 3
+end
+
 ControllerFunctions.passTier = function(player: Player): number
 	local userId = player.UserId
-	-- Staff receive the complete club membership tier by default. This is
-	-- derived from the server-verified staff rank, never from client attributes.
-	if ControllerFunctions.getLevel(player) >= 1 then return 3 end
-	if sultanPass[userId] == true then return 3 end
-	if vvipPass[userId] == true then return 2 end
-	if vipPass[userId] == true or tempVip[userId] == true then return 1 end
-	return 0
+	-- The configured OWNER receives every membership tier. Other staff permissions
+	-- remain separate. Group members receive VIP, while owner-issued rank-up rewards
+	-- persist on the player's profile and can raise them through VVIP and Tiki Tide.
+	if ControllerFunctions.getLevel(player) >= 4 then return 3 end
+	local profile = profiles[userId]
+	local groupTier = if vipPass[userId] == true then 1 else 0
+	local paidTier = if tikiTidePass[userId] == true then 3 elseif vvipPass[userId] == true then 2 elseif vipPass[userId] == true then 1 else 0
+	local rewardedTier = if profile then math.clamp(profile.rewardedPassTier, 0, 3) else 0
+	return math.max(groupTier, paidTier, rewardedTier)
 end
 
 ControllerFunctions.isVip = function(player: Player): boolean
@@ -1770,7 +2419,7 @@ ControllerFunctions.isVvip = function(player: Player): boolean
 	return ControllerFunctions.passTier(player) >= 2
 end
 
-ControllerFunctions.isSultan = function(player: Player): boolean
+ControllerFunctions.hasTikiTideAccess = function(player: Player): boolean
 	return ControllerFunctions.passTier(player) >= 3
 end
 
@@ -1785,7 +2434,7 @@ end
 ControllerFunctions.applyVipAttribute = function(player: Player)
 	player:SetAttribute("IsVIP", ControllerFunctions.isVip(player))
 	player:SetAttribute("IsVVIP", ControllerFunctions.isVvip(player))
-	player:SetAttribute("IsTikiTideSultan", ControllerFunctions.isSultan(player))
+	player:SetAttribute("HasTikiTideAccess", ControllerFunctions.hasTikiTideAccess(player))
 	player:SetAttribute("ClubPassTier", ControllerFunctions.passTier(player))
 end
 
@@ -1799,20 +2448,39 @@ ControllerFunctions.ownsGamePass = function(userId: number, passId: number): boo
 	return ok and owns == true
 end
 
+ControllerFunctions.refreshPersonalPasses = function(player: Player)
+	local userId = player.UserId
+	local ownsPersonal2x = ControllerFunctions.ownsGamePass(userId, CONFIG.PersonalXP2xPassId)
+	local ownsPersonal4x = ControllerFunctions.ownsGamePass(userId, CONFIG.PersonalXP4xPassId)
+	local ownsMount = ControllerFunctions.ownsGamePass(userId, CONFIG.MountPassId)
+	local ownsCompanion = ControllerFunctions.ownsGamePass(userId, CONFIG.CompanionPassId)
+	local ownsStageClubLighting = ControllerFunctions.ownsGamePass(userId, CONFIG.StageClubLightingPassId)
+	player:SetAttribute("HasPersonalXP2xPass", ownsPersonal2x)
+	player:SetAttribute("HasPersonalXP4xPass", ownsPersonal4x)
+	player:SetAttribute("HasIslandMountPass", ownsMount)
+	player:SetAttribute("HasIslandCompanionPass", ownsCompanion)
+	player:SetAttribute("HasStageClubLightingPass", ownsStageClubLighting)
+	player:SetAttribute("PersonalXPMultiplier", if ownsPersonal4x then 4 elseif ownsPersonal2x then 2 else 1)
+end
+
 ControllerFunctions.refreshVip = function(player: Player)
 	local userId = player.UserId
-	vipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VipGamePassId)
-	vvipPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.VvipGamePassId)
-	sultanPass[userId] = ControllerFunctions.ownsGamePass(userId, CONFIG.TikiTideSultanPassId)
-	if not vipPass[userId] and CONFIG.VipGroupRank > 0 and CONFIG.GroupId > 0 then
-		local ok, rank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
-		if ok and typeof(rank) == "number" and rank >= CONFIG.VipGroupRank then vipPass[userId] = true end
-	end
+	-- Membership in the configured Roblox group grants the base VIP tier.
+	-- Failed group lookups fail closed; the next rank/VIP refresh can retry.
+	local isGroupMember = authorizationService ~= nil
+		and authorizationService:IsGroupMember(player) == true
+	local ownsVip = ControllerFunctions.ownsGamePass(userId, CONFIG.VipGamePassId)
+	local ownsVvip = ControllerFunctions.ownsGamePass(userId, CONFIG.VvipGamePassId)
+	local ownsTikiTide = ControllerFunctions.ownsGamePass(userId, CONFIG.TikiTidePassId)
+	vipPass[userId] = isGroupMember or ownsVip
+	vvipPass[userId] = ownsVvip
+	tikiTidePass[userId] = ownsTikiTide
+	-- Group membership grants VIP; paid passes and owner-issued rewards can raise the tier.
 end
 
 ControllerFunctions.requestLimitFor = function(player: Player): number
 	local tier = ControllerFunctions.passTier(player)
-	if tier >= 3 then return CONFIG.SultanMaxRequestsPerPlayer end
+	if tier >= 3 then return CONFIG.TikiTideMaxRequestsPerPlayer end
 	if tier == 2 then return CONFIG.VvipMaxRequestsPerPlayer end
 	if tier == 1 then return CONFIG.VipMaxRequestsPerPlayer end
 	return CONFIG.MaxRequestsPerPlayer
@@ -1820,7 +2488,7 @@ end
 
 ControllerFunctions.cooldownFor = function(player: Player): number
 	local tier = ControllerFunctions.passTier(player)
-	if tier >= 3 then return CONFIG.SultanCooldownSeconds end
+	if tier >= 3 then return CONFIG.TikiTideCooldownSeconds end
 	if tier == 2 then return CONFIG.VvipCooldownSeconds end
 	if tier == 1 then return CONFIG.VipCooldownSeconds end
 	return CONFIG.RequestCooldownSeconds
@@ -1960,6 +2628,7 @@ ControllerFunctions.defaultProfile = function(): Profile
 		unlockedSlots = 1,
 		activeSlot = 1,
 		showCustomTitle = true,
+		rewardedPassTier = 0,
 		glowsticks = 0,
 		skipTokens = 0,
 		neonTrail = false,
@@ -2019,6 +2688,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 		profile.claimedToday = data.claimedToday == true
 		profile.equippedTag = if typeof(data.equippedTag) == "string" and TAGS[data.equippedTag] == true then data.equippedTag else nil
 		profile.showCustomTitle = data.showCustomTitle ~= false
+		profile.rewardedPassTier = math.clamp(math.floor(tonumber(data.rewardedPassTier) or 0), 0, 3)
 		profile.glowsticks = math.max(0, math.floor(tonumber(data.glowsticks) or 0))
 		profile.skipTokens = math.max(0, math.floor(tonumber(data.skipTokens) or 0))
 		profile.neonTrail = data.neonTrail == true
@@ -2172,6 +2842,7 @@ ControllerFunctions.saveProfile = function(player: Player)
 		unlockedSlots = profile.unlockedSlots,
 		activeSlot = profile.activeSlot,
 		showCustomTitle = profile.showCustomTitle,
+		rewardedPassTier = profile.rewardedPassTier,
 		glowsticks = profile.glowsticks,
 		skipTokens = profile.skipTokens,
 		neonTrail = profile.neonTrail,
@@ -2245,6 +2916,11 @@ ControllerFunctions.scheduleProfileSave = function(player: Player)
 	end)
 end
 
+ControllerFunctions.recordDiagnosticPulse = function(name: string, detail: string, healthy: boolean?, metadata: {[string]: any}?)
+	local ok, recorded = ControllerFunctions.globalInvoke("RecordLocalWatchdogPulse", name, detail, healthy, metadata)
+	return ok and recorded == true
+end
+
 -- Queue / Auto DJ ---------------------------------------------------------------
 
 ControllerFunctions.makeEntry = function(track: Track, source: string, player: Player?): QueueEntry
@@ -2291,7 +2967,7 @@ ControllerFunctions.findQueueIndex = function(id: string): number?
 	return nil
 end
 
--- Queue order: Sultan, VVIP, VIP, normal player requests, then auto tracks.
+-- Queue order: Tiki Tide, VVIP, VIP, normal player requests, then auto tracks.
 ControllerFunctions.insertIndex = function(tier: number): number
 	local lastPlayer = 0
 	local insertAt = 0
@@ -2307,20 +2983,34 @@ ControllerFunctions.insertIndex = function(tier: number): number
 end
 
 ControllerFunctions.isTrackBlocked = function(trackId: string): boolean
-	if not globalQueueMode then return false end
-	local cache = ControllerFunctions.blockedTrackCache
-	if not cache then cache = {}; ControllerFunctions.blockedTrackCache = cache end
+	if typeof(trackId) ~= "string" or #trackId < 1 or #trackId > 64
+		or not string.match(trackId, "^[%w%-_]+$") then return true end
+
+	local cache = ControllerFunctions.blockedTrackCache or {}
+	ControllerFunctions.blockedTrackCache = cache
+	local now = os.clock()
 	local cached = cache[trackId]
-	if typeof(cached) == "table" and os.clock() - cached.checkedAt < 30 then return cached.blocked end
-	local invoked, blocked, lookupOk = ControllerFunctions.globalInvoke("IsTrackBlocked", trackId)
-	if not invoked or lookupOk ~= true then
-		return not RunService:IsStudio()
+	-- Moderation decisions are cached per server to avoid a DataStore read for
+	-- every queue/catalog check. MessagingService updates this cache immediately.
+	if typeof(cached) == "table" and typeof(cached.blocked) == "boolean"
+		and typeof(cached.checkedAt) == "number" and now - cached.checkedAt < 300 then
+		return cached.blocked
 	end
-	cache[trackId] = {blocked = blocked == true, checkedAt = os.clock()}
-	return blocked == true
+
+	local callOk, blocked, lookupOk = ControllerFunctions.globalInvoke("IsTrackBlocked", trackId)
+	if callOk and lookupOk == true and typeof(blocked) == "boolean" then
+		cache[trackId] = {blocked = blocked, checkedAt = now}
+		return blocked
+	end
+
+	-- Studio isolation intentionally permits local testing without the global
+	-- moderation backend. In live servers, an unknown moderation decision fails
+	-- closed; a previously cached block also remains effective during outages.
+	if cached and cached.blocked == true then return true end
+	return not RunService:IsStudio()
 end
 
-ControllerFunctions.pickAutoTrack = function(): Track
+ControllerFunctions.pickAutoTrack = function(): Track?
 	local queued: {[string]: boolean} = {}
 	for _, entry in ipairs(queue) do queued[entry.trackId] = true end
 	local recentSet: {[string]: boolean} = {}
@@ -2330,7 +3020,7 @@ ControllerFunctions.pickAutoTrack = function(): Track
 	local preferred: {Track} = {}
 	for _, id in ipairs(ALL_TRACK_IDS) do
 		local track = TRACK_BY_ID[id]
-		if not queued[id] and not recentSet[id] and id ~= nowPlaying.trackId
+		if isPlayableTrack(track) and not queued[id] and not recentSet[id] and id ~= nowPlaying.trackId
 			and not ControllerFunctions.isTrackBlocked(id) then
 			table.insert(pool, track)
 			if track.genreId ~= lastAutoGenre then table.insert(preferred, track) end
@@ -2343,7 +3033,10 @@ ControllerFunctions.pickAutoTrack = function(): Track
 		lastAutoGenre = chosen.genreId
 		return chosen
 	end
-	return TRACK_BY_ID[ALL_TRACK_IDS[random:NextInteger(1, #ALL_TRACK_IDS)]]
+	-- Never bypass recent-history exclusions when the preferred pool is empty.
+	-- Waiting for the next authoritative refill is safer than replaying a
+	-- recently heard track simply to keep the queue populated.
+	return nil
 end
 
 ControllerFunctions.nextPlaylistTrack = function(): Track?
@@ -2352,36 +3045,17 @@ ControllerFunctions.nextPlaylistTrack = function(): Track?
 		if activePlaylistCursor > #activePlaylistTracks then activePlaylistCursor = 1 end
 		local track = activePlaylistTracks[activePlaylistCursor]
 		activePlaylistCursor += 1
-		if TRACK_BY_ID[track.id] and not ControllerFunctions.isTrackBlocked(track.id) then return track end
+		if isPlayableTrack(TRACK_BY_ID[track.id]) and not ControllerFunctions.isTrackBlocked(track.id) then return TRACK_BY_ID[track.id] end
 	end
 	return nil
 end
 
 ControllerFunctions.topUpAuto = function()
-	if autoQueueHold then return end
-	if globalQueueMode then
-		-- Generate one refill and commit it atomically. The service rechecks the
-		-- queue target inside UpdateAsync so concurrent servers cannot overfill it.
-		if not enqueueGlobalQueueBatch then return end
-		local entries: {QueueEntry} = {}
-		local guard = 0
-		while #queue + #entries < CONFIG.AutoQueueTarget and guard < 10 do
-			guard += 1
-			local playlistTrack = ControllerFunctions.nextPlaylistTrack()
-			if playlistTrack then
-				table.insert(entries, ControllerFunctions.makeEntry(playlistTrack, "playlist", nil))
-			else
-				if activePlaylistId then
-					warn("[ClubMusic] Active playlist has no playable catalog tracks; returning to Auto DJ.")
-					activePlaylistId = nil; activePlaylistName = ""
-					table.clear(activePlaylistTracks); activePlaylistCursor = 1
-				end
-				table.insert(entries, ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil))
-			end
-		end
-		if #entries > 0 then enqueueGlobalQueueBatch(entries) end
+	if autoQueueHold then
+		ControllerFunctions.recordDiagnosticPulse("AutoDJ", "refill-held", true, {queueDepth = #queue})
 		return
 	end
+-- Auto DJ refills only this server's queue.
 	local guard = 0
 	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
 		guard += 1
@@ -2395,10 +3069,17 @@ ControllerFunctions.topUpAuto = function()
 				activePlaylistId = nil; activePlaylistName = ""
 				table.clear(activePlaylistTracks); activePlaylistCursor = 1
 			end
-			entry = ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
+			local autoTrack = ControllerFunctions.pickAutoTrack()
+			if not autoTrack then warn("[ClubMusic] No playable catalog tracks are available; automatic queue refill paused."); break end
+			entry = ControllerFunctions.makeEntry(autoTrack, "auto", nil)
 		end
 		queueManager:Insert(#queue + 1, entry)
 	end
+	local healthy = #queue >= CONFIG.AutoQueueTarget
+	ControllerFunctions.recordDiagnosticPulse("AutoDJ",
+		if healthy then "refill-complete" else "no-playable-catalog-tracks",
+		healthy, {queueDepth = #queue, target = CONFIG.AutoQueueTarget})
+	ControllerFunctions.recordDiagnosticPulse("Queue", "queue-refill-observed", true, {queueDepth = #queue})
 end
 
 ControllerFunctions.clearAutomaticQueue = function()
@@ -2456,19 +3137,6 @@ ControllerFunctions.startPlaylistRotation = function(player: Player, playlistId:
 		notify(player, "This playlist has no tracks available in the current catalog.", "warn")
 		return false
 	end
-	if globalQueueMode then
-		local trackIds = {}
-		for _, playlistTrack in ipairs(validTracks) do table.insert(trackIds, playlistTrack.id) end
-		local callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlaylistRotation", found.id, found.name, trackIds)
-		if not callOk or changed ~= true or typeof(state) ~= "table" then
-			notify(player, tostring(message or "Global playlist rotation could not be started."), "warn")
-			return false
-		end
-		ControllerFunctions.applyGlobalQueueState(state)
-		ControllerFunctions.topUpAuto()
-		notify(player, "Global playlist rotation enabled: " .. found.name .. ".", "ok")
-		return true
-	end
 	activePlaylistId = found.id
 	activePlaylistName = found.name
 	activePlaylistTracks = validTracks
@@ -2485,17 +3153,6 @@ ControllerFunctions.stopPlaylistRotation = function(player: Player?)
 		return false
 	end
 	local stoppedName = activePlaylistName
-	if globalQueueMode then
-		local callOk, stopped, state, message = ControllerFunctions.globalInvoke("SetGlobalPlaylistRotation", nil)
-		if not callOk or stopped ~= true or typeof(state) ~= "table" then
-			if player then notify(player, tostring(message or "Global playlist rotation could not be stopped."), "warn") end
-			return false
-		end
-		ControllerFunctions.applyGlobalQueueState(state)
-		ControllerFunctions.topUpAuto()
-		if player then notify(player, "Global playlist rotation stopped: " .. stoppedName .. ".", "ok") end
-		return true
-	end
 	activePlaylistId = nil
 	activePlaylistName = ""
 	table.clear(activePlaylistTracks)
@@ -2511,6 +3168,9 @@ local transitionInProgress = false
 local crossfadeAttemptedGeneration = -1
 local crossfadeBoundaryWaitGeneration = -1
 local crossfadeBoundaryWaitStartedAt = 0
+ControllerFunctions.stoppedAudioGeneration = -1
+ControllerFunctions.stoppedAudioSince = 0
+ControllerFunctions.audioRecoveryAttemptedGeneration = -1
 
 ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: boolean?)
 	if preserveAudio ~= true then ControllerFunctions.cancelAudioTransition("track-change") end
@@ -2518,10 +3178,7 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	audioTransitionTrackToken += 1
 	pendingCrossfadeEntry = nil
 	pendingCrossfadeToken = -1
-	ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-	ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-	ControllerFunctions.pendingCrossfadeDeadline = 0
-	crossfadeAttemptedGeneration = -1
+				crossfadeAttemptedGeneration = -1
 	crossfadeBoundaryWaitGeneration = -1
 	autoQueueHold = false
 	nowPlaying.trackId = entry.trackId
@@ -2536,444 +3193,60 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	nowPlaying.vip = entry.vip
 	nowPlaying.soundId = entry.soundId or CONFIG.SoundIds[entry.trackId] or ""
 	if preserveAudio ~= true then ControllerFunctions.startServerMusic(nowPlaying.soundId) end
-	if preserveAudio ~= true and CONFIG.UseModernAudioBackend then
-		task.defer(ControllerFunctions.tryModernAudioBackendMigration)
-	end
 
 	table.insert(recentTracks, entry.trackId)
 	while #recentTracks > CONFIG.AutoAvoidRecent do
 		table.remove(recentTracks, 1)
 	end
 	table.clear(skipVotes)
+	if ControllerFunctions.publishPlaybackState then ControllerFunctions.publishPlaybackState() end
 end
 
--- Shared queue mirror. The global DataStore is authoritative when the global
--- service is enabled; the local table remains a detached UI mirror only.
-ControllerFunctions.applyGlobalQueueState = function(state: any): boolean
-	if typeof(state) ~= "table" or typeof(state.queue) ~= "table"
-		or typeof(state.playback) ~= "table" then return false end
-	-- Queue and playback revisions are separate monotonic counters. A snapshot
-	-- must be fresh for both dimensions before it can replace the local mirror.
-	local queueRevision = tonumber(state.revision)
-	local catalogRevision = tonumber(state.catalogRevision) or 0
-	local revision = tonumber(state.playback.trackRevision)
-	if not ControllerFunctions.isFiniteNumber(queueRevision) or queueRevision < 0 or queueRevision % 1 ~= 0
-		or queueRevision > 9007199254740991 or queueRevision < globalQueueRevision then return false end
-	if not ControllerFunctions.isFiniteNumber(revision) or revision < 0 or revision % 1 ~= 0
-		or revision > 9007199254740991 or revision < globalTrackRevision then return false end
-	if not ControllerFunctions.isFiniteNumber(catalogRevision) or catalogRevision < 0 or catalogRevision % 1 ~= 0
-		or catalogRevision > 9007199254740991 then return false end
-	globalCatalogRevision = math.max(globalCatalogRevision, catalogRevision)
-	globalCatalogChangeTrackId = if typeof(state.catalogChangeTrackId) == "string" then state.catalogChangeTrackId else nil
-	globalCatalogChangeKind = if state.catalogChangeKind == "add" or state.catalogChangeKind == "remove"
-		then state.catalogChangeKind else nil
-	globalPlaylistRotationEnabled = typeof(state.rotation) == "table" and state.rotation.enabled == true
-	if typeof(state.rotation) == "table" and state.rotation.enabled == true
-		and typeof(state.rotation.trackIds) == "table" then
-		activePlaylistId = tostring(state.rotation.id)
-		activePlaylistName = tostring(state.rotation.name)
-		activePlaylistTracks = {}
-		for _, trackId in ipairs(state.rotation.trackIds) do
-			local track = TRACK_BY_ID[trackId]
-			if track then table.insert(activePlaylistTracks, track) end
-		end
-		activePlaylistCursor = math.clamp(tonumber(state.rotation.cursor) or 1, 1, math.max(1, #activePlaylistTracks))
-		if #activePlaylistTracks == 0 then activePlaylistId = nil; activePlaylistName = "" end
-	else
-		activePlaylistId = nil; activePlaylistName = ""; table.clear(activePlaylistTracks); activePlaylistCursor = 1
-	end
-	table.clear(queue)
-	for _, raw in ipairs(state.queue) do
-		if typeof(raw) == "table" and typeof(raw.id) == "string" and typeof(raw.trackId) == "string"
-			and typeof(raw.title) == "string" and typeof(raw.artist) == "string"
-			and typeof(raw.duration) == "number" and typeof(raw.userId) == "number"
-			and typeof(raw.source) == "string" then
-			table.insert(queue, {
-				id = raw.id, trackId = raw.trackId, title = raw.title, artist = raw.artist,
-				duration = raw.duration, requestedBy = tostring(raw.requestedBy or "Auto DJ"),
-				userId = raw.userId, genre = tostring(raw.genre or "Unknown"), source = raw.source,
-				vip = raw.vip == true, passTier = tonumber(raw.passTier) or 0,
-				soundId = tostring(raw.soundId or ""),
-			})
-		end
-	end
-	for userId in pairs(requestCounts) do requestCounts[userId] = nil end
-	for _, entry in ipairs(queue) do
-		if entry.source == "player" and Players:GetPlayerByUserId(entry.userId) then
-			requestCounts[entry.userId] = (requestCounts[entry.userId] or 0) + 1
-		end
-	end
-	local previousRestartRevision = globalRestartRevision
-	local restartRevision = tonumber(state.playback.restartRevision) or 0
-	if not ControllerFunctions.isFiniteNumber(restartRevision) or restartRevision < 0 or restartRevision % 1 ~= 0 then return false end
-	local current = state.current
-	if typeof(current) == "table" and typeof(current.trackId) == "string" then
-		local playbackAnchor = tonumber(state.playback.anchorTime)
-		local playbackBasePosition = tonumber(state.playback.position) or 0
-		local currentDuration = tonumber(current.duration) or 1
-		if ControllerFunctions.isFiniteNumber(playbackAnchor) and ControllerFunctions.isFiniteNumber(playbackBasePosition) then
-			ControllerFunctions.globalPlaybackEndTime = playbackAnchor + math.max(0, currentDuration - playbackBasePosition)
-		end
-		local pendingManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
-		local pendingPreparedEntry = pendingCrossfadeEntry
-		local preservePreparedCrossfade = pendingManager ~= nil and pendingManager.active == true
-			and typeof(pendingPreparedEntry) == "table"
-			and pendingCrossfadeToken == audioTransitionTrackToken
-			and ControllerFunctions.pendingCrossfadeGlobalRevision >= 0
-			and revision > ControllerFunctions.pendingCrossfadeGlobalRevision
-			and state.playback.paused ~= true
-			and restartRevision <= previousRestartRevision
-			and typeof(current) == "table" and current.id == pendingPreparedEntry.id
-		if preservePreparedCrossfade then ControllerFunctions.pendingCrossfadeGlobalCommitted = true end
-		if nowPlaying.trackId ~= current.trackId and not preservePreparedCrossfade then
-			local entry: QueueEntry = {
-				id = tostring(current.id), trackId = current.trackId, title = tostring(current.title),
-				artist = tostring(current.artist), duration = tonumber(current.duration) or 1,
-				requestedBy = tostring(current.requestedBy or "Auto DJ"), userId = tonumber(current.userId) or 0,
-				genre = tostring(current.genre or "Unknown"), source = tostring(current.source or "auto"),
-				vip = current.vip == true, passTier = tonumber(current.passTier) or 0,
-				soundId = tostring(current.soundId or ""),
-			}
-			ControllerFunctions.setNowPlaying(entry)
-		end
-		-- Pause is authoritative state, not a side effect of a position lookup.
-		-- Apply it even if the optional position helper is temporarily unavailable.
-		playbackPaused = state.playback.paused == true
-		local restartObserved = globalPlaybackInitialized and restartRevision > previousRestartRevision
-		if playbackPaused and not preservePreparedCrossfade then
-			local pendingManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
-			if pendingManager and pendingManager.active then
-				ControllerFunctions.cancelAudioTransition("global-snapshot-pause")
-			end
-		end
-		if preservePreparedCrossfade then
-			-- Keep the outgoing deck untouched until the prepared incoming deck
-			-- completes its local fade and commits controller ownership.
-		elseif restartObserved then
-			ControllerFunctions.cancelAudioTransition("global-restart-reconcile")
-			nowPlaying.elapsed = 0
-			pcall(function() ControllerFunctions.startServerMusic(nowPlaying.soundId) end)
-		elseif ControllerFunctions.isFiniteNumber(state.playback.position) then
-			nowPlaying.elapsed = math.clamp(state.playback.position, 0, nowPlaying.duration)
-		end
-		if not preservePreparedCrossfade then
-			local positionCallOk, position = ControllerFunctions.globalInvoke("GetGlobalPlaybackPosition", state)
-			if positionCallOk and ControllerFunctions.isFiniteNumber(position) then
-				nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
-			end
-			pcall(function()
-				local audio = ControllerFunctions.getAudioSnapshot()
-				if audio.asset ~= nowPlaying.soundId then
-					if nowPlaying.soundId ~= "" then ControllerFunctions.startServerMusic(nowPlaying.soundId)
-					else ControllerFunctions.stopServerMusic(); ControllerFunctions.setAudioAsset("") end
-				end
-				audio = ControllerFunctions.getAudioSnapshot()
-				if audio.ready and math.abs(audio.position - nowPlaying.elapsed) > 2 then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
-				if playbackPaused then ControllerFunctions.pauseAudio()
-				elseif not audio.playing and nowPlaying.soundId ~= "" then ControllerFunctions.playAudio() end
-			end)
-		end
-		globalTrackRevision = revision
-		globalRestartRevision = restartRevision
-		globalPlaybackInitialized = true
-	else
-		ControllerFunctions.globalPlaybackEndTime = 0
-		if nowPlaying.trackId ~= "" then
-			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
-			nowPlaying.genre = ""; nowPlaying.duration = 1; nowPlaying.elapsed = 0
-			nowPlaying.dj = "Automated Selector"; nowPlaying.source = "auto"
-			nowPlaying.requestedBy = "Auto DJ"; nowPlaying.vip = false; nowPlaying.soundId = ""
-			ControllerFunctions.stopServerMusic(); ControllerFunctions.setAudioAsset("")
-		end
-		playbackPaused = true
-		globalTrackRevision = revision
-		globalRestartRevision = restartRevision
-	end
-	autoQueueHold = state.autoQueueHold == true
-	globalQueueRevision = queueRevision
-	return true
-end
+-- Queue state and playback transitions are owned by this server.
 
--- Playlist edits are persistent per playlist, but an active rotation is shared
--- state. Republish its complete ordered track list atomically so every server
--- drops stale automatic entries and resumes from the same rotation definition.
-ControllerFunctions.syncGlobalPlaylistRotation = function(): (boolean, string?)
-	if not globalQueueMode then return true, nil end
-	local callOk, changed, state, message = false, false, nil, nil
-	if activePlaylistId and #activePlaylistTracks > 0 then
-		local trackIds = {}
-		for _, track in ipairs(activePlaylistTracks) do
-			table.insert(trackIds, track.id)
-		end
-		callOk, changed, state, message = ControllerFunctions.globalInvoke(
-			"SetGlobalPlaylistRotation", activePlaylistId, activePlaylistName, trackIds
-		)
-	else
-		callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlaylistRotation", nil)
-	end
-	if not callOk or changed ~= true or typeof(state) ~= "table" then
-		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		return false, tostring(message or "The shared playlist rotation could not be updated.")
-	end
-	if not ControllerFunctions.applyGlobalQueueState(state) then
-		return false, "The shared playlist state could not be applied."
-	end
-	return true, nil
-end
-
-syncGlobalQueueSnapshot = function(): boolean
-	if not globalQueueMode or globalQueueSyncBusy then return false end
-	globalQueueSyncBusy = true
-	-- A malformed or unexpectedly-shaped bridge response must not strand the
-	-- sync lock. Keep the whole read/apply path protected and always release it.
-	local syncOk, applied = pcall(function(): boolean
-		local callOk, readOk, state = ControllerFunctions.globalInvoke("GetGlobalQueueState")
-		return callOk == true and readOk == true and ControllerFunctions.applyGlobalQueueState(state)
-	end)
-	globalQueueSyncBusy = false
-	if not syncOk then
-		warn("[ClubMusic] Global queue snapshot reconciliation failed: " .. tostring(applied))
-		return false
-	end
-	if applied then publishState(nil) end
-	return applied == true
-end
-
-enqueueGlobalQueueEntry = function(entry: QueueEntry): (boolean, string?)
-	local callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
-		"EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize, localCatalogRevision
-	)
-	if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-	if callOk and writeOk == true then return true, nil end
-	if tostring(message) == "Catalog changed on another server; refresh and retry."
-		and ControllerFunctions.refreshCatalogWhenReady() then
-		if not TRACK_BY_ID[entry.trackId] then return false, "That track is no longer in the shared catalog." end
-		callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
-			"EnqueueGlobalQueueEntry", entry, CONFIG.MaxQueueSize, localCatalogRevision
-		)
-		if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-		if callOk and writeOk == true then return true, nil end
-	end
-	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-	return false, tostring(message or "Global queue is unavailable.")
-end
-
-enqueueGlobalQueueBatch = function(entries: {QueueEntry}): (boolean, string?)
-	local callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
-		"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget, localCatalogRevision
-	)
-	if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-	if callOk and writeOk == true then return true, nil end
-	if tostring(message) == "Catalog changed on another server; refresh and retry."
-		and ControllerFunctions.refreshCatalogWhenReady() then
-		local allTracksPresent = true
-		for _, entry in ipairs(entries) do
-			if not TRACK_BY_ID[entry.trackId] then allTracksPresent = false; break end
-		end
-		if not allTracksPresent then
-			-- Rebuild the Auto DJ batch from the refreshed catalog rather than
-			-- leaving a short queue after a stale server selected a deleted ID.
-			task.defer(ControllerFunctions.topUpAuto)
-			return false, "An automatic track is no longer in the shared catalog; refill is being rebuilt."
-		end
-		callOk, writeOk, state, message = ControllerFunctions.globalInvoke(
-			"EnqueueGlobalQueueBatch", entries, CONFIG.MaxQueueSize, CONFIG.AutoQueueTarget, localCatalogRevision
-		)
-		if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-		if callOk and writeOk == true then return true, nil end
-	end
-	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-	return false, tostring(message or "Global automatic queue refill is unavailable.")
-end
 
 ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, string?)
-	-- Every transition is synchronous and generation-checked. This prevents the
-	-- duration clock and playback watchdog from advancing the same track twice.
+	-- Server-local queue only. Generation checks prevent the playback clock and
+	-- watchdog from advancing the same track twice.
 	if transitionInProgress then return false, "A track transition is already in progress." end
 	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then
 		return false, "The current track changed before the transition started."
 	end
 	ControllerFunctions.cancelAudioTransition("advance")
 	transitionInProgress = true
-	if globalQueueMode then
-		-- Always release the transition lock, including when fallback selection,
-		-- state synchronization, or post-transition queue maintenance throws.
-		local branchOk, advanced, reason = pcall(function(): (boolean, string?)
-			-- A queue snapshot carries the catalog epoch. Refresh stale local catalog
-			-- data before choosing a fallback so removed IDs are never replayed.
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			if localCatalogRevision ~= globalCatalogRevision then
-				if not ControllerFunctions.refreshCatalogWhenReady() then
-					return false, "The shared catalog is updating; track transition will retry."
-				end
-			end
-			if globalPlaylistRotationEnabled and not activePlaylistId then
-				local rotationSynced, rotationMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-				if not rotationSynced then
-					return false, "The shared playlist rotation is still recovering: " .. tostring(rotationMessage)
-				end
-			end
-			-- Build one fallback entry for this transition. Retrying a stale revision
-			-- must not consume additional playlist cursor positions or pick new tracks.
-			local playlistFallback = ControllerFunctions.nextPlaylistTrack()
-			local fallback = if playlistFallback then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil) else ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
-			local function attemptGlobalAdvance(): (boolean, string?)
-				local expectedRevision = globalTrackRevision
-				local callOk, didAdvance, state, message = ControllerFunctions.globalInvoke(
-					"AdvanceGlobalQueue", expectedRevision, fallback, localCatalogRevision
-				)
-				if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-				if callOk and didAdvance == true and typeof(state) == "table" then
-					return true, nil
-				end
-				return false, tostring(message or (if callOk then "The shared queue rejected the transition." else "The shared queue service is unavailable."))
-			end
-			local didAdvance, failureReason = attemptGlobalAdvance()
-			if not didAdvance and failureReason == "Catalog changed on another server; refresh and retry." then
-				-- The reservation/revision may have committed after the preflight
-				-- snapshot. Reconcile the catalog, then retry once with the refreshed
-				-- playlist cursor or a new Auto DJ fallback if the old ID disappeared.
-				if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-					and ControllerFunctions.refreshCatalogWhenReady() then
-					if not TRACK_BY_ID[fallback.trackId] then
-						local refreshedPlaylistTrack = ControllerFunctions.nextPlaylistTrack()
-						fallback = if refreshedPlaylistTrack
-							then ControllerFunctions.makeEntry(refreshedPlaylistTrack, "playlist", nil)
-							else ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
-					end
-					didAdvance, failureReason = attemptGlobalAdvance()
-				end
-			end
-			-- A stale revision means another server has already won this transition.
-			-- Refresh and accept that authoritative advance instead of issuing a
-			-- second skip against the newly-current track (which would double-skip).
-			if not didAdvance and failureReason == "Track already advanced by another server." then
-				local previousRevision = globalTrackRevision
-				local refreshed = false
-				-- Snapshot sync may already be running in another event callback.
-				for refreshAttempt = 1, 10 do
-					if syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-						and globalTrackRevision > previousRevision then
-						refreshed = true
-						break
-					end
-					task.wait(0.1)
-				end
-				if refreshed then
-					didAdvance, failureReason = true, nil
-				else
-					failureReason = "The shared track changed, but this server could not confirm the newer snapshot. Please retry."
-				end
-			end
-			-- Keep the transition lock scoped to the authoritative CAS and any
-			-- required stale-revision confirmation. Queue replenishment and the
-			-- follow-up snapshot can yield on DataStore work, so they must run only
-			-- after the lock is released.
-			return didAdvance, failureReason
-		end)
-		transitionInProgress = false
-		if not branchOk then
-			local failure = "Global track transition failed unexpectedly: " .. tostring(advanced)
-			warn("[ClubMusic] " .. failure)
-			return false, failure
-		end
-		if not advanced then
-			warn("[ClubMusic] Global transition was not applied: " .. tostring(reason))
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			return false, reason
-		end
-		local maintenanceOk, maintenanceError = pcall(function()
-			ControllerFunctions.topUpAuto()
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		end)
-		if not maintenanceOk then
-			warn("[ClubMusic] Track advanced, but post-transition queue maintenance failed: " .. tostring(maintenanceError))
-		end
-		return true, nil
-	end
 	local ok, err = pcall(function()
 		local nextEntry = queueManager:PopNext()
-		if nextEntry then
-		else nextEntry = ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil) end
+		if not nextEntry then
+			local playlistTrack = ControllerFunctions.nextPlaylistTrack()
+			local autoTrack = if playlistTrack then nil else ControllerFunctions.pickAutoTrack()
+			if not playlistTrack and not autoTrack then
+				error("No playable catalog tracks are available for the next transition.")
+			end
+			nextEntry = if playlistTrack
+				then ControllerFunctions.makeEntry(playlistTrack, "playlist", nil)
+				else ControllerFunctions.makeEntry(autoTrack :: Track, "auto", nil)
+		end
 		ControllerFunctions.setNowPlaying(nextEntry :: QueueEntry)
 		ControllerFunctions.topUpAuto()
 	end)
 	transitionInProgress = false
 	if not ok then
-		warn("[ClubMusic] Track transition failed: " .. tostring(err))
+		warn("[ClubMusic] Local track transition failed: " .. tostring(err))
 		return false, "The local track transition failed."
 	end
 	return true, nil
 end
 
 -- Boot: start with an auto-selected track and a visible auto queue.
-ControllerFunctions.setNowPlaying(ControllerFunctions.makeEntry(TRACK_BY_ID["edm-0"], "auto", nil))
-ControllerFunctions.topUpAuto()
-
--- Switch to shared authority only when the separately configured global service
--- confirms it is enabled. Studio remains local unless explicitly enabled there.
-task.spawn(function()
-	local enabledCallOk, enabled = false, false
-	for _ = 1, 30 do
-		enabledCallOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
-		if enabledCallOk then break end
-		task.wait(2)
-	end
-	if not enabledCallOk or enabled ~= true then return end
-	globalQueueMode = true
-	local readOk = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-	if not readOk then
-		table.clear(queue)
-		nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""; nowPlaying.elapsed = 0
-		ControllerFunctions.stopServerMusic()
-		warn("[ClubMusic] Global queue could not be loaded; shared playback and requests remain fail-closed.")
-		return
-	end
-	if localCatalogRevision ~= globalCatalogRevision then
-		if not ControllerFunctions.refreshCatalogWhenReady() then
-			warn("[ClubMusic] Catalog revision could not be synchronized; global queue writes remain blocked on this server.")
-			return
-		end
-	end
-	if globalPlaylistRotationEnabled and not activePlaylistId then
-		local rotationSynced, rotationMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-		if not rotationSynced then
-			warn("[ClubMusic] Empty global playlist rotation could not be cleared: " .. tostring(rotationMessage))
-			return
-		end
-	end
-	if nowPlaying.trackId == "" then
-		local playlistFallback = ControllerFunctions.nextPlaylistTrack()
-		local fallback = if playlistFallback then ControllerFunctions.makeEntry(playlistFallback, "playlist", nil) else ControllerFunctions.makeEntry(ControllerFunctions.pickAutoTrack(), "auto", nil)
-		local callOk, advanced, state = ControllerFunctions.globalInvoke("AdvanceGlobalQueue", globalTrackRevision, fallback, localCatalogRevision)
-		if callOk and advanced == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state)
-		elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-	end
-	if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
+local initialTrack = ControllerFunctions.pickAutoTrack()
+if initialTrack then
+	ControllerFunctions.setNowPlaying(ControllerFunctions.makeEntry(initialTrack, "auto", nil))
 	ControllerFunctions.topUpAuto()
-end)
+else
+	warn("[ClubMusic] Startup held: the catalog contains no playable audio tracks.")
+end
 
--- MessagingService is the primary fast invalidation path. Periodic snapshots are
--- a repair fallback. A server with no synchronized current track is recovering
--- from startup/service unavailability, so retry it quickly instead of waiting
--- through the normal low-frequency reconciliation interval.
-task.spawn(function()
-	while script.Parent do
-		local recoveringPlayback = globalQueueMode and nowPlaying.trackId == ""
-		task.wait(if recoveringPlayback then 5 + math.random(0, 5) else 90 + math.random(0, 30))
-		if globalQueueMode then
-			local synchronized = syncGlobalQueueSnapshot and syncGlobalQueueSnapshot()
-			if synchronized and nowPlaying.trackId == "" then
-				-- Use the controller's generation-checked transition path. It owns
-				-- the transition lock, authoritative CAS, snapshot application, and
-				-- post-transition queue refill; do not issue a parallel raw advance.
-				ControllerFunctions.advance(globalTrackRevision)
-			end
-			-- Queue refill is performed by the server that wins the atomic track transition.
-			-- Periodic repair only refreshes missed state notifications; it must not make every server race to refill.
-		end
-	end
-end)
+-- Each server runs its own local queue and playback clock.
 
 -- Skip voting ---------------------------------------------------------------------
 
@@ -3057,7 +3330,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		rank = ControllerFunctions.getRank(player),
 		perm = level,
 		vip = vip,
-		customTitleUnlocked = ControllerFunctions.isSultan(player),
+		customTitleUnlocked = ControllerFunctions.hasTikiTideAccess(player),
 		queue = safeQueue,
 		nowPlaying = {
 			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
@@ -3085,13 +3358,13 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		},
 		vipGamePassId = CONFIG.VipGamePassId,
 		vvipGamePassId = CONFIG.VvipGamePassId,
-		sultanGamePassId = CONFIG.TikiTideSultanPassId,
+		tikiTideGamePassId = CONFIG.TikiTidePassId,
 		passTier = ControllerFunctions.passTier(player),
-		passName = if ControllerFunctions.isSultan(player) then "TIKI TIDE SULTAN" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
+		passName = if ControllerFunctions.hasTikiTideAccess(player) then "TIKI TIDE" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
 		passPerks = {
 			vip = { slots = CONFIG.VipMaxRequestsPerPlayer, cooldown = CONFIG.VipCooldownSeconds },
 			vvip = { slots = CONFIG.VvipMaxRequestsPerPlayer, cooldown = CONFIG.VvipCooldownSeconds },
-			sultan = { slots = CONFIG.SultanMaxRequestsPerPlayer, cooldown = CONFIG.SultanCooldownSeconds, priority = "highest" },
+			tikiTide = { slots = CONFIG.TikiTideMaxRequestsPerPlayer, cooldown = CONFIG.TikiTideCooldownSeconds, priority = "highest" },
 		},
 		equippedTag = profile.equippedTag,
 		ownedTags = profile.ownedTags,
@@ -3138,10 +3411,15 @@ ControllerFunctions.snapshotFor = function(player: Player)
 				displayName = other.DisplayName,
 				rank = ControllerFunctions.getRank(other),
 				vip = ControllerFunctions.isVip(other),
-				tempVip = tempVip[other.UserId] == true,
+				passTier = ControllerFunctions.passTier(other),
+				rewardedPassTier = if profiles[other.UserId] then profiles[other.UserId].rewardedPassTier else 0,
+				groupMember = vipPass[other.UserId] == true,
 				blocked = blockedUsers[other.UserId] == true,
 				requests = requestCounts[other.UserId] or 0,
 				canMod = ControllerFunctions.canModerate(player, other),
+				-- Explicit server-derived flag for the free tier award controls.
+				-- Owners may award any other player; self-awards remain prohibited.
+				canAwardPassTier = ControllerFunctions.getLevel(player) >= 4 and other.UserId ~= player.UserId,
 			})
 		end
 		snapshot.players = roster
@@ -3188,6 +3466,20 @@ ControllerFunctions.flushPendingState = function()
 	end
 end
 
+-- Playback state is latency-sensitive: don't hold title, pause, or restart
+-- updates behind the general-purpose state coalescing interval.
+ControllerFunctions.publishPlaybackState = function()
+	-- Playback commits already run on the server task that owns the new state.
+	-- Build and send the snapshot in that same task so clients don't wait for
+	-- another deferred scheduler turn to learn the new title/pause/restart state.
+	for _, target in ipairs(Players:GetPlayers()) do
+		local ok, snapshot = pcall(ControllerFunctions.snapshotFor, target)
+		if ok and target.Parent == Players then
+			pcall(function() stateRemote:FireClient(target, snapshot) end)
+		end
+	end
+end
+
 publishState = function(player: Player?)
 	if player then
 		pendingStatePlayers[player.UserId] = true
@@ -3215,11 +3507,13 @@ end
 -- A zero ID is intentionally ignored so unconfigured products cannot collide.
 local PRODUCT_IDS = {
 	-- Donations / Tips
-	Coconut = 0,
-	Pineapple = 0,
-	TikiTorch = 0,
-	Volcano = 0,
-	IslandLegend = 0,
+	Coconut = 3731488823,
+	Pineapple = 3731489572,
+	TikiTorch = 3731490154,
+	Volcano = 3731490513,
+	IslandLegend = 3731490937,
+	IslandRoyalty = 3731491257,
+	SultansLegacy = 3731491679,
 
 	-- Shop Items
 	Glowsticks = 0,
@@ -3271,6 +3565,12 @@ ControllerFunctions.registerProduct(PRODUCT_IDS.Volcano, {
 })
 ControllerFunctions.registerProduct(PRODUCT_IDS.IslandLegend, {
 	type = "Donation", perk = "Island Legend", amount = 1000,
+})
+ControllerFunctions.registerProduct(PRODUCT_IDS.IslandRoyalty, {
+	type = "Donation", perk = "Island Royalty", amount = 5000,
+})
+ControllerFunctions.registerProduct(PRODUCT_IDS.SultansLegacy, {
+	type = "Donation", perk = "Sultan's Legacy", amount = 10000,
 })
 
 -- Shop Items
@@ -3571,6 +3871,11 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	local userId = receiptInfo.PlayerId
 	local productId = receiptInfo.ProductId
 	local receiptId = tostring(receiptInfo.PurchaseId)
+	print(string.format("[ClubMusic][PurchaseServer] ProcessReceiptReached | UserId=%s | ProductId=%s | PurchaseId=%s | PlaceId=%d | GameId=%d",
+		tostring(userId), tostring(productId), string.sub(receiptId, 1, 32), game.PlaceId, game.GameId))
+	if typeof(userId) == "number" and typeof(productId) == "number" then
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
+	end
 	if typeof(userId) ~= "number" or typeof(productId) ~= "number"
 		or receiptId == "" or #receiptId > 128 then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
@@ -3578,10 +3883,14 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	if processedReceipts[receiptId] then return Enum.ProductPurchaseDecision.PurchaseGranted end
 	local player = Players:GetPlayerByUserId(userId)
 	local profile = profiles[userId]
-	if not player or not profile then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	if not player or not profile then
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "AwaitingPlayerProfile", "Player or loaded profile is not available; Roblox receipt will retry")
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
 	local productData = PRODUCT_MAP[productId]
 	if not productData then
 		warn(string.format("[ClubMusic] Unregistered Developer Product ID %d (receipt %s).", productId, receiptId))
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "RejectedUnregisteredProduct", "Receipt ID is not in PRODUCT_MAP; purchase remains ungranted")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
@@ -3601,6 +3910,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 			)
 			if not activateOk or activated ~= true then
 				warn("[ClubMusic] Global XP boost activation failed; receipt will be retried.")
+				recordPurchaseDiagnostic("ServerReceipt", userId, productId, "XPBoostActivationFailed", "Global XP service rejected or failed activation; Roblox receipt will retry")
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
 			if typeof(expiry) == "number" and (effectiveMultiplier == 1 or effectiveMultiplier == 2 or effectiveMultiplier == 4) then
@@ -3612,6 +3922,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		-- The global per-PurchaseId journal is authoritative for XP boosts.
 		-- Do not write XP receipts into the legacy profile receipt map.
 		processedReceipts[receiptId] = true
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Global XP boost activation completed")
 		notify(player, string.format("%dx global XP boost activated!", productData.multiplier), "ok")
 		publishState(nil)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
@@ -3619,6 +3930,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	local ok, alreadyProcessed, err = ControllerFunctions.persistReceipt(userId, receiptId, productData)
 	if not ok then
 		warn("[ClubMusic] Receipt persistence failed for " .. receiptId .. ": " .. tostring(err))
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptPersistenceFailed", tostring(err))
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	-- A receipt already in the durable ledger was granted by an earlier callback/server.
@@ -3631,6 +3943,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	if USE_STUDIO_MEMORY_PROFILES then ControllerFunctions.applyReceiptToMemory(profile, productData) end
 	receiptMemoryApplied[receiptId] = nil
 	processedReceipts[receiptId] = true
+	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Receipt persistence completed and reward application proceeded")
 	player:SetAttribute("Tickets", profile.tickets)
 	player:SetAttribute("Coins", profile.coins)
 	player:SetAttribute("Glowsticks", profile.glowsticks)
@@ -3645,7 +3958,9 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		elseif perk == "Pineapple" then ControllerFunctions.broadcast(string.format("🎆 %s launched a Pineapple Firework burst!", player.DisplayName), "ok")
 		elseif perk == "Tiki Torch" then ControllerFunctions.broadcast(string.format("🎊 %s filled the dancefloor with Stage Confetti!", player.DisplayName), "ok")
 		elseif perk == "Volcano" then ControllerFunctions.broadcast(string.format("🔥 %s activated the Volcano Light Show!", player.DisplayName), "warn")
-		elseif perk == "Island Legend" then ControllerFunctions.broadcast(string.format("👑 LEGENDARY: %s is displayed on the Big Stage Screens!", player.DisplayName), "info") end
+		elseif perk == "Island Legend" then ControllerFunctions.broadcast(string.format("👑 LEGENDARY: %s is displayed on the Big Stage Screens!", player.DisplayName), "info")
+		elseif perk == "Island Royalty" then ControllerFunctions.broadcast(string.format("👑 ROYAL CELEBRATION: %s has supported the island with an extraordinary gift!", player.DisplayName), "info")
+		elseif perk == "Sultan's Legacy" then ControllerFunctions.broadcast(string.format("✨ SULTAN'S LEGACY: %s has made the ultimate island contribution!", player.DisplayName), "ok") end
 	elseif productData.type == "Item" then
 		notify(player, string.format("Purchase Successful: %s acquired!", productData.name or "Item"), "ok")
 	elseif productData.type == "TitleSlot" then
@@ -3711,14 +4026,6 @@ ControllerFunctions.findTarget = function(actor: Player, userId: any): Player?
 end
 
 ControllerFunctions.purgeUserEntries = function(userId: number): number
-	if globalQueueMode then
-		local removedCount = 0
-		for _, entry in ipairs(queue) do if entry.source == "player" and entry.userId == userId then removedCount += 1 end end
-		local callOk, purged, state = ControllerFunctions.globalInvoke("PurgeGlobalUserQueueEntries", userId)
-		if callOk and purged == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state); return removedCount end
-		if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		return 0
-	end
 	local removed = 0
 	for index = #queue, 1, -1 do
 		local entry = queue[index]
@@ -3734,9 +4041,12 @@ end
 -- Returns a reason string when this player may NOT queue this track right now, otherwise nil.
 -- Used by Creator Hub audio requests, which re-check after yielding for the asset lookup.
 ControllerFunctions.requestBlockReason = function(player: Player, trackId: string, now: number): string?
+	if player:GetAttribute("GlobalModerationPending") == true then
+		return "Global moderation is temporarily checking your account. Song requests are paused until verification completes."
+	end
 	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
 	if ControllerFunctions.isTrackBlocked(trackId) then return "That track has been blocked by ClubMusic staff." end
-	if requestsLocked and ControllerFunctions.getLevel(player) < 1 then return "Requests are locked by staff right now." end
+	if requestsLocked and ControllerFunctions.getLevel(player) < 3 then return "DJ Control Mode is active. Normal song requests are temporarily locked." end
 	if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
 	local cooldown = ControllerFunctions.cooldownFor(player)
 	local sinceLast = now - (lastRequestAt[player.UserId] or -1000)
@@ -3813,8 +4123,8 @@ end
 ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number, data: any, visible: boolean): boolean
 	local profile = profiles[player.UserId]
 	if not profile then return false end
-	if not ControllerFunctions.isSultan(player) then
-		notify(player, "Custom titles are exclusive to Tiki Tide Sultan members.", "warn")
+	if not ControllerFunctions.hasTikiTideAccess(player) then
+		notify(player, "Custom titles are exclusive to Tiki Tide members.", "warn")
 		return false
 	end
 	if slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return false end
@@ -3855,27 +4165,19 @@ end
 
 ControllerFunctions.handleAction = function(player: Player, action: any, payload: any, trustedAdminCommand: boolean?): (boolean?, string?)
 	if player.Parent ~= Players then return false, "The caller is no longer in this server." end
-	-- Validate the small, fixed remote contract before spending shared-service
-	-- budget or forwarding attacker-controlled action values across the server bridge.
+	-- Validate the small, fixed remote contract before spending local rate-limit
+	-- capacity or processing attacker-controlled action values.
 	if not ControllerFunctions.isValidString(action, 32) or not ControllerFunctions.isBoundedPayload(payload) then return false, "Invalid action or payload." end
 	if ACTION_COOLDOWNS[action] == nil then return false, "That action is not supported." end
 
-	-- Global + per-action throttles apply only to recognized, bounded actions.
+	-- Per-player + per-server throttles apply only to recognized, bounded actions.
 	local now = os.clock()
 	local userId = player.UserId
 	if not ControllerFunctions.consumeActionBudget(userId, now) then return false, "ClubMusic action rate limit reached. Try again shortly." end
-	local globalBudgetOk, globalAllowed = ControllerFunctions.globalInvoke("ConsumeActionBudget", userId, action, 1)
-	if RunService:IsStudio() then
-		if globalBudgetOk and globalAllowed == false then return false, "ClubMusic shared action budget is exhausted." end
-	else
-		-- Live servers require the global security service; never bypass aggregate
-		-- budgets because the bridge or shared MemoryStore is unavailable.
-		if not globalBudgetOk or globalAllowed ~= true then return false, "ClubMusic security budget is unavailable. Try again shortly." end
-	end
 	-- Check every cooldown before recording timestamps. A rejected action must not
 	-- consume the cross-action interval and block an unrelated command immediately after it.
 	-- Keep trusted admin commands in a separate per-action cooldown lane.
-	-- The shared action budgets above still protect the server, while this avoids
+	-- The local per-player/server budgets still protect this bridge, while this avoids
 	-- a normal DJ-booth/UI action accidentally blocking the equivalent admin command.
 	local actionTimesByPlayer = if trustedAdminCommand == true then lastAdminActionByType else lastActionByType
 	local actionTimes = actionTimesByPlayer[userId]
@@ -3953,17 +4255,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			if action == "PlaylistAddTrack" or action == "PlaylistRemoveTrack" or action == "PlaylistMoveTrack" then
 				ControllerFunctions.reloadActivePlaylist()
 			end
-			if globalQueueMode then
-				local rotationSynced, syncMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-				if rotationSynced then
-					ControllerFunctions.topUpAuto()
-				else
-					message = tostring(message) .. " Shared rotation update failed: " .. tostring(syncMessage)
-				end
-			else
-				ControllerFunctions.clearAutomaticQueue()
-				ControllerFunctions.topUpAuto()
-			end
+			ControllerFunctions.clearAutomaticQueue()
+			ControllerFunctions.topUpAuto()
 		end
 		notify(player, message, if ok then "ok" else "warn")
 		if ok then publishState(nil) end
@@ -4027,79 +4320,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local budgetReady = ControllerFunctions.waitForDataStoreBudget(5)
 		if not budgetReady then notify(player, "Shared DataStore budget is unavailable; catalog was not changed.", "warn"); return end
 		local trackId = "custom-" .. tostring(assetId)
-		local additionReserved = false
-		if globalQueueMode then
-			-- Serialize additions as well as removals. This prevents a restore/add
-			-- from racing a removal reservation for the same catalog ID.
-			local reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
-				"ReserveCatalogAddition", trackId, localCatalogRevision
-			)
-			if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
-			if reserveCallOk and reserved ~= true
-				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				ControllerFunctions.refreshCatalogWhenReady()
-				reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
-					"ReserveCatalogAddition", trackId, localCatalogRevision
-				)
-				if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
-			end
-			local alreadyReserved = reserveCallOk and reserved ~= true
-				and tostring(reserveMessage) == "Catalog addition is already reserved for this track."
-			if not reserveCallOk or (reserved ~= true and not alreadyReserved) then
-				notify(player, tostring(reserveMessage or "The shared catalog could not reserve this addition."), "warn")
-				return
-			end
-			additionReserved = true
-			if not ControllerFunctions.refreshCatalogWhenReady() then
-				notify(player, "Catalog addition is reserved globally, but the catalog could not be refreshed. Retry the audio addition after storage recovers.", "warn")
-				return
-			end
-			local existingTrack = TRACK_BY_ID[trackId]
-			if existingTrack then
-				if alreadyReserved then
-					local completeCallOk, completed, completeState, completeMessage = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
-					if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
-					if completeCallOk and completed == true then
-						notify(player, "The previously saved catalog addition was recovered and synchronized.", "ok")
-					else
-						notify(player, "The track is saved, but its shared addition reservation remains pending. Retry the addition to finish recovery.", "warn")
-					end
-				else
-					local completeCallOk, completed, completeState = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
-					if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
-					if not completeCallOk or completed ~= true then
-						notify(player, "That track is already in the catalog; reservation cleanup is pending.", "warn")
-					else
-						notify(player, "That audio is already in the catalog.", "warn")
-					end
-				end
-				return
-			end
-		end
-
 		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId, artworkAssetId)
-		if not saved and globalQueueMode and tostring(message) == "That audio was added by another server already. Refresh the catalog." then
-			if ControllerFunctions.refreshCatalogWhenReady() and TRACK_BY_ID[trackId] then
-				saved = true
-				message = "Track was added by another server; shared catalog state recovered."
-			end
-		end
 		if not saved then
-			if globalQueueMode and additionReserved then
-				local uncertain = tostring(message) == "Catalog save failed. Try again later."
-					or tostring(message) == "The catalog update could not be confirmed; refresh and retry."
-				if not uncertain then
-					local releaseCallOk, released, releaseState = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
-					if typeof(releaseState) == "table" then ControllerFunctions.applyGlobalQueueState(releaseState) end
-					if not releaseCallOk or released ~= true then
-						warn("[ClubMusic] Could not release rejected catalog addition reservation.")
-					end
-				else
-					notify(player, tostring(message) .. " The shared addition reservation remains active so stale servers cannot queue this ID. Retry the audio addition to recover.", "warn")
-					return
-				end
-			end
 			notify(player, message, "warn")
 			return
 		end
@@ -4109,16 +4331,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			TRACK_BY_ID[trackId] = track
 			if not table.find(ALL_TRACK_IDS, trackId) then table.insert(ALL_TRACK_IDS, trackId) end
 			table.sort(ALL_TRACK_IDS)
-		end
-		if globalQueueMode and additionReserved then
-			local completeCallOk, completed, completeState, completeMessage = ControllerFunctions.globalInvoke("CompleteCatalogAddition", trackId)
-			if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
-			if not completeCallOk or completed ~= true then
-				warn("[ClubMusic] Catalog addition saved but shared reservation finalization is pending: " .. tostring(completeMessage))
-				notify(player, "Track saved. Shared addition finalization is pending; retry the audio addition to finish safely.", "warn")
-				publishState(nil)
-				return
-			end
 		end
 		local publishOk, published = ControllerFunctions.globalInvoke("PublishCatalogChange")
 		if not publishOk or published ~= true then
@@ -4135,149 +4347,43 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isValidString(trackId, 32) or not string.match(trackId, "^custom%-%d+$") then
 			notify(player, "Only a valid staff-added catalog track ID can be removed.", "warn"); return
 		end
-		local initialTrack = TRACK_BY_ID[trackId]
-		if initialTrack and initialTrack.assetId == nil then
+		local track = TRACK_BY_ID[trackId]
+		if not track or track.assetId == nil then
 			notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
 		end
 		if not catalogStorageReady or not ControllerFunctions.waitForDataStoreBudget(5) then
 			notify(player, "Catalog storage is unavailable; track was not removed.", "warn"); return
 		end
-
-		local track = TRACK_BY_ID[trackId]
-		if globalQueueMode and not track then
-			-- A missing local record is valid only for an interrupted removal.
-			-- Refresh once so stale caches are not mistaken for completed deletion.
-			if syncGlobalQueueSnapshot and not syncGlobalQueueSnapshot() then
-				notify(player, "The shared catalog state could not be verified; track was not removed.", "warn"); return
-			end
-			if ControllerFunctions.refreshCatalogWhenReady() then track = TRACK_BY_ID[trackId] end
-			if not track and not (globalCatalogChangeTrackId == trackId and globalCatalogChangeKind == "remove") then
-				notify(player, "Custom catalog track not found.", "warn"); return
+		if nowPlaying.trackId == trackId then
+			notify(player, "That track is currently playing. Remove it after playback ends.", "warn"); return
+		end
+		for _, queued in ipairs(queue) do
+			if queued.trackId == trackId then
+				notify(player, "That track is queued. Remove it from the queue first.", "warn"); return
 			end
 		end
-		if not globalQueueMode then
-			if not track or track.assetId == nil then
-				notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
-			end
-			if nowPlaying.trackId == trackId then
-				notify(player, "That track is currently playing. Remove it after playback ends.", "warn"); return
-			end
-			for _, queued in ipairs(queue) do
-				if queued.trackId == trackId then
-					notify(player, "That track is queued. Remove it from the queue first.", "warn"); return
-				end
-			end
-		else
-			-- Reserve the ID atomically in the same DataStore used by every global
-			-- enqueue/advance. This closes the read-queue-then-delete race.
-			local reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
-				"ReserveCatalogRemoval", trackId, localCatalogRevision
-			)
-			if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
-			if reserveCallOk and reserved ~= true
-				and tostring(reserveMessage) == "Catalog changed on another server; refresh and retry." then
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				ControllerFunctions.refreshCatalogWhenReady()
-				reserveCallOk, reserved, reserveState, reserveMessage = ControllerFunctions.globalInvoke(
-					"ReserveCatalogRemoval", trackId, localCatalogRevision
-				)
-				if typeof(reserveState) == "table" then ControllerFunctions.applyGlobalQueueState(reserveState) end
-			end
-			local alreadyReserved = reserveCallOk and reserved ~= true
-				and tostring(reserveMessage) == "Catalog removal is already reserved for this track."
-			if not reserveCallOk or (reserved ~= true and not alreadyReserved) then
-				notify(player, tostring(reserveMessage or "The shared catalog could not reserve this removal."), "warn")
-				return
-			end
-			-- Refresh after the reservation's revision bump. If this server stopped
-			-- after deleting the catalog record but before finalizing, a retry sees
-			-- the missing record and safely completes the existing reservation.
-			if not ControllerFunctions.refreshCatalogWhenReady() then
-				notify(player, "Removal is reserved globally, but the catalog could not be refreshed. Retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
-				return
-			end
-			track = TRACK_BY_ID[trackId]
-			if track and track.assetId == nil then
-				local releaseCallOk, released, releaseState = ControllerFunctions.globalInvoke("CompleteCatalogRemoval", trackId)
-				if typeof(releaseState) == "table" then ControllerFunctions.applyGlobalQueueState(releaseState) end
-				if not releaseCallOk or released ~= true then
-					warn("[ClubMusic] Could not release an invalid catalog removal reservation.")
-				end
-				notify(player, "Only staff-added catalog tracks can be removed here.", "warn"); return
-			end
-		end
-
-		local removed = false
-		local message = "Track removed from the shared catalog."
-		if track then
-			removed, message = MusicCatalogService:RemoveCustomTrack(trackId)
-			if not removed and globalQueueMode then
-				-- UpdateAsync can report an error after its write outcome becomes
-				-- uncertain. Re-read before deciding whether to keep the reservation.
-				if MusicCatalogService:Refresh() then
-					if MusicCatalogService:GetTrackById(trackId) == nil then
-						removed = true
-						message = "Catalog removal was already committed; shared reservation recovered."
-					end
-				end
-			end
-		else
-			-- A missing local record is acceptable only when this is a reserved
-			-- global retry and the authoritative catalog refresh confirmed absence.
-			removed = globalQueueMode == true
-		end
+		local removed, message = MusicCatalogService:RemoveCustomTrack(trackId)
 		if not removed then
-			if globalQueueMode then
-				notify(player, tostring(message) .. " The shared removal reservation remains active to prevent stale servers from queueing this track. Retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
-			else
-				notify(player, message, "warn")
-			end
+			notify(player, tostring(message or "Catalog track could not be removed."), "warn")
 			return
 		end
-
 		TRACK_BY_ID[trackId] = nil
 		for index, id in ipairs(ALL_TRACK_IDS) do
 			if id == trackId then table.remove(ALL_TRACK_IDS, index); break end
 		end
-		local rotationReady = true
-		if activePlaylistId or (globalQueueMode and globalPlaylistRotationEnabled) then
+		if activePlaylistId then
 			for index = #activePlaylistTracks, 1, -1 do
 				if activePlaylistTracks[index].id == trackId then table.remove(activePlaylistTracks, index) end
 			end
 			activePlaylistCursor = math.clamp(activePlaylistCursor, 1, math.max(1, #activePlaylistTracks))
-			if globalQueueMode then
-				local rotationSynced, syncMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-				if not rotationSynced then
-					rotationReady = false
-					warn("[ClubMusic] Removed catalog track locally, but shared playlist rotation sync failed: " .. tostring(syncMessage))
-				end
-			else
-				ControllerFunctions.clearAutomaticQueue()
-				ControllerFunctions.topUpAuto()
-			end
+			ControllerFunctions.clearAutomaticQueue()
+			ControllerFunctions.topUpAuto()
 		end
-
-		if globalQueueMode then
-			if not rotationReady then
-				notify(player, "Catalog record is removed, but the shared playlist rotation is not synchronized. The safety reservation remains active; retry the catalog removal from the staff catalog UI for this same track after storage recovers.", "warn")
-				publishState(nil)
-				return
-			end
-			local completeCallOk, completed, completeState, completeMessage = ControllerFunctions.globalInvoke("CompleteCatalogRemoval", trackId)
-			if typeof(completeState) == "table" then ControllerFunctions.applyGlobalQueueState(completeState) end
-			if not completeCallOk or completed ~= true then
-				warn("[ClubMusic] Catalog record removed but shared reservation finalization is pending: " .. tostring(completeMessage))
-				notify(player, "Catalog record removed. Shared reservation finalization is pending; retry the catalog removal from the staff catalog UI for this same track to finish safely.", "warn")
-				publishState(nil)
-				return
-			end
-		end
-
 		local publishOk, published = ControllerFunctions.globalInvoke("PublishCatalogChange")
 		if not publishOk or published ~= true then
 			warn("[ClubMusic] Catalog removal saved locally; cross-server invalidation publish failed.")
 		end
-		notify(player, message, "ok")
+		notify(player, tostring(message or "Track removed from the catalog."), "ok")
 		publishState(nil)
 		return
 	end
@@ -4287,14 +4393,15 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isValidString(trackId, 24) then return end
 		local track = TRACK_BY_ID[trackId]
 		if not track then return end
+		if not isPlayableTrack(track) then notify(player, "That catalog entry is a temporary placeholder and is not playable yet.", "warn"); return end
 
 		local level = ControllerFunctions.getLevel(player)
 		if blockedUsers[player.UserId] then
 			notify(player, "Your requests are disabled by staff.", "warn")
 			return
 		end
-		if requestsLocked and level < 1 then
-			notify(player, "Requests are locked by staff right now.", "warn")
+		if requestsLocked and level < 3 then
+			notify(player, "DJ Control Mode is active. Normal song requests are temporarily locked.", "warn")
 			return
 		end
 		if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then
@@ -4329,15 +4436,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 		local vip = ControllerFunctions.isVip(player)
 		local entry = ControllerFunctions.makeEntry(track, "player", player)
-		if globalQueueMode then
-			local queued: boolean = false
-			local queueError: string? = "Global queue is not ready."
-			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
-			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
-		else
-			queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
-			requestCounts[player.UserId] = count + 1
-		end
+		queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
+		requestCounts[player.UserId] = count + 1
 		lastRequestAt[player.UserId] = now
 		notify(player, if vip and CONFIG.VipPriority then "Requested with VIP priority!" else "Track requested!", "ok")
 		publishState(nil)
@@ -4349,20 +4449,6 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isStaff(player) then
 			notify(player, "Audio asset IDs are staff only.", "warn")
 			return
-		end
-		local audioBudgetCallOk, audioBudgetAllowed = ControllerFunctions.globalInvoke("ConsumeAudioBudget", userId)
-		if RunService:IsStudio() then
-			if audioBudgetCallOk and audioBudgetAllowed == false then
-				notify(player, "Global audio inspection capacity is busy. Please try again shortly.", "warn")
-				return
-			end
-		else
-			-- Live servers must not silently fall back to independent per-server
-			-- audio limits when the shared cross-server budget is unavailable.
-			if not audioBudgetCallOk or audioBudgetAllowed ~= true then
-				notify(player, "Shared audio inspection capacity is unavailable. Try again shortly.", "warn")
-				return
-			end
 		end
 		local assetId = payload.assetId
 		if typeof(assetId) ~= "number" or assetId % 1 ~= 0 or assetId <= 0 or assetId > 9007199254740991 then
@@ -4440,15 +4526,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			genre = "Creator Hub Audio",
 		}, "player", player)
 		entry.soundId = "rbxassetid://" .. tostring(assetId)
-		if globalQueueMode then
-			local queued: boolean = false
-			local queueError: string? = "Global queue is not ready."
-			if enqueueGlobalQueueEntry then queued, queueError = enqueueGlobalQueueEntry(entry) end
-			if not queued then notify(player, tostring(queueError or "Global queue is unavailable."), "warn"); return end
-		else
-			queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
-			requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
-		end
+		queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
+		requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
 		lastRequestAt[player.UserId] = recheckNow
 		notify(player, "Audio queued: " .. titleOrError, "ok")
 		publishState(nil)
@@ -4459,9 +4538,13 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local last = lastReloadAt[player.UserId] or -1000
 		if now - last < CONFIG.ReloadCooldownSeconds then return end
 		lastReloadAt[player.UserId] = now
-		-- Bumping the nonce makes this player's next snapshot differ, so their client re-processes
-		-- the current track (e.g. an audio script can restart playback at the right position).
-		reloadNonce[player.UserId] = (reloadNonce[player.UserId] or 0) + 1
+		local recovered, recoveryError = ControllerFunctions.reloadServerMusic()
+		if recovered then
+			reloadNonce[player.UserId] = (reloadNonce[player.UserId] or 0) + 1
+			notify(player, "Audio reloaded at the current track position.", "ok")
+		else
+			notify(player, tostring(recoveryError or "Audio reload could not be completed."), "warn")
+		end
 		publishState(player)
 		return
 	end
@@ -4500,8 +4583,13 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	-- Staff ----------------------------------------------------------------------------
 
+	if action == "DJToggleGlobalPlaybackSync" then
+		return false, "Global playback synchronization has been retired. Each server has its own playback and request queue."
+	end
+
+
 	if action == "DJPlayPlaylist" then
-		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can start playlist rotation.", "warn"); return end
+		if not ControllerFunctions.isDJBoothController(player) then notify(player, "The DJ Booth is restricted to the Owner and Co-Owner.", "warn"); return end
 		if not playlistStorageReady or not MusicPlaylistService:IsReady() then
 			notify(player, "Playlist storage is unavailable.", "warn"); return
 		end
@@ -4511,44 +4599,26 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJStopPlaylist" then
-		if not ControllerFunctions.isStaff(player) then notify(player, "Only staff can stop playlist rotation.", "warn"); return end
+		if not ControllerFunctions.isDJBoothController(player) then notify(player, "The DJ Booth is restricted to the Owner and Co-Owner.", "warn"); return end
 		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playlist
 		if manager and manager:StopRotation(player) then publishState(nil) end
 		return
 	end
 
 	if action == "DJMoveUp" then
-		if not ControllerFunctions.isStaff(player) then return end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		local id = payload.queueId
 		if not ControllerFunctions.isValidString(id, 64) then return end
-		if globalQueueMode then
-			local callOk, moved, state = ControllerFunctions.globalInvoke("MoveUpGlobalQueueEntry", id)
-			if callOk and moved == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state)
-			elseif syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-		else
-			local index = ControllerFunctions.findQueueIndex(id)
-			if index and index > 1 then queue[index], queue[index - 1] = queue[index - 1], queue[index] end
-		end
+		local index = ControllerFunctions.findQueueIndex(id)
+		if index and index > 1 then queue[index], queue[index - 1] = queue[index - 1], queue[index] end
 		publishState(nil)
 		return
 	end
 
 	if action == "DJRemove" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		local id = payload.queueId
 		if not ControllerFunctions.isValidString(id, 64) then return false, "A valid queue entry ID is required." end
-		if globalQueueMode then
-			local callOk, removed, state, message = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntry", id)
-			if callOk and removed == true then
-				if typeof(state) == "table" and not ControllerFunctions.applyGlobalQueueState(state) and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				if typeof(state) ~= "table" and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				ControllerFunctions.topUpAuto()
-				publishState(nil)
-				return true, "Queued track removed."
-			end
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			return false, tostring(message or "Queue entry was not found or the shared queue is unavailable.")
-		end
 		local index = ControllerFunctions.findQueueIndex(id)
 		if not index then return false, "Queue entry was not found. Run ;cmqueue to refresh the IDs." end
 		local removedEntry = queueManager:RemoveAt(index, true)
@@ -4559,123 +4629,85 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "DJSkip" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
-		-- Kohl's Admin can dispatch the same command while an automatic or
-		-- admin-triggered transition is still yielding on shared queue work.
-		-- The active transition already owns this track change; do not call
-		-- advance() a second time or surface its internal lock as a warning.
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		if trustedAdminCommand == true and transitionInProgress then
 			return true, "A track transition is already being processed; no second skip was sent."
 		end
 		local advanced, transitionError = ControllerFunctions.advance()
 		if not advanced then
-			local reason = tostring(transitionError or "The shared track transition could not be confirmed.")
+			local reason = tostring(transitionError or "The local track transition could not be confirmed.")
 			notify(player, reason, "warn")
 			return false, reason
 		end
-		if not globalQueueMode then ControllerFunctions.globalInvoke("PublishDJCommand", "Skip", {}, player.UserId) end
-		notify(player, "Track skipped.", "ok")
-		publishState(nil)
-		return true, "Track skipped."
+		notify(player, "Track skipped on this server.", "ok")
+		return true, "Track skipped on this server."
 	end
 
 	if action == "DJPause" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
+		playbackControlRequestId += 1
 		ControllerFunctions.cancelAudioTransition(if desiredPaused then "pause" else "resume")
-		if globalQueueMode then
-			local position = nowPlaying.elapsed
-			pcall(function() local audio = ControllerFunctions.getAudioSnapshot(); if audio.ready then position = audio.position end end)
-			local callOk, changed, state, message = ControllerFunctions.globalInvoke("SetGlobalPlayback", desiredPaused, position, globalTrackRevision, false)
-			if not callOk or changed ~= true or typeof(state) ~= "table" then
-				notify(player, tostring(message or "Global playback state could not be saved."), "warn")
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				return false, tostring(message or "Global playback state could not be saved.")
+		local position = math.clamp(tonumber(nowPlaying.elapsed) or 0, 0, nowPlaying.duration)
+		local audioOk, audioError = pcall(function()
+			local controlOk, controlResult, capturedPosition
+			if desiredPaused then
+				controlOk, controlResult, capturedPosition = ControllerFunctions.pauseAudio()
+				if ControllerFunctions.isFiniteNumber(capturedPosition) then
+					position = math.clamp(capturedPosition, 0, nowPlaying.duration)
+				end
+			else
+				controlOk, controlResult = ControllerFunctions.resumeAudio()
 			end
-			ControllerFunctions.applyGlobalQueueState(state)
-			notify(player, if desiredPaused then "Music paused globally." else "Music resumed globally.", "ok")
-		else
-			local position = nowPlaying.elapsed
-			pcall(function() local audio = ControllerFunctions.getAudioSnapshot(); if audio.ready then position = audio.position end end)
-			nowPlaying.elapsed = math.clamp(position, 0, nowPlaying.duration)
-			playbackPaused = desiredPaused
-			pcall(function()
-				local audio = ControllerFunctions.getAudioSnapshot()
-				if audio.ready then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
-				if playbackPaused then ControllerFunctions.pauseAudio() else ControllerFunctions.resumeAudio() end
-			end)
-			local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke("PublishDJCommand", "SetPlaybackPaused", {paused = playbackPaused, position = nowPlaying.elapsed}, player.UserId)
-			if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
-			if not globalOk or globalPublished ~= true then notify(player, "Playback changed on this server, but cross-server sync is unavailable.", "warn") end
-			notify(player, if playbackPaused then "Music paused." else "Music resumed.", "ok")
+			if controlOk == false or controlResult == false then error("The audio source rejected the pause/resume command.") end
+		end)
+		if not audioOk then
+			notify(player, "Audio control could not be applied: " .. tostring(audioError), "warn")
+			return false, tostring(audioError)
 		end
-		publishState(nil)
-		return true, if desiredPaused then "Music paused." else "Music resumed."
+		nowPlaying.elapsed = position
+		playbackPaused = desiredPaused
+		ControllerFunctions.publishPlaybackState()
+		notify(player, if desiredPaused then "Music paused on this server." else "Music resumed on this server.", "ok")
+		return true, if desiredPaused then "Music paused on this server." else "Music resumed on this server."
 	end
 
 	if action == "DJRestart" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
+		playbackControlRequestId += 1
+		local restartAsset = nowPlaying.soundId
 		ControllerFunctions.cancelAudioTransition("restart")
-		if globalQueueMode then
-			local callOk, restarted, state, message = ControllerFunctions.globalInvoke("SetGlobalPlayback", false, 0, globalTrackRevision, true)
-			if not callOk or restarted ~= true or typeof(state) ~= "table" then
-				notify(player, tostring(message or "Global restart could not be confirmed."), "warn")
-				if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-				return false, tostring(message or "Global restart could not be confirmed.")
-			end
-			ControllerFunctions.applyGlobalQueueState(state)
-			notify(player, "Current track restarted across servers.", "ok")
-		else
-			nowPlaying.elapsed = 0; playbackPaused = false
-			ControllerFunctions.startServerMusic(nowPlaying.soundId)
-			local globalOk, globalPublished, globalRevision = ControllerFunctions.globalInvoke("PublishDJCommand", "Restart", {}, player.UserId)
-			if globalOk and globalPublished == true and ControllerFunctions.isFiniteNumber(globalRevision) then lastGlobalPlaybackRevision = math.max(lastGlobalPlaybackRevision, math.floor(globalRevision)) end
-			if not globalOk or globalPublished ~= true then notify(player, "Track restarted here, but cross-server sync is unavailable.", "warn")
-			else notify(player, "Current track restarted across servers.", "ok") end
+		local restartOk, restartError = ControllerFunctions.restartServerMusic(restartAsset)
+		if not restartOk then
+			playbackPaused = true
+			notify(player, "Track restart could not be applied: " .. tostring(restartError), "warn")
+			return false, tostring(restartError)
 		end
-		publishState(nil)
-		return true, "Current track restarted."
+		nowPlaying.elapsed = 0
+		playbackPaused = false
+		ControllerFunctions.publishPlaybackState()
+		notify(player, "Current track restarted on this server.", "ok")
+		return true, "Current track restarted on this server."
 	end
 
 	if action == "DJClearQueue" then
-		if not ControllerFunctions.isAdmin(player) then return false, "ClubMusic administrator permission is required." end
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		ControllerFunctions.cancelAudioTransition("queue-clear")
-		if globalQueueMode then
-			local callOk, cleared, state, message = ControllerFunctions.globalInvoke("ClearGlobalQueue")
-			if not callOk or cleared ~= true then
-				local reason = tostring(message or "The shared queue service did not confirm the clear.")
-				warn("[ClubMusic] Shared queue clear failed: " .. reason)
-				notify(player, reason, "warn")
-				return false, reason
-			end
-			if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-		else
-			queueManager:Clear(true)
-			autoQueueHold = true
-			ControllerFunctions.globalInvoke("PublishDJCommand", "ClearQueue", {}, player.UserId)
-		end
-		notify(player, "Queue cleared.", "ok")
+		queueManager:Clear(true)
+		autoQueueHold = true
+		notify(player, "This server's queue was cleared.", "ok")
 		publishState(nil)
-		return true, "Queue cleared."
+		return true, "This server's queue was cleared."
 	end
 
 	if action == "DJToggleLock" then
-		if not ControllerFunctions.isStaff(player) then return false, "ClubMusic staff permission is required." end
-		local desiredLock = not requestsLocked
-		local publishCallOk, persisted = ControllerFunctions.globalInvoke("PublishDJCommand", "SetRequestLock", {locked = desiredLock}, player.UserId)
-		if not RunService:IsStudio() and (not publishCallOk or persisted ~= true) then
-			-- Fail closed locally if the durable global lock cannot be confirmed.
-			requestsLocked = true
-			notify(player, "Global lock could not be confirmed. Requests remain locked on this server.", "warn")
-			publishState(nil)
-			return false, "Global lock could not be confirmed; requests remain locked here."
-		end
-		requestsLocked = desiredLock
-		ControllerFunctions.broadcast(if requestsLocked then "Song requests are now LOCKED." else "Song requests are open again.", "info")
+		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
+		requestsLocked = not requestsLocked
+		ControllerFunctions.broadcast(if requestsLocked then "DJ Control Mode is ON. Normal player song requests are locked on this server." else "DJ Control Mode is OFF. Normal song requests are open on this server.", "info")
 		publishState(nil)
-		return true, if requestsLocked then "Song requests locked." else "Song requests opened."
+		return true, if requestsLocked then "DJ Control Mode enabled on this server." else "DJ Control Mode disabled on this server."
 	end
 
 	if action == "ModBlockUser" then
@@ -4729,14 +4761,24 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		return
 	end
 
-	if action == "ModSetVip" then
-		if not ControllerFunctions.isAdmin(player) then return end
+	if action == "ModSetPassTier" then
+		-- Only the actual configured OWNER may issue free membership rank-up rewards.
+		if ControllerFunctions.getLevel(player) < 4 then return end
 		local target = ControllerFunctions.findTarget(player, payload.userId)
-		if not target or typeof(payload.vip) ~= "boolean" then return end
-		tempVip[target.UserId] = if payload.vip then true else nil
+		local requestedTier = payload.passTier
+		if not target or typeof(requestedTier) ~= "number" or requestedTier % 1 ~= 0
+			or requestedTier < 0 or requestedTier > 3 then return end
+		local profile = profiles[target.UserId]
+		if not profile then
+			notify(player, "That player's profile is not ready; no membership reward was changed.", "warn")
+			return
+		end
+		profile.rewardedPassTier = requestedTier
 		ControllerFunctions.applyVipAttribute(target)
-		notify(target, if payload.vip then "You were given VIP by staff!" else "Your staff-granted VIP was removed.", "info")
-		notify(player, (if payload.vip then "VIP granted to " else "VIP removed from ") .. target.DisplayName .. ".", "ok")
+		ControllerFunctions.scheduleProfileSave(target)
+		local tierName = ({"GUEST", "VIP", "VVIP", "TIKI TIDE"})[requestedTier + 1]
+		notify(target, if requestedTier > 0 then "Your free membership rank was raised to " .. tierName .. "!" else "Your owner-awarded membership rank was reset.", "info")
+		notify(player, target.DisplayName .. " membership reward set to " .. tierName .. ".", "ok")
 		publishState(nil)
 		return
 	end
@@ -4883,7 +4925,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "SelectTitleSlot" then
-		if not ControllerFunctions.isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
+		if not ControllerFunctions.hasTikiTideAccess(player) then notify(player, "Custom titles require Tiki Tide.", "warn"); return end
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		local profile = profiles[player.UserId]
@@ -4900,7 +4942,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "ClearTitleSlot" then
-		if not ControllerFunctions.isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
+		if not ControllerFunctions.hasTikiTideAccess(player) then notify(player, "Custom titles require Tiki Tide.", "warn"); return end
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		local profile = profiles[player.UserId]
@@ -4916,7 +4958,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "SetTitleVisible" then
-		if not ControllerFunctions.isSultan(player) then notify(player, "Custom titles require Tiki Tide Sultan.", "warn"); return end
+		if not ControllerFunctions.hasTikiTideAccess(player) then notify(player, "Custom titles require Tiki Tide.", "warn"); return end
 		if typeof(payload.visible) ~= "boolean" then return end
 		local profile = profiles[player.UserId]
 		if not profile then return end
@@ -4931,13 +4973,11 @@ end
 catalogFunction.OnServerInvoke = function(player: Player, query: any, genreId: any, offset: any, limit: any)
 	if player.Parent ~= Players then return nil end
 	local now = os.clock()
-	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
-	local sharedStateCallOk, sharedStateAllowed = ControllerFunctions.globalInvoke("ConsumeStateBudget", player.UserId)
-	if RunService:IsStudio() then
-		if sharedStateCallOk and sharedStateAllowed == false then return nil end
-	else
-		if not sharedStateCallOk or sharedStateAllowed ~= true then return nil end
-	end
+	if not ControllerFunctions.consumeToken(globalCatalogQueryBucket, now, 1) then return nil end
+	-- Catalog browsing is a read-only lookup over the built-in in-memory
+	-- catalog plus the local custom-track cache. Keep it available during a
+	-- transient global security-service outage; the per-server token bucket
+	-- above and per-player cooldown below still bound request volume.
 	local previous = lastCatalogInvoke[player.UserId] or 0
 	if previous > 0 and now - previous < 0.75 then return nil end
 	lastCatalogInvoke[player.UserId] = now
@@ -4962,12 +5002,6 @@ playlistFunction.OnServerInvoke = function(player: Player)
 	if player.Parent ~= Players or not playlistStorageReady then return nil end
 	local now = os.clock()
 	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
-	local sharedOk, allowed = ControllerFunctions.globalInvoke("ConsumeStateBudget", player.UserId)
-	if RunService:IsStudio() then
-		if sharedOk and allowed == false then return nil end
-	else
-		if not sharedOk or allowed ~= true then return nil end
-	end
 	local previous = lastPlaylistInvoke[player.UserId] or 0
 	if previous > 0 and now - previous < 1 then return nil end
 	lastPlaylistInvoke[player.UserId] = now
@@ -4983,12 +5017,6 @@ stateFunction.OnServerInvoke = function(player: Player)
 	if player.Parent ~= Players then return nil end
 	local now = os.clock()
 	if not ControllerFunctions.consumeToken(globalStateQueryBucket, now, 1) then return nil end
-	local sharedStateCallOk, sharedStateAllowed = ControllerFunctions.globalInvoke("ConsumeStateBudget", player.UserId)
-	if RunService:IsStudio() then
-		if sharedStateCallOk and sharedStateAllowed == false then return nil end
-	else
-		if not sharedStateCallOk or sharedStateAllowed ~= true then return nil end
-	end
 	local previous = lastStateInvoke[player.UserId] or 0
 	if previous > 0 and now - previous < CONFIG.GetStateCooldownSeconds then
 		return nil -- StateChanged continues to push live updates; client can retry after cooldown.
@@ -5002,41 +5030,20 @@ stateFunction.OnServerInvoke = function(player: Player)
 	return snapshot
 end
 
--- Server-only integration point for trusted admin addons (for example Kohl's Admin).
--- This is deliberately not replicated. Every request is re-authorized by ClubMusic's
--- own rank cache and then passes through the same action budgets/cooldowns/handlers.
--- Narrow server-only permission resolver for the global security authorization adapter.
--- Uses the same server-verified rank cache as the existing admin bridge.
-local authorizationResolver = ControllerFunctions.getOrCreate(
-	ServerStorage,
-	"BindableFunction",
-	"ClubMusicAuthorizationResolver"
-) :: BindableFunction
-local GLOBAL_PERMISSION_LEVELS = {
-	GlobalDJ = 1,
-	GlobalModeration = 2,
-	GlobalAnnouncement = 2,
-	GlobalConfig = 3,
-	SecurityPolicy = 3,
-	IncidentResponse = 3,
-}
-authorizationResolver.OnInvoke = function(actorUserId: any, permission: any): boolean
-	if typeof(actorUserId) ~= "number" or actorUserId < 1 or actorUserId % 1 ~= 0
-		or typeof(permission) ~= "string" then
-		return false
-	end
-	local requiredLevel = GLOBAL_PERMISSION_LEVELS[permission]
-	if not requiredLevel then return false end
-	local player = Players:GetPlayerByUserId(math.floor(actorUserId))
-	if not player or player.Parent ~= Players then return false end
-	return ControllerFunctions.getLevel(player) >= requiredLevel
-end
-
+-- Trusted admin integrations use ClubMusic Global's SecurityCore authorization API.
 -- Kohl's Admin security bridge helpers. Global security operations are checked by
 -- the same server-only authorization service used by the cross-server API.
 ControllerFunctions.adminBridgeGlobalCall = function(name: string, ...: any): (boolean, any, any)
 	local invoked, accepted, value, detail = ControllerFunctions.globalInvoke(name, ...)
 	if not invoked then return false, "Global security service is unavailable." end
+	-- GetGlobalAudit is a read-only list getter whose established provider
+	-- contract returns the records directly, rather than true, records.
+	-- Normalize that one legacy contract at this consumer boundary so the
+	-- provider and any other callers keep their existing return shape.
+	if name == "GetGlobalAudit" then
+		if typeof(accepted) == "table" then return true, accepted end
+		return false, if typeof(value) == "string" then value else "Security audit log is unavailable."
+	end
 	if accepted ~= true then
 		return false, if typeof(value) == "string" then value else "Global security operation was rejected."
 	end
@@ -5079,12 +5086,11 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local currentArtist = if typeof(nowPlaying.artist) == "string" then nowPlaying.artist else ""
 		local playbackLabel = if playbackPaused then "PAUSED" else "PLAYING"
 		local requestLabel = if requestsLocked then "LOCKED" else "OPEN"
-		local queueModeLabel = if globalQueueMode then "GLOBAL" else "LOCAL"
 		local queueCount = #queue
 		local elapsed = math.max(0, math.floor(tonumber(nowPlaying.elapsed) or 0))
 		local duration = math.max(0, math.floor(tonumber(nowPlaying.duration) or 0))
 		local trackLabel = currentTitle .. (if currentArtist ~= "" then " — " .. currentArtist else "")
-		return true, string.sub(string.format("ClubMusic: %s | %s | Requests %s | Queue %d (%s) | %ds/%ds", trackLabel, playbackLabel, requestLabel, queueCount, queueModeLabel, elapsed, duration), 1, 450)
+		return true, string.sub(string.format("ClubMusic: %s | %s | Requests %s | Local queue %d | %ds/%ds", trackLabel, playbackLabel, requestLabel, queueCount, elapsed, duration), 1, 450)
 	end
 	if operation == "DJSessionStatus" then
 		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
@@ -5130,12 +5136,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, "DJ session ended."
 	end
 	if operation == "Queue" then
-		if globalQueueMode and (not syncGlobalQueueSnapshot or not syncGlobalQueueSnapshot()) then
-			return false, "The shared queue could not be refreshed. Try ;cmqueue again shortly."
-		end
 		local total = #queue
-		if total == 0 then return true, "ClubMusic queue is empty (" .. (if globalQueueMode then "GLOBAL" else "LOCAL") .. ")." end
-		local lines = {string.format("ClubMusic queue (%s) — %d queued:", if globalQueueMode then "GLOBAL" else "LOCAL", total)}
+		if total == 0 then return true, "This server's ClubMusic queue is empty." end
+		local lines = {string.format("This server's ClubMusic queue — %d queued:", total)}
 		local shown = math.min(total, 6)
 		for index = 1, shown do
 			local entry = queue[index]
@@ -5193,13 +5196,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
 		ControllerFunctions.blockedTrackCache[trackId] = {blocked = mode == "on", checkedAt = os.clock()}
 		if mode == "on" then
-			if globalQueueMode then
-				local purgeOk, purged, state = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntriesForTrack", trackId)
-				if not purgeOk or purged ~= true then
-					return false, "Track was blocked, but the shared queue purge could not be confirmed. Retry ;cmblocktrack " .. trackId .. " on."
-				end
-				if typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-			end
+			for index = #queue, 1, -1 do
 			for index = #queue, 1, -1 do
 				if queue[index].trackId == trackId then queueManager:RemoveAt(index, true) end
 			end
@@ -5212,19 +5209,6 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, string.format("Track %s is now %s globally.", trackId, if mode == "on" then "blocked" else "allowed")
 	end
 	if operation == "ForceStop" then
-		if globalQueueMode then
-			local pauseOk, paused, state, pauseMessage = ControllerFunctions.globalInvoke(
-				"SetGlobalPlayback", true, nowPlaying.elapsed, globalTrackRevision, false
-			)
-			if not pauseOk or paused ~= true or typeof(state) ~= "table" then
-				return false, tostring(pauseMessage or "The shared playback state could not be emergency-paused.")
-			end
-			ControllerFunctions.applyGlobalQueueState(state)
-		end
-		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("PublishDJCommand", "ForceStop", {}, caller.UserId)
-		if not ok or (accepted ~= true and not ControllerFunctions.isFiniteNumber(accepted)) then
-			return false, tostring(accepted or "Global force-stop could not be published.")
-		end
 		ControllerFunctions.cancelAudioTransition("admin-force-stop")
 		playbackPaused = true
 		nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
@@ -5233,10 +5217,11 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		nowPlaying.requestedBy = "Emergency stop"; nowPlaying.vip = false; nowPlaying.soundId = ""
 		ControllerFunctions.stopServerMusic()
 		ControllerFunctions.setAudioAsset("")
-		ControllerFunctions.broadcast("ClubMusic playback was emergency-stopped by staff.", "warn")
+		ControllerFunctions.broadcast("ClubMusic playback was emergency-stopped on this server by staff.", "warn")
 		publishState(nil)
-		return true, "ClubMusic playback was emergency-stopped across servers. Use ;cmskip to start the next queued track."
+		return true, "ClubMusic playback was emergency-stopped on this server. Use ;cmskip to resume."
 	end
+
 	if operation == "ModerationHistory" then
 		if typeof(argument) ~= "string" or #argument > 24 or not string.match(argument, "^%d+$") then
 			return false, "Usage: ;cmmoderationhistory <numeric UserId>"
@@ -5267,12 +5252,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, string.format("Removed %d queued ClubMusic request(s) for UserId %d.", removed, targetUserId)
 	end
 	if operation == "EmergencyLock" then
-		local ok, accepted = ControllerFunctions.adminBridgeGlobalCall("PublishDJCommand", "SetRequestLock", {locked = true}, caller.UserId)
-		if not ok or accepted ~= true then return false, tostring(accepted or "Global request lock could not be persisted.") end
 		requestsLocked = true
-		ControllerFunctions.broadcast("ClubMusic requests have been emergency-locked by staff.", "warn")
+		ControllerFunctions.broadcast("ClubMusic requests have been emergency-locked on this server by staff.", "warn")
 		publishState(nil)
-		return true, "ClubMusic requests are now locked across servers. Use ;cmlock after the incident to reopen them."
+		return true, "ClubMusic requests are now locked on this server. Use ;cmlock after the incident to reopen them."
 	end
 	if operation == "SecurityStatus" then
 		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
@@ -5296,7 +5279,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
 			return false, "ClubMusic co-owner/owner permission is required."
 		end
-		local ok, incidents = ControllerFunctions.adminBridgeGlobalCall("GetGlobalSecurityIncidents", 8)
+		local ok, incidents = ControllerFunctions.adminBridgeGlobalCall("GetGlobalSecurityIncidents", 8, caller.UserId)
 		if not ok or typeof(incidents) ~= "table" then return false, tostring(incidents or "Incident service is unavailable.") end
 		if #incidents == 0 then return true, "No recent ClubMusic security incidents." end
 		local lines = {"Recent ClubMusic security incidents:"}
@@ -5314,11 +5297,14 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			return false, "ClubMusic co-owner/owner permission is required."
 		end
 		if typeof(argument) ~= "string" or #argument < 4 or #argument > 200 then
-			return false, "Usage: ;cmincident <SecurityAlert|ServiceDegraded|AbuseReport|ManualReview> <summary>"
+			return false, "Usage: ;cmincident <SecurityAlert|ServiceDegraded|AbuseReport|ManualReview> <userId|server> <summary>"
 		end
-		local kind, summary = string.match(argument, "^(%a+)%s+(.+)$")
-		if not kind or not summary or #summary > 180 then return false, "Provide an allowed incident type followed by a summary (max 180 characters)." end
-		local ok, incidentId = ControllerFunctions.adminBridgeGlobalCall("OpenGlobalSecurityIncident", kind, summary, caller.UserId)
+		local kind, subjectToken, summary = string.match(argument, "^(%a+)%s+(%S+)%s+(.+)$")
+		local subjectUserId = if subjectToken == "server" then 0 else tonumber(subjectToken)
+		if not kind or not subjectUserId or subjectUserId < 0 or subjectUserId % 1 ~= 0 or not summary or #summary > 180 then
+			return false, "Provide an allowed incident type, a numeric userId (or server), and a summary."
+		end
+		local ok, incidentId = ControllerFunctions.adminBridgeGlobalCall("OpenGlobalSecurityIncident", kind, summary, caller.UserId, subjectUserId)
 		if not ok then return false, tostring(incidentId) end
 		return true, "Security incident opened: " .. tostring(incidentId)
 	end
@@ -5380,7 +5366,6 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		OperationalErrors = "GlobalConfig",
 		OperationalMetrics = "GlobalModeration",
 		OperationalSecurityLog = "IncidentResponse",
-		OperationalServers = "IncidentResponse",
 		OperationalRateLimit = "IncidentResponse",
 		OperationalConfig = "GlobalConfig",
 		OperationalRecovery = "GlobalConfig",
@@ -5406,12 +5391,25 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local ok, health = ControllerFunctions.adminBridgeGlobalCall("GetGlobalHealth")
 		if not ok or typeof(health) ~= "table" then return false, tostring(health or "Health status is unavailable.") end
 		return true, string.sub(string.format(
-			"ClubMusic Health: %s | Local: %s | Global: %s | Sync: %s (%d peers) | Recovery: %s\n%s",
+			"ClubMusic Local Health: %s | Dependencies: %s | Global service: %s | Recovery: %s\n%s",
 			tostring(health.state or "Unknown"), tostring(health.localState or "Unknown"),
-			tostring(health.serviceState or "Unknown"), tostring(health.syncState or "Unknown"),
-			math.clamp(tonumber(health.syncStatus and health.syncStatus.peerCount) or 0, 0, 999),
-			tostring(health.recoveryState or "Unknown"), string.sub(tostring(health.detail or health.localDetail or ""), 1, 500)
+			tostring(health.serviceState or "Unknown"), tostring(health.recoveryState or "Unknown"),
+			string.sub(tostring(health.detail or health.localDetail or ""), 1, 500)
 		), 1, 1100)
+	end
+	if operation == "PurchaseDiagnostics" then
+		local lines = {"Recent ClubMusic purchase events (latest server-local records):"}
+		if #purchaseDiagnosticEntries == 0 then
+			table.insert(lines, "No purchase prompt or receipt events have been recorded in this server yet.")
+		else
+			for index = math.max(1, #purchaseDiagnosticEntries - 11), #purchaseDiagnosticEntries do
+				local item = purchaseDiagnosticEntries[index]
+				table.insert(lines, string.format("%s | %s | UserId %d | ID %d | %s%s",
+					os.date("!%H:%M:%S UTC", item.at), item.source, item.userId, item.itemId,
+					item.outcome, if item.detail ~= "" then " | " .. item.detail else ""))
+			end
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1700)
 	end
 	if operation == "OperationalDiagnostics" then
 		local ok, snapshot = ControllerFunctions.adminBridgeGlobalCall("GetGlobalDiagnostics")
@@ -5420,17 +5418,62 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local recovery = if typeof(snapshot.recovery) == "table" then snapshot.recovery else {}
 		local sync = if typeof(snapshot.syncStatus) == "table" then snapshot.syncStatus else {}
 		local services = if typeof(snapshot.operationalServices) == "table" then snapshot.operationalServices else {}
+		local watchdog = if typeof(services.watchdog) == "table" then services.watchdog else {}
+		local watchdogIssues = if typeof(watchdog.issues) == "table" then watchdog.issues else {}
+		local watchdogDetail = if #watchdogIssues > 0 then table.concat(watchdogIssues, " | ") else "none reported"
+		local serverHealth = if typeof(services.serverHealth) == "table" then services.serverHealth else {}
+		local heartbeat = if typeof(serverHealth.heartbeat) == "table" then serverHealth.heartbeat else {}
+		local memory = if typeof(serverHealth.memory) == "table" then serverHealth.memory else {}
+		local registry = if typeof(services.serviceRegistry) == "table" then services.serviceRegistry else {}
+		local registryCounts = if typeof(registry.counts) == "table" then registry.counts else {}
+		local errorHistory = if typeof(services.errorHistory) == "table" then services.errorHistory else {}
+		local securityHealth = if typeof(services.securityHealth) == "table" then services.securityHealth else {}
+		local securityComponents = if typeof(securityHealth.components) == "table" then securityHealth.components else {}
+		local _, globalOperational = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
+		local messaging = if typeof(globalOperational) == "table" and typeof(globalOperational.Messaging) == "table" then globalOperational.Messaging else {}
+		local memoryStore = if typeof(services.memoryStore) == "table" then services.memoryStore else {}
 		local lines = {
 			"ClubMusic Diagnostic Snapshot:",
 			"Generated: " .. os.date("!%Y-%m-%d %H:%M:%S UTC", tonumber(snapshot.generatedAt) or os.time()),
 			"Global enabled: " .. tostring(snapshot.serviceEnabled == true),
-			"Health: " .. tostring(health.state or "Unavailable") .. " / Local: " .. tostring(health.localState or "Unavailable"),
-			"Sync: " .. tostring(sync.state or "Unavailable") .. " / peers: " .. tostring(sync.peerCount or 0),
+			"Local health: " .. tostring(health.state or "Unavailable") .. " / " .. tostring(health.localState or "Unavailable"),
+			"Health dimensions: cross-server " .. tostring(health.crossServerState or "Unavailable")
+				.. " | performance " .. tostring(health.performanceState or "Unavailable")
+				.. " | watchdog " .. tostring(health.watchdogState or "Unavailable"),
+			"Server runtime: " .. tostring(serverHealth.state or "NotInstalled")
+				.. " | Heartbeat max " .. tostring(math.floor((tonumber(heartbeat.maxDeltaSeconds) or 0) * 1000)) .. "ms"
+				.. " | Memory " .. tostring(memory.usageMb or "n/a") .. " MB",
+			"Service registry: " .. tostring(registry.state or "NotInstalled")
+				.. " | total " .. tostring(registry.serviceCount or 0)
+				.. " | healthy " .. tostring(registryCounts.Healthy or 0)
+				.. " | degraded " .. tostring(registryCounts.Degraded or 0)
+				.. " | unavailable " .. tostring(registryCounts.Unavailable or 0),
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
-			"Watchdog: " .. tostring(services.watchdog and services.watchdog.state or "Unavailable"),
-			"Error history: " .. tostring(snapshot.errorHistoryAvailable == true),
+			"Watchdog: " .. tostring(watchdog.state or "Unavailable"),
+			"SecurityCore health: " .. tostring(securityHealth.state or "Unavailable")
+				.. " (" .. tostring(securityHealth.observedComponents or 0) .. "/" .. tostring(securityHealth.totalComponents or 0) .. " observed)"
+				.. " | Auth " .. tostring(securityComponents.authorization or "Unavailable")
+				.. " | RateLimit " .. tostring(securityComponents.rateLimit or "Unavailable")
+				.. " | Validation " .. tostring(securityComponents.messageValidation or "Unavailable")
+				.. " | Audit " .. tostring(securityComponents.audit or "Unavailable")
+				.. " | Incidents " .. tostring(securityComponents.incidentResponse or "Unavailable"),
+			"Watchdog detail: " .. string.sub(watchdogDetail, 1, 300),
+			"Error history: " .. tostring(errorHistory.count or 0) .. "/" .. tostring(errorHistory.maxRecords or 50)
+				.. " records | repeats " .. tostring(errorHistory.totalRepeats or 0),
+			"Messaging: " .. tostring(messaging.state or "Unavailable")
+				.. " | published " .. tostring(messaging.published or 0)
+				.. " | failures " .. tostring(messaging.publishFailures or 0)
+				.. " | received " .. tostring(messaging.received or 0)
+				.. " | rejected " .. tostring(messaging.rejected or 0),
+			"MemoryStore limiter fallback: " .. tostring(memoryStore.capacityLimited == true),
+			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s):",
 		}
-		return true, string.sub(table.concat(lines, "\n"), 1, 1300)
+		for index = math.max(1, #purchaseDiagnosticEntries - 3), #purchaseDiagnosticEntries do
+			local item = purchaseDiagnosticEntries[index]
+			table.insert(lines, string.format("Purchase %s | ID %d | %s | %s",
+				item.source, item.itemId, item.outcome, string.sub(item.detail, 1, 90)))
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1700)
 	end
 	if operation == "OperationalServices" then
 		local ok, services = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
@@ -5447,19 +5490,16 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	end
 	if operation == "OperationalErrors" then
 		local ok, snapshot = ControllerFunctions.adminBridgeGlobalCall("GetGlobalDiagnostics")
-		if not ok or typeof(snapshot) ~= "table" then return false, tostring(snapshot or "Diagnostic history is unavailable.") end
-		if snapshot.errorHistoryAvailable ~= true then return true, "ClubMusic error history is unavailable; check whether ClubMusicErrorHandler is installed." end
-		local errors = if typeof(snapshot.recentErrors) == "table" then snapshot.recentErrors else {}
-		if #errors == 0 then return true, "No recent ClubMusic errors are recorded." end
-		local lines = {"Recent ClubMusic errors (metadata only):"}
-		for index = math.max(1, #errors - 7), #errors do
-			local item = errors[index]
-			if typeof(item) == "table" then
-				table.insert(lines, string.format("%s | %s / %s | repeats not included",
-					tostring(item.id or "?"), tostring(item.subsystem or "?"), tostring(item.operation or "?")))
-			end
+		if not ok or typeof(snapshot) ~= "table" then return false, "Diagnostic status is unavailable." end
+		local services = if typeof(snapshot.operationalServices) == "table" then snapshot.operationalServices else {}
+		local history = if typeof(services.errorHistory) == "table" then services.errorHistory else {}
+		if snapshot.errorHistoryAvailable ~= true then
+			return true, "Server-local ErrorHistory is unavailable. Detailed records remain server-side."
 		end
-		return true, string.sub(table.concat(lines, "\n"), 1, 1200)
+		return true, string.format(
+			"Server-local ErrorHistory: %s/%s records retained | %s total unique errors | %s repeated occurrences. Error messages and tracebacks are not sent to clients.",
+			tostring(history.count or 0), tostring(history.maxRecords or 50),
+			tostring(history.totalErrors or 0), tostring(history.totalRepeats or 0))
 	end
 	if operation == "OperationalMetrics" then
 		local ok, metrics = ControllerFunctions.adminBridgeGlobalCall("GetGlobalMetrics")
@@ -5478,7 +5518,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		return true, string.sub(table.concat(lines, "\n"), 1, 1400)
 	end
 	if operation == "OperationalSecurityLog" then
-		local ok, entries = ControllerFunctions.adminBridgeGlobalCall("GetGlobalAudit", 30)
+		local ok, entries = ControllerFunctions.adminBridgeGlobalCall("GetGlobalAudit", 30, caller.UserId)
 		if not ok or typeof(entries) ~= "table" then return false, tostring(entries or "Security audit log is unavailable.") end
 		local lines = {"Recent ClubMusic security audit events:"}
 		local count = 0
@@ -5493,22 +5533,6 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		end
 		if count == 0 then table.insert(lines, "No recent security audit events were found in the latest audit page.") end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1500)
-	end
-	if operation == "OperationalServers" then
-		local ok, servers = ControllerFunctions.adminBridgeGlobalCall("GetGlobalServers", 12)
-		if not ok or typeof(servers) ~= "table" then return false, tostring(servers or "Server registry is unavailable.") end
-		local lines = {"Registered ClubMusic servers (up to 12):"}
-		for index, item in ipairs(servers) do
-			if index > 12 then break end
-			if typeof(item) == "table" then
-				table.insert(lines, string.format("%d. Place %s | %d/%d players | health %s | heartbeat %s",
-					index, tostring(item.placeId or "?"), math.clamp(tonumber(item.players) or 0, 0, 1000),
-					math.clamp(tonumber(item.maxPlayers) or 0, 0, 1000), tostring(item.health or "Unknown"),
-					os.date("!%H:%M:%S", tonumber(item.updatedAt) or 0)))
-			end
-		end
-		if #servers == 0 then table.insert(lines, "No active registry entries were returned.") end
-		return true, string.sub(table.concat(lines, "\n"), 1, 1300)
 	end
 	if operation == "OperationalRateLimit" then
 		local ok, services = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
@@ -5636,12 +5660,11 @@ local playlistManagerOk, playlistManager = pcall(childManagerModules.MusicPlayli
 		local trackIds = {}
 		for _, track in ipairs(activePlaylistTracks) do table.insert(trackIds, track.id) end
 		return {
-			active = activePlaylistId ~= nil or globalPlaylistRotationEnabled,
 			playlistId = activePlaylistId,
 			name = activePlaylistName,
 			cursor = activePlaylistCursor,
 			trackIds = trackIds,
-			global = globalQueueMode,
+			global = false,
 		}
 	end,
 	StartRotation = function(player: Player, playlistId: any)
@@ -5736,8 +5759,17 @@ end
 
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
-	local ok, err = pcall(ControllerFunctions.handleAction, player, action, payload)
-	if not ok then warn("[ClubMusic] Action handler error: " .. tostring(err)) end
+	local isPlaybackControl = action == "DJPause" or action == "DJRestart" or action == "DJSkip"
+	if isPlaybackControl then
+		print("[ClubMusic][PlaybackControl] Request received; action=" .. tostring(action) .. "; player=" .. player.Name)
+	end
+	local ok, accepted, result = pcall(ControllerFunctions.handleAction, player, action, payload)
+	if not ok then
+		warn("[ClubMusic] Action handler error: " .. tostring(accepted))
+	elseif isPlaybackControl then
+		print("[ClubMusic][PlaybackControl] Handler result; action=" .. tostring(action)
+			.. "; accepted=" .. tostring(accepted) .. "; detail=" .. tostring(result))
+	end
 end)
 remotes:SetAttribute("StartupStage", "Ready")
 remotes:SetAttribute("Ready", true)
@@ -5794,38 +5826,120 @@ ControllerFunctions.syncTitleTagUnlocks = function(player: Player): boolean
 	return changed
 end
 
+-- Roblox-native ban history is separate from Tiki Tide's custom moderation store.
+-- This API is production-only and may yield/fail when Roblox services are unavailable.
+ControllerFunctions.checkNativeBanHistory = function(player: Player)
+	if RunService:IsStudio() then return end
+	local ok, banned, displayReason = pcall(function()
+		local pages = Players:GetBanHistoryAsync(player.UserId)
+		local currentPage = pages:GetCurrentPage()
+		local latestRecord = nil
+		local latestTimestamp = -math.huge
+		for _, record in ipairs(currentPage) do
+			if typeof(record) == "table" and typeof(record.StartTime) == "string"
+				and typeof(record.Ban) == "boolean" then
+				local parsed = DateTime.fromIsoDate(record.StartTime)
+				local timestamp = parsed.UnixTimestamp
+				if timestamp > latestTimestamp then
+					latestTimestamp = timestamp
+					latestRecord = record
+				end
+			end
+		end
+		if not latestRecord or latestRecord.Ban ~= true then return false, nil end
+		local duration = latestRecord.Duration
+		if typeof(duration) ~= "number" then error("Ban history returned an invalid duration") end
+		if duration == -1 then
+			return true, latestRecord.DisplayReason
+		end
+		if duration <= 0 then return false, nil end
+		local expiresAt = latestTimestamp + duration
+		return expiresAt > os.time(), latestRecord.DisplayReason
+	end)
+	if not ok then
+		warn("[Tiki Tide][NativeBanLookup] Roblox ban history unavailable for UserId "
+			.. tostring(player.UserId) .. ": " .. tostring(banned))
+		return
+	end
+	if banned == true and player.Parent == Players then
+		local reason = if typeof(displayReason) == "string" and #displayReason > 0
+			then displayReason else "You are banned from this experience."
+		player:Kick(reason)
+	end
+end
+
 ControllerFunctions.onJoin = function(player: Player)
+	task.spawn(ControllerFunctions.checkNativeBanHistory, player)
 	local enabledCallOk, globalServiceEnabled = ControllerFunctions.globalInvoke("IsEnabled")
 	local globalModerationRequired = not RunService:IsStudio()
-	if globalModerationRequired and (not enabledCallOk or globalServiceEnabled ~= true) then
-		player:Kick("The experience security service is temporarily unavailable. Please rejoin shortly.")
-		return
-	end
-	local lockCallOk, globalLock, lockLookupOk = ControllerFunctions.globalInvoke("GetGlobalRequestLock")
-	if lockCallOk and lockLookupOk == true and typeof(globalLock) == "boolean" then
-		requestsLocked = globalLock
+	local globalServiceReady = enabledCallOk and globalServiceEnabled == true
+	-- A service-readiness failure is not a ban. Keep moderation-sensitive actions
+	-- closed and retry authoritative checks instead of kicking legitimate players.
+	-- Fetch ban and request-block status together to avoid serial durable reads.
+	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked =
+		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+	local moderationVerified = not globalModerationRequired or (moderationCallOk and moderationLookupOk == true)
+	ControllerFunctions.recordDiagnosticPulse("Moderation",
+		if not globalModerationRequired then "studio-local-moderation-isolated"
+		elseif moderationVerified then "join-moderation-verified" else "join-moderation-lookup-failed",
+		moderationVerified, {lookupSucceeded = moderationCallOk and moderationLookupOk == true})
+	if moderationCallOk and moderationLookupOk == true then
+		if globallyBanned == true then
+			player:Kick("You are globally banned from this experience.")
+			return
+		end
+		blockedUsers[player.UserId] = if globallyBlocked == true then true else nil
 	elseif globalModerationRequired then
-		-- Do not silently open requests when the authoritative global lock cannot be read.
-		requestsLocked = true
-	end
-	local banCallOk, globallyBanned, banLookupOk = ControllerFunctions.globalInvoke("IsGloballyBanned", player.UserId)
-	if banCallOk and banLookupOk == true and globallyBanned == true then
-		player:Kick("You are globally banned from this experience.")
-		return
-	elseif globalModerationRequired and (not banCallOk or banLookupOk ~= true) then
-		-- Fail closed for global bans while the authoritative moderation store is unavailable.
-		player:Kick("Global moderation is temporarily unavailable. Please rejoin shortly.")
-		return
-	end
-	local blockCallOk, globallyBlocked, blockLookupOk = ControllerFunctions.globalInvoke("IsRequestBlocked", player.UserId)
-	if blockCallOk and blockLookupOk == true and globallyBlocked == true then
+		-- Unknown remains restricted; a failed read never grants requests or kicks.
 		blockedUsers[player.UserId] = true
-	elseif globalModerationRequired and (not blockCallOk or blockLookupOk ~= true) then
-		-- Keep the player connected, but fail closed for the request feature.
-		blockedUsers[player.UserId] = true
+	end
+	local retryModeration = globalModerationRequired and
+		(not globalServiceReady or not moderationCallOk or moderationLookupOk ~= true)
+	if retryModeration then player:SetAttribute("GlobalModerationPending", true) end
+	if retryModeration then
+		task.spawn(function()
+			local serviceResolved = globalServiceReady
+			local moderationResolved = not retryModeration
+			local attempt = 0
+			while player.Parent == Players and not (serviceResolved and moderationResolved) do
+				attempt += 1
+				-- The initial join checks already ran immediately. If a backend was still
+				-- loading, retry quickly instead of imposing a five-second blind lock;
+				-- increase the interval only when the service continues to fail.
+				local retryDelay = if attempt == 1 then 1 else math.min(15, 2 ^ math.min(attempt - 1, 4))
+				task.wait(retryDelay)
+				if player.Parent ~= Players then return end
+				if not serviceResolved then
+					local callOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
+					serviceResolved = callOk and enabled == true
+				end
+				if not moderationResolved then
+					local callOk, lookupOk, banned, blocked =
+						ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+					if callOk and lookupOk == true then
+						ControllerFunctions.recordDiagnosticPulse("Moderation", "moderation-retry-verified", true,
+							{lookupSucceeded = true})
+						moderationResolved = true
+						if banned == true then
+							player:Kick("You are globally banned from this experience.")
+							return
+						end
+						blockedUsers[player.UserId] = if blocked == true then true else nil
+					end
+				end
+				if moderationResolved and serviceResolved then
+					player:SetAttribute("GlobalModerationPending", false)
+					publishState(nil)
+					return
+				end
+			end
+			-- If the player leaves, the loop exits. Unknown moderation state never
+			-- grants requests or triggers a kick; checks continue with bounded backoff.
+		end)
 	end
 	ControllerFunctions.refreshRank(player)
 	ControllerFunctions.refreshVip(player)
+	ControllerFunctions.refreshPersonalPasses(player)
 	local loaded = ControllerFunctions.loadProfile(player)
 	if not loaded then
 		notify(player, "Your profile could not be loaded. Please rejoin in a moment; no default profile was saved over your data.", "warn")
@@ -5866,6 +5980,7 @@ refreshLocalCatalog = function(): boolean
 				genre = catalogTrack.genre,
 				assetId = catalogTrack.assetId,
 				soundId = catalogTrack.soundId,
+				placeholder = catalogTrack.placeholder,
 			}
 			nextTracks[track.id] = track
 			table.insert(nextIds, track.id)
@@ -5879,105 +5994,33 @@ refreshLocalCatalog = function(): boolean
 		-- Catalog invalidation can remove tracks referenced by an active playlist.
 		-- Rebuild the in-memory playable view without mutating the saved playlist:
 		-- stale IDs remain available if a track is restored in a later catalog sync.
-		if globalQueueMode then
-			-- The shared rotation is authoritative in global mode; re-read it
-			-- against the refreshed local catalog instead of replacing it with
-			-- this server's possibly stale playlist copy.
-			if syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
-			-- A removed track can leave a rotation with no locally playable IDs.
-			-- Disable that stale rotation so an empty queue can fall back to Auto DJ.
-			if globalPlaylistRotationEnabled and not activePlaylistId then
-				local rotationSynced, rotationMessage = ControllerFunctions.syncGlobalPlaylistRotation()
-				if not rotationSynced then
-					warn("[ClubMusic] Could not clear a playlist rotation with no playable catalog tracks: " .. tostring(rotationMessage))
-				end
-			end
-		elseif activePlaylistId then
+		if activePlaylistId then
 			ControllerFunctions.reloadActivePlaylist()
 		end
+
 		refreshed = true
 	end)
 	catalogRefreshBusy = false
 	if not ok then warn("[ClubMusic] Catalog refresh failed: " .. tostring(err)) end
 	if refreshed then
 		lastCatalogRefreshAt = os.clock()
-		localCatalogRevision = globalCatalogRevision
 		publishState(nil)
 	end
 	return refreshed
 end
 
-ControllerFunctions.applyGlobalPlaybackControl = function(command: string, payload: any): boolean
-	-- When the shared queue is active, its playback snapshot is authoritative.
-	-- The legacy playbackControl store is a separate compatibility path; applying
-	-- its delayed reconciliation events here could overwrite a newer queue pause
-	-- or restart with stale state.
-	if globalQueueMode then return false end
-	-- Playback revisions are monotonic integer sequence numbers. Reject malformed
-	-- fractional/unsafe values instead of silently rounding them into a valid revision.
-	if typeof(payload) ~= "table" or not ControllerFunctions.isFiniteNumber(payload.revision)
-		or payload.revision < 1 or payload.revision % 1 ~= 0
-		or payload.revision > 9007199254740991 then return false end
-	local revision = payload.revision
-	if revision <= lastGlobalPlaybackRevision then return false end
-	if command == "SetPlaybackPaused" then
-		if typeof(payload.paused) ~= "boolean" then return false end
-		ControllerFunctions.cancelAudioTransition(if payload.paused then "global-pause" else "global-resume")
-		playbackPaused = payload.paused
-		if ControllerFunctions.isFiniteNumber(payload.position) then
-			nowPlaying.elapsed = math.clamp(payload.position, 0, nowPlaying.duration)
-		end
-		pcall(function()
-			local audio = ControllerFunctions.getAudioSnapshot()
-			if audio.ready and ControllerFunctions.isFiniteNumber(payload.position) then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
-			if playbackPaused then ControllerFunctions.pauseAudio() else ControllerFunctions.resumeAudio() end
-		end)
-	elseif command == "Restart" then
-		ControllerFunctions.cancelAudioTransition("global-restart")
-		nowPlaying.elapsed = 0
-		playbackPaused = false
-		ControllerFunctions.startServerMusic(nowPlaying.soundId)
-	else
-		return false
-	end
-	lastGlobalPlaybackRevision = revision
-	return true
-end
+-- Cross-server playback controls are retired; local playback controls are handled by DJ actions.
+
 
 ControllerFunctions.handleGlobalMessage = function(message: any)
 	if typeof(message) ~= "table" then return end
-	if message.kind == "QueueChanged" and globalQueueMode then
-		-- Coalesce bursts (for example, several automatic queue inserts) into one
-		-- authoritative snapshot read. Observer servers only refresh their HUD mirror.
-		if not globalQueueRefreshScheduled then
-			globalQueueRefreshScheduled = true
-			task.delay(0.2, function()
-				-- MessagingService is only an invalidation hint. If a transient
-				-- DataStore read fails, retry the read with short backoff instead
-				-- of leaving this server's HUD mirror stale until the slow poll.
-				local retryDelays = {0, 1, 3}
-				for attempt, delaySeconds in ipairs(retryDelays) do
-					if delaySeconds > 0 then task.wait(delaySeconds) end
-					if not globalQueueMode or not syncGlobalQueueSnapshot then break end
-					if syncGlobalQueueSnapshot() then break end
-					if attempt == #retryDelays then
-						warn("[ClubMusic] Global queue refresh remained unavailable after retry attempts; periodic reconciliation will retry.")
-					end
-				end
-				globalQueueRefreshScheduled = false
-			end)
-		end
-		return
-	end
+	-- Playback sync and shared-queue notifications are retired; only global
+	-- moderation, catalog invalidation, announcements, and XP events are consumed.
 	if message.kind == "TrackModeration" and typeof(message.trackId) == "string" and typeof(message.blocked) == "boolean" then
 		if message.senderJob == game.JobId then return end
 		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
 		ControllerFunctions.blockedTrackCache[message.trackId] = {blocked = message.blocked, checkedAt = os.clock()}
 		if message.blocked ~= true then return end
-		if globalQueueMode then
-			local purgeOk, purged, state = ControllerFunctions.globalInvoke("RemoveGlobalQueueEntriesForTrack", message.trackId)
-			if purgeOk and purged == true and typeof(state) == "table" then ControllerFunctions.applyGlobalQueueState(state) end
-		end
 		for index = #queue, 1, -1 do
 			if queue[index].trackId == message.trackId then queueManager:RemoveAt(index, true) end
 		end
@@ -5991,7 +6034,6 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 	if message.kind == "Catalog" then
 		if os.clock() - lastCatalogRefreshAt < 3 then return end
 		task.spawn(function()
-			if globalQueueMode and syncGlobalQueueSnapshot then syncGlobalQueueSnapshot() end
 			ControllerFunctions.refreshCatalogWhenReady()
 		end)
 		return
@@ -6021,47 +6063,6 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 			publishState(nil)
 		end
 		return
-	end
-	if message.kind == "DJ" and typeof(message.command) == "string"
-		and (message.command == "Skip" or message.command == "ClearQueue" or message.command == "SetRequestLock"
-			or message.command == "SetPlaybackPaused" or message.command == "Restart" or message.command == "ForceStop") then
-		-- MessagingService may echo a command to its originating server. The local
-		-- action has already been applied there, so ignore that echo to avoid double skips.
-		if message.senderJob == game.JobId then return end
-		if message.command == "Skip" then
-			ControllerFunctions.advance()
-			ControllerFunctions.broadcast("A global DJ command skipped the current track.", "info")
-		elseif message.command == "ClearQueue" then
-			queueManager:Clear(true)
-			ControllerFunctions.topUpAuto()
-			ControllerFunctions.broadcast("The request queue was globally cleared.", "info")
-		elseif message.command == "SetRequestLock" and typeof(message.payload) == "table"
-			and typeof(message.payload.locked) == "boolean" then
-			local changed = requestsLocked ~= message.payload.locked
-			requestsLocked = message.payload.locked
-			if changed then
-				ControllerFunctions.broadcast(if requestsLocked then "Song requests are globally locked." else "Song requests are globally open.", "info")
-			end
-		elseif message.command == "ForceStop" then
-			ControllerFunctions.cancelAudioTransition("global-force-stop")
-			playbackPaused = true
-			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
-			nowPlaying.genre = ""; nowPlaying.duration = 1; nowPlaying.elapsed = 0
-			nowPlaying.dj = "Staff"; nowPlaying.source = "admin"
-			nowPlaying.requestedBy = "Emergency stop"; nowPlaying.vip = false; nowPlaying.soundId = ""
-			ControllerFunctions.stopServerMusic()
-			ControllerFunctions.setAudioAsset("")
-			ControllerFunctions.broadcast("ClubMusic playback was emergency-stopped by staff.", "warn")
-		elseif message.command == "SetPlaybackPaused" or message.command == "Restart" then
-			if ControllerFunctions.applyGlobalPlaybackControl(message.command, message.payload) then
-				if message.command == "SetPlaybackPaused" then
-					ControllerFunctions.broadcast(if playbackPaused then "Music was paused globally." else "Music was resumed globally.", "info")
-				else
-					ControllerFunctions.broadcast("The current track was restarted globally.", "info")
-				end
-			end
-		end
-		publishState(nil)
 	end
 end
 
@@ -6129,7 +6130,10 @@ ControllerFunctions.settlePlayerXP = function(player: Player, nowClock: number):
 		boostedTwoSeconds = math.clamp(twoExpiryClock - lastClock, 0, elapsed)
 	end
 	local weightedSeconds = elapsed + boostedFourSeconds * 3 + boostedTwoSeconds
-	local fractional = (xpFractional[userId] or 0) + weightedSeconds * (CONFIG.XPPerMinute / 60)
+	-- Permanent personal XP ownership multiplies the globally boosted award.
+	-- The client never supplies this value; it comes from server-verified pass ownership.
+	local personalMultiplier = math.clamp(tonumber(player:GetAttribute("PersonalXPMultiplier")) or 1, 1, 4)
+	local fractional = (xpFractional[userId] or 0) + weightedSeconds * personalMultiplier * (CONFIG.XPPerMinute / 60)
 	local gain = math.floor(fractional + 1e-7)
 	xpFractional[userId] = fractional - gain
 	if gain <= 0 then return false end
@@ -6203,6 +6207,8 @@ Players.PlayerRemoving:Connect(function(player)
 		if appliedProfile == departingProfile then receiptMemoryApplied[receiptId] = nil end
 	end
 	profiles[userId] = nil
+	-- Final save/lease handling has completed; discard the local writer lock.
+	profileWriteLocks[userId] = nil
 	requestCounts[userId] = nil
 	lastRequestAt[userId] = nil
 	lastActionAt[userId] = nil
@@ -6220,11 +6226,9 @@ Players.PlayerRemoving:Connect(function(player)
 	lastReloadAt[userId] = nil
 	reloadNonce[userId] = nil
 	pendingAudio[userId] = nil
-	rankCache[userId] = nil
 	vipPass[userId] = nil
 	vvipPass[userId] = nil
-	sultanPass[userId] = nil
-	tempVip[userId] = nil
+	tikiTidePass[userId] = nil
 	blockedUsers[userId] = nil
 	local voteManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.SkipVote
 	if voteManager then
@@ -6237,25 +6241,31 @@ Players.PlayerRemoving:Connect(function(player)
 			publishState(nil)
 		end)
 	end
+	skipVotes[userId] = nil
 end)
 
 for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(ControllerFunctions.onJoin, player)
 end
 
--- Purchasing any pass mid-session refreshes server-verified tier ownership immediately.
+-- Refresh purchased membership entitlements after a successful in-session purchase.
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, purchased: boolean)
 	if not purchased then return end
-	local recognized = passId == CONFIG.VipGamePassId
-		or passId == CONFIG.VvipGamePassId
-		or passId == CONFIG.TikiTideSultanPassId
-	if not recognized then return end
+	local isMembershipPass = passId == CONFIG.VipGamePassId or passId == CONFIG.VvipGamePassId or passId == CONFIG.TikiTidePassId
+	local isNewFeaturePass = passId == CONFIG.PersonalXP2xPassId or passId == CONFIG.PersonalXP4xPassId
+		or passId == CONFIG.MountPassId or passId == CONFIG.CompanionPassId or passId == CONFIG.StageClubLightingPassId
+	if not isMembershipPass and not isNewFeaturePass then return end
 	task.spawn(function()
-		ControllerFunctions.refreshVip(player)
-		ControllerFunctions.applyVipAttribute(player)
-		ControllerFunctions.syncTitleTagUnlocks(player)
-		local tierName = if ControllerFunctions.isSultan(player) then "Tiki Tide Sultan" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
-		notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
+		if isNewFeaturePass then ControllerFunctions.refreshPersonalPasses(player) end
+		if isMembershipPass then ControllerFunctions.refreshVip(player) end
+		if isMembershipPass then
+			ControllerFunctions.applyVipAttribute(player)
+			ControllerFunctions.syncTitleTagUnlocks(player)
+			local tierName = if ControllerFunctions.hasTikiTideAccess(player) then "Tiki Tide" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "Pass"
+			notify(player, tierName .. " unlocked! Your perks are now active.", "ok")
+		else
+			notify(player, "Your new Game Pass entitlement is active.", "ok")
+		end
 		publishState(nil)
 	end)
 end)
@@ -6330,45 +6340,84 @@ task.spawn(function()
 	local ticks = 0
 	while true do
 		task.wait(1)
-		if not playbackPaused then
+		if not playbackPaused and not audioReloadInProgress then
 			nowPlaying.elapsed += 1
 		end
 		ticks += 1
+		ControllerFunctions.recordDiagnosticPulse("Playback", "playback-clock-tick", true, {
+			trackId = nowPlaying.trackId,
+			queueDepth = #queue,
+			elapsed = nowPlaying.elapsed,
+		})
+		if ticks % 30 == 0 then
+			ControllerFunctions.recordDiagnosticPulse("Queue", "queue-state-sampled", true, {queueDepth = #queue})
+			ControllerFunctions.recordDiagnosticPulse("AutoDJ",
+				if autoQueueHold then "refill-held" else "queue-target-sampled",
+				autoQueueHold or #queue >= CONFIG.AutoQueueTarget,
+				{queueDepth = #queue, target = CONFIG.AutoQueueTarget})
+		end
 
 		local currentGeneration = playbackGeneration
-		local shouldAdvance = not playbackPaused and nowPlaying.trackId ~= ""
+		local shouldAdvance = not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.elapsed >= nowPlaying.duration
 		-- Catalog tracks without a configured SoundId are intentionally silent
 		-- UI/visualizer entries. Do not treat their non-playing Sound as a failed
 		-- asset: let their catalog duration drive the normal transition instead.
-		if not shouldAdvance and not playbackPaused and nowPlaying.trackId ~= ""
-			and nowPlaying.soundId ~= "" and nowPlaying.elapsed >= 15 and not ControllerFunctions.getAudioSnapshot().playing then
-			-- IsLoaded/TimeLength distinguishes a confirmed stopped/ended sound from
-			-- an audio asset that is still buffering. If loading never completes,
-			-- the 45-second ceiling prevents a permanently stuck track.
-			local audio = ControllerFunctions.getAudioSnapshot()
+		-- A transient IsPlaying=false must not be treated as end-of-track.
+		-- Require a short stable stop, then attempt one in-place resume from the
+		-- captured playhead before allowing the queue watchdog to advance.
+		local audio = ControllerFunctions.getAudioSnapshot()
+		if playbackPaused or audioReloadInProgress or nowPlaying.trackId == "" or nowPlaying.soundId == ""
+			or audio.playing == true then
+			ControllerFunctions.stoppedAudioGeneration = -1
+			ControllerFunctions.stoppedAudioSince = 0
+			ControllerFunctions.audioRecoveryAttemptedGeneration = -1
+		elseif not audioReloadInProgress and not shouldAdvance and nowPlaying.elapsed >= 15 then
+			local now = os.clock()
+			if ControllerFunctions.stoppedAudioGeneration ~= currentGeneration then
+				ControllerFunctions.stoppedAudioGeneration = currentGeneration
+				ControllerFunctions.stoppedAudioSince = now
+				ControllerFunctions.audioRecoveryAttemptedGeneration = -1
+			end
+			local stoppedFor = math.max(0, now - ControllerFunctions.stoppedAudioSince)
 			local loadedAndKnownLength = audio.ready and audio.length > 0
-			shouldAdvance = loadedAndKnownLength or nowPlaying.elapsed >= 45
-			if shouldAdvance then
+			local playheadAtEnd = loadedAndKnownLength
+				and audio.position >= math.max(0, audio.length - 1.5)
+			if stoppedFor >= 2 and not playheadAtEnd and loadedAndKnownLength
+				and ControllerFunctions.audioRecoveryAttemptedGeneration ~= currentGeneration then
+				ControllerFunctions.audioRecoveryAttemptedGeneration = currentGeneration
+				local resumePosition = math.clamp(audio.position, 0, math.max(0, audio.length - 0.25))
+				local seekOk, seekResult = pcall(ControllerFunctions.seekAudio, resumePosition)
+				local playOk, playResult = false, false
+				if seekOk and seekResult ~= false then
+					playOk, playResult = pcall(ControllerFunctions.playAudio)
+				end
+				local recoveredAudio = playOk and playResult ~= false
+				ControllerFunctions.recordDiagnosticPulse("Recovery",
+					if recoveredAudio then "audio-resume-recovered" else "audio-resume-failed",
+					recoveredAudio, {generation = currentGeneration})
+				if not recoveredAudio then
+					warn("[ClubMusic] Playback watchdog could not resume the stopped track at its saved playhead.")
+				end
+			elseif (playheadAtEnd and stoppedFor >= 2)
+				or (ControllerFunctions.audioRecoveryAttemptedGeneration == currentGeneration and stoppedFor >= 7)
+				or (not loadedAndKnownLength and nowPlaying.elapsed >= 45) then
+				shouldAdvance = true
 				local playbackAdapter = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playback
 				local quality = if playbackAdapter then playbackAdapter:InspectQuality() else nil
 				local reason = if typeof(quality) == "table" then tostring(quality.state or "Unknown") else "WatchdogStoppedTrack"
-				warn("[ClubMusic] Playback watchdog detected a stopped or unplayable track (" .. reason .. "); advancing safely.")
+				warn("[ClubMusic] Playback watchdog confirmed an ended or unrecoverable track (" .. reason .. "); advancing safely.")
 				if ControllerFunctions.ErrorHandler then
 					ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, musicSound)
 				end
 			end
 		end
 
-		-- Each server prepares the same authoritative global queue head. At fade
-		-- completion the queue service CAS commits that exact entry once; peers
-		-- accept the same committed entry rather than advancing a second time.
-		if not playbackPaused and nowPlaying.trackId ~= ""
+		-- This server prepares its own next local queue entry before the current
+		-- track ends; the crossfade commit advances only this server's queue.
+		if not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
 			local remaining = nowPlaying.duration - nowPlaying.elapsed
-			if globalQueueMode and ControllerFunctions.globalPlaybackEndTime > 0 then
-				remaining = math.max(0, ControllerFunctions.globalPlaybackEndTime - game:GetService("Workspace"):GetServerTimeNow())
-			end
 			local managers = ControllerFunctions.ChildManagers
 			local crossfade = managers and managers.Crossfade
 			local nextEntry = queue[1]
@@ -6376,25 +6425,22 @@ task.spawn(function()
 				then (nextEntry.soundId or CONFIG.SoundIds[nextEntry.trackId] or "") else ""
 			local validNextAsset = typeof(nextAsset) == "string" and #nextAsset <= 64
 				and string.match(nextAsset, "^rbxassetid://%d+$") ~= nil
+			-- Start preparation any time before the track ends. The coordinator itself waits
+			-- until the fade window; a strict duration-plus-one gate can miss the window
+			-- when the one-second playback clock lands exactly on its boundary.
 			if crossfade and not crossfade.destroyed and not crossfade.active
 				and crossfadeAttemptedGeneration ~= currentGeneration
 				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
-				and remaining > (CONFIG.CrossfadeDurationSeconds + 1)
+				and remaining > 0
 				and typeof(nextEntry) == "table" and validNextAsset
 				and ControllerFunctions.getAudioSnapshot().playing == true then
 				crossfadeAttemptedGeneration = currentGeneration
 				pendingCrossfadeEntry = nextEntry
 				pendingCrossfadeToken = audioTransitionTrackToken
-				ControllerFunctions.pendingCrossfadeGlobalRevision = if globalQueueMode then globalTrackRevision else -1
-				ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-				ControllerFunctions.pendingCrossfadeDeadline = if globalQueueMode then ControllerFunctions.globalPlaybackEndTime else 0
 				local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
 				if not started then
 					pendingCrossfadeEntry = nil
 					pendingCrossfadeToken = -1
-					ControllerFunctions.pendingCrossfadeGlobalRevision = -1
-					ControllerFunctions.pendingCrossfadeGlobalCommitted = false
-					ControllerFunctions.pendingCrossfadeDeadline = 0
 					warn("[ClubMusic][Crossfade] Automatic transition was not started; normal track advance remains available: " .. tostring(startError))
 				end
 			end

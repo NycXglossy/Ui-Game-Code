@@ -64,6 +64,8 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	DJSkip = true,
 	DJClearQueue = true,
 	DJToggleLock = true,
+	-- Server rechecks Owner/Co-Owner authorization for playback-sync mode changes.
+	DJToggleGlobalPlaybackSync = true,
 	ModBlockUser = true,
 	ModSetVip = true,
 	ModPurgeUser = true,
@@ -100,6 +102,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	DJSkip = 0.5,
 	DJClearQueue = 1,
 	DJToggleLock = 1,
+	DJToggleGlobalPlaybackSync = 1,
 	ModBlockUser = 0.5,
 	ModSetVip = 0.5,
 	ModPurgeUser = 0.5,
@@ -363,18 +366,24 @@ function Network.GetMusicCatalog(query: string?, genreId: string?, offset: numbe
 	local safeGenre = if typeof(genreId) == "string" then string.sub(genreId, 1, 24) else ""
 	local safeOffset = if typeof(offset) == "number" then math.clamp(math.floor(offset), 0, 10000) else 0
 	local safeLimit = if typeof(limit) == "number" then math.clamp(math.floor(limit), 1, 50) else 30
-	local ok, result = pcall(function()
-		return remote:InvokeServer(safeQuery, safeGenre, safeOffset, safeLimit)
-	end)
-	if not ok then
-		warn("[ClubMusic Network] GetMusicCatalog failed: " .. tostring(result))
-		return nil
+	-- The server applies a per-player catalog cooldown. Retry a transient
+	-- nil/error response after that window instead of immediately showing the
+	-- generic unavailable state for a request that was merely rate-limited.
+	local lastError: any = nil
+	for attempt = 1, 3 do
+		local ok, result = pcall(function()
+			return remote:InvokeServer(safeQuery, safeGenre, safeOffset, safeLimit)
+		end)
+		if ok and typeof(result) == "table" and typeof(result.items) == "table"
+			and typeof(result.total) == "number" and typeof(result.offset) == "number" then
+			return safeClone(result)
+		end
+		lastError = if ok then "Server returned no valid catalog page." else result
+		if attempt < 3 then task.wait(0.85) end
+		if destroyed or remote.Parent == nil then return nil end
 	end
-	if typeof(result) ~= "table" or typeof(result.items) ~= "table"
-		or typeof(result.total) ~= "number" or typeof(result.offset) ~= "number" then
-		return nil
-	end
-	return safeClone(result)
+	warn("[ClubMusic Network] GetMusicCatalog failed after 3 attempts: " .. tostring(lastError))
+	return nil
 end
 
 function Network.GetMusicPlaylists()
@@ -482,40 +491,40 @@ function Network.ToggleFavorite(trackId: string)
 	Network.Send("ToggleFavorite", {trackId = trackId})
 end
 
-function Network.VoteSkip()
-	Network.Send("VoteSkip", {})
+function Network.VoteSkip(): boolean
+	return Network.Send("VoteSkip", {})
 end
 
-function Network.ReloadSong()
-	Network.Send("ReloadSong", {})
+function Network.ReloadSong(): boolean
+	return Network.Send("ReloadSong", {})
 end
 
-function Network.DJSkip()
-	Network.Send("DJSkip", {})
+function Network.DJSkip(): boolean
+	return Network.Send("DJSkip", {})
 end
 
-function Network.DJPause()
-	Network.Send("DJPause", {})
+function Network.DJPause(): boolean
+	return Network.Send("DJPause", {})
 end
 
-function Network.DJRestart()
-	Network.Send("DJRestart", {})
+function Network.DJRestart(): boolean
+	return Network.Send("DJRestart", {})
 end
 
-function Network.DJMoveUp(queueId: string)
-	Network.Send("DJMoveUp", {queueId = queueId})
+function Network.DJMoveUp(queueId: string): boolean
+	return Network.Send("DJMoveUp", {queueId = queueId})
 end
 
-function Network.DJRemove(queueId: string)
-	Network.Send("DJRemove", {queueId = queueId})
+function Network.DJRemove(queueId: string): boolean
+	return Network.Send("DJRemove", {queueId = queueId})
 end
 
-function Network.DJClearQueue()
-	Network.Send("DJClearQueue", {})
+function Network.DJClearQueue(): boolean
+	return Network.Send("DJClearQueue", {})
 end
 
-function Network.DJToggleLock()
-	Network.Send("DJToggleLock", {})
+function Network.DJToggleLock(): boolean
+	return Network.Send("DJToggleLock", {})
 end
 
 -- Staff-only on the server. Client-side checks here are not authorization.

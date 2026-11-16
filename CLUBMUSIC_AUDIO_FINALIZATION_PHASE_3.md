@@ -1,19 +1,19 @@
 # ClubMusic Audio Finalization — Six-Update Workstream
 
-Branch: `audit/hardened-clubmusic-2026-11-08`
+Branch: `feature/sultan-settings-2026-11-10`
 
 ## Update 1 — Guarded modern main-playback migration
 
 Implemented:
-- Added `CONFIG.UseModernAudioBackend = false`; legacy playback remains the default.
-- Added a one-time, deferred migration attempt after the first valid track starts when the flag is explicitly enabled.
-- The controller constructs the optional AudioPlayer backend and uses the existing guarded `adoptAudioBackend` handoff.
-- Candidate preparation, asset readiness, playhead transfer, source revision checks, gain preservation, rollback, and cleanup remain inside the controller handoff.
-- Missing modules, failed readiness, or failed handoff leave the legacy Sound as the active source.
+- `CONFIG.UseModernAudioBackend = true`; the user-confirmed Studio log records successful controller ownership handoff to the modern AudioPlayer.
+- Track startup now constructs and prepares the modern AudioPlayer first; it waits for matching asset readiness, starts at the initial playhead, verifies `IsPlaying`, then commits source ownership and binds the source signal.
+- A per-start token and source-revision guard prevent a late decoder completion from replacing a newer track or control action.
+- The legacy Sound starts only when modern construction, readiness, playback verification, or commit preparation fails. The existing guarded migration remains available as a bounded recovery path after fallback.
+- The previous post-start migration on every first track has been removed; successful modern startup marks the modern route as active directly.
 
 Not yet release-enabled:
-- Keep the flag false until Studio has verified output routing, private/restricted assets, pause transfer, and rollback with multiple clients.
-- Do not delete `ServerMusicSound` or `MusicGroup`.
+- Modern-first startup is now implemented but awaits Studio validation. Keep the legacy Sound as the guarded emergency fallback until first-track startup, failure fallback, pause preservation, and multiplayer behavior pass testing.
+- Do not delete `ServerMusicSound` or `MusicGroup` until remaining Sound-based transition/recovery compatibility paths and rollout are validated.
 
 ## Update 2 — Crossfade transition integration
 
@@ -29,8 +29,9 @@ Remaining:
 ## Update 3 — Independent player volume
 
 Implemented:
-- Renderer local preference integration adjusts the client's local SoundGroup instance and local staff-preview fader.
-- It does not send shared server-volume changes.
+- Renderer local preference integration now applies gain to a private client AudioFader and AudioDeviceOutput for each replicated main/crossfade deck, plus the local staff-preview fader.
+- The server backend no longer creates a shared AudioDeviceOutput; its replicated MusicFader remains the shared transition-gain stage.
+- MusicGroup is adjusted only on the local client as a temporary legacy Sound fallback, never as the modern volume path.
 - Client preference profile names are restricted to Standard, Soft, Bass, and Night; failed profile application restores the previous selection.
 
 Validation still required:
@@ -40,7 +41,7 @@ Validation still required:
 ## Update 4 — Real equalizer profiles
 
 Implemented:
-- Modern backend graph now routes AudioPlayer → AudioEqualizer → AudioFader → AudioDeviceOutput.
+- Modern server graph now routes AudioPlayer → AudioEqualizer → MusicFader. Each client adds its own PlayerMusicGain AudioFader → AudioDeviceOutput route.
 - Backend exposes bounded low/mid/high equalizer controls.
 - Quality profiles now define actual EQ bands for Standard, Soft, Bass, and Night and call the injected SetEqualizer callback when provided.
 - Server RBXMX package embeds the same backend and profile sources as the standalone files.
@@ -52,7 +53,7 @@ Boundary:
 ## Update 5 — Spatial audio safety
 
 Implemented:
-- Spatial graph builder validates AudioPlayer and AudioDeviceOutput endpoints.
+- Spatial graph builder validates AudioPlayer and AudioDeviceOutput endpoints; the shared modern 2D playback graph deliberately leaves the device output to each client.
 - Route keys and world-space emitter/listener parents are validated.
 - Route construction is protected and cleans partial objects on failure.
 - Route removal and cleanup are idempotent.
@@ -66,17 +67,17 @@ Boundary:
 Not executed from the repository connection. Required release checklist:
 
 1. With the default flag off, verify legacy Sound playback is unchanged.
-2. Enable `UseModernAudioBackend` only in a test place; verify first-track handoff, asset readiness, position continuity, pause preservation, and that only one main output is audible.
-3. Force missing-module, invalid-asset, timeout, and candidate-start failures; verify legacy playback continues.
+2. Enable `UseModernAudioBackend` only in a test place; verify the first track starts directly on AudioPlayer, matching asset readiness, playback verification, pause preservation, and that only one main output is audible. Confirm a failed modern start activates the guarded Sound fallback.
+3. Force missing-module, invalid-asset, timeout, and candidate-start failures; verify the legacy bootstrap remains safe. Then force a modern decoder reload failure and verify the controller rebuilds a replacement AudioPlayer without changing queue ownership or track position.
 4. Test crossfade cancellation for skip, clear, pause, restart, source reconciliation, and server shutdown; verify outgoing gain restoration and no duplicate outputs.
-5. With two clients, independently change volume and mute; verify each listener hears only their own local gain.
+5. With two clients, independently change volume and mute; verify each listener hears only their own local gain while the server-controlled crossfade affects both equally.
 6. Apply all four EQ profiles on the modern backend and verify band changes and profile rollback on failure.
 7. Test spatial route creation/removal in a dedicated venue test with the intended listener placement.
 8. Inspect client and server Output during player join/leave, track changes, queue clear, pause/resume, and server shutdown.
 
 ## Current release decision
 
-- Source changes committed: guarded modern migration, EQ graph/profile support, spatial graph hardening, and local profile validation.
-- Existing source foundation retained: player-local volume and crossfade coordinator safeguards.
-- Not claimed complete: automatic queue crossfade, Studio runtime verification, multi-client volume independence, actual device output, and spatial venue behavior.
-- Keep legacy playback enabled until all validation gates pass.
+- Source changes committed: guarded modern migration, EQ graph/profile support, spatial graph hardening, local profile validation, replacement AudioPlayer recovery, and per-player output routing.
+- Studio validation: the user confirmed the modern recovery and independent client-volume updates are functional.
+- The controller publishes `SoundService.ClubMusicAudioSourceKind` as `AudioPlayer` or `Sound` whenever source ownership is rebound. The renderer changes `MusicGroup.Volume` only while the guarded legacy Sound fallback is authoritative; modern playback continues to use private `PlayerMusicGain` faders.
+- Modern-first startup is implemented in the controller but is not yet Studio-validated. `ServerMusicSound` and `MusicGroup` remain guarded emergency fallback objects; Sound-based transition and recovery compatibility branches still exist. Do not retire them until the modern-first startup and fallback regression pass.

@@ -17,16 +17,6 @@ local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local ReceiptHash = require(ServerStorage:WaitForChild("ClubMusic_ReceiptHash"))
 
-local queueModule = ServerStorage:WaitForChild("MusicGlobalQueueService", 20)
-if not queueModule or not queueModule:IsA("ModuleScript") then
-	error("[ClubMusic Global] Missing ServerStorage.MusicGlobalQueueService ModuleScript.")
-end
-local queueRequireOk, queueRequireResult = pcall(require, queueModule)
-if not queueRequireOk then
-	error("[ClubMusic Global] MusicGlobalQueueService failed to load: " .. tostring(queueRequireResult))
-end
-local MusicGlobalQueueService = queueRequireResult
-
 local CONFIG = {
 	Enabled = true,
 	-- Keep Studio isolated by default. Set true only for intentional cross-server Studio tests.
@@ -35,10 +25,8 @@ local CONFIG = {
 	Topics = {
 		Announcements = "ClubMusic_Global_Announcements_v1",
 		Moderation = "ClubMusic_Global_Moderation_v1",
-		DJ = "ClubMusic_Global_DJ_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
-		Queue = "ClubMusic_Global_Queue_v1",
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -64,14 +52,21 @@ local CONFIG = {
 local IS_STUDIO = RunService:IsStudio()
 local SERVICE_ENABLED = CONFIG.Enabled and (not IS_STUDIO or CONFIG.EnableInStudio)
 local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false)
-local globalRegistryService: any = nil
-local globalEventLogService: any = nil
-local globalWatchdogService: any = nil
+local globalDiagnosticsService: any = nil
+local globalServiceRegistry: any = nil
+local globalServerHealthService: any = nil
+local globalLocalWatchdog: any = nil
+local subscriptionStatus: {[string]: string} = {}
+local messagingPublishSuccess = 0
+local messagingPublishFailures = 0
+local messagingReceived = 0
+local messagingRejected = 0
+local messagingLastError: string? = nil
 local globalConfigService: any = nil
 local globalStateReconciliationService: any = nil
 local globalMaintenanceService: any = nil
-local globalMetricsService: any = nil
 local globalAuditService: any = nil
+local globalEventLogService: any = nil
 local globalRateLimitService: any = nil
 local globalAuthorizationService: any = nil
 local globalSecurityMonitorService: any = nil
@@ -84,6 +79,7 @@ local authorizeGlobalActor: (any, string) -> boolean
 -- In isolated Studio sessions, requiring this controller must not touch DataStore
 -- or MemoryStore APIs (the place may be unpublished and API access unavailable).
 local budgetMap: any = nil
+local budgetMapInitializationError: string? = nil
 local moderationStore: any = nil
 local globalControlStore: any = nil
 local globalConfigStore: any = nil
@@ -94,8 +90,9 @@ local xpReceiptStore: any = nil
 local MAX_PURCHASE_ID_LENGTH = 128
 
 if SERVICE_ENABLED then
+	-- Durable DataStore handles are required for global moderation, configuration,
+	-- and purchase records. MemoryStore rate-limit allocation remains disabled.
 	local storesOk, storesError = pcall(function()
-		budgetMap = MemoryStoreService:GetHashMap(CONFIG.BudgetMapName)
 		moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 		globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
 		globalConfigStore = DataStoreService:GetDataStore("ClubMusic_GlobalConfig_v1")
@@ -103,8 +100,13 @@ if SERVICE_ENABLED then
 	end)
 	if not storesOk then
 		SERVICE_ENABLED = false
-		warn("[ClubMusic Global] Cross-server storage initialization failed; global features are disabled safely: "
+		warn("[ClubMusic Global] DataStore handle initialization failed; global features are disabled safely: "
 			.. tostring(storesError))
+	else
+		-- MemoryStore rate-limit records are intentionally disabled to minimize
+		-- universe-wide allocation. Cross-server requests use bounded local limits.
+		budgetMap = nil
+		budgetMapInitializationError = "MemoryStore total memory budget disabled for minimal storage mode."
 	end
 end
 
@@ -194,25 +196,79 @@ local function fallbackBucket(key: string, capacity: number, refill: number, cos
 	return true
 end
 
+local memoryStoreCapacityLimited = false
+local memoryStoreCapacityError = nil
+
+local function isMemoryCapacityError(err: any): boolean
+ local message = string.lower(tostring(err or ""))
+ return string.find(message, "total memory", 1, true) ~= nil
+  or string.find(message, "memory limit", 1, true) ~= nil
+  or string.find(message, "memory usage", 1, true) ~= nil
+end
+
 local function consumeShared(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
-	if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
-	local now = os.time()
-	local ok, allowed = pcall(function()
-		local result = budgetMap:UpdateAsync(key, function(old)
-			local state = if typeof(old) == "table" then old else {}
-			local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
-			local updated = if finiteNumber(state.updated) then state.updated else now
-			tokens = math.min(capacity, tokens + math.max(0, now - updated) * refill)
-			local permit = tokens >= cost
-			if permit then tokens -= cost end
-			return {tokens = tokens, updated = now, allowed = permit}
-		end, CONFIG.BudgetKeyTtlSeconds)
-		return typeof(result) == "table" and result.allowed == true
-	end)
-	if ok then return allowed == true, true end
-	-- MemoryStore outage: degrade to a conservative per-server limiter, not a hard outage.
-	warn("[ClubMusic Global] MemoryStore budget unavailable; using local fallback: " .. tostring(allowed))
-	return fallbackBucket(key, math.min(capacity, CONFIG.FallbackPlayerCapacity), CONFIG.FallbackPlayerRefillPerSecond, cost), false
+ if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
+ -- Shared MemoryStore rate-limit allocation is intentionally disabled in
+ -- minimal-storage mode. Use bounded per-server buckets directly; do not
+ -- classify this deliberate configuration as a capacity failure.
+ if budgetMap == nil then
+  return fallbackBucket(key, math.min(capacity, CONFIG.FallbackPlayerCapacity), CONFIG.FallbackPlayerRefillPerSecond, cost), false
+ end
+ -- Consolidate the three per-player limiter records (user/state/audio) into
+ -- one expiring MemoryStore item per player. This lowers key cardinality
+ -- without merging their independent token buckets or changing their limits.
+ local bucketName, playerId = string.match(key, "^(%a+):(%d+)$")
+ if bucketName ~= "user" and bucketName ~= "state" and bucketName ~= "audio" then
+  bucketName, playerId = nil, nil
+ end
+ local storageKey = if playerId then "player:" .. playerId else key
+ if not memoryStoreCapacityLimited then
+  local now = os.time()
+  local ok, allowed = pcall(function()
+   local result = budgetMap:UpdateAsync(storageKey, function(old)
+    if playerId then
+     local record = if typeof(old) == "table" then table.clone(old) else {}
+     local buckets = if typeof(record.buckets) == "table" then table.clone(record.buckets) else {}
+     for name, saved in pairs(buckets) do
+      if typeof(saved) ~= "table" or not finiteNumber(saved.updated)
+       or now - saved.updated > CONFIG.BudgetKeyTtlSeconds then
+       buckets[name] = nil
+      end
+     end
+     local state = if typeof(buckets[bucketName]) == "table" then buckets[bucketName] else {}
+     local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
+     local updated = if finiteNumber(state.updated) then state.updated else now
+     tokens = math.min(capacity, tokens + math.max(0, now - updated) * refill)
+     local permit = tokens >= cost
+     if permit then tokens -= cost end
+     buckets[bucketName] = {tokens = tokens, updated = now}
+     record.buckets = buckets
+     record.lastUpdated = now
+     record.allowed = permit
+     return record
+    end
+    local state = if typeof(old) == "table" then old else {}
+    local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
+    local updated = if finiteNumber(state.updated) then state.updated else now
+    tokens = math.min(capacity, tokens + math.max(0, now - updated) * refill)
+    local permit = tokens >= cost
+    if permit then tokens -= cost end
+    return {tokens = tokens, updated = now, allowed = permit}
+   end, CONFIG.BudgetKeyTtlSeconds)
+   return typeof(result) == "table" and result.allowed == true
+  end)
+  if ok then return allowed == true, true end
+  if isMemoryCapacityError(allowed) then
+   -- Stop issuing more MemoryStore writes while the allocation is full.
+   -- The per-server fallback remains bounded and does not bypass authorization.
+   memoryStoreCapacityLimited = true
+   memoryStoreCapacityError = string.sub(tostring(allowed), 1, 300)
+   warn("[ClubMusic Global] MemoryStore total memory limit reached; shared rate limiting is temporarily using bounded per-server fallback.")
+  else
+   warn("[ClubMusic Global] MemoryStore budget unavailable; using local fallback: " .. tostring(allowed))
+  end
+ end
+ return fallbackBucket(key, math.min(capacity, CONFIG.FallbackPlayerCapacity), CONFIG.FallbackPlayerRefillPerSecond, cost), false
 end
 
 local function userKey(userId: number): string?
@@ -226,7 +282,11 @@ local function getModeration(userId: number): {[string]: any}
 	-- Bound durable reads across all servers. If the shared limiter itself is
 	-- unavailable, report a lookup failure so callers can fail closed.
 	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-	if not budgetShared or not budgetAllowed then
+	-- consumeShared already applies a conservative per-server fallback when
+	-- MemoryStore is unavailable. Only an exhausted limiter should block the
+	-- durable read; a MemoryStore outage alone must not manufacture an unknown
+	-- moderation result when DataStore is still reachable.
+	if not budgetAllowed then
 		return {lookupFailed = true}
 	end
 	local ok, data = pcall(function() return moderationStore:GetAsync(key) end)
@@ -237,12 +297,16 @@ local function getModeration(userId: number): {[string]: any}
 	return if typeof(data) == "table" then data else {}
 end
 
+local publishTopic: (string, {[string]: any}) -> boolean
+
 local function updateModeration(userId: number, field: string, value: any, actorUserId: number, reason: string?): boolean
 	local key = userKey(userId)
 	if not key or (field ~= "globalBan" and field ~= "requestBlocked") then return false end
-	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-	if not budgetShared or not budgetAllowed then
-		warn("[ClubMusic Global] Moderation update rejected: shared DataStore budget unavailable.")
+	local budgetAllowed = consumeShared("all:datastore", 90, 15, 1)
+	-- Shared MemoryStore budgets are intentionally disabled in minimal-storage mode.
+	-- The bounded per-server fallback remains mandatory; reject only when it is exhausted.
+	if not budgetAllowed then
+		warn("[ClubMusic Global] Moderation update rejected: local DataStore budget exhausted.")
 		return false
 	end
 	local ok, result = pcall(function()
@@ -268,134 +332,38 @@ local function updateModeration(userId: number, field: string, value: any, actor
 		kind = "Moderation", userId = userId, field = field, value = value,
 		actorUserId = actorUserId, reason = reason, at = os.time(),
 	}
-	local publishOk, publishErr = pcall(function() MessagingService:PublishAsync(CONFIG.Topics.Moderation, message) end)
-	if not publishOk then warn("[ClubMusic Global] Moderation publish failed; periodic reconciliation remains active: " .. tostring(publishErr)) end
-	if globalAuditService then
-		pcall(globalAuditService.Record, globalAuditService, "Moderation", actorUserId,
-			tostring(userId), field .. "=" .. tostring(value) .. (if reason then " | " .. reason else ""))
-	end
-	globalEventBindable:Fire({kind = "Moderation", userId = userId, field = field, value = value, reason = reason})
+	local published = publishTopic(CONFIG.Topics.Moderation, message)
+	if not published then warn("[ClubMusic Global] Moderation publish failed; periodic reconciliation remains active.") end
+	-- The local event listener writes one audit record. Do not write here as well.
+	globalEventBindable:Fire({kind = "Moderation", userId = userId, field = field, value = value,
+		actorUserId = actorUserId, reason = reason, senderJob = JOB_ID})
 	return true
 end
 
-local function publishTopic(topic: string, payload: {[string]: any}): boolean
+publishTopic = function(topic: string, payload: {[string]: any}): boolean
 	if not SERVICE_ENABLED then return false end
 	payload.version = 1
 	payload.senderJob = JOB_ID
 	payload.id = HttpService:GenerateGUID(false)
 	payload.at = os.time()
 	local ok, err = pcall(function() MessagingService:PublishAsync(topic, payload) end)
-	if not ok then warn("[ClubMusic Global] Publish failed: " .. tostring(err)); return false end
-	if globalMetricsService then pcall(globalMetricsService.Record, globalMetricsService, "publish:" .. tostring(payload.kind or "unknown"), 1) end
+	if not ok then
+		messagingPublishFailures += 1
+		messagingLastError = string.sub(tostring(err), 1, 240)
+		warn("[ClubMusic Global] Publish failed on topic " .. topic .. ": " .. tostring(err))
+		return false
+	end
+	messagingPublishSuccess += 1
+	messagingLastError = nil
+	if globalDiagnosticsService then pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "publish:" .. tostring(payload.kind or "unknown"), 1) end
 	if globalAuditService then
 		if payload.kind == "DJ" then
 			pcall(globalAuditService.Record, globalAuditService, "AdminAction", payload.actorUserId, tostring(payload.command), tostring(payload.command))
-		elseif payload.kind == "Catalog" then
+		elseif payload.kind == "Catalog" and typeof(payload.trackId) ~= "string" then
 			pcall(globalAuditService.Record, globalAuditService, "CatalogChange", 0, "catalog", "invalidate")
-		elseif payload.kind == "QueueChanged" then
-			pcall(globalAuditService.Record, globalAuditService, "GlobalQueueChange", 0, "global-queue", "changed")
 		end
 	end
 	return true
-end
-
-local allowedDJCommands = {Skip = true, ClearQueue = true, SetRequestLock = true, SetPlaybackPaused = true, Restart = true, ForceStop = true}
-local function publishDJCommand(command: any, payload: any, actorUserId: any): (boolean, number?)
-	if not SERVICE_ENABLED or not allowedDJCommands[command] or not finiteNumber(actorUserId) then return false end
-	local permission = if command == "ClearQueue" or command == "ForceStop" then "GlobalModeration" else "GlobalDJ"
-	if not authorizeGlobalActor(actorUserId, permission) then return false end
-	if typeof(payload) ~= "table" then payload = {} end
-	local cleanPayload = {}
-	if command == "SetRequestLock" then
-		if typeof(payload.locked) ~= "boolean" then return false end
-		cleanPayload.locked = payload.locked
-		-- Persist request-lock state only for SetRequestLock. Previously this
-		-- block was accidentally nested under SetPlaybackPaused, where it read
-		-- a nil payload.locked and prevented pause/resume publication.
-		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-		if not budgetShared or not budgetAllowed then
-			warn("[ClubMusic Global] Global request lock change rejected: shared DataStore budget unavailable.")
-			return false
-		end
-		local stored, storeResult = pcall(function()
-			return globalControlStore:UpdateAsync("requestLock", function(old)
-				local state = if typeof(old) == "table" then table.clone(old) else {}
-				state.locked = cleanPayload.locked
-				state.updatedAt = os.time()
-				state.updatedBy = math.floor(actorUserId)
-				return state
-			end)
-		end)
-		if not stored or typeof(storeResult) ~= "table" or storeResult.locked ~= cleanPayload.locked then
-			warn("[ClubMusic Global] Could not persist global request lock: " .. tostring(storeResult))
-			return false
-		end
-	elseif command == "SetPlaybackPaused" then
-		if typeof(payload.paused) ~= "boolean" then return false end
-		cleanPayload.paused = payload.paused
-	elseif command == "Restart" then
-		cleanPayload.restart = true
-	elseif command == "ForceStop" then
-		cleanPayload.forceStop = true
-	end
-	if command == "SetPlaybackPaused" or command == "Restart" or command == "ForceStop" then
-		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-		if not budgetShared or not budgetAllowed then
-			warn("[ClubMusic Global] Playback control rejected: shared DataStore budget unavailable.")
-			return false
-		end
-		local stored, storeResult = pcall(function()
-			return globalControlStore:UpdateAsync("playbackControl", function(old)
-				local state = if typeof(old) == "table" then table.clone(old) else {}
-				local revision = if finiteNumber(state.revision) and state.revision >= 0 then math.floor(state.revision) else 0
-				state.revision = revision + 1
-				state.command = command
-				state.paused = if command == "SetPlaybackPaused" then cleanPayload.paused else (state.paused == true)
-				if command == "Restart" or (command == "SetPlaybackPaused" and cleanPayload.paused == false) then
-					state.stopRevision = nil
-				end
-				if command == "SetPlaybackPaused" then
-					state.pauseRevision = state.revision
-				elseif command == "Restart" then
-					state.restartRevision = state.revision
-				else
-					state.stopRevision = state.revision
-				end
-				state.updatedAt = os.time()
-				state.updatedBy = math.floor(actorUserId)
-				return state
-			end)
-		end)
-		if not stored or typeof(storeResult) ~= "table" or not finiteNumber(storeResult.revision) then
-			warn("[ClubMusic Global] Could not persist global playback control: " .. tostring(storeResult))
-			return false
-		end
-		cleanPayload.revision = math.floor(storeResult.revision)
-	end
-	local published = publishTopic(CONFIG.Topics.DJ, {
-		kind = "DJ", command = command, payload = cleanPayload,
-		actorUserId = math.floor(actorUserId),
-	})
-	-- Pause/resume and restart are durable; polling repairs missed MessagingService events.
-	if command == "SetRequestLock" then return true end
-	if command == "SetPlaybackPaused" or command == "Restart" or command == "ForceStop" then return true, cleanPayload.revision end
-	if command == "Skip" and published then
-		-- A confirmed skip is the explicit resume path after an emergency stop.
-		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-		if budgetShared and budgetAllowed then
-			pcall(function()
-				globalControlStore:UpdateAsync("playbackControl", function(old)
-					if typeof(old) ~= "table" or old.stopRevision == nil then return old end
-					local state = table.clone(old)
-					state.stopRevision = nil
-					state.updatedAt = os.time()
-					state.updatedBy = math.floor(actorUserId)
-					return state
-				end)
-			end)
-		end
-	end
-	return published
 end
 
 bindFunction("ConsumeActionBudget", function(userId: any, action: any, cost: any)
@@ -453,6 +421,15 @@ bindFunction("IsGloballyBanned", function(userId: any)
 	return data.globalBan == true, true, data.reason
 end)
 
+-- Join-time moderation uses one authoritative durable read for both ban and
+-- request-block state. This avoids two sequential DataStore lookups per player.
+bindFunction("GetModerationState", function(userId: any)
+	if not SERVICE_ENABLED then return false, false end
+	local data = getModeration(userId)
+	if data.lookupFailed then return false, false end
+	return true, data.globalBan == true, data.requestBlocked == true, data.reason
+end)
+
 bindFunction("SetGlobalBan", function(userId: any, banned: any, actorUserId: any, reason: any)
 	if not SERVICE_ENABLED or typeof(banned) ~= "boolean" or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
 	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
@@ -503,8 +480,8 @@ end
 bindFunction("IsTrackBlocked", function(trackId: any)
 	local key = validTrackKey(trackId)
 	if not SERVICE_ENABLED or not key then return false, false end
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	if not shared or not allowed then return false, false end
+	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	if not allowed then return false, false end
 	local ok, record = pcall(function() return globalControlStore:GetAsync(key) end)
 	if not ok then return false, false end
 	return typeof(record) == "table" and record.blocked == true, true
@@ -516,8 +493,8 @@ bindFunction("SetTrackBlocked", function(trackId: any, blocked: any, actorUserId
 		or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
 	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
 	if reason ~= nil and not cleanReason then return false end
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	if not shared or not allowed then return false end
+	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	if not allowed then return false end
 	local ok, record = pcall(function()
 		return globalControlStore:UpdateAsync(key, function(old)
 			local nextRecord = if typeof(old) == "table" then table.clone(old) else {}
@@ -542,268 +519,34 @@ bindFunction("PublishAnnouncement", function(message: any, actorUserId: any)
 	return publishTopic(CONFIG.Topics.Announcements, {kind = "Announcement", text = clean, actorUserId = math.floor(actorUserId)})
 end)
 
-bindFunction("PublishDJCommand", publishDJCommand)
 
-local function allowGlobalQueueStoreOperation(): boolean
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	return shared and allowed
+local function allowGlobalDataStoreOperation(): boolean
+	-- Shared DataStore operations retain a conservative per-server budget
+	-- when the optional cross-server MemoryStore budget is unavailable.
+	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	return allowed == true
 end
-
--- Global queue API: every mutation is atomic in the shared DataStore.
--- Controller callers still perform role, moderation, catalog, and request-limit checks.
-bindFunction("GetGlobalQueueState", function()
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	return MusicGlobalQueueService:GetSnapshot()
-end)
-
-bindFunction("RemoveGlobalQueueEntriesForTrack", function(trackId: any)
-	if not SERVICE_ENABLED or typeof(trackId) ~= "string" or #trackId < 1 or #trackId > 64
-		or not string.match(trackId, "^[%w%-_]+$") then return false, nil, "Invalid track ID." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	return MusicGlobalQueueService:RemoveTrackEntries(trackId)
-end)
-
-bindFunction("EnqueueGlobalQueueEntry", function(entry: any, playerQueueCap: any, catalogRevision: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Enqueue(entry, playerQueueCap, catalogRevision)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("EnqueueGlobalQueueBatch", function(entries: any, maxQueueSize: any, targetQueueSize: any, catalogRevision: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:EnqueueBatch(entries, maxQueueSize, targetQueueSize, catalogRevision)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("RemoveGlobalQueueEntry", function(entryId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Remove(entryId)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("SetGlobalPlaylistRotation", function(playlistId: any, playlistName: any, trackIds: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:SetPlaylistRotation(playlistId, playlistName, trackIds)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("MoveUpGlobalQueueEntry", function(entryId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:MoveUp(entryId)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("PurgeGlobalUserQueueEntries", function(userId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:RemoveUserEntries(userId)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("ClearGlobalQueue", function()
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Clear()
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("AdvanceGlobalQueue", function(expectedTrackRevision: any, fallbackEntry: any, catalogRevision: any, expectedNextEntryId: any?)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:Advance(expectedTrackRevision, fallbackEntry, catalogRevision, expectedNextEntryId)
-	if ok then
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
-		-- A committed next-track transition is the resume path after ForceStop.
-		local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-		if budgetShared and budgetAllowed then
-			pcall(function()
-				globalControlStore:UpdateAsync("playbackControl", function(old)
-					if typeof(old) ~= "table" or old.stopRevision == nil then return old end
-					local nextControl = table.clone(old)
-					nextControl.stopRevision = nil
-					nextControl.updatedAt = os.time()
-					return nextControl
-				end)
-			end)
-		end
-	end
-	return ok, state, message
-end)
-
-bindFunction("ReserveCatalogRemoval", function(trackId: any, catalogRevision: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:ReserveCatalogRemoval(trackId, catalogRevision)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("CompleteCatalogRemoval", function(trackId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:CompleteCatalogRemoval(trackId)
-	if ok then
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
-		publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
-	end
-	return ok, state, message
-end)
-
-bindFunction("ReserveCatalogAddition", function(trackId: any, catalogRevision: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:ReserveCatalogAddition(trackId, catalogRevision)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("CompleteCatalogAddition", function(trackId: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:CompleteCatalogAddition(trackId)
-	if ok then
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
-		publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
-	end
-	return ok, state, message
-end)
-
-bindFunction("AdvanceCatalogRevision", function()
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:AdvanceCatalogRevision()
-	if ok then
-		publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision})
-		publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
-	end
-	return ok, state, message
-end)
-
-bindFunction("SetGlobalPlayback", function(paused: any, position: any, expectedTrackRevision: any, restart: any)
-	if not SERVICE_ENABLED then return false, nil, "Global queue service is disabled." end
-	if not allowGlobalQueueStoreOperation() then return false, nil, "Global queue storage budget is unavailable." end
-	local ok, state, message = MusicGlobalQueueService:SetPlayback(paused, position, expectedTrackRevision, restart)
-	if ok then publishTopic(CONFIG.Topics.Queue, {kind = "QueueChanged", revision = state.revision}) end
-	return ok, state, message
-end)
-
-bindFunction("GetGlobalPlaybackPosition", function(snapshot: any)
-	return MusicGlobalQueueService:GetPosition(snapshot)
-end)
 
 bindFunction("PublishCatalogChange", function()
 	if not SERVICE_ENABLED then return false end
 	return publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog"})
 end)
 
-bindFunction("GetGlobalPlaybackControl", function()
-	if not SERVICE_ENABLED then return nil, false end
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-	if not shared or not allowed then return nil, false end
-	local ok, state = pcall(function() return globalControlStore:GetAsync("playbackControl") end)
-	if not ok then return nil, false end
-	if typeof(state) == "table" and finiteNumber(state.revision)
-		and (state.command == "SetPlaybackPaused" or state.command == "Restart")
-		and typeof(state.paused) == "boolean" then
-		return {revision = math.floor(state.revision), command = state.command, paused = state.paused}, true
-	end
-	return nil, true
-end)
-
-bindFunction("GetGlobalRequestLock", function()
-	if not SERVICE_ENABLED then return nil, false end
-	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-	if not budgetShared or not budgetAllowed then return nil, false end
-	local ok, state = pcall(function() return globalControlStore:GetAsync("requestLock") end)
-	if not ok then return nil, false end
-	if typeof(state) == "table" and typeof(state.locked) == "boolean" then return state.locked, true end
-	-- No persisted lock means the experience is unlocked by default.
-	return false, true
-end)
-
 bindFunction("IsEnabled", function()
+	-- Reports availability of global moderation/configuration services only.
+	-- Queue/playback modes are permanently local and no longer gate this check.
 	return SERVICE_ENABLED
 end)
 
--- Optional operational services. They observe the existing global queue and
--- never create a second playback controller or mutate queue ownership.
-local globalRecoveryService: any = nil
-local globalHealthService: any = nil
-
--- Cross-server sync is verified with peer heartbeats, not inferred from DataStore access.
-local SYNC_HEARTBEAT_INTERVAL_SECONDS = 60
-local SYNC_HEARTBEAT_TIMEOUT_SECONDS = 180
-local syncHeartbeatTopic = CONFIG.Topics.Queue
-local subscriptionStatus: {[string]: string} = {[syncHeartbeatTopic] = "Starting"}
-local peerHeartbeats: {[string]: {seenAt: number, reportedAt: number}} = {}
-local hasSeenSyncPeer = false
-local lastQueueNotificationAt = 0
-local queueNotificationsReceived = 0
-local lastHeartbeatPublishAt = 0
-
+-- Diagnostics expose the local-only playback architecture without maintaining
+-- cross-server playback state or peer heartbeats.
 local function getGlobalSyncStatus(): {[string]: any}
-    local now = os.clock()
-    local peerCount = 0
-    local newestPeerAt = 0
-    for jobId, heartbeat in pairs(peerHeartbeats) do
-        if now - heartbeat.seenAt > SYNC_HEARTBEAT_TIMEOUT_SECONDS then
-            peerHeartbeats[jobId] = nil
-        else
-            peerCount += 1
-            newestPeerAt = math.max(newestPeerAt, heartbeat.reportedAt)
-        end
-    end
-
-    local subscription = subscriptionStatus[syncHeartbeatTopic] or "Starting"
-    local state = "Unverified"
-    local detail = "No other server heartbeat has been observed yet; cross-server sync is unverified."
-    if not SERVICE_ENABLED then
-        state = "Disabled"
-        detail = "Cross-server messaging is disabled in this server (Studio isolation or configuration)."
-    elseif subscription ~= "Active" then
-        state = if subscription == "Starting" then "Starting" else "Degraded"
-        detail = "Cross-server sync heartbeat subscription is " .. subscription .. "."
-    elseif lastHeartbeatPublishAt == 0 then
-        state = "Starting"
-        detail = "The first cross-server sync heartbeat has not been published yet."
-    elseif now - lastHeartbeatPublishAt > SYNC_HEARTBEAT_TIMEOUT_SECONDS then
-        state = "Degraded"
-        detail = "This server has not successfully published a sync heartbeat within "
-            .. tostring(SYNC_HEARTBEAT_TIMEOUT_SECONDS) .. " seconds."
-    elseif peerCount > 0 then
-        state = "Healthy"
-        detail = "Cross-server messaging is receiving heartbeats from " .. tostring(peerCount) .. " peer server(s)."
-    elseif hasSeenSyncPeer then
-        state = "Degraded"
-        detail = "Previously observed peer servers stopped sending sync heartbeats for more than "
-            .. tostring(SYNC_HEARTBEAT_TIMEOUT_SECONDS) .. " seconds."
-    end
-
-    return {
-        state = state,
-        detail = detail,
-        subscription = subscription,
-        peerCount = peerCount,
-        lastPeerHeartbeatAt = newestPeerAt,
-        lastHeartbeatPublishedAt = if lastHeartbeatPublishAt > 0 then os.time() - math.floor(now - lastHeartbeatPublishAt) else 0,
-        lastQueueNotificationAt = if lastQueueNotificationAt > 0 then os.time() - math.floor(now - lastQueueNotificationAt) else 0,
-        queueNotificationsReceived = queueNotificationsReceived,
-        heartbeatIntervalSeconds = SYNC_HEARTBEAT_INTERVAL_SECONDS,
-        heartbeatTimeoutSeconds = SYNC_HEARTBEAT_TIMEOUT_SECONDS,
-    }
+	return {
+		state = "LocalOnly",
+		detail = "Each server owns its own playback and request queue.",
+		peerCount = 0,
+		queueNotificationsReceived = 0,
+	}
 end
 
 -- Reuse the same per-server diagnostic handler used by the local UI controller.
@@ -823,10 +566,10 @@ end
 
 local function reportOperationalError(subsystem: string, operation: string, err: any, context: Instance?)
 	local metricName = string.lower(tostring(subsystem)) .. ":" .. string.lower(tostring(operation))
-	if globalMetricsService then
-		pcall(globalMetricsService.Record, globalMetricsService, "error:" .. string.sub(metricName, 1, 42), 1)
+	if globalDiagnosticsService then
+		pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "error:" .. string.sub(metricName, 1, 42), 1)
 		if string.find(metricName, "playback", 1, true) or string.find(metricName, "audio", 1, true) then
-			pcall(globalMetricsService.Record, globalMetricsService, "playbackFailure", 1)
+			pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "playbackFailure", 1)
 		end
 	end
 	if globalErrorHandler then
@@ -845,19 +588,105 @@ local function reportOperationalError(subsystem: string, operation: string, err:
 end
 
 local OPTIONAL_GLOBAL_MODULE_ALIASES: {[string]: {string}} = {
-	ClubMusic_Global_Event_Log_Service = {
-		"ClubMusic_Global_Event_Log_Service",
-		"ClubMusic_Global_Event_Logging_Service",
-	},
-	ClubMusic_Global_RateLimit_Service = {
+		ClubMusic_Global_RateLimit_Service = {
 		"ClubMusic_Global_RateLimit_Service",
 		"ClubMusic_Global_Ratelimit_Service",
 	},
 }
 
+local SECURITY_MODULE_EXPORTS: {[string]: string} = {
+	ClubMusic_Global_Authorization_Service = "Authorization",
+	ClubMusic_Global_RateLimit_Service = "RateLimit",
+	ClubMusic_Global_Message_Validation_Service = "MessageValidation",
+	ClubMusic_Global_Idempotency_Service = "Idempotency",
+	ClubMusic_Global_Security_Monitor_Service = "SecurityMonitor",
+	ClubMusic_Global_Security_Policy_Service = "SecurityPolicy",
+	ClubMusic_Global_Audit_Service = "Audit",
+	ClubMusic_Global_Event_Log_Service = "EventLog",
+	ClubMusic_Global_Incident_Response_Service = "IncidentResponse",
+	ClubMusic_Global_Connection_Janitor_Service = "ConnectionJanitor",
+}
+local cachedSecurityBundle: any = nil
+local securityBundleLoadAttempted = false
+local EXPECTED_SECURITY_CORE_RELEASE = "1559ccc20b13685fab28824bba532ecaecf66962"
+local securityCoreInstallStatus: {[string]: any} = {
+ state = "NotChecked",
+ expectedRelease = EXPECTED_SECURITY_CORE_RELEASE,
+ installedRelease = nil,
+ manifestPresent = false,
+}
+
 local function loadOptionalGlobalModule(moduleName: string): any?
-	-- Support both canonical names and the established ServerStorage instance names.
-	-- Search recursively so optional modules may remain grouped in folders.
+	local securityExport = SECURITY_MODULE_EXPORTS[moduleName]
+	if securityExport then
+		-- Preferred layout: independently maintained private ModuleScripts under
+		-- ServerStorage/ClubMusicSecurityCore. A present-but-invalid split folder
+		-- fails closed instead of silently loading an outdated fallback.
+		local privateCore = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+		if privateCore then
+			if not privateCore:IsA("Folder") then
+				securityCoreInstallStatus.state = "InvalidContainer"
+				warn("[ClubMusic Global] Private security core has an invalid container type.")
+				return nil
+			end
+			local manifest = privateCore:FindFirstChild("InstallManifest")
+			if manifest then
+				if not manifest:IsA("StringValue") then
+					securityCoreInstallStatus.state = "InvalidManifest"
+					warn("[ClubMusic Global] Security Core install manifest has the wrong class.")
+					return nil
+				end
+				local installedRelease = string.match(manifest.Value, "release=([%w]+)")
+				securityCoreInstallStatus.manifestPresent = true
+				securityCoreInstallStatus.installedRelease = installedRelease
+				if installedRelease ~= EXPECTED_SECURITY_CORE_RELEASE then
+					securityCoreInstallStatus.state = "VersionMismatch"
+					warn("[ClubMusic Global] Security Core release mismatch; refusing split modules.")
+					return nil
+				end
+				securityCoreInstallStatus.state = "VersionVerified"
+			else
+				securityCoreInstallStatus.state = "InstalledUnversioned"
+			end
+			local privateModule = privateCore:FindFirstChild(securityExport)
+			if not privateModule or not privateModule:IsA("ModuleScript") then
+				warn("[ClubMusic Global] Private security module is missing: " .. securityExport)
+				return nil
+			end
+			local moduleOk, exported = pcall(require, privateModule)
+			if not moduleOk or typeof(exported) ~= "table" or type(exported.new) ~= "function" then
+				warn("[ClubMusic Global] Private security module failed validation: " .. securityExport
+					.. "; error=" .. string.sub(tostring(exported), 1, 180))
+				return nil
+			end
+			return exported
+		end
+
+		-- Backward compatibility only: existing places without the split folder
+		-- continue to use the previously installed consolidated bundle.
+		if not securityBundleLoadAttempted then
+			securityBundleLoadAttempted = true
+			local bundleModule = ServerStorage:FindFirstChild("ClubMusic_Global_Security_Service")
+				or ServerStorage:FindFirstChild("ClubMusic_Global_Security_Service", true)
+			if bundleModule and bundleModule:IsA("ModuleScript") then
+				local bundleOk, bundle = pcall(require, bundleModule)
+				if bundleOk and typeof(bundle) == "table" then
+					cachedSecurityBundle = bundle
+				else
+					warn("[ClubMusic Global] Legacy security bundle failed to load: " .. tostring(bundle))
+				end
+			else
+				warn("[ClubMusic Global] No split security core or legacy bundle exists under ServerStorage.")
+			end
+		end
+		local exported = if cachedSecurityBundle then cachedSecurityBundle[securityExport] else nil
+		if typeof(exported) ~= "table" or type(exported.new) ~= "function" then
+			warn("[ClubMusic Global] Security export is unavailable: " .. moduleName)
+			return nil
+		end
+		return exported
+	end
+	-- Support canonical names and established instance-name aliases for non-security modules.
 	local candidates = OPTIONAL_GLOBAL_MODULE_ALIASES[moduleName] or {moduleName}
 	local module: Instance? = nil
 	local resolvedName = moduleName
@@ -891,114 +720,247 @@ local function loadOptionalGlobalModule(moduleName: string): any?
 	return result
 end
 
-local recoveryModule = loadOptionalGlobalModule("ClubMusic_Global_Recovery_Service")
-if recoveryModule then
-	local createOk, instance = pcall(function()
-		return recoveryModule.new({
-			isEnabled = function() return SERVICE_ENABLED end,
-			allowStoreOperation = allowGlobalQueueStoreOperation,
-			invalidateSnapshot = function()
-				if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
-					MusicGlobalQueueService:InvalidateSnapshot()
+-- Shared SafeCall diagnostics are optional and never gate core global behavior.
+local safeCallModule = loadOptionalGlobalModule("ClubMusic_Global_SafeCall_Service")
+local globalSafeCall: any = nil
+if safeCallModule then
+	local safeOk, safeInstance = pcall(function()
+		return safeCallModule.new({serviceName = "ClubMusicGlobal"})
+	end)
+	if safeOk and typeof(safeInstance) == "table"
+		and type(safeInstance.Run) == "function"
+		and type(safeInstance.GetStatus) == "function"
+		and type(safeInstance.GetRecent) == "function" then
+		globalSafeCall = safeInstance
+	else
+		warn("[ClubMusic][SafeCall] Diagnostics helper unavailable; existing protected-call behavior remains active: " .. tostring(safeInstance))
+	end
+end
+if globalSafeCall then
+	bindFunction("GetGlobalMemoryStoreStatus", function()
+	return {
+		sharedRateLimitsEnabled = budgetMap ~= nil and not memoryStoreCapacityLimited,
+		capacityLimited = memoryStoreCapacityLimited,
+		lastCapacityError = memoryStoreCapacityError,
+		mode = if budgetMap == nil then "LocalOnly" else (if memoryStoreCapacityLimited then "LocalFallback" else "Shared")
+	}
+end)
+
+bindFunction("GetGlobalSafeCallStatus", function()
+		return globalSafeCall:GetStatus()
+	end)
+	bindFunction("GetGlobalSafeCallRecent", function(limit: any)
+		return globalSafeCall:GetRecent(if finiteNumber(limit) then limit else 20)
+	end)
+	print("[ClubMusic][SafeCall] Diagnostics helper ready; maxRecords=50.")
+end
+
+-- Optional server-local registry. It records status only; it never controls services.
+do
+	local module = ServerStorage:FindFirstChild("ClubMusic_Local_Service_Registry")
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new)
+			if createOk and typeof(instance) == "table"
+				and type(instance.Register) == "function"
+				and type(instance.SetStatus) == "function"
+				and type(instance.GetStatus) == "function" then
+				globalServiceRegistry = instance
+				pcall(instance.SetStatus, instance, "GlobalAPI", "Healthy", "ServerStorage.ClubMusicGlobalAPI is available.")
+			if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function" then
+				pcall(instance.Register, instance, "ErrorHistory", globalErrorHandler, {"Report", "GetRecentErrors", "GetStatus"}, true)
+			else
+				pcall(instance.SetStatus, instance, "ErrorHistory", "Unavailable", "ClubMusicErrorHandler is not installed.")
+			end
+			else
+				warn("[ClubMusic Diagnostics] Local service registry initialization failed: " .. tostring(instance))
+			end
+		else
+			warn("[ClubMusic Diagnostics] Local service registry could not be loaded: " .. tostring(exported))
+		end
+	else
+		warn("[ClubMusic Diagnostics] Optional ClubMusic_Local_Service_Registry ModuleScript is not installed.")
+	end
+end
+
+local function updateRegistryStatus(name: string, state: string, detail: string)
+	if globalServiceRegistry then
+		pcall(globalServiceRegistry.SetStatus, globalServiceRegistry, name, state, detail)
+	end
+end
+
+-- Local ServerHealth probe: heartbeat timing and process memory only.
+do
+	local module = ServerStorage:FindFirstChild("ClubMusic_Server_Health_Service")
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new)
+			if createOk and typeof(instance) == "table" and type(instance.Start) == "function"
+				and type(instance.GetStatus) == "function" and type(instance.Stop) == "function" then
+				globalServerHealthService = instance
+				local startOk, started = pcall(instance.Start, instance)
+				if startOk and started == true then
+					if globalServiceRegistry then
+						pcall(globalServiceRegistry.Register, globalServiceRegistry, "ServerHealth", instance, {"Start", "GetStatus", "Stop"}, false)
+					end
+				else
+					globalServerHealthService = nil
+					updateRegistryStatus("ServerHealth", "Unavailable", "ServerHealth probe failed to start.")
+					warn("[ClubMusic Diagnostics] ServerHealth probe failed to start.")
 				end
-			end,
-			getSnapshot = function()
-				return MusicGlobalQueueService:GetSnapshot()
-			end,
-			initialRetrySeconds = 30,
-			maxRetrySeconds = 180,
-			reportError = reportOperationalError,
-		})
-	end)
-	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
-		globalRecoveryService = instance
-		globalRecoveryService:Start()
+			else
+				updateRegistryStatus("ServerHealth", "Unavailable", "ServerHealth module has an invalid interface.")
+				warn("[ClubMusic Diagnostics] ServerHealth module has an invalid interface.")
+			end
+		else
+			updateRegistryStatus("ServerHealth", "Unavailable", "ServerHealth module failed to load.")
+			warn("[ClubMusic Diagnostics] ServerHealth module failed to load: " .. tostring(exported))
+		end
 	else
-		warn("[ClubMusic Global] Could not initialize Global Recovery Service: " .. tostring(instance))
+		updateRegistryStatus("ServerHealth", "NotInstalled", "Optional ServerHealth module is not installed.")
+		warn("[ClubMusic Diagnostics] Optional ClubMusic_Server_Health_Service ModuleScript is not installed.")
 	end
 end
 
-local healthModule = loadOptionalGlobalModule("ClubMusic_Global_Health_Service")
-if healthModule and globalRecoveryService then
+-- Local Watchdog records progress pulses only; it never controls the observed systems.
+do
+	local module = ServerStorage:FindFirstChild("ClubMusic_Local_Watchdog_Service")
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new)
+			if createOk and typeof(instance) == "table" and type(instance.Pulse) == "function"
+				and type(instance.SetExpected) == "function" and type(instance.GetStatus) == "function" then
+				globalLocalWatchdog = instance
+				if globalServiceRegistry then
+					pcall(globalServiceRegistry.Register, globalServiceRegistry, "Watchdog", instance, {"Pulse", "SetExpected", "GetStatus"}, false)
+				end
+			else
+				updateRegistryStatus("Watchdog", "Unavailable", "Watchdog module has an invalid interface.")
+				warn("[ClubMusic Diagnostics] Watchdog module has an invalid interface.")
+			end
+		else
+			updateRegistryStatus("Watchdog", "Unavailable", "Watchdog module failed to load.")
+			warn("[ClubMusic Diagnostics] Watchdog module failed to load: " .. tostring(exported))
+		end
+	else
+		updateRegistryStatus("Watchdog", "NotInstalled", "Optional Watchdog module is not installed.")
+		warn("[ClubMusic Diagnostics] Optional ClubMusic_Local_Watchdog_Service ModuleScript is not installed.")
+	end
+end
+
+local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
+if diagnosticsModule then
 	local createOk, instance = pcall(function()
-		return healthModule.new({
+		return diagnosticsModule.new({
 			isEnabled = function() return SERVICE_ENABLED end,
-			getRecoveryStatus = function() return globalRecoveryService:GetStatus() end,
-			getSyncStatus = getGlobalSyncStatus,
+			getRegistryStatus = function() return if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "Unavailable", scope = "ServerLocal", detail = "Registry module is not installed."} end,
+			getServerHealthStatus = function() return if globalServerHealthService then globalServerHealthService:GetStatus() else nil end,
+			getWatchdogStatus = function() return if globalLocalWatchdog then globalLocalWatchdog:GetStatus() else nil end,
 			apiFolder = apiFolder,
-			queueModule = queueModule,
-			intervalSeconds = 30,
-			reportError = reportOperationalError,
+				getSyncStatus = getGlobalSyncStatus,
+			getRecentErrors = function()
+				if globalErrorHandler and type(globalErrorHandler.GetRecentErrors) == "function" then return globalErrorHandler.GetRecentErrors() end
+				return nil
+			end,
+			getErrorHistoryStatus = function()
+				return if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function"
+					then globalErrorHandler.GetStatus() else nil
+			end,
+			getMemoryStoreStatus = function() return {capacityLimited = memoryStoreCapacityLimited, lastCapacityError = memoryStoreCapacityError} end,
+			getAuthorizationStatus = function() return if globalAuthorizationService then globalAuthorizationService:GetStatus() else nil end,
+			getRateLimitStatus = function() return if globalRateLimitService then globalRateLimitService:GetStatus() else nil end,
+			getSecurityPolicyStatus = function() return if globalSecurityPolicyService then globalSecurityPolicyService:GetStatus() else nil end,
+			getSecurityMonitorStatus = function() return if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else nil end,
+			getMessageValidationStatus = function() return if globalMessageValidationService then globalMessageValidationService:GetStatus() else nil end,
+			getIdempotencyStatus = function() return if globalIdempotencyService then globalIdempotencyService:GetStatus() else nil end,
+			getAuditStatus = function() return if globalAuditService then globalAuditService:GetStatus() else nil end,
+			getEventLogStatus = function() return if globalEventLogService then globalEventLogService:GetStatus() else nil end,
+			getIncidentResponseStatus = function() return if globalIncidentResponseService then globalIncidentResponseService:GetStatus() else nil end,
 		})
 	end)
-	if createOk and instance and type(instance.Start) == "function" and type(instance.GetStatus) == "function" then
-		globalHealthService = instance
-		globalHealthService:Start()
+	if createOk and instance and type(instance.Start) == "function"
+		and type(instance.GetStatus) == "function" and type(instance.GetSnapshot) == "function" then
+		globalDiagnosticsService = instance
+		if globalServiceRegistry then pcall(globalServiceRegistry.Register, globalServiceRegistry, "Diagnostics", instance, {"Start", "Check", "GetStatus", "GetSnapshot", "GetMetrics"}, true) end
+		task.delay(4, function()
+			if globalDiagnosticsService == instance then
+				local startOk, startError = pcall(function() instance:Start() end)
+				if not startOk then warn("[ClubMusic Diagnostics] Delayed startup failed: " .. tostring(startError)) end
+			end
+		end)
 	else
-		warn("[ClubMusic Global] Could not initialize Global Health Service: " .. tostring(instance))
+		updateRegistryStatus("Diagnostics", "Unavailable", "Diagnostics coordinator failed to initialize.")
+		warn("[ClubMusic Global] Could not initialize lightweight Diagnostics Service: " .. tostring(instance))
 	end
+else
+	updateRegistryStatus("Diagnostics", "NotInstalled", "Diagnostics coordinator ModuleScript is not installed.")
+	warn("[ClubMusic Diagnostics] Optional ClubMusic_Global_Diagnostics_Service ModuleScript is not installed.")
 end
 
--- Operational services are optional modules and fail independently. They observe or
--- coordinate shared state; none of them owns playback or the global queue controller.
+-- Operational services are optional modules and fail independently. They manage
+-- shared configuration, moderation, security, and bounded diagnostics only.
 local function createOperationalService(moduleName: string, dependencies: {[string]: any}, requiredMethods: {string}): any?
 	-- These optional modules are cross-server infrastructure, not local playback
 	-- dependencies. Do not construct them in isolated Studio sessions.
-	if not SERVICE_ENABLED then return nil end
+	if not SERVICE_ENABLED then
+		updateRegistryStatus(moduleName, "Disabled", "Global service is disabled in this server.")
+		return nil
+	end
 	local module = loadOptionalGlobalModule(moduleName)
-	if not module then return nil end
+	if not module then
+		updateRegistryStatus(moduleName, "Unavailable", "Optional ModuleScript is not installed or failed to load.")
+		return nil
+	end
 	local ok, instance = pcall(function() return module.new(dependencies) end)
 	if not ok or typeof(instance) ~= "table" then
 		warn("[ClubMusic Global] Could not create " .. moduleName .. ": " .. tostring(instance))
+		updateRegistryStatus(moduleName, "Unavailable", "Service constructor failed.")
 		return nil
 	end
 	for _, methodName in ipairs(requiredMethods) do
 		if type(instance[methodName]) ~= "function" then
 			warn("[ClubMusic Global] " .. moduleName .. " is missing method " .. methodName)
+			updateRegistryStatus(moduleName, "Unavailable", "Required method missing: " .. methodName)
 			return nil
 		end
+	end
+	if globalServiceRegistry then
+		pcall(globalServiceRegistry.Register, globalServiceRegistry, moduleName, instance, requiredMethods, false)
 	end
 	return instance
 end
 
+
 local sharedDependencies = {
+	safeCall = globalSafeCall,
 	isEnabled = function() return SERVICE_ENABLED end,
 	memoryStoreService = MemoryStoreService,
 	dataStore = globalConfigStore,
-	allowStoreOperation = allowGlobalQueueStoreOperation,
+	allowStoreOperation = allowGlobalDataStoreOperation,
 	jobId = JOB_ID,
 	guid = function() return HttpService:GenerateGUID(false) end,
+	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
+	jsonDecode = function(value) return HttpService:JSONDecode(value) end,
 }
-globalConfigService = createOperationalService("ClubMusic_Global_Config_Service", sharedDependencies, {"Start", "GetStatus", "Get", "Set"})
-if globalConfigService then globalConfigService:Start() end
+globalConfigService = createOperationalService("ClubMusic_Global_Config_Service", sharedDependencies, {"Start", "GetStatus", "Get", "Set", "SetLocal"})
 
-globalRegistryService = createOperationalService("ClubMusic_Global_Server_Registry", {
-	isEnabled = function() return SERVICE_ENABLED end,
-	memoryStoreService = MemoryStoreService,
-	jobId = JOB_ID,
-	getHealth = function()
-		return if globalHealthService then globalHealthService:GetStatus().localState else "Unknown"
-	end,
-}, {"Start", "GetStatus", "GetServers"})
-if globalRegistryService then globalRegistryService:Start() end
+if globalConfigService then globalConfigService:Start() end
 
 local auditDependencies = table.clone(sharedDependencies)
 auditDependencies.isEnabled = function()
 	return SERVICE_ENABLED and globalConfigService ~= nil and globalConfigService:Get("auditEnabled") == true
 end
-local metricsDependencies = table.clone(sharedDependencies)
-metricsDependencies.isEnabled = function()
-	return SERVICE_ENABLED and globalConfigService ~= nil and globalConfigService:Get("metricsEnabled") == true
-end
-
-globalEventLogService = createOperationalService("ClubMusic_Global_Event_Log_Service", auditDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
-if globalEventLogService then globalEventLogService:Start() end
-
-globalMetricsService = createOperationalService("ClubMusic_Global_Metrics_Service", metricsDependencies, {"Start", "GetStatus", "GetAggregate", "Record", "ObserveLatency"})
-if globalMetricsService then globalMetricsService:Start() end
-
 globalAuditService = createOperationalService("ClubMusic_Global_Audit_Service", auditDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
 if globalAuditService then globalAuditService:Start() end
+
+globalEventLogService = if globalAuditService then createOperationalService("ClubMusic_Global_Event_Log_Service", {
+	isEnabled = auditDependencies.isEnabled,
+	auditService = globalAuditService,
+}, {"Start", "GetStatus", "Record", "GetRecent"}) else nil
+if globalEventLogService then globalEventLogService:Start() end
 
 globalRateLimitService = createOperationalService("ClubMusic_Global_RateLimit_Service", {
 	isEnabled = function() return SERVICE_ENABLED end,
@@ -1011,52 +973,58 @@ globalMaintenanceService = if globalConfigService then createOperationalService(
 	configService = globalConfigService,
 	publish = function(payload)
 		globalEventBindable:Fire(payload)
-		if globalEventLogService then globalEventLogService:Record("Maintenance", "Maintenance state changed", "Warning") end
 		if globalAuditService then globalAuditService:Record("Maintenance", 0, "global", if payload.enabled then "enabled" else "disabled") end
 	end,
 }, {"Start", "GetStatus", "Set"}) else nil
 if globalMaintenanceService then globalMaintenanceService:Start() end
 
-globalStateReconciliationService = createOperationalService("ClubMusic_Global_State_Reconciliation_Service", {
-	isEnabled = function() return SERVICE_ENABLED end,
-	getSnapshot = function() return MusicGlobalQueueService:GetSnapshot() end,
-}, {"Start", "GetStatus", "Reconcile"})
-if globalStateReconciliationService then globalStateReconciliationService:Start() end
+-- Authorization is owned by the installed SecurityCore module. There is no
+-- controller BindableFunction resolver or legacy authorization fallback.
+local authorizationModule = loadOptionalGlobalModule("ClubMusic_Global_Authorization_Service")
+if authorizationModule and type(authorizationModule.GetShared) == "function" then
+	local createOk, instance = pcall(function()
+		return authorizationModule.GetShared({
+			groupId = 500470662,
+			studioStaff = true,
+			onDenied = function(actorUserId, permission, count)
+				if globalAuditService then
+					pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", actorUserId,
+						permission, "repeated-privilege-denial:" .. tostring(count))
+				end
+			end,
+		})
+	end)
+	if createOk and typeof(instance) == "table"
+		and type(instance.Start) == "function"
+		and type(instance.GetStatus) == "function"
+		and type(instance.Check) == "function" then
+		globalAuthorizationService = instance
+		if globalServiceRegistry then pcall(globalServiceRegistry.Register, globalServiceRegistry, "Authorization", instance, {"Start", "GetStatus", "Check"}, true) end
+		local authStartOk, authStartResult = pcall(instance.Start, instance)
+		if not authStartOk or authStartResult ~= true then
+			warn("[ClubMusic][Authorization] SecurityCore authorization failed to start; protected actions remain denied.")
+			globalAuthorizationService = nil
+			updateRegistryStatus("Authorization", "Unavailable", "SecurityCore Authorization failed to start.")
+		end
+	else
+		warn("[ClubMusic][Authorization] SecurityCore authorization module could not be initialized: "
+			.. tostring(instance))
+		updateRegistryStatus("Authorization", "Unavailable", "SecurityCore Authorization could not initialize.")
+	end
+else
+	warn("[ClubMusic][Authorization] SecurityCore Authorization module is unavailable; protected actions remain denied.")
+	updateRegistryStatus("Authorization", "Unavailable", "SecurityCore Authorization ModuleScript is missing.")
+end
 
-globalWatchdogService = createOperationalService("ClubMusic_Global_Watchdog_Service", {
-	isEnabled = function() return SERVICE_ENABLED end,
-	getChecks = function()
-		local health = if globalHealthService then globalHealthService:GetStatus() else nil
-		local recovery = if globalRecoveryService then globalRecoveryService:GetStatus() else nil
-		return {
-			LocalHealth = health ~= nil and health.localState == "Healthy",
-			QueueModule = queueModule.Parent == ServerStorage and queueModule:IsA("ModuleScript"),
-			Recovery = recovery ~= nil and (recovery.state == "Healthy" or recovery.state == "Disabled"),
-			Registry = globalRegistryService ~= nil and globalRegistryService:GetStatus().state == "Healthy",
-		}
-	end,
-	reportError = reportOperationalError,
-}, {"Start", "GetStatus", "Check"})
-if globalWatchdogService then globalWatchdogService:Start() end
-
--- Security services remain independent; authorization denies by default until a trusted resolver exists.
-globalAuthorizationService = createOperationalService("ClubMusic_Global_Authorization_Service", {
-	isResolverAvailable = function()
-		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-		return resolver ~= nil and resolver:IsA("BindableFunction") and resolver.Parent == ServerStorage
-	end,
-	resolvePermission = function(actorUserId, permission)
-		local resolver = ServerStorage:FindFirstChild("ClubMusicAuthorizationResolver")
-		if not resolver or not resolver:IsA("BindableFunction") or resolver.Parent ~= ServerStorage then return false end
-		local ok, allowed = pcall(function() return resolver:Invoke(actorUserId, permission) end)
-		return ok and allowed == true
-	end,
-}, {"Start", "GetStatus", "Check"})
-if globalAuthorizationService then globalAuthorizationService:Start() end
 authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
-	if not globalAuthorizationService then return false end
-	local ok, allowed = pcall(globalAuthorizationService.Check, globalAuthorizationService, actorUserId, permission)
-	return ok and allowed == true
+	local service = globalAuthorizationService
+	if not service then return false end
+	local ok, allowed, reason = pcall(service.Check, service, actorUserId, permission)
+	if not ok then
+		warn("[ClubMusic][Authorization] SecurityCore Check failed; access denied: " .. string.sub(tostring(allowed), 1, 180))
+		return false
+	end
+	return allowed == true
 end
 
 globalSecurityPolicyService = createOperationalService("ClubMusic_Global_Security_Policy_Service", {
@@ -1064,20 +1032,33 @@ globalSecurityPolicyService = createOperationalService("ClubMusic_Global_Securit
 	authorize = authorizeGlobalActor,
 	onChange = function(key, value, revision, actor)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", actor, key, "policy-update") end
-		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecurityPolicyChanged", key, "Info") end
 	end,
 }, {"Start", "GetStatus", "Get", "GetAll", "Set"})
 if globalSecurityPolicyService then globalSecurityPolicyService:Start() end
 
 globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Security_Monitor_Service", {
 	isEnabled = function() return SERVICE_ENABLED and globalSecurityPolicyService ~= nil and globalSecurityPolicyService:Get("monitoringEnabled") == true end,
+	memoryStoreService = MemoryStoreService,
+	jobId = JOB_ID,
+	guid = function() return HttpService:GenerateGUID(false) end,
+	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
 	getThreshold = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("suspiciousSignalThreshold") else 8 end,
 	onAlert = function(signal, count)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", 0, signal, "threshold-reached:" .. tostring(count)) end
-		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecuritySignal", signal, "Warning") end
 	end,
-}, {"Start", "GetStatus", "Record"})
+}, {"Start", "GetStatus", "Record", "ForgetSubject"})
 if globalSecurityMonitorService then globalSecurityMonitorService:Start() end
+
+-- Local character-physics detections feed the existing bounded SecurityMonitor.
+-- This is telemetry only; it never changes enforcement or creates another storage map.
+bindFunction("RecordGlobalSecuritySignal", function(signal: any, subject: any)
+	if not globalSecurityMonitorService or typeof(signal) ~= "string"
+		or #signal < 1 or #signal > 48 then return false end
+	local safeSubject = if typeof(subject) == "string" then string.sub(subject, 1, 48) else "server"
+	local ok, recorded = pcall(globalSecurityMonitorService.Record,
+		globalSecurityMonitorService, signal, safeSubject)
+	return ok and recorded == true
+end)
 
 globalMessageValidationService = createOperationalService("ClubMusic_Global_Message_Validation_Service", {
 	getJobId = function() return JOB_ID end,
@@ -1102,74 +1083,124 @@ globalIncidentResponseService = createOperationalService("ClubMusic_Global_Incid
 	guid = function() return HttpService:GenerateGUID(false) end,
 	onChange = function(action, incident)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", incident.actorUserId, incident.kind, "incident-" .. action) end
-		if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, "SecurityIncident", incident.kind .. ":" .. incident.id, action) end
 	end,
 }, {"Start", "GetStatus", "Open", "Resolve", "GetRecent"})
 if globalIncidentResponseService then globalIncidentResponseService:Start() end
 
--- Route the shared ErrorHandler's new, deduplicated records into the existing
--- operational event log. Only metadata is forwarded; messages and tracebacks
--- remain in the bounded local diagnostic history and server Output.
-if globalErrorHandler and type(globalErrorHandler.SetReporter) == "function" then
-	local reporterOk, reporterResult = pcall(globalErrorHandler.SetReporter, function(record)
-		if typeof(record) ~= "table" or not globalEventLogService then return end
-		local subsystem = if typeof(record.subsystem) == "string" then string.sub(record.subsystem, 1, 64) else "Unknown"
-		local operation = if typeof(record.operation) == "string" then string.sub(record.operation, 1, 96) else "Unknown"
-		local errorId = if typeof(record.id) == "string" then string.sub(record.id, 1, 32) else "Unknown"
-		pcall(globalEventLogService.Record, globalEventLogService, "OperationalError", subsystem .. "." .. operation .. ":" .. errorId, "Error")
-	end)
-	if not reporterOk or reporterResult ~= true then
-		warn("[ClubMusic Global] Could not connect ErrorHandler telemetry reporter: " .. tostring(reporterResult))
+local janitorModule = loadOptionalGlobalModule("ClubMusic_Global_Connection_Janitor_Service")
+local lifecycleJanitor = nil
+if janitorModule then
+	local janitorOk,janitorResult=pcall(janitorModule.new)
+	if janitorOk and typeof(janitorResult)=="table" and type(janitorResult.Add)=="function"
+		and type(janitorResult.Cleanup)=="function" then
+		lifecycleJanitor=janitorResult
+	else
+		warn("[ClubMusic][SecurityJanitor] Lifecycle cleanup unavailable: "..tostring(janitorResult))
 	end
 end
+local function ownConnection(connection)
+	if lifecycleJanitor then lifecycleJanitor:Add(connection,"Disconnect") end
+	return connection
+end
+local function ownThread(thread)
+	if lifecycleJanitor then lifecycleJanitor:Add(thread,"Cancel") end
+	return thread
+end
+if lifecycleJanitor then
+	lifecycleJanitor:Add(function()
+		for _,service in pairs({
+			Audit=globalAuditService,
+			EventLog=globalEventLogService,
+			SecurityMonitor=globalSecurityMonitorService,
+			Idempotency=globalIdempotencyService,
+			IncidentResponse=globalIncidentResponseService,
+			Diagnostics=globalDiagnosticsService,
+			ServerHealth=globalServerHealthService,
+			Watchdog=globalLocalWatchdog,
+		}) do
+			if service and type(service.Stop)=="function" then pcall(service.Stop,service) end
+		end
+	end,true)
+	ownConnection(script.Destroying:Connect(function()
+		lifecycleJanitor:Cleanup()
+	end))
+end
 
-globalEventBindable.Event:Connect(function(event)
+ownConnection(globalEventBindable.Event:Connect(function(event)
 	if typeof(event) ~= "table" then return end
 	local kind = tostring(event.kind or "Unknown")
-	if globalEventLogService then pcall(globalEventLogService.Record, globalEventLogService, kind, "Global event received", "Info") end
-	if globalMetricsService then pcall(globalMetricsService.Record, globalMetricsService, "event:" .. kind, 1) end
+	if globalDiagnosticsService then pcall(globalDiagnosticsService.Record, globalDiagnosticsService, "event:" .. kind, 1) end
 	if globalAuditService then
 		if kind == "DJ" then
 			pcall(globalAuditService.Record, globalAuditService, "AdminAction", event.actorUserId, tostring(event.command or "unknown"), tostring(event.command or "unknown"))
-		elseif kind == "Catalog" then
+		elseif kind == "Catalog" and (event.senderJob == nil or event.senderJob == JOB_ID) then
 			pcall(globalAuditService.Record, globalAuditService, "CatalogChange", 0, "catalog", "received")
-		elseif kind == "QueueChanged" then
-			pcall(globalAuditService.Record, globalAuditService, "GlobalQueueChange", 0, "global-queue", "received")
-		elseif kind == "Moderation" then
-			pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", event.actorUserId, tostring(event.field or "moderation"), tostring(event.field or "moderation"))
+		elseif kind == "Moderation" and event.source ~= "reconciliation"
+			and (event.senderJob == nil or event.senderJob == JOB_ID) then
+			pcall(globalAuditService.Record, globalAuditService, "Moderation", event.actorUserId,
+				tostring(event.userId or "unknown"), tostring(event.field or "moderation") .. "=" .. tostring(event.value))
 		end
 	end
-end)
+end))
 
-bindFunction("GetGlobalServers", function(limit: any)
-	if not globalRegistryService then return false, {}, "Registry unavailable." end
-	return globalRegistryService:GetServers(limit)
-end)
+ownConnection(Players.PlayerRemoving:Connect(function(player)
+	local userId=tostring(player.UserId)
+	fallbackBuckets["user:"..userId]=nil
+	fallbackBuckets["state:"..userId]=nil
+	fallbackBuckets["audio:"..userId]=nil
+	for key in pairs(signalCounts) do
+		if string.sub(key,1,#userId+1)==userId..":" then signalCounts[key]=nil end
+	end
+	if globalSecurityMonitorService then
+		pcall(globalSecurityMonitorService.ForgetSubject,globalSecurityMonitorService,userId)
+	end
+end))
+
+local function getMessagingStatus(): {[string]: any}
+	local active, total = 0, 0
+	for _, state in pairs(subscriptionStatus) do
+		total += 1
+		if state == "Active" then active += 1 end
+	end
+	local state = if not SERVICE_ENABLED then "Disabled"
+		elseif total == 0 or active == 0 then "Starting"
+		elseif active < total then "Degraded"
+		else "Healthy"
+	return {
+		state = state,
+		published = messagingPublishSuccess,
+		publishFailures = messagingPublishFailures,
+		received = messagingReceived,
+		rejected = messagingRejected,
+		activeSubscriptions = active,
+		totalSubscriptions = total,
+		subscriptions = table.clone(subscriptionStatus),
+		lastError = messagingLastError,
+	}
+end
+
 bindFunction("GetGlobalMetrics", function()
-	if not globalMetricsService then return false, nil end
-	local aggregateOk, aggregate, aggregateError = globalMetricsService:GetAggregate()
-	local status = globalMetricsService:GetStatus()
-	status.aggregate = aggregate
-	return aggregateOk, status, aggregateError
+	if not globalDiagnosticsService then return false, nil end
+	return true, globalDiagnosticsService:GetMetrics()
 end)
-bindFunction("GetGlobalAudit", function(limit: any)
+bindFunction("GetGlobalAudit", function(limit: any, moderatorUserId: any)
 	if not globalAuditService then return false, {} end
-	return globalAuditService:GetRecent(limit)
-end)
-bindFunction("GetGlobalEventLog", function(limit: any)
-	if not globalEventLogService then return false, {} end
-	return globalEventLogService:GetRecent(limit)
+	return globalAuditService:GetRecent(limit, moderatorUserId)
 end)
 bindFunction("GetGlobalOperationalStatus", function()
 	local status = {
-		Registry = if globalRegistryService then globalRegistryService:GetStatus() else {state = "Unavailable"},
-		EventLog = if globalEventLogService then globalEventLogService:GetStatus() else {state = "Unavailable"},
-		Watchdog = if globalWatchdogService then globalWatchdogService:GetStatus() else {state = "Unavailable"},
+		Messaging = getMessagingStatus(),
+		Diagnostics = if globalDiagnosticsService then globalDiagnosticsService:GetStatus() else {state = "Unavailable"},
+		ServerHealth = if globalServerHealthService then globalServerHealthService:GetStatus() else {state = "NotInstalled"},
+		Watchdog = if globalLocalWatchdog then globalLocalWatchdog:GetStatus() else {state = "NotInstalled"},
+		ErrorHistory = if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function" then globalErrorHandler.GetStatus() else {state = "Unavailable"},
+		ServiceRegistry = if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "NotInstalled"},
 		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
 		Reconciliation = if globalStateReconciliationService then globalStateReconciliationService:GetStatus() else {state = "Unavailable"},
 		Maintenance = if globalMaintenanceService then globalMaintenanceService:GetStatus() else {state = "Unavailable"},
-		Metrics = if globalMetricsService then globalMetricsService:GetStatus() else {state = "Unavailable"},
+		Metrics = if globalDiagnosticsService then globalDiagnosticsService:GetMetrics() else {state = "Unavailable"},
 		Audit = if globalAuditService then globalAuditService:GetStatus() else {state = "Unavailable"},
+		EventLog = if globalEventLogService then globalEventLogService:GetStatus() else {state = "Unavailable"},
 		RateLimit = if globalRateLimitService then globalRateLimitService:GetStatus() else {state = "Unavailable"},
 		Authorization = if globalAuthorizationService then globalAuthorizationService:GetStatus() else {state = "Unavailable"},
 		SecurityMonitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else {state = "Unavailable"},
@@ -1200,20 +1231,33 @@ bindFunction("ConsumeGlobalRateLimit", function(key: any, capacity: any, refill:
 		or not finiteNumber(capacity) or not finiteNumber(refill) or not finiteNumber(cost) then return false, false end
 	return globalRateLimitService:Consume(key, capacity, refill, cost)
 end)
+bindFunction("RecordLocalWatchdogPulse", function(name: any, detail: any, healthy: any, metadata: any)
+	if not globalLocalWatchdog or typeof(name) ~= "string" or #name > 24
+		or (detail ~= nil and typeof(detail) ~= "string")
+		or (healthy ~= nil and typeof(healthy) ~= "boolean")
+		or (metadata ~= nil and typeof(metadata) ~= "table") then return false end
+	return globalLocalWatchdog:Pulse(name, detail, healthy, metadata)
+end)
 bindFunction("RecordGlobalMetric", function(name: any, value: any, latencySeconds: any)
-	if not globalMetricsService or typeof(name) ~= "string" or #name > 48 then return false end
-	globalMetricsService:Record(name, value)
-	if finiteNumber(latencySeconds) then globalMetricsService:ObserveLatency(name, latencySeconds) end
-	return true
+	if not globalDiagnosticsService or typeof(name) ~= "string" or #name > 48 then return false end
+	return globalDiagnosticsService:Record(name, value, latencySeconds)
 end)
 bindFunction("RecordGlobalAuditEvent", function(kind: any, actorUserId: any, target: any, action: any)
 	if not globalAuditService then return false end
 	return globalAuditService:Record(kind, actorUserId, target, action)
 end)
+bindFunction("RecordGlobalEvent", function(kind: any, detail: any, severity: any)
+	if not globalEventLogService then return false end
+	return globalEventLogService:Record(kind, detail, severity)
+end)
+bindFunction("GetGlobalEvents", function(limit: any)
+	if not globalEventLogService then return false, {} end
+	return globalEventLogService:GetRecent(limit)
+end)
 
 bindFunction("GetGlobalHealth", function()
-	if not globalHealthService then return false, nil end
-	return true, globalHealthService:GetStatus()
+	if not globalDiagnosticsService then return false, nil end
+	return true, globalDiagnosticsService:GetStatus()
 end)
 
 bindFunction("RunGlobalReconciliation", function(actorUserId: any)
@@ -1231,46 +1275,10 @@ end)
 -- Server-only diagnostic snapshot for trusted scripts in ServerStorage.
 -- This API performs no DataStore/MessagingService calls and never changes service state.
 bindFunction("GetGlobalDiagnostics", function()
-	local healthOk, health = pcall(function()
-		return if globalHealthService then globalHealthService:GetStatus() else nil
-	end)
-	local recoveryOk, recovery = pcall(function()
-		return if globalRecoveryService then globalRecoveryService:GetStatus() else nil
-	end)
-	local errors = {}
-	local errorsAvailable = false
-	if globalErrorHandler and type(globalErrorHandler.GetRecentErrors) == "function" then
-		local errorsOk, result = pcall(globalErrorHandler.GetRecentErrors)
-		if errorsOk and typeof(result) == "table" then
-			errorsAvailable = true
-			local firstIndex = math.max(1, #result - 19)
-			for index = firstIndex, #result do
-				local record = result[index]
-				if typeof(record) == "table" then
-					table.insert(errors, table.clone(record))
-				end
-			end
-		end
-	end
-	return true, {
-		generatedAt = os.time(),
-		serviceEnabled = SERVICE_ENABLED,
-		healthAvailable = healthOk and health ~= nil,
-		health = if healthOk then health else nil,
-		recoveryAvailable = recoveryOk and recovery ~= nil,
-		recovery = if recoveryOk then recovery else nil,
-		syncStatus = getGlobalSyncStatus(),
-		errorHistoryAvailable = errorsAvailable,
-		recentErrors = errors,
-		operationalServices = {
-			registry = if globalRegistryService then globalRegistryService:GetStatus() else nil,
-			metrics = if globalMetricsService then globalMetricsService:GetStatus() else nil,
-			watchdog = if globalWatchdogService then globalWatchdogService:GetStatus() else nil,
-			securityMonitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else nil,
-			messageValidation = if globalMessageValidationService then globalMessageValidationService:GetStatus() else nil,
-			idempotency = if globalIdempotencyService then globalIdempotencyService:GetStatus() else nil,
-		},
-	}
+	if not globalDiagnosticsService then return false, nil end
+	local ok, snapshot = pcall(globalDiagnosticsService.GetSnapshot, globalDiagnosticsService)
+	if not ok or typeof(snapshot) ~= "table" then return false, nil end
+	return true, snapshot
 end)
 
 bindFunction("ReportSignal", function(userId: any, signal: any, detail: any)
@@ -1300,6 +1308,7 @@ bindFunction("AuthorizeGlobalAction", function(actorUserId: any, permission: any
 end)
 bindFunction("GetGlobalSecurityStatus", function()
 	return true, {
+		SecurityCoreInstall = table.clone(securityCoreInstallStatus),
 		Authorization = if globalAuthorizationService then globalAuthorizationService:GetStatus() else {state = "Unavailable"},
 		Monitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else {state = "Unavailable"},
 		MessageValidation = if globalMessageValidationService then globalMessageValidationService:GetStatus() else {state = "Unavailable"},
@@ -1316,21 +1325,21 @@ bindFunction("SetGlobalSecurityPolicy", function(key: any, value: any, actorUser
 	if not globalSecurityPolicyService or typeof(key) ~= "string" then return false, "Policy service unavailable." end
 	return globalSecurityPolicyService:Set(key, value, actorUserId)
 end)
-bindFunction("ReserveGlobalOperation", function(operationId: any, ttlSeconds: any)
+bindFunction("ReserveGlobalOperation", function(operationId: any, ttlSeconds: any, crossServer: any)
 	if not globalIdempotencyService then return false, "Idempotency service unavailable." end
-	return globalIdempotencyService:Reserve(operationId, ttlSeconds)
+	return globalIdempotencyService:Reserve(operationId, ttlSeconds, crossServer == true)
 end)
-bindFunction("OpenGlobalSecurityIncident", function(kind: any, summary: any, actorUserId: any)
+bindFunction("OpenGlobalSecurityIncident", function(kind: any, summary: any, actorUserId: any, subjectUserId: any)
 	if not globalIncidentResponseService then return false, "Incident service unavailable." end
-	return globalIncidentResponseService:Open(kind, summary, actorUserId)
+	return globalIncidentResponseService:Open(kind, summary, actorUserId, subjectUserId)
 end)
 bindFunction("ResolveGlobalSecurityIncident", function(id: any, actorUserId: any)
 	if not globalIncidentResponseService then return false, "Incident service unavailable." end
 	return globalIncidentResponseService:Resolve(id, actorUserId)
 end)
-bindFunction("GetGlobalSecurityIncidents", function(limit: any)
+bindFunction("GetGlobalSecurityIncidents", function(limit: any, moderatorUserId: any)
 	if not globalIncidentResponseService then return false, {} end
-	return globalIncidentResponseService:GetRecent(limit)
+	return globalIncidentResponseService:GetRecent(limit, moderatorUserId)
 end)
 
 local function validEnvelope(data: any, topic: string): boolean
@@ -1338,6 +1347,7 @@ local function validEnvelope(data: any, topic: string): boolean
 	-- If the dedicated validator is missing or failed to initialize, reject the
 	-- message and let the existing subscription/reconciliation paths recover.
 	if not globalMessageValidationService then
+		messagingRejected += 1
 		if globalSecurityMonitorService then
 			pcall(globalSecurityMonitorService.Record, globalSecurityMonitorService, "message_validator_unavailable", topic)
 		end
@@ -1345,6 +1355,7 @@ local function validEnvelope(data: any, topic: string): boolean
 	end
 	local ok, valid = pcall(globalMessageValidationService.Validate, globalMessageValidationService, topic, data)
 	if not ok or valid ~= true then
+		messagingRejected += 1
 		if globalSecurityMonitorService then
 			pcall(globalSecurityMonitorService.Record, globalSecurityMonitorService, "invalid_message", topic)
 		end
@@ -1383,8 +1394,10 @@ local function onModeration(message)
 	local data = message.Data
 	if not validEnvelope(data, "Moderation") or data.kind ~= "Moderation" or not unseen(data.id) then return end
 	if not finiteNumber(data.userId) or (data.field ~= "globalBan" and data.field ~= "requestBlocked")
-		or typeof(data.value) ~= "boolean" then return end
-	globalEventBindable:Fire({kind = "Moderation", userId = data.userId, field = data.field, value = data.value, reason = cleanText(data.reason, CONFIG.MaxModerationReasonLength)})
+		or typeof(data.value) ~= "boolean" or not finiteNumber(data.actorUserId) or data.actorUserId < 1 then return end
+	globalEventBindable:Fire({kind = "Moderation", userId = data.userId, field = data.field, value = data.value,
+		actorUserId = math.floor(data.actorUserId), reason = cleanText(data.reason, CONFIG.MaxModerationReasonLength),
+		senderJob = data.senderJob})
 end
 
 local function onXPBoost(message)
@@ -1394,17 +1407,6 @@ local function onXPBoost(message)
 		or not finiteNumber(data.expiresAt) or data.expiresAt < 0 then return end
 	local lowerExpiry = if finiteNumber(data.lowerExpiresAt) and data.lowerExpiresAt > os.time() then math.floor(data.lowerExpiresAt) else 0
 	globalEventBindable:Fire({kind = "XPBoost", multiplier = data.multiplier, expiresAt = math.floor(data.expiresAt), lowerExpiresAt = lowerExpiry})
-end
-
-local function onDJ(message)
-	local data = message.Data
-	if not validEnvelope(data, "DJ") or data.kind ~= "DJ" or not unseen(data.id) then return end
-	if not allowedDJCommands[data.command] or not finiteNumber(data.actorUserId) then return end
-	local payload = if typeof(data.payload) == "table" then data.payload else {}
-	if data.command == "SetRequestLock" and typeof(payload.locked) ~= "boolean" then return end
-	if data.command == "SetPlaybackPaused" and (typeof(payload.paused) ~= "boolean" or not finiteNumber(payload.revision)) then return end
-	if data.command == "Restart" and not finiteNumber(payload.revision) then return end
-	globalEventBindable:Fire({kind = "DJ", command = data.command, payload = payload, actorUserId = data.actorUserId, senderJob = data.senderJob})
 end
 
 local function onCatalog(message)
@@ -1420,64 +1422,41 @@ local function onCatalog(message)
 	end
 end
 
-local function onQueueChanged(message)
-	local data = if typeof(message) == "table" then message.Data else nil
-	if not validEnvelope(data, "Queue") then return end
-	if data.kind == "ServerHeartbeat" then
-		if typeof(data.serverJob) ~= "string" or #data.serverJob < 1 or #data.serverJob > 64
-			or data.serverJob ~= data.senderJob or data.serverJob == JOB_ID then return end
-		peerHeartbeats[data.serverJob] = {seenAt = os.clock(), reportedAt = math.floor(data.at)}
-		hasSeenSyncPeer = true
-		return
-	end
-	if data.kind ~= "QueueChanged" or not finiteNumber(data.revision) then return end
-	if not unseen(data.id) then return end
-	-- The originating controller already applies the state returned by its
-	-- successful mutation. Ignore our own echo to avoid a redundant DataStore read.
-	if data.senderJob == JOB_ID then return end
-	lastQueueNotificationAt = os.clock()
-	queueNotificationsReceived += 1
-	-- MessagingService is an invalidation signal: discard this server's short-lived
-	-- snapshot cache before the controller asks for the authoritative queue state.
-	if typeof(MusicGlobalQueueService.InvalidateSnapshot) == "function" then
-		MusicGlobalQueueService:InvalidateSnapshot()
-	end
-	globalEventBindable:Fire({kind = "QueueChanged", revision = math.floor(data.revision), senderJob = data.senderJob})
-end
-
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
-	task.spawn(function()
+	ownThread(task.spawn(function()
 		while SERVICE_ENABLED do
-			local ok, err = pcall(function() MessagingService:SubscribeAsync(topic, callback) end)
+			local ok, subscriptionOrError = pcall(function()
+				return MessagingService:SubscribeAsync(topic, function(message)
+					messagingReceived += 1
+					local callbackOk, callbackError = pcall(callback, message)
+					if not callbackOk then
+						messagingRejected += 1
+						messagingLastError = string.sub(tostring(callbackError), 1, 240)
+						warn("[ClubMusic Global] Message handler failed on topic " .. topic .. ": " .. tostring(callbackError))
+					end
+				end)
+				end)
 			if ok then
+				if typeof(subscriptionOrError)=="RBXScriptConnection" then ownConnection(subscriptionOrError) end
 				-- Subscription stays active after SubscribeAsync returns.
 				subscriptionStatus[topic] = "Active"
 				print("[ClubMusic Global] Messaging subscription active: " .. topic)
 				return
 			end
 			subscriptionStatus[topic] = "Retrying"
-			warn("[ClubMusic Global] Subscription failed for " .. topic .. "; retrying: " .. tostring(err))
+			warn("[ClubMusic Global] Subscription failed for " .. topic .. "; retrying: " .. tostring(subscriptionOrError))
 			task.wait(CONFIG.SubscriptionRetrySeconds)
 		end
 		subscriptionStatus[topic] = "Disabled"
-	end)
+	end))
 end
 
 if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.Announcements, onAnnouncement)
 	subscribeWithRetry(CONFIG.Topics.Moderation, onModeration)
-	subscribeWithRetry(CONFIG.Topics.DJ, onDJ)
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
-	subscribeWithRetry(CONFIG.Topics.Queue, onQueueChanged)
-	task.spawn(function()
-		while SERVICE_ENABLED do
-			local published = publishTopic(CONFIG.Topics.Queue, {kind = "ServerHeartbeat", serverJob = JOB_ID})
-			if published then lastHeartbeatPublishAt = os.clock() end
-			task.wait(SYNC_HEARTBEAT_INTERVAL_SECONDS)
-		end
-	end)
 else
 	if not CONFIG.Enabled then
 		warn("[ClubMusic Global] Cross-server service is disabled by CONFIG.Enabled=false; local UI controller remains fully functional.")
@@ -1488,73 +1467,32 @@ else
 	end
 end
 
--- Reconcile both the latest pause state and the latest restart independently.
--- Emit in revision order so an older pause cannot override a newer restart (or vice versa).
-task.spawn(function()
-	while true do
-		if SERVICE_ENABLED then
-			local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
-			if allowed and shared then
-				local ok, state = pcall(function() return globalControlStore:GetAsync("playbackControl") end)
-				if ok and typeof(state) == "table" and finiteNumber(state.revision) then
-					local events = {}
-					if finiteNumber(state.restartRevision) and state.restartRevision > 0 then
-						table.insert(events, {revision = math.floor(state.restartRevision), command = "Restart"})
-					end
-					if finiteNumber(state.stopRevision) and state.stopRevision > 0 then
-						table.insert(events, {revision = math.floor(state.stopRevision), command = "ForceStop"})
-					end
-					if finiteNumber(state.pauseRevision) and state.pauseRevision > 0 and typeof(state.paused) == "boolean" then
-						table.insert(events, {revision = math.floor(state.pauseRevision), command = "SetPlaybackPaused", paused = state.paused})
-					end
-					table.sort(events, function(a, b) return a.revision < b.revision end)
-					for _, event in ipairs(events) do
-						globalEventBindable:Fire({
-							kind = "DJ", command = event.command,
-							payload = {revision = event.revision, paused = event.paused},
-							actorUserId = if finiteNumber(state.updatedBy) then state.updatedBy else 0,
-						})
-					end
-				elseif not ok then
-					warn("[ClubMusic Global] Playback-control reconciliation read failed: " .. tostring(state))
-				end
-			end
-		end
-		task.wait(60 + math.random(0, 15))
-	end
-end)
-
 -- Reconcile online users against durable moderation records so missed MessagingService
 -- deliveries do not leave a stale request-block/ban state indefinitely.
-task.spawn(function()
+ownThread(task.spawn(function()
 	while true do
 		task.wait(CONFIG.ModerationReconcileSeconds)
 		if SERVICE_ENABLED then
-			local lockBudgetAllowed, lockBudgetShared = consumeShared("all:datastore", 90, 15, 1)
-			local lockOk, lockState = false, nil
-			if lockBudgetShared and lockBudgetAllowed then
-				lockOk, lockState = pcall(function() return globalControlStore:GetAsync("requestLock") end)
-			end
-			if lockOk and typeof(lockState) == "table" and typeof(lockState.locked) == "boolean" then
-				globalEventBindable:Fire({kind = "DJ", command = "SetRequestLock", payload = {locked = lockState.locked}, actorUserId = 0})
-			elseif not lockOk then
-				globalEventBindable:Fire({kind = "DJ", command = "SetRequestLock", payload = {locked = true}, actorUserId = 0})
-			else
-				globalEventBindable:Fire({kind = "DJ", command = "SetRequestLock", payload = {locked = false}, actorUserId = 0})
-			end
 			for _, player in ipairs(Players:GetPlayers()) do
 				local data = getModeration(player.UserId)
 				if data.lookupFailed then
-					player:Kick("Global moderation is temporarily unavailable. Please rejoin shortly.")
+					-- Unknown is not the same as banned. Keep moderation-sensitive
+					-- actions closed while the authoritative record is unavailable,
+					-- but never kick a player solely because a backend read failed.
+					player:SetAttribute("GlobalModerationPending", true)
 				else
-					if data.globalBan == true then player:Kick("You are globally banned from this experience.") end
-					globalEventBindable:Fire({kind = "Moderation", userId = player.UserId, field = "requestBlocked", value = data.requestBlocked == true})
+					if data.globalBan == true then
+						player:Kick("You are globally banned from this experience.")
+					else
+						player:SetAttribute("GlobalModerationPending", false)
+					end
+					globalEventBindable:Fire({kind = "Moderation", userId = player.UserId, field = "requestBlocked", value = data.requestBlocked == true, source = "reconciliation"})
 				end
 				task.wait(1.1)
 			end
 		end
 	end
-end)
+end))
 
 local function globalXPState(record: any): (number, number, number)
 	if typeof(record) ~= "table" or typeof(record.boosts) ~= "table" then return 1, 0, 0 end

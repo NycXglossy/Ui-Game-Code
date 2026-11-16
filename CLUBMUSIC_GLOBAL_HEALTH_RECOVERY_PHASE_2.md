@@ -12,12 +12,12 @@ This phase does not add another queue controller, playback owner, persistent log
 
 ## Installation
 
-1. Replace the existing `ClubMusic_Global_Service_server_1` Script in ServerScriptService with the updated source.
-2. Keep the existing `ClubMusic_Global_Health_Service`, `ClubMusic_Global_Recovery_Service`, `ClubMusicErrorHandler`, and `MusicGlobalQueueService` ModuleScripts in ServerStorage.
-3. Do not create a second global service Script or another copy of any existing module.
-4. Keep `EnableInStudio = false` unless intentionally testing cross-server behavior in a dedicated test universe.
+1. Keep exactly one `ClubMusic_Global_Service_server_1` Script in ServerScriptService.
+2. Install the current local diagnostics ModuleScripts directly under ServerStorage: `ClubMusic_Global_Diagnostics_Service`, `ClubMusic_Local_Service_Registry`, `ClubMusic_Server_Health_Service`, `ClubMusic_Local_Watchdog_Service`, and `ClubMusicErrorHandler`.
+3. Keep the existing queue manager and other service modules in their established locations; do not create a second queue controller or playback owner.
+4. Keep `EnableInStudio = false` unless intentionally testing existing cross-server features in a dedicated test universe.
 
-No new Explorer instances are required for Phase 2.
+The former standalone `ClubMusic_Global_Health_Service` and `ClubMusic_Global_Recovery_Service` modules are not part of the current branch and should not be recreated from this historical phase note.
 
 ## API
 
@@ -57,7 +57,7 @@ The existing `GetGlobalHealth` BindableFunction remains unchanged.
 - It is a BindableFunction under ServerStorage, not a RemoteFunction; it is intended for trusted server scripts, not clients.
 - The response is a point-in-time snapshot. Health and recovery may change immediately after it is returned.
 - Error history remains local to the current server process. This phase does not provide cross-server aggregation or durable history.
-- The response includes error details and tracebacks; keep consumers server-side and do not forward the records to clients.
+- The server-side snapshot includes error details and tracebacks for trusted server scripts only. Client-facing admin output must use aggregate counts and must never forward error records or tracebacks.
 
 ## Verification
 
@@ -72,21 +72,33 @@ Static source verification confirms:
 No Roblox Studio runtime or live multi-server test was run by the assistant. In a dedicated test server, invoke the BindableFunction from a temporary trusted server Script and confirm that it returns health/recovery data without changing queue or playback state.
 
 
-## Cross-server synchronization verification
+## Local-only diagnostics boundary
 
-The health monitor now distinguishes shared-storage health from MessagingService synchronization health.
+Diagnostics are intentionally scoped to the current Roblox server process.
 
-- Each enabled server publishes a small `ServerHeartbeat` message every 60 seconds on the existing global queue topic, `ClubMusic_Global_Queue_v1`.
-- The existing queue-topic subscriber recognizes heartbeat messages separately from `QueueChanged` notifications; heartbeat messages do not invalidate queue snapshots or trigger playback changes.
-- The monitor tracks whether the queue-topic subscription is active, whether heartbeat publishing succeeds, and whether peer-server heartbeats arrive.
-- A peer is considered stale after 180 seconds without a heartbeat.
-- If a peer was previously observed and all peer heartbeats go stale, sync status becomes `Degraded`. If no peer has ever been observed, sync is `Unverified`, not falsely reported as confirmed healthy or definitively broken. This is expected when only one server is running.
-- A failed queue-topic subscription or repeated heartbeat publish failure is reported as `Degraded`.
+- No diagnostic heartbeat is published through MessagingService.
+- No peer-server presence, health, metrics, or error history is collected.
+- No diagnostic data is stored in DataStore or MemoryStore.
+- Diagnostics do not issue kicks, restarts, queue repairs, or other control actions.
+- No diagnostic details or server error records are exposed through client remotes.
+- Existing cross-server features (such as moderation notifications and shared configuration) continue to operate independently; diagnostics only report the local server's view of their status.
 
-The health monitor exposes `syncState` and `syncStatus` in `GetGlobalHealth`, and the diagnostics response includes a top-level `syncStatus`. The API folder also publishes `SyncStatus` and `SyncPeerCount` attributes.
+The current GetGlobalDiagnostics snapshot remains a trusted server-to-server-script BindableFunction under ServerStorage. It is read-only and returns a point-in-time view.
 
-The heartbeat checks the same MessagingService topic used for queue invalidation, so a peer heartbeat confirms that the queue-topic subscription is receiving messages. It does not guarantee that every individual queue event is delivered; DataStore remains authoritative and the existing snapshot reconciliation path remains the correctness mechanism.
+## Follow-on diagnostics improvements
 
-## Phase 2 verification additions
+The repository implementation now covers stages 1–7:
 
-Static source verification confirms the queue-topic heartbeat is separate from queue mutation handling, peer heartbeats are time-bounded, the subscription state is tracked, and sync state is surfaced through health and diagnostics. No Roblox Studio runtime or multi-server test was run by the assistant.
+- The diagnostics coordinator preserves existing query APIs and uses bounded snapshot copying.
+- The local service registry, ServerHealth probes, and observational Watchdog are installed as optional local components.
+- Metrics and ErrorHistory remain bounded and server-local.
+- The trusted admin snapshot includes SecurityCore health observations without exposing error records or tracebacks.
+- Opt-in ClientDiagnostics measures local FPS, frame spikes, memory, and ping. Its measurements remain on the client and are explicitly untrusted.
+
+The remaining stage is to audit all diagnostic consumers, remove obsolete duplicate paths only after migration is proven, and complete Studio/published-server verification. Preserve the existing public BindableFunction names and metric counter compatibility during that work.
+
+No diagnostics component may become an enforcement authority or a dependency of SecurityCore.
+
+## Verification
+
+The coordinator and registry changes are statically inspected and committed. Roblox Studio runtime testing is still required. Test the same-server BindableFunction, ensure the snapshot stays read-only, and confirm that disabling or removing an optional probe reports NotInstalled/Unavailable rather than falsely marking the whole service unhealthy.

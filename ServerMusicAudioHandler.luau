@@ -6,6 +6,14 @@
 local ServerMusicAudioHandler = {}
 ServerMusicAudioHandler.__index = ServerMusicAudioHandler
 
+local function finiteNonNegative(value: any): number
+	local numberValue = tonumber(value)
+	if numberValue == nil or numberValue ~= numberValue or numberValue == math.huge or numberValue == -math.huge then
+		return 0
+	end
+	return math.max(0, numberValue)
+end
+
 export type Context = {
 	Sound: Sound?,
 	Backend: any?,
@@ -69,20 +77,25 @@ function ServerMusicAudioHandler:GetPlaybackSnapshot()
 	end
 	local backend = self.context.Backend
 	if typeof(backend) == "table" then
-		local player = self:GetAudioPlayer()
 		local ok, ready = pcall(function() return backend:IsReady() end)
 		local playingOk, playing = pcall(function() return backend:IsPlaying() end)
 		local positionOk, position = pcall(function() return backend:GetTimePosition() end)
 		local lengthOk, length = pcall(function() return backend:GetTimeLength() end)
 		local asset = ""
-		if player then pcall(function() asset = tostring(player.Asset) end) end
+		local assetOk, backendAsset = pcall(function() return backend:GetAsset() end)
+		if assetOk and typeof(backendAsset) == "string" then
+			asset = backendAsset
+		else
+			local player = self:GetAudioPlayer()
+			if player then pcall(function() asset = tostring(player.Asset) end) end
+		end
 		return {
 			kind = "AudioPlayer",
 			ready = ok and ready == true,
 			playing = playingOk and playing == true,
 			paused = self:IsPaused(),
-			position = positionOk and math.max(0, tonumber(position) or 0) or 0,
-			length = lengthOk and math.max(0, tonumber(length) or 0) or 0,
+			position = positionOk and finiteNonNegative(position) or 0,
+			length = lengthOk and finiteNonNegative(length) or 0,
 			asset = asset,
 		}
 	end
