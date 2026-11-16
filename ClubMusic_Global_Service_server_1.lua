@@ -819,6 +819,7 @@ do
 			warn("[ClubMusic Diagnostics] ServerHealth module failed to load: " .. tostring(exported))
 		end
 	else
+		updateRegistryStatus("ServerHealth", "NotInstalled", "Optional ServerHealth module is not installed.")
 		warn("[ClubMusic Diagnostics] Optional ClubMusic_Server_Health_Service ModuleScript is not installed.")
 	end
 end
@@ -845,6 +846,7 @@ do
 			warn("[ClubMusic Diagnostics] Watchdog module failed to load: " .. tostring(exported))
 		end
 	else
+		updateRegistryStatus("Watchdog", "NotInstalled", "Optional Watchdog module is not installed.")
 		warn("[ClubMusic Diagnostics] Optional ClubMusic_Local_Watchdog_Service ModuleScript is not installed.")
 	end
 end
@@ -890,8 +892,12 @@ if diagnosticsModule then
 			end
 		end)
 	else
+		updateRegistryStatus("Diagnostics", "Unavailable", "Diagnostics coordinator failed to initialize.")
 		warn("[ClubMusic Global] Could not initialize lightweight Diagnostics Service: " .. tostring(instance))
 	end
+else
+	updateRegistryStatus("Diagnostics", "NotInstalled", "Diagnostics coordinator ModuleScript is not installed.")
+	warn("[ClubMusic Diagnostics] Optional ClubMusic_Global_Diagnostics_Service ModuleScript is not installed.")
 end
 
 -- Operational services are optional modules and fail independently. They manage
