@@ -4,6 +4,45 @@
 -- centralizes module delivery and does not merge or weaken their responsibilities.
 local Bundle = {}
 
+-- Per-server MemoryStore protection shared by the bundled security services.
+-- Enforcement and authorization never depend on this reporting/storage guard.
+local StorageGuard = (function()
+	local tokens = 5
+	local updatedAt = os.clock()
+	local openUntil = 0
+	local failures = 0
+	local function isThrottleOrTimeout(err)
+		local message = string.lower(tostring(err))
+		return string.find(message, "thrott", 1, true) ~= nil
+			or string.find(message, "timeout", 1, true) ~= nil
+			or string.find(message, "timed out", 1, true) ~= nil
+			or string.find(message, "request queue", 1, true) ~= nil
+	end
+	local function Allow()
+		local now = os.clock()
+		if now < openUntil then return false, "CircuitOpen" end
+		tokens = math.min(5, tokens + math.max(0, now - updatedAt) * 0.2)
+		updatedAt = now
+		if tokens < 1 then return false, "LocalTokenBucketEmpty" end
+		tokens -= 1
+		return true
+	end
+	local function Failure(err)
+		if isThrottleOrTimeout(err) then
+			failures += 1
+			openUntil = os.clock() + math.random(15, 30)
+			return true
+		end
+		return false
+	end
+	local function GetStatus()
+		return {tokens = tokens, circuitOpen = os.clock() < openUntil,
+			openForSeconds = math.max(0, openUntil - os.clock()), failures = failures,
+			refillPerSecond = 0.2, capacity = 5}
+	end
+	return {Allow = Allow, Failure = Failure, GetStatus = GetStatus}
+end)()
+
 Bundle.Authorization = (function()
 --!strict
 -- Local authorization adapter for ClubMusic global controls.
@@ -215,31 +254,60 @@ end)()
 
 Bundle.Idempotency = (function()
 --!strict
--- Atomic cross-server operation reservations using expiring MemoryStore keys.
+-- Local-first idempotency. Shared atomic reservations are opt-in for cross-server actions.
 local Service={}; Service.__index=Service
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Idempotency dependencies missing")
- return setmetatable({d=d,map=d.memoryStoreService:GetHashMap(d.mapName or "ClubMusic_GlobalIdempotency_v1"),reserved=0,duplicates=0},Service)
+ return setmetatable({d=d,map=d.memoryStoreService:GetHashMap(d.mapName or "ClubMusic_GlobalIdempotency_v1"),
+	seenNonces={},reserved=0,duplicates=0,sharedChecks=0,localHits=0,lastError=nil},Service)
 end
-function Service:Reserve(operationId,ttlSeconds)
- if not self.d.isEnabled() or type(operationId)~="string" or #operationId<1 or #operationId>47 then return false,"Invalid or disabled operation." end
- local ttl=math.clamp(math.floor(tonumber(ttlSeconds) or (self.d.getDefaultTtl and self.d.getDefaultTtl()) or 60),30,180)
+function Service:Reserve(operationId,ttlSeconds,crossServer)
+ if type(operationId)~="string" or #operationId<1 or #operationId>55 then return false,"Invalid operation key." end
+ local now=os.clock()
+ for key,entry in pairs(self.seenNonces) do if entry.expiresAt<=now then self.seenNonces[key]=nil end end
+ if self.seenNonces[operationId] then
+  self.localHits+=1; self.duplicates+=1; return false,"Duplicate operation."
+ end
+ local ttl=math.clamp(math.floor(tonumber(ttlSeconds) or 120),60,300)
+ -- A purely local action never queries MemoryStore.
+ if crossServer~=true then
+  self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),bytes=160}
+  self.reserved+=1
+  return true,"ReservedLocal"
+ end
+ if not self.d.isEnabled() then return false,"Cross-server idempotency is disabled." end
+ local allowed,reason=StorageGuard.Allow()
+ if not allowed then return false,reason end
  local token=self.d.guid()
+ local key="TT:IDEM:"..operationId
+ if #key>64 then return false,"Idempotency key exceeds 64 characters." end
+ self.sharedChecks+=1
  local ok,result=pcall(function()
-  return self.map:UpdateAsync("op:"..operationId,function(old)
+  return self.map:UpdateAsync(key,function(old)
    if typeof(old)=="table" and type(old.token)=="string" then return old end
-   return {token=token,createdAt=os.time()}
+   return {token=token,createdAt=os.time(),action=string.sub(operationId,1,48)}
   end,ttl)
  end)
- if not ok then return false,"Idempotency storage unavailable." end
- if typeof(result)=="table" and result.token==token then self.reserved+=1; return true,"Reserved" end
- self.duplicates+=1; return false,"Duplicate operation."
+ if not ok then
+  self.lastError=tostring(result); StorageGuard.Failure(result)
+  return false,"Idempotency storage unavailable."
+ end
+ if typeof(result)=="table" and result.token==token then
+  self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),bytes=160}
+  self.reserved+=1; self.lastError=nil; return true,"Reserved"
+ end
+ self.duplicates+=1
+ self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),bytes=160}
+ return false,"Duplicate operation."
 end
-function Service:GetStatus() return {state=if self.d.isEnabled() then "Ready" else "Disabled",reserved=self.reserved,duplicates=self.duplicates} end
+function Service:GetStatus()
+ return {state=if self.d.isEnabled() then "Ready" else "Disabled",reserved=self.reserved,
+  duplicates=self.duplicates,localCacheHits=self.localHits,sharedChecks=self.sharedChecks,
+  keyStrategy="Direct transaction key",recordBytes={min=100,max=250},storageGuard=StorageGuard.GetStatus()}
+end
 function Service:Start() return true end
-function Service:Stop() end
+function Service:Stop() table.clear(self.seenNonces) end
 return Service
-
 end)()
 
 Bundle.SecurityMonitor = (function()
@@ -318,36 +386,121 @@ end)()
 
 Bundle.Audit = (function()
 --!strict
--- Append-only, expiring audit events; bounded and excludes arbitrary payloads.
+-- Local bounded audit queue; compact JSON batches are written to sharded expiring keys.
 local Service={}; Service.__index=Service
-local ALLOWED={AdminAction=true,CatalogChange=true,GlobalQueueChange=true,SecurityEvent=true,Maintenance=true}
+local ALLOWED={AdminAction=true,CatalogChange=true,GlobalQueueChange=true,SecurityEvent=true,Maintenance=true,Moderation=true}
+local MAX_ITEMS=200
+local MAX_PAYLOAD=24500
+local TTL=3600
+local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderation" then 3 else if kind=="AdminAction" then 2 else 1 end
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Audit dependencies missing")
- local self=setmetatable({d=d,written=0,lastError=nil},Service)
- self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalAudit_v1"); return self
+ local self=setmetatable({d=d,written=0,queued=0,droppedLow=0,lastError=nil,buffer={},lastFlushAt=0,
+  readCache=nil,readCacheAt=0,flushRunning=false},Service)
+ self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalAudit_v1")
+ return self
+end
+function Service:_enqueue(record)
+ if #self.buffer>=MAX_ITEMS then
+  local lowestIndex,lowestSeverity=nil,math.huge
+  for i,item in ipairs(self.buffer) do
+   local level=severity(item.kind)
+   if level<lowestSeverity then lowestIndex,lowestSeverity=i,level end
+  end
+  if lowestIndex and lowestSeverity<3 then table.remove(self.buffer,lowestIndex); self.droppedLow+=1
+  else self.droppedLow+=1; return false end
+ end
+ table.insert(self.buffer,record); self.queued+=1
+ return true
 end
 function Service:Record(kind,actorUserId,target,action)
  if not self.d.isEnabled() or not ALLOWED[kind] then return false end
  local actor=if type(actorUserId)=="number" and actorUserId>0 then math.floor(actorUserId) else 0
- local safeTarget=if type(target)=="string" then string.sub(target,1,32) else ""
- local safeAction=if type(action)=="string" then string.sub(action,1,32) else ""
- local id=tostring(os.time())..":"..self.d.jobId..":"..tostring(self.d.guid())
- local record={kind=kind,actorUserId=actor,target=safeTarget,action=safeAction,jobId=self.d.jobId,at=os.time()}
- local ok,err=pcall(function() self.map:SetAsync(id,record,21600,os.time()) end)
- if ok then self.written+=1 else self.lastError=tostring(err) end
- return ok
+ local record={kind=kind,actorUserId=actor,target=if type(target)=="string" then string.sub(target,1,32) else "",
+  action=if type(action)=="string" then string.sub(action,1,32) else "",jobId=self.d.jobId,at=os.time(),
+  severity=severity(kind)}
+ return self:_enqueue(record)
+end
+function Service:_flush()
+ if not self.d.isEnabled() or #self.buffer<1 then return false end
+ local now=os.clock()
+ if now-self.lastFlushAt<15 then return false end
+ local allowed,reason=StorageGuard.Allow()
+ if not allowed then self.lastError=reason; return false end
+ local batch={}
+ local count=math.min(100,#self.buffer)
+ for i=1,count do table.insert(batch,self.buffer[i]) end
+ local encodedOk,payload=pcall(self.d.jsonEncode,batch)
+ if not encodedOk or type(payload)~="string" then self.lastError="Audit JSON serialization failed."; return false end
+ while #payload>MAX_PAYLOAD and #batch>1 do
+  table.remove(batch)
+  encodedOk,payload=pcall(self.d.jsonEncode,batch)
+  if not encodedOk or type(payload)~="string" then self.lastError="Audit JSON serialization failed."; return false end
+ end
+ if #payload>MAX_PAYLOAD then
+  -- Trim optional detail fields before ever dropping a high-severity event.
+  for _,item in ipairs(batch) do item.target=string.sub(item.target,1,16); item.action=string.sub(item.action,1,16) end
+  encodedOk,payload=pcall(self.d.jsonEncode,batch)
+  if not encodedOk or type(payload)~="string" or #payload>MAX_PAYLOAD then self.lastError="Audit batch exceeds payload ceiling."; return false end
+ end
+ local bucket=math.floor(os.time()/30)
+ local shard=(bucket%3)+1
+ local job=string.sub(tostring(self.d.jobId or "server"),1,32)
+ local key="TT:A:"..tostring(shard)..":"..job..":"..tostring(bucket)
+ if #key>64 then key=string.sub(key,1,64) end
+ local writeOk,writeError=pcall(function() self.map:SetAsync(key,payload,TTL,os.time()) end)
+ if not writeOk then
+  self.lastError=tostring(writeError); StorageGuard.Failure(writeError); return false
+ end
+ for _=1,#batch do table.remove(self.buffer,1) end
+ self.written+=#batch; self.lastFlushAt=now; self.lastError=nil; self.readCache=nil
+ return true
 end
 function Service:GetRecent(limit)
  if not self.d.isEnabled() then return false,{} end
- local ok,result=pcall(function() return self.map:GetRangeAsync(Enum.SortDirection.Descending,math.clamp(tonumber(limit) or 20,1,50)) end)
- if not ok then self.lastError=tostring(result); return false,{} end
- local out={}; for _,entry in ipairs(result) do if typeof(entry.value)=="table" then table.insert(out,table.clone(entry.value)) end end; return true,out
+ local now=os.clock()
+ if self.readCache and now-self.readCacheAt<10 then
+  local cached={}; for i,item in ipairs(self.readCache) do if i>math.clamp(math.floor(tonumber(limit) or 20),1,50) then break end; table.insert(cached,table.clone(item)) end
+  return true,cached
+ end
+ local allowed,reason=StorageGuard.Allow()
+ if not allowed then self.lastError=reason; return false,{} end
+ local ok,result=pcall(function() return self.map:GetRangeAsync(Enum.SortDirection.Descending,50) end)
+ if not ok then self.lastError=tostring(result); StorageGuard.Failure(result); return false,{} end
+ local out={}
+ for _,entry in ipairs(result) do
+  if type(entry.value)=="string" then
+   local decodeOk,decoded=pcall(self.d.jsonDecode,entry.value)
+   if decodeOk and typeof(decoded)=="table" then for _,item in ipairs(decoded) do if typeof(item)=="table" then table.insert(out,item) end end end
+  elseif typeof(entry.value)=="table" then table.insert(out,table.clone(entry.value)) end
+ end
+ table.sort(out,function(a,b) return (tonumber(a.at) or 0)>(tonumber(b.at) or 0) end)
+ self.readCache=out; self.readCacheAt=now
+ local selected={}; for i=1,math.min(#out,math.clamp(math.floor(tonumber(limit) or 20),1,50)) do table.insert(selected,table.clone(out[i])) end
+ return true,selected
 end
-function Service:GetStatus() return {state=if self.d.isEnabled() then "Healthy" else "Disabled",written=self.written,lastError=self.lastError} end
-function Service:Start() return true end
-function Service:Stop() end
+function Service:GetStatus()
+ return {state=if self.d.isEnabled() then "Healthy" else "Disabled",written=self.written,
+  queued=#self.buffer,droppedLowSeverity=self.droppedLow,lastError=self.lastError,
+  eventsPerBatch={min=50,max=100},payloadTargetBytes=MAX_PAYLOAD,flushSeconds={min=15,max=30},
+  maxFlushesPerMinute=4,ttlSeconds=TTL,shards=3,storageGuard=StorageGuard.GetStatus()}
+end
+function Service:Start()
+ if self.flushRunning then return true end
+ self.flushRunning=true
+ task.spawn(function()
+  while self.flushRunning do
+   task.wait(22.5)
+   if #self.buffer>=50 then self:_flush() end
+  end
+ end)
+ return true
+end
+function Service:Stop()
+ self.flushRunning=false
+ -- Do not attempt unbounded shutdown writes; remaining records expire with this server.
+end
 return Service
-
 end)()
 
 Bundle.IncidentResponse = (function()
