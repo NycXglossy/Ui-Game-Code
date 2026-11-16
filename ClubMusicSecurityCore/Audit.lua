@@ -9,6 +9,23 @@ local ALLOWED={AdminAction=true,CatalogChange=true,SecurityEvent=true,Maintenanc
 local MAX_ITEMS=200
 local MAX_PAYLOAD=24000
 local TTL=900
+local READ_CACHE_CAPACITY=32
+local function cacheRead(self,key,value,now)
+	if self.readCache[key]==nil then
+		local count=0
+		local oldestKey,oldestAt=nil,math.huge
+		for existingKey,stamp in pairs(self.readCacheAt) do
+			count+=1
+			if stamp<oldestAt then oldestAt=stamp; oldestKey=existingKey end
+		end
+		if count>=READ_CACHE_CAPACITY and oldestKey then
+			self.readCache[oldestKey]=nil
+			self.readCacheAt[oldestKey]=nil
+		end
+	end
+	self.readCache[key]=value
+	self.readCacheAt[key]=now
+end
 local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderation" then 3 else if kind=="AdminAction" then 2 else 1 end
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Audit dependencies missing")
@@ -128,7 +145,7 @@ function Service:GetRecent(limit,moderatorUserId)
   elseif typeof(entry.value)=="table" then table.insert(out,table.clone(entry.value)) end
  end
  table.sort(out,function(a,b) return (tonumber(a.at) or 0)>(tonumber(b.at) or 0) end)
- self.readCache[cacheKey]=out; self.readCacheAt[cacheKey]=now
+ cacheRead(self,cacheKey,out,now)
  local selected={}; for i=1,math.min(#out,math.clamp(math.floor(tonumber(limit) or 20),1,50)) do table.insert(selected,table.clone(out[i])) end
  return true,selected
 end
