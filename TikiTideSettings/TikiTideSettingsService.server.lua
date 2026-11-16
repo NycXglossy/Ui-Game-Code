@@ -379,8 +379,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 			teleportValidationService.Complete,
 			ticket,
 			player,
-			player,
-			ownRoot.Position
+			player
 		)
 		if not completeOk or verified ~= true then
 			return fail("Teleport position could not be verified.")
