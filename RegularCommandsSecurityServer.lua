@@ -182,16 +182,34 @@ return function(_K: any)
 	end
 
 	local function logAction(command: any, policy: any, targets: {Player}, value: any)
-		if type(_K.log) ~= "function" then return end
 		local id = actorUserId(command)
 		local targetCount = #targets
 		local valueText = if value == nil then "default" elseif typeof(value) == "boolean" then tostring(value) else tostring(value)
+		local commandName = tostring(command.definition.name)
 		local message = string.format(
 			"Security-authorized Kohl's command: command=%s property=%s targets=%d value=%s",
-			tostring(command.definition.name), policy.property, targetCount, string.sub(valueText, 1, 24)
+			commandName, policy.property, targetCount, string.sub(valueText, 1, 24)
 		)
-		local ok, err = pcall(_K.log, message, "COMMAND", id)
-		if not ok then warn("[Tiki Tide Security][Kohl's] Audit log failed: " .. tostring(err)) end
+		if type(_K.log) == "function" then
+			local ok, err = pcall(_K.log, message, "COMMAND", id)
+			if not ok then warn("[Tiki Tide Security][Kohl's] Kohl's log failed: " .. tostring(err)) end
+		end
+		-- Send the successful action to the existing unified SecurityCore Audit.
+		-- This is best-effort reporting and does not affect command execution.
+		local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+		local audit = api and api:IsA("Folder") and api:FindFirstChild("RecordGlobalAuditEvent")
+		if audit and audit:IsA("BindableFunction") then
+			task.spawn(function()
+				local ok, recorded = pcall(function()
+					return audit:Invoke("AdminAction", id or 0, tostring(targetCount) .. " target(s)", "kohls:" .. policy.property)
+				end)
+				if not ok or recorded ~= true then
+					warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit did not accept command=" .. commandName)
+				end
+			end)
+		else
+			warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit API is unavailable; Kohl's command log remains the fallback.")
+		end
 	end
 
 	local wrappedDefinitions = setmetatable({}, {__mode = "k"})
@@ -256,6 +274,13 @@ return function(_K: any)
 		local actorId = actorUserId(command)
 		if not actorId then return false, "This administrative command requires a live server player." end
 		if not authorize(actorId, policy.permission) then
+			task.spawn(function()
+				local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+				local report = api and api:IsA("Folder") and api:FindFirstChild("ReportSignal")
+				if report and report:IsA("BindableFunction") then
+					pcall(function() report:Invoke(actorId, "kohls_regular_command_denied", commandName) end)
+				end
+			end)
 			return false, if policy.permission == "GlobalConfig"
 				then "Tiki Tide owner/co-owner authorization is required for global movement settings."
 				else "Tiki Tide administrator authorization is required for player movement commands."
