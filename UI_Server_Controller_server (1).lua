@@ -3977,7 +3977,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	if productData.type == "XPBoost" then
 		-- The global per-PurchaseId journal is authoritative for XP boosts.
 		-- Do not write XP receipts into the legacy profile receipt map.
-		processedReceipts[receiptId] = true
+		rememberProcessedReceipt(receiptId)
 		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Global XP boost activation completed")
 		notify(player, string.format("%dx global XP boost activated!", productData.multiplier), "ok")
 		publishState(nil)
@@ -3992,13 +3992,13 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	-- A receipt already in the durable ledger was granted by an earlier callback/server.
 	-- The loaded profile already contains its reward, so never apply it twice in memory.
 	if alreadyProcessed or processedReceipts[receiptId] then
-		processedReceipts[receiptId] = true
+		rememberProcessedReceipt(receiptId)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	if profiles[userId] ~= profile then return Enum.ProductPurchaseDecision.NotProcessedYet end
 	if USE_STUDIO_MEMORY_PROFILES then ControllerFunctions.applyReceiptToMemory(profile, productData) end
 	receiptMemoryApplied[receiptId] = nil
-	processedReceipts[receiptId] = true
+	rememberProcessedReceipt(receiptId)
 	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Receipt persistence completed and reward application proceeded")
 	player:SetAttribute("Tickets", profile.tickets)
 	player:SetAttribute("Coins", profile.coins)
