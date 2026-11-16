@@ -2916,6 +2916,11 @@ ControllerFunctions.scheduleProfileSave = function(player: Player)
 	end)
 end
 
+ControllerFunctions.recordDiagnosticPulse = function(name: string, detail: string, healthy: boolean?, metadata: {[string]: any}?)
+	local ok, recorded = ControllerFunctions.globalInvoke("RecordLocalWatchdogPulse", name, detail, healthy, metadata)
+	return ok and recorded == true
+end
+
 -- Queue / Auto DJ ---------------------------------------------------------------
 
 ControllerFunctions.makeEntry = function(track: Track, source: string, player: Player?): QueueEntry
@@ -3046,7 +3051,10 @@ ControllerFunctions.nextPlaylistTrack = function(): Track?
 end
 
 ControllerFunctions.topUpAuto = function()
-	if autoQueueHold then return end
+	if autoQueueHold then
+		ControllerFunctions.recordDiagnosticPulse("AutoDJ", "refill-held", true, {queueDepth = #queue})
+		return
+	end
 -- Auto DJ refills only this server's queue.
 	local guard = 0
 	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
@@ -3067,6 +3075,11 @@ ControllerFunctions.topUpAuto = function()
 		end
 		queueManager:Insert(#queue + 1, entry)
 	end
+	local healthy = #queue >= CONFIG.AutoQueueTarget
+	ControllerFunctions.recordDiagnosticPulse("AutoDJ",
+		if healthy then "refill-complete" else "no-playable-catalog-tracks",
+		healthy, {queueDepth = #queue, target = CONFIG.AutoQueueTarget})
+	ControllerFunctions.recordDiagnosticPulse("Queue", "queue-refill-observed", true, {queueDepth = #queue})
 end
 
 ControllerFunctions.clearAutomaticQueue = function()
@@ -6297,6 +6310,14 @@ task.spawn(function()
 			nowPlaying.elapsed += 1
 		end
 		ticks += 1
+		ControllerFunctions.recordDiagnosticPulse("Playback", "playback-clock-tick", true, {
+			trackId = nowPlaying.trackId,
+			queueDepth = #queue,
+			elapsed = nowPlaying.elapsed,
+		})
+		if ticks % 30 == 0 then
+			ControllerFunctions.recordDiagnosticPulse("Queue", "queue-state-sampled", true, {queueDepth = #queue})
+		end
 
 		local currentGeneration = playbackGeneration
 		local shouldAdvance = not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
