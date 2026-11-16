@@ -62,3 +62,8 @@ The Security Core installer now includes `SanityValidation` before `TeleportVali
 - Rejection does not automatically mean exploit intent; record evidence and correlate before moderation.
 - No automatic kick/ban is enabled by this phase.
 - No Studio or published-server runtime tests have been performed.
+
+
+## Phase 7 update
+
+Detection-only avatar/accessory monitoring now runs from the main server controller; see `CLUBMUSIC_PHASE7_AVATAR_ACCESSORY_VALIDATION.md`. It records server-observed anomalies without stripping accessories or punishing players.
