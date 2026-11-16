@@ -18,11 +18,14 @@ local StorageGuard = (function()
 			or string.find(message, "timed out", 1, true) ~= nil
 			or string.find(message, "request queue", 1, true) ~= nil
 	end
-	local function Allow()
+	local function Allow(priority)
 		local now = os.clock()
 		if now < openUntil then return false, "CircuitOpen" end
 		tokens = math.min(5, tokens + math.max(0, now - updatedAt) * 0.2)
 		updatedAt = now
+		-- Keep two tokens available for critical idempotency and incident writes.
+		-- Audit and moderator reads cannot consume this reserved capacity.
+		if priority ~= "critical" and tokens <= 2 then return false, "CriticalCapacityReserved" end
 		if tokens < 1 then return false, "LocalTokenBucketEmpty" end
 		tokens -= 1
 		return true
@@ -259,24 +262,38 @@ local Service={}; Service.__index=Service
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Idempotency dependencies missing")
  return setmetatable({d=d,map=d.memoryStoreService:GetHashMap(d.mapName or "ClubMusic_GlobalIdempotency_v1"),
-	seenNonces={},reserved=0,duplicates=0,sharedChecks=0,localHits=0,lastError=nil},Service)
+	seenNonces={},reserved=0,duplicates=0,sharedChecks=0,localHits=0,lastError=nil,
+	sharedWindowAt=0,sharedWindowCount=0},Service)
 end
 function Service:Reserve(operationId,ttlSeconds,crossServer)
  if type(operationId)~="string" or #operationId<1 or #operationId>55 then return false,"Invalid operation key." end
  local now=os.clock()
- for key,entry in pairs(self.seenNonces) do if entry.expiresAt<=now then self.seenNonces[key]=nil end end
+ local localCount=0
+ local oldestKey,oldestAt=nil,math.huge
+ for key,entry in pairs(self.seenNonces) do
+  if entry.expiresAt<=now then self.seenNonces[key]=nil
+  else
+   localCount+=1
+   local created=tonumber(entry.createdClock) or 0
+   if created<oldestAt then oldestKey,oldestAt=key,created end
+  end
+ end
+ if localCount>=512 and oldestKey then self.seenNonces[oldestKey]=nil end
  if self.seenNonces[operationId] then
   self.localHits+=1; self.duplicates+=1; return false,"Duplicate operation."
  end
  local ttl=math.clamp(math.floor(tonumber(ttlSeconds) or 120),60,300)
  -- A purely local action never queries MemoryStore.
  if crossServer~=true then
-  self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),bytes=160}
+  self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),createdClock=now,bytes=160}
   self.reserved+=1
   return true,"ReservedLocal"
  end
  if not self.d.isEnabled() then return false,"Cross-server idempotency is disabled." end
- local allowed,reason=StorageGuard.Allow()
+ if now-self.sharedWindowAt>=1 then self.sharedWindowAt=now; self.sharedWindowCount=0 end
+ if self.sharedWindowCount>=2 then return false,"Cross-server idempotency check rate limited." end
+ self.sharedWindowCount+=1
+ local allowed,reason=StorageGuard.Allow("critical")
  if not allowed then return false,reason end
  local token=self.d.guid()
  local key="TT:IDEM:"..operationId
@@ -293,11 +310,11 @@ function Service:Reserve(operationId,ttlSeconds,crossServer)
   return false,"Idempotency storage unavailable."
  end
  if typeof(result)=="table" and result.token==token then
-  self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),bytes=160}
+  self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),createdClock=now,bytes=160}
   self.reserved+=1; self.lastError=nil; return true,"Reserved"
  end
  self.duplicates+=1
- self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),bytes=160}
+ self.seenNonces[operationId]={expiresAt=now+ttl,createdAt=os.time(),createdClock=now,bytes=160}
  return false,"Duplicate operation."
 end
 function Service:GetStatus()
@@ -384,9 +401,9 @@ function Service:Record(signal,subject)
  return true,entry.count
 end
 function Service:_flush()
- if not self.map or not self.d.isEnabled() or self.eventCount<25 then return false end
+ if not self.map or not self.d.isEnabled() or self.eventCount<1 then return false end
  if os.clock()-self.lastFlushAt<5 then return false end
- local allowed,reason=StorageGuard.Allow()
+ local allowed,reason=StorageGuard.Allow("low")
  if not allowed then self.lastError=reason; return false end
  local batch={}
  for offset=1,math.min(50,self.eventCount) do
@@ -480,9 +497,9 @@ Bundle.Audit = (function()
 --!strict
 -- Local bounded audit queue; compact JSON batches are written to sharded expiring keys.
 local Service={}; Service.__index=Service
-local ALLOWED={AdminAction=true,CatalogChange=true,GlobalQueueChange=true,SecurityEvent=true,Maintenance=true,Moderation=true}
+local ALLOWED={AdminAction=true,CatalogChange=true,SecurityEvent=true,Maintenance=true,Moderation=true}
 local MAX_ITEMS=200
-local MAX_PAYLOAD=24500
+local MAX_PAYLOAD=24000
 local TTL=3600
 local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderation" then 3 else if kind=="AdminAction" then 2 else 1 end
 function Service.new(d)
@@ -569,7 +586,7 @@ function Service:GetRecent(limit,moderatorUserId)
   local cached={}; for i,item in ipairs(self.readCache[cacheKey]) do if i>math.clamp(math.floor(tonumber(limit) or 20),1,50) then break end; table.insert(cached,table.clone(item)) end
   return true,cached
  end
- local allowed,reason=StorageGuard.Allow()
+ local allowed,reason=StorageGuard.Allow("low")
  if not allowed then self.lastError=reason; return false,{} end
  local ok,result=pcall(function() return self.map:GetRangeAsync(Enum.SortDirection.Descending,50) end)
  if not ok then self.lastError=tostring(result); StorageGuard.Failure(result); return false,{} end
@@ -597,7 +614,7 @@ function Service:Start()
  task.spawn(function()
   while self.flushRunning do
    task.wait(22.5)
-   if self.bufferCount>=50 then self:_flush() end
+   if self.bufferCount>0 then self:_flush() end
   end
  end)
  return true
@@ -634,7 +651,7 @@ function Service:Open(kind,summary,actorUserId,subjectUserId)
   return true,existing.id,"Coalesced"
  end
  if now-self.lastWriteAt<1 then return false,"Incident write rate limited." end
- local allowed,reason=StorageGuard.Allow()
+ local allowed,reason=StorageGuard.Allow("critical")
  if not allowed then self.pendingFlags[userId]=(self.pendingFlags[userId] or 0)+1; return false,reason end
  local item
  local ok,result=pcall(function()
@@ -651,11 +668,17 @@ function Service:Open(kind,summary,actorUserId,subjectUserId)
      openedAt=os.time(),lastFlagAt=os.time(),actorUserId=actorUserId,state="Open",
      eventCount=1+(self.pendingFlags[userId] or 0)}
    end
+   local encodedOk,encoded=pcall(self.d.jsonEncode,nextItem)
+   if not encodedOk or type(encoded)~="string" or #encoded>5120 then
+    item=nil
+    return old
+   end
    item=nextItem
    return nextItem
   end,math.clamp(math.floor(tonumber(self.d.getTtlSeconds and self.d.getTtlSeconds()) or 3600),3600,86400),os.time())
  end)
  if not ok then self.lastError=tostring(result); StorageGuard.Failure(result); self.pendingFlags[userId]=(self.pendingFlags[userId] or 0)+1; return false,"Incident storage unavailable." end
+ if item==nil then return false,"Incident snapshot exceeds the 5 KB safety limit." end
  self.lastWriteAt=now; self.pendingFlags[userId]=nil; self.activeByUser[userId]=item
  self.opened+=1; self.readCache={}; self.readCacheAt={}
  if type(self.d.onChange)=="function" then pcall(self.d.onChange,"opened",item) end
@@ -666,7 +689,7 @@ function Service:Resolve(id,actorUserId)
  if self.d.authorize(actorUserId,"IncidentResponse")~=true then return false,"Incident response permission denied." end
  local now=os.clock()
  if now-self.lastWriteAt<1 then return false,"Incident write rate limited." end
- local allowed,reason=StorageGuard.Allow()
+ local allowed,reason=StorageGuard.Allow("critical")
  if not allowed then return false,reason end
  local ok,result=pcall(function()
   local resolved=self.map:UpdateAsync(id,function(old)
