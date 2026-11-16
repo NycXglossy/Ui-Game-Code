@@ -2677,17 +2677,24 @@ ControllerFunctions.firstFilledSlot = function(profile: Profile): number?
 	return nil
 end
 
+-- Per-session cache of text that has passed Roblox broadcast filtering.
+-- Profile text is preserved if TextService is temporarily unavailable, but is never
+-- replicated until the current value has been filtered successfully.
+local filteredTitleTextByUserId: {[number]: {[number]: string}} = {}
+
 -- Mirrors the active slot onto player attributes for the overhead title script.
 -- Legacy attributes (CustomTitle/TitleColor/TitleStyle/ShowCustomTitle) are kept up to date as well.
 ControllerFunctions.applyTitleAttributes = function(player: Player, profile: Profile)
 	local slot = profile.titleSlots[profile.activeSlot]
+	local safeTexts = filteredTitleTextByUserId[player.UserId]
+	local safeText = if safeTexts then safeTexts[profile.activeSlot] else nil
 	-- Replicate the equipped collection tag on join as well as after equip actions.
 	-- The overhead renderer consumes this cosmetic attribute; ownership remains server-authoritative.
 	player:SetAttribute("EquippedTag", if typeof(profile.equippedTag) == "string" then profile.equippedTag else "")
 	player:SetAttribute("TitleSlotsUnlocked", profile.unlockedSlots)
 	player:SetAttribute("TitleSlot", profile.activeSlot)
 	player:SetAttribute("ShowCustomTitle", profile.showCustomTitle)
-	if slot == nil then
+	if slot == nil or typeof(safeText) ~= "string" or safeText == "" then
 		player:SetAttribute("CustomTitle", "")
 		player:SetAttribute("TitleColor", "gold")
 		player:SetAttribute("TitleStyle", "normal")
@@ -2702,7 +2709,7 @@ ControllerFunctions.applyTitleAttributes = function(player: Player, profile: Pro
 		player:SetAttribute("TitleDistance", 80)
 		return
 	end
-	player:SetAttribute("CustomTitle", slot.text)
+	player:SetAttribute("CustomTitle", safeText)
 	player:SetAttribute("TitleColor", if slot.effect == "fixed" then slot.set else "gold")
 	player:SetAttribute("TitleStyle", slot.style)
 	player:SetAttribute("TitleEffect", slot.effect)
@@ -2726,6 +2733,26 @@ ControllerFunctions.filterTitleText = function(player: Player, rawText: string):
 	end)
 	if not ok or typeof(result) ~= "string" then return nil end
 	return ControllerFunctions.truncateUtf8(result, MAX_CUSTOM_TITLE_LENGTH)
+end
+
+-- Re-filter persisted titles before they can be selected or replicated. The cache
+-- is session-local and keyed by slot; failed filtering leaves saved profile data
+-- intact but keeps that title hidden until a later successful retry.
+ControllerFunctions.ensureFilteredTitleSlot = function(player: Player, profile: Profile, slotNumber: number): boolean
+	local slot = profile.titleSlots[slotNumber]
+	if not slot then return false end
+	local safeTexts = filteredTitleTextByUserId[player.UserId]
+	if safeTexts and safeTexts[slotNumber] == slot.text then return true end
+	local filtered = ControllerFunctions.filterTitleText(player, slot.text)
+	if filtered == nil or filtered == "" then return false end
+	if player.Parent ~= Players or profile.titleSlots[slotNumber] ~= slot then return false end
+	slot.text = filtered
+	if not safeTexts then
+		safeTexts = {}
+		filteredTitleTextByUserId[player.UserId] = safeTexts
+	end
+	safeTexts[slotNumber] = filtered
+	return true
 end
 
 -- Profiles --------------------------------------------------------------------
@@ -2796,6 +2823,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 		warn("[ClubMusic] Profile load/lock failed for " .. player.Name .. ": " .. lastError .. ". Profile remains unavailable; refusing to save defaults.")
 		return false
 	end
+	filteredTitleTextByUserId[player.UserId] = {}
 	if typeof(data) == "table" then
 		profile.xp = math.clamp(math.floor(tonumber(data.xp) or 0), 0, 9007199254740000)
 		profile.tickets = math.max(0, tonumber(data.tickets) or 0)
@@ -2867,6 +2895,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 				if filteredText and filteredText ~= "" then
 					legacy.text = filteredText
 					profile.titleSlots[1] = legacy
+					filteredTitleTextByUserId[player.UserId][1] = filteredText
 				else
 					warn("[ClubMusic] Legacy custom title migration was skipped because Roblox text filtering failed for userId " .. tostring(player.UserId))
 				end
@@ -2886,6 +2915,11 @@ ControllerFunctions.loadProfile = function(player: Player)
 	-- The active slot must be unlocked and filled; otherwise fall back to the first filled slot.
 	if profile.activeSlot > profile.unlockedSlots or profile.titleSlots[profile.activeSlot] == nil then
 		profile.activeSlot = ControllerFunctions.firstFilledSlot(profile) or 1
+	end
+	if profile.titleSlots[profile.activeSlot] then
+		-- Only the active title is filtered during join; other slots are filtered
+		-- lazily when selected, avoiding up to three TextService calls per player.
+		ControllerFunctions.ensureFilteredTitleSlot(player, profile, profile.activeSlot)
 	end
 
 	local today = math.floor(os.time() / 86400)
@@ -4299,7 +4333,10 @@ ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number,
 	clean.text = filtered
 
 	-- The profile may have been unloaded while the filter request yielded.
-	if profiles[player.UserId] ~= profile then return false end
+	if profiles[player.UserId] ~= profile or player.Parent ~= Players then return false end
+	local safeTexts = filteredTitleTextByUserId[player.UserId]
+	if not safeTexts then safeTexts = {}; filteredTitleTextByUserId[player.UserId] = safeTexts end
+	safeTexts[slotNumber] = filtered
 	profile.titleSlots[slotNumber] = clean
 	profile.showCustomTitle = visible
 	if profile.titleSlots[profile.activeSlot] == nil or profile.activeSlot > profile.unlockedSlots then
@@ -5087,6 +5124,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, "Save a title in that slot first.", "warn")
 			return
 		end
+		if not ControllerFunctions.ensureFilteredTitleSlot(player, profile, slotNumber) then
+			notify(player, "Roblox text filtering is unavailable. This title remains hidden; please try again.", "warn")
+			return
+		end
 		profile.activeSlot = slotNumber
 		ControllerFunctions.applyTitleAttributes(player, profile)
 		ControllerFunctions.scheduleProfileSave(player)
@@ -5101,6 +5142,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local profile = profiles[player.UserId]
 		if not profile or slotNumber > profile.unlockedSlots then return end
 		profile.titleSlots[slotNumber] = nil
+		local safeTexts = filteredTitleTextByUserId[player.UserId]
+		if safeTexts then safeTexts[slotNumber] = nil end
 		if profile.activeSlot == slotNumber then
 			profile.activeSlot = ControllerFunctions.firstFilledSlot(profile) or 1
 		end
@@ -6335,6 +6378,7 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
+	filteredTitleTextByUserId[userId] = nil
 	local djSessionManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
 	if djSessionManager then
 		local endedSession = djSessionManager:EndForDeparture(userId)
