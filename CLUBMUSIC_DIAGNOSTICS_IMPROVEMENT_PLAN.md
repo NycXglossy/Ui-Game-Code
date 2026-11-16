@@ -134,3 +134,12 @@ This is a static compatibility pass, not proof that every consumer in all embedd
 - Added a Studio compatibility test matrix covering startup order, late API discovery, event replacement, optional SafeCall availability, and the audit return-shape mismatch.
 
 **Next verification task:** run static contract checks and Studio tests for `OperationalSecurityLog` with populated, empty, and unavailable audit results. No runtime test is claimed.
+
+
+## Diagnostics exposure audit update (2026-11-16)
+
+- Completed a static, controller-scoped review of the UI Server Controller's client remotes.
+- Confirmed the controller's client-facing read functions return player state, catalog, or playlist data; the Global Diagnostics and SafeCall recent-record APIs remain on the server-only BindableFunction path in the inspected source.
+- Confirmed PurchaseDiagnostic is bounded, rate-limited client telemetry and is explicitly not proof of a completed purchase.
+- Confirmed RequestAction remains a multiplexed security boundary and still needs action-by-action review. This is not a full repository remote audit.
+- No runtime or exploit-client verification has been performed. Keep the diagnostics exposure work in static-audit status until Studio tests confirm no diagnostic records or tracebacks are exposed.
