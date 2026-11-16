@@ -198,9 +198,38 @@ return function(_K: any)
 		return true
 	end
 
+	-- Bound security-signal reporting so repeated denied commands cannot spawn
+	-- an unbounded number of report tasks or grow a per-player table indefinitely.
+	local reportCooldowns: {[string]: number} = {}
+	local function reportSecuritySignal(actorId: number, signal: string, detail: string)
+		local key = tostring(actorId) .. ":" .. signal
+		local now = os.clock()
+		local last = reportCooldowns[key]
+		if last and now - last < 15 then return end
+		local count = 0
+		local oldestKey, oldestAt = nil, math.huge
+		for existingKey, timestamp in pairs(reportCooldowns) do
+			count += 1
+			if timestamp < oldestAt then oldestKey, oldestAt = existingKey, timestamp end
+		end
+		if count >= 256 and oldestKey then reportCooldowns[oldestKey] = nil end
+		reportCooldowns[key] = now
+		task.spawn(function()
+			local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+			local report = api and api:IsA("Folder") and api:FindFirstChild("ReportSignal")
+			if report and report:IsA("BindableFunction") then
+				pcall(function() report:Invoke(actorId, signal, string.sub(detail, 1, 120)) end)
+			end
+		end)
+	end
+
 	Players.PlayerRemoving:Connect(function(player)
 		buckets[player.UserId] = nil
 		permissionCache[player.UserId] = nil
+		local prefix = tostring(player.UserId) .. ":"
+		for key in pairs(reportCooldowns) do
+			if string.sub(key, 1, #prefix) == prefix then reportCooldowns[key] = nil end
+		end
 	end)
 
 	-- Server-only, bounded, in-memory movement authorization ledger. Other server
@@ -418,15 +447,7 @@ return function(_K: any)
 		local blockedReason = BLOCKED_COMMANDS[commandName] or BLOCKED_COMMANDS[definitionName]
 		if blockedReason then
 			local actorId = actorUserId(command)
-			if actorId then
-				task.spawn(function()
-					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
-					local report = api and api:IsA("Folder") and api:FindFirstChild("ReportSignal")
-					if report and report:IsA("BindableFunction") then
-						pcall(function() report:Invoke(actorId, "kohls_dangerous_command_blocked", commandName) end)
-					end
-				end)
-			end
+			if actorId then reportSecuritySignal(actorId, "kohls_dangerous_command_blocked", commandName) end
 			return false, blockedReason
 		end
 		local policy = POLICY[commandName] or POLICY[definitionName]
@@ -435,13 +456,7 @@ return function(_K: any)
 		local actorId = actorUserId(command)
 		if not actorId then return false, "This administrative command requires a live server player." end
 		if not authorize(actorId, policy.permission) then
-			task.spawn(function()
-				local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
-				local report = api and api:IsA("Folder") and api:FindFirstChild("ReportSignal")
-				if report and report:IsA("BindableFunction") then
-					pcall(function() report:Invoke(actorId, "kohls_regular_command_denied", commandName) end)
-				end
-			end)
+			reportSecuritySignal(actorId, "kohls_regular_command_denied", commandName)
 			return false, if policy.permission == "GlobalConfig"
 				then "Tiki Tide owner/co-owner authorization is required for this server-wide command."
 				else "Tiki Tide administrator authorization is required for this moderation or player-control command."
