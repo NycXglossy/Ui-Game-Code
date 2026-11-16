@@ -142,6 +142,38 @@ local function registerMovementAuthority(actorUserId: number, targetUserId: numb
 	return true
 end
 
+-- Teleport validation is a server-only dependency. If it cannot start, the
+-- TeleportTo action remains unavailable rather than falling back to raw CFrame writes.
+local teleportValidationService: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("TeleportValidationService") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.Start) == "function"
+			and type(exported.Begin) == "function" and type(exported.Complete) == "function"
+			and type(exported.Cancel) == "function" then
+			local startOk, started = pcall(exported.Start, {
+				onSignal = function(signal: string, targetUserId: number, detail: string)
+					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+					local recorder = api and api:FindFirstChild("RecordGlobalSecuritySignal")
+					if recorder and recorder:IsA("BindableFunction") then
+						local recordOk = pcall(function() recorder:Invoke(signal, targetUserId) end)
+						if recordOk then return end
+					end
+					warn("[Tiki Tide][TeleportValidation] " .. signal .. " target=" .. tostring(targetUserId) .. " detail=" .. string.sub(tostring(detail), 1, 160))
+				end,
+			})
+			if startOk and started == true then
+				teleportValidationService = exported
+			end
+		end
+	end
+	if not teleportValidationService then
+		warn("[Tiki Tide] TeleportValidationService is unavailable; TeleportTo is fail-closed.")
+	end
+end
+
 local function filterBroadcastText(player: Player, raw: any): string?
 	if typeof(raw) ~= "string" then return nil end
 	local trimmed = string.match(raw, "^%s*(.-)%s*$") or ""
@@ -319,7 +351,40 @@ local function handleRequest(player: Player, action: any, payload: any)
 		if not targetRoot or not targetRoot:IsA("BasePart") or not ownRoot or not ownRoot:IsA("BasePart") then
 			return fail("Character position is not ready.")
 		end
-		ownRoot.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
+		if not teleportValidationService then
+			return fail("Secure teleport validation is unavailable; please try again later.")
+		end
+		-- Resolve the destination from the server-observed target transform. The
+		-- ticket is bound to this player, destination and trusted server origin.
+		local destinationCFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
+		local ticketOk, ticket = pcall(
+			teleportValidationService.Begin,
+			player,
+			player,
+			destinationCFrame.Position,
+			"TikiTideSettings",
+			8
+		)
+		if not ticketOk or typeof(ticket) ~= "string" then
+			return fail("Teleport could not be authorized safely.")
+		end
+		local moveOk = pcall(function()
+			ownRoot.CFrame = destinationCFrame
+		end)
+		if not moveOk then
+			pcall(teleportValidationService.Cancel, ticket)
+			return fail("Teleport could not be completed.")
+		end
+		local completeOk, verified = pcall(
+			teleportValidationService.Complete,
+			ticket,
+			player,
+			player,
+			ownRoot.Position
+		)
+		if not completeOk or verified ~= true then
+			return fail("Teleport position could not be verified.")
+		end
 		return {ok = true, message = "Teleported to " .. target.DisplayName .. "."}
 	elseif action == "SetGravity" then
 		if not hasClubPermission(player, "GlobalConfig") then
