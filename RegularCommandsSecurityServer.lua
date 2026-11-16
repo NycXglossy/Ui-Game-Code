@@ -203,8 +203,8 @@ return function(_K: any)
 				local ok, recorded = pcall(function()
 					return audit:Invoke("AdminAction", id or 0, tostring(targetCount) .. " target(s)", "kohls:" .. policy.property)
 				end)
-				if not ok or recorded ~= true then
-					warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit did not accept command=" .. commandName)
+				if not ok then
+					warn("[Tiki Tide Security][Kohl's] Unified SecurityCore audit invocation failed for command=" .. commandName)
 				end
 			end)
 		else
