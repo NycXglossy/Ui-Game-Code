@@ -237,28 +237,26 @@ return function(_K: any)
 		end
 	end)
 
-	-- Server-only, bounded, in-memory movement authorization ledger. Other server
-	-- systems can use the BindableFunction to register their own approved changes.
-	local authorityEntries: {[string]: {actor: number, target: number, property: string, value: any, origin: string, expiresAt: number}} = {}
-	local AUTHORIZED_PROPERTIES = {
-		WorldGravity = true, StarterWalkSpeed = true, WalkSpeed = true, JumpPower = true,
-		JumpImpulse = true, PersonalGravity = true, BodyScale = true, Flight = true, Frozen = true,
-		JumpHeight = true, Anchored = true, Teleport = true, Fling = true,
-	}
-	local function authorityKey(targetUserId: number, property: string): string
-		return tostring(targetUserId) .. ":" .. property
-	end
-	Players.PlayerRemoving:Connect(function(player)
-		for key, entry in pairs(authorityEntries) do
-			if entry.actor == player.UserId or entry.target == player.UserId then
-				authorityEntries[key] = nil
-			end
+	-- Compatibility adapter: keep the existing ServerStorage BindableFunction API
+	-- while the ledger itself lives in the private SecurityCore module.
+	local authorityModuleScript = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local movementAuthorityModule = authorityModuleScript and authorityModuleScript:IsA("Folder")
+		and authorityModuleScript:FindFirstChild("MovementAuthority")
+	local movementAuthority: any = nil
+	if movementAuthorityModule and movementAuthorityModule:IsA("ModuleScript") then
+		local requireOk, result = pcall(require, movementAuthorityModule)
+		if requireOk and typeof(result) == "table" and type(result.Invoke) == "function" then
+			movementAuthority = result
+		else
+			warn("[Tiki Tide Security][Kohl's] MovementAuthority module failed to load; movement authorization is fail-closed.")
 		end
-	end)
+	else
+		warn("[Tiki Tide Security][Kohl's] SecurityCore MovementAuthority module is missing; install the updated security module bundle.")
+	end
 
 	local authority = ServerStorage:FindFirstChild(AUTHORITY_NAME)
 	if authority and not authority:IsA("BindableFunction") then
-		warn("[Tiki Tide Security][Kohl's] TikiTideMovementAuthority exists with the wrong class; movement ledger unavailable.")
+		warn("[Tiki Tide Security][Kohl's] TikiTideMovementAuthority exists with the wrong class; movement adapter unavailable.")
 		authority = nil
 	end
 	if not authority then
@@ -267,61 +265,10 @@ return function(_K: any)
 		authority.Parent = ServerStorage
 	end
 	(authority :: BindableFunction).OnInvoke = function(operation: any, actorId: any, targetId: any, property: any, value: any, origin: any, ttl: any)
-		if operation == "Register" then
-			if not finiteNumber(actorId) or actorId < 1 or actorId % 1 ~= 0
-				or not finiteNumber(targetId) or targetId < 0 or targetId % 1 ~= 0
-				or typeof(property) ~= "string" or not AUTHORIZED_PROPERTIES[property]
-				or (typeof(value) ~= "boolean" and value ~= "DEFAULT" and not finiteNumber(value))
-				or typeof(origin) ~= "string" or #origin < 1 or #origin > 32 then
-				return false, "Invalid movement authorization record."
-			end
-			local actorPlayer = Players:GetPlayerByUserId(math.floor(actorId))
-			if not actorPlayer or actorPlayer.Parent ~= Players then return false, "Movement authority actor is not active." end
-			if targetId > 0 then
-				local targetPlayer = Players:GetPlayerByUserId(math.floor(targetId))
-				if not targetPlayer or targetPlayer.Parent ~= Players then return false, "Movement authority target is not active." end
-			end
-			local lifetime = if finiteNumber(ttl) then math.clamp(ttl, 5, 600) else 120
-			local now = os.clock()
-			local count = 0
-			local oldestKey, oldestExpiry = nil, math.huge
-			for key, entry in pairs(authorityEntries) do
-				if entry.expiresAt <= now then
-					authorityEntries[key] = nil
-				else
-					count += 1
-					if entry.expiresAt < oldestExpiry then oldestKey, oldestExpiry = key, entry.expiresAt end
-				end
-			end
-			if count >= 256 then
-				if oldestKey then authorityEntries[oldestKey] = nil else return false, "Movement authorization ledger is full." end
-			end
-			authorityEntries[authorityKey(math.floor(targetId), property)] = {
-				actor = math.floor(actorId), target = math.floor(targetId), property = property,
-				value = value, origin = origin, expiresAt = now + lifetime,
-			}
-			return true
-		elseif operation == "Check" then
-			if not finiteNumber(targetId) or targetId < 0 or targetId % 1 ~= 0
-				or typeof(property) ~= "string" or not AUTHORIZED_PROPERTIES[property] then
-				return false
-			end
-			local key = authorityKey(math.floor(targetId), property)
-			local entry = authorityEntries[key]
-			if not entry then return false end
-			if entry.expiresAt <= os.clock() then authorityEntries[key] = nil; return false end
-			if typeof(value) == "number" and typeof(entry.value) == "number" then
-				return math.abs(value - entry.value) <= 0.05, entry.origin
-			end
-			return entry.value == "DEFAULT" or value == entry.value, entry.origin
-		elseif operation == "Status" then
-			local count = 0
-			for key, entry in pairs(authorityEntries) do
-				if entry.expiresAt <= os.clock() then authorityEntries[key] = nil else count += 1 end
-			end
-			return {tracked = count, capacity = 256, scope = "PerServerOnly", createsStorageRecords = false}
+		if not movementAuthority then
+			return false, "SecurityCore MovementAuthority is unavailable."
 		end
-		return false, "Unknown movement authority operation."
+		return movementAuthority.Invoke(operation, actorId, targetId, property, value, origin, ttl)
 	end
 
 	local auditUnavailableWarned = false
