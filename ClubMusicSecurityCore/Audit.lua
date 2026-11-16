@@ -29,7 +29,7 @@ end
 local function severity(kind) return if kind=="SecurityEvent" or kind=="Moderation" then 3 else if kind=="AdminAction" then 2 else 1 end
 function Service.new(d)
  assert(type(d)=="table" and d.memoryStoreService and type(d.isEnabled)=="function","Audit dependencies missing")
- local self=setmetatable({d=d,written=0,queued=0,droppedLow=0,lastError=nil,buffer={},bufferHead=1,bufferCount=0,lastFlushAt=0,batchSequence=0,
+ local self=setmetatable({d=d,written=0,queued=0,droppedLowSeverity=0,droppedCritical=0,droppedTotal=0,lastError=nil,buffer={},bufferHead=1,bufferCount=0,lastFlushAt=0,batchSequence=0,
   readCache={},readCacheAt={},flushRunning=false,janitor=ConnectionJanitor.new()},Service)
  self.map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalAudit_v1")
  return self
@@ -52,8 +52,13 @@ function Service:_enqueue(record)
    end
    table.clear(self.buffer); self.bufferHead=1; self.bufferCount=0
    for _,item in ipairs(rebuilt) do self.bufferCount+=1; self.buffer[self.bufferCount]=item end
-   self.droppedLow+=1
-  else self.droppedLow+=1; return false end
+   self.droppedLowSeverity+=1
+   self.droppedTotal+=1
+  else
+   if severity(record.kind)>=3 then self.droppedCritical+=1 else self.droppedLowSeverity+=1 end
+   self.droppedTotal+=1
+   return false
+  end
  end
  local tail=((self.bufferHead+self.bufferCount-1)%MAX_ITEMS)+1
  self.buffer[tail]=record; self.bufferCount+=1; self.queued+=1
@@ -89,37 +94,38 @@ function Service:_flush()
  if not allowed then self.lastError=reason; return false end
  local acquired,release=ResourceGuard.TryAcquire("MemoryStoreWrite")
  if not acquired then self.lastError="LocalResourceLimit:MemoryStoreWrite"; return false end
- local batch={}
- local count=math.min(100,self.bufferCount)
- for offset=1,count do local index=((self.bufferHead+offset-2)%MAX_ITEMS)+1; table.insert(batch,self.buffer[index]) end
- local encodedOk,payload=pcall(self.d.jsonEncode,batch)
- if not encodedOk or type(payload)~="string" then self.lastError="Audit JSON serialization failed."; return false end
- while #payload>MAX_PAYLOAD and #batch>1 do
-  table.remove(batch)
-  encodedOk,payload=pcall(self.d.jsonEncode,batch)
+ local released=false
+ local function releasePermit() if not released then released=true; pcall(release) end end
+ local ok,result=xpcall(function()
+  local batch={}
+  local count=math.min(100,self.bufferCount)
+  for offset=1,count do local index=((self.bufferHead+offset-2)%MAX_ITEMS)+1; table.insert(batch,table.clone(self.buffer[index])) end
+  local encodedOk,payload=pcall(self.d.jsonEncode,batch)
   if not encodedOk or type(payload)~="string" then self.lastError="Audit JSON serialization failed."; return false end
- end
- if #payload>MAX_PAYLOAD then
-  -- Trim optional detail fields before ever dropping a high-severity event.
-  for _,item in ipairs(batch) do item.target=string.sub(item.target,1,16); item.action=string.sub(item.action,1,16) end
-  encodedOk,payload=pcall(self.d.jsonEncode,batch)
-  if not encodedOk or type(payload)~="string" or #payload>MAX_PAYLOAD then self.lastError="Audit batch exceeds payload ceiling."; return false end
- end
- local bucket=math.floor(os.time()/30)
- local shard=(bucket%3)+1
- self.batchSequence=(self.batchSequence%999)+1
- local job=string.sub(tostring(self.d.jobId or "server"),1,32)
- local key="TT:A:"..tostring(shard)..":"..job..":"..tostring(bucket)..":"..tostring(self.batchSequence)
- if #key>64 then key=string.sub(key,1,64) end
- local writeOk,writeError=pcall(function() self.map:SetAsync(key,payload,TTL,os.time()) end)
- release()
- if not writeOk then
-  self.lastError=tostring(writeError); StorageGuard.Failure(writeError); return false
- end
- StorageGuard.Success()
- for _=1,#batch do self.buffer[self.bufferHead]=nil; self.bufferHead=(self.bufferHead%MAX_ITEMS)+1; self.bufferCount-=1 end
- self.written+=#batch; self.lastFlushAt=now; self.lastError=nil; self.readCache={}; self.readCacheAt={}
- return true
+  while #payload>MAX_PAYLOAD and #batch>1 do
+   table.remove(batch); encodedOk,payload=pcall(self.d.jsonEncode,batch)
+   if not encodedOk or type(payload)~="string" then self.lastError="Audit JSON serialization failed."; return false end
+  end
+  if #payload>MAX_PAYLOAD then
+   for _,item in ipairs(batch) do item.target=string.sub(item.target,1,16); item.action=string.sub(item.action,1,16) end
+   encodedOk,payload=pcall(self.d.jsonEncode,batch)
+   if not encodedOk or type(payload)~="string" or #payload>MAX_PAYLOAD then self.lastError="Audit batch exceeds payload ceiling."; return false end
+  end
+  local bucket=math.floor(os.time()/30); local shard=(bucket%3)+1
+  self.batchSequence=(self.batchSequence%999)+1
+  local job=string.sub(tostring(self.d.jobId or "server"),1,32)
+  local key="TT:A:"..tostring(shard)..":"..job..":"..tostring(bucket)..":"..tostring(self.batchSequence)
+  if #key>64 then key=string.sub(key,1,64) end
+  local writeOk,writeError=pcall(function() self.map:SetAsync(key,payload,TTL,os.time()) end)
+  if not writeOk then self.lastError=tostring(writeError); StorageGuard.Failure(writeError); return false end
+  StorageGuard.Success()
+  for _=1,#batch do self.buffer[self.bufferHead]=nil; self.bufferHead=(self.bufferHead%MAX_ITEMS)+1; self.bufferCount-=1 end
+  self.written+=#batch; self.lastFlushAt=now; self.lastError=nil; self.readCache={}; self.readCacheAt={}
+  return true
+ end,debug.traceback)
+ releasePermit()
+ if not ok then self.lastError=string.sub(tostring(result),1,240); return false end
+ return result==true
 end
 function Service:GetRecent(limit,moderatorUserId)
  if not self.d.isEnabled() then return false,{} end
@@ -151,7 +157,7 @@ function Service:GetRecent(limit,moderatorUserId)
 end
 function Service:GetStatus()
  return {state=if self.d.isEnabled() then "Healthy" else "Disabled",written=self.written,
-  queued=self.bufferCount,droppedLowSeverity=self.droppedLow,lastError=self.lastError,
+  queued=self.bufferCount,droppedLowSeverity=self.droppedLowSeverity,droppedCritical=self.droppedCritical,droppedTotal=self.droppedTotal,lastError=self.lastError,
   eventsPerBatch={min=50,max=100},payloadTargetBytes=MAX_PAYLOAD,flushSeconds={min=15,max=30},
   maxFlushesPerMinute=4,ttlSeconds=TTL,shards=3,storageGuard=StorageGuard.GetStatus(),resourceGuard=ResourceGuard.GetStatus()}
 end
