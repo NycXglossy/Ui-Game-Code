@@ -284,7 +284,7 @@ return function(_K: any)
 			end
 			local value = if policy.valueArg then args[policy.valueArg] else nil
 			if policy.property == "JumpImpulse" then value = true end
-			if policy.property == "BodyScale" and value == nil then value = 1 end
+			if policy.property == "BodyScale" and (value == nil or context.undo) then value = 1 end
 			if policy.property == "Flight" then value = command.definition.name ~= "unfly" end
 			if policy.property == "Frozen" then value = command.definition.name ~= "thaw" end
 			if value == nil then value = "DEFAULT" end
