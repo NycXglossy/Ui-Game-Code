@@ -63,6 +63,7 @@ local globalConfigService: any = nil
 local globalStateReconciliationService: any = nil
 local globalMaintenanceService: any = nil
 local globalAuditService: any = nil
+local globalEventLogService: any = nil
 local globalRateLimitService: any = nil
 local globalAuthorizationService: any = nil
 local globalSecurityMonitorService: any = nil
@@ -598,6 +599,7 @@ local SECURITY_MODULE_EXPORTS: {[string]: string} = {
 	ClubMusic_Global_Security_Monitor_Service = "SecurityMonitor",
 	ClubMusic_Global_Security_Policy_Service = "SecurityPolicy",
 	ClubMusic_Global_Audit_Service = "Audit",
+	ClubMusic_Global_Event_Log_Service = "EventLog",
 	ClubMusic_Global_Incident_Response_Service = "IncidentResponse",
 }
 local cachedSecurityBundle: any = nil
@@ -796,6 +798,12 @@ auditDependencies.isEnabled = function()
 end
 globalAuditService = createOperationalService("ClubMusic_Global_Audit_Service", auditDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
 if globalAuditService then globalAuditService:Start() end
+
+globalEventLogService = if globalAuditService then createOperationalService("ClubMusic_Global_Event_Log_Service", {
+	isEnabled = auditDependencies.isEnabled,
+	auditService = globalAuditService,
+}, {"Start", "GetStatus", "Record", "GetRecent"}) else nil
+if globalEventLogService then globalEventLogService:Start() end
 
 globalRateLimitService = createOperationalService("ClubMusic_Global_RateLimit_Service", {
 	isEnabled = function() return SERVICE_ENABLED end,
@@ -1033,6 +1041,7 @@ bindFunction("GetGlobalOperationalStatus", function()
 		Maintenance = if globalMaintenanceService then globalMaintenanceService:GetStatus() else {state = "Unavailable"},
 		Metrics = if globalDiagnosticsService then globalDiagnosticsService:GetMetrics() else {state = "Unavailable"},
 		Audit = if globalAuditService then globalAuditService:GetStatus() else {state = "Unavailable"},
+		EventLog = if globalEventLogService then globalEventLogService:GetStatus() else {state = "Unavailable"},
 		RateLimit = if globalRateLimitService then globalRateLimitService:GetStatus() else {state = "Unavailable"},
 		Authorization = if globalAuthorizationService then globalAuthorizationService:GetStatus() else {state = "Unavailable"},
 		SecurityMonitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else {state = "Unavailable"},
@@ -1070,6 +1079,14 @@ end)
 bindFunction("RecordGlobalAuditEvent", function(kind: any, actorUserId: any, target: any, action: any)
 	if not globalAuditService then return false end
 	return globalAuditService:Record(kind, actorUserId, target, action)
+end)
+bindFunction("RecordGlobalEvent", function(kind: any, detail: any, severity: any)
+	if not globalEventLogService then return false end
+	return globalEventLogService:Record(kind, detail, severity)
+end)
+bindFunction("GetGlobalEvents", function(limit: any)
+	if not globalEventLogService then return false, {} end
+	return globalEventLogService:GetRecent(limit)
 end)
 
 bindFunction("GetGlobalHealth", function()
