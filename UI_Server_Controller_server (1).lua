@@ -5429,6 +5429,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Generated: " .. os.date("!%Y-%m-%d %H:%M:%S UTC", tonumber(snapshot.generatedAt) or os.time()),
 			"Global enabled: " .. tostring(snapshot.serviceEnabled == true),
 			"Local health: " .. tostring(health.state or "Unavailable") .. " / " .. tostring(health.localState or "Unavailable"),
+			"Health dimensions: cross-server " .. tostring(health.crossServerState or "Unavailable")
+				.. " | performance " .. tostring(health.performanceState or "Unavailable")
+				.. " | watchdog " .. tostring(health.watchdogState or "Unavailable"),
 			"Server runtime: " .. tostring(serverHealth.state or "NotInstalled")
 				.. " | Heartbeat max " .. tostring(math.floor((tonumber(heartbeat.maxDeltaSeconds) or 0) * 1000)) .. "ms"
 				.. " | Memory " .. tostring(memory.usageMb or "n/a") .. " MB",
@@ -5440,6 +5443,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(watchdog.state or "Unavailable"),
 			"SecurityCore health: " .. tostring(securityHealth.state or "Unavailable")
+				.. " (" .. tostring(securityHealth.observedComponents or 0) .. "/" .. tostring(securityHealth.totalComponents or 0) .. " observed)"
 				.. " | Auth " .. tostring(securityComponents.authorization or "Unavailable")
 				.. " | RateLimit " .. tostring(securityComponents.rateLimit or "Unavailable")
 				.. " | Validation " .. tostring(securityComponents.messageValidation or "Unavailable")
