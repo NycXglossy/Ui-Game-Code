@@ -2466,11 +2466,8 @@ ControllerFunctions.refreshVip = function(player: Player)
 	local userId = player.UserId
 	-- Membership in the configured Roblox group grants the base VIP tier.
 	-- Failed group lookups fail closed; the next rank/VIP refresh can retry.
-	local ok, groupRank = false, 0
-	if CONFIG.GroupId > 0 then
-		ok, groupRank = pcall(function() return player:GetRankInGroup(CONFIG.GroupId) end)
-	end
-	local isGroupMember = ok and typeof(groupRank) == "number" and groupRank > 0
+	local isGroupMember = authorizationService ~= nil
+		and authorizationService:IsGroupMember(player) == true
 	local ownsVip = ControllerFunctions.ownsGamePass(userId, CONFIG.VipGamePassId)
 	local ownsVvip = ControllerFunctions.ownsGamePass(userId, CONFIG.VvipGamePassId)
 	local ownsTikiTide = ControllerFunctions.ownsGamePass(userId, CONFIG.TikiTidePassId)
@@ -6181,9 +6178,6 @@ Players.PlayerRemoving:Connect(function(player)
 	lastReloadAt[userId] = nil
 	reloadNonce[userId] = nil
 	pendingAudio[userId] = nil
-	rankCache[userId] = nil
-	rankRefreshInFlight[userId] = nil
-	rankRetryAfter[userId] = nil
 	vipPass[userId] = nil
 	vvipPass[userId] = nil
 	tikiTidePass[userId] = nil
