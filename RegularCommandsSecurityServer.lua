@@ -19,7 +19,7 @@ return function(_K: any)
 	local AUTHORIZER_NAME = "ClubMusicAuthorizationResolver"
 	local AUTHORITY_NAME = "TikiTideMovementAuthority"
 
-	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?}} = {
+	local POLICY: {[string]: {permission: string, property: string, valueArg: number?, targetArg: number?, targetArg2: number?, global: boolean?, targetSelf: boolean?, authority: boolean?, auditKind: string?, limitProperty: string?, budget: string?}} = {
 		-- Verified movement/environment commands in the supplied Kohl's Admin export.
 		gravity = {permission = "GlobalConfig", property = "WorldGravity", valueArg = 1, global = true, authority = true},
 		starterspeed = {permission = "GlobalConfig", property = "StarterWalkSpeed", valueArg = 1, global = true, authority = true},
@@ -52,10 +52,40 @@ return function(_K: any)
 		blind = {permission = "GlobalModeration", property = "Blind", targetArg = 1, auditKind = "Moderation"},
 		unblind = {permission = "GlobalModeration", property = "Unblind", targetArg = 1, auditKind = "Moderation"},
 
+		-- Persistent roles/permissions are owner/co-owner operations.
+		role = {permission = "GlobalConfig", property = "RoleAssign", targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
+		temprole = {permission = "GlobalConfig", property = "TemporaryRoleAssign", targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
+		unrole = {permission = "GlobalConfig", property = "RoleRemove", targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
+		removemember = {permission = "GlobalConfig", property = "MemberPermissionsRemove", targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
+
+		-- Asset/tool grants can introduce executable or persistent content.
+		give = {permission = "GlobalConfig", property = "ToolGrant", targetArg = 1, auditKind = "AdminAction", budget = "Asset"},
+		startergive = {permission = "GlobalConfig", property = "PersistentToolGrant", targetArg = 1, auditKind = "AdminAction", budget = "Asset"},
+		starterremove = {permission = "GlobalConfig", property = "PersistentToolRemove", targetArg = 1, auditKind = "AdminAction", budget = "Asset"},
+		copytools = {permission = "GlobalConfig", property = "ToolCopy", targetArg = 1, targetArg2 = 2, auditKind = "AdminAction", budget = "Asset"},
+		gear = {permission = "GlobalConfig", property = "AssetGearGrant", valueArg = 2, targetArg = 1, auditKind = "AdminAction", budget = "Asset"},
+		btools = {permission = "GlobalConfig", property = "BuildingToolsGrant", targetArg = 1, auditKind = "AdminAction", budget = "Asset"},
+		insert = {permission = "GlobalConfig", property = "AssetInsert", valueArg = 1, auditKind = "AdminAction", budget = "Asset"},
+
+		-- Cross-server announcements and local broadcasts are separately permissioned.
+		announce = {permission = "GlobalAnnouncement", property = "PersistentAnnouncement", global = true, auditKind = "AdminAction", budget = "Broadcast"},
+		unannounce = {permission = "GlobalAnnouncement", property = "PersistentAnnouncementClear", global = true, auditKind = "AdminAction", budget = "Broadcast"},
+		hint = {permission = "GlobalAnnouncement", property = "BroadcastHint", auditKind = "AdminAction", budget = "Broadcast"},
+		message = {permission = "GlobalAnnouncement", property = "BroadcastMessage", auditKind = "AdminAction", budget = "Broadcast"},
+		fullmessage = {permission = "GlobalAnnouncement", property = "FullScreenBroadcast", auditKind = "AdminAction", budget = "Broadcast"},
+		privatehint = {permission = "GlobalModeration", property = "PrivateHint", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
+
+		-- Respawn/refresh and destructive world actions are sensitive too.
+		respawn = {permission = "GlobalModeration", property = "Respawn", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		refresh = {permission = "GlobalModeration", property = "Refresh", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		removelimbs = {permission = "GlobalModeration", property = "RemoveLimbs", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		clean = {permission = "GlobalConfig", property = "AdminCleanup", auditKind = "AdminAction", budget = "World"},
+		clearterrain = {permission = "GlobalConfig", property = "ClearTerrain", global = true, auditKind = "AdminAction", budget = "World"},
+
 		-- Server-wide disruptive commands require the highest Tiki Tide permission.
-		serverlock = {permission = "GlobalConfig", property = "ServerLock", global = true, auditKind = "AdminAction"},
-		unserverlock = {permission = "GlobalConfig", property = "ServerUnlock", global = true, auditKind = "AdminAction"},
-		shutdown = {permission = "GlobalConfig", property = "Shutdown", global = true, auditKind = "AdminAction"},
+		serverlock = {permission = "GlobalConfig", property = "ServerLock", global = true, auditKind = "AdminAction", budget = "World"},
+		unserverlock = {permission = "GlobalConfig", property = "ServerUnlock", global = true, auditKind = "AdminAction", budget = "World"},
+		shutdown = {permission = "GlobalConfig", property = "Shutdown", global = true, auditKind = "AdminAction", budget = "World"},
 	}
 
 	local BLOCKED_COMMANDS = {
@@ -88,7 +118,7 @@ return function(_K: any)
 
 	-- Prime trusted permission snapshots outside the synchronous command filter.
 	-- Process.addCommandFilter must not yield; expired/missing snapshots deny.
-	local permissionCache: {[number]: {GlobalModeration: boolean, GlobalConfig: boolean, expiresAt: number}} = {}
+	local permissionCache: {[number]: {GlobalModeration: boolean, GlobalAnnouncement: boolean, GlobalConfig: boolean, expiresAt: number}} = {}
 	local function refreshAuthorization(player: Player)
 		task.spawn(function()
 			local resolver = ServerStorage:FindFirstChild(AUTHORIZER_NAME)
@@ -96,12 +126,12 @@ return function(_K: any)
 				permissionCache[player.UserId] = nil
 				return
 			end
-			local moderationOk, moderation = pcall(function() return resolver:Invoke(player.UserId, "GlobalModeration") end)
-			local configOk, config = pcall(function() return resolver:Invoke(player.UserId, "GlobalConfig") end)
+			local snapshotOk, snapshot = pcall(function() return resolver:Invoke(player.UserId, "KohlsAdminSnapshot") end)
 			if player.Parent ~= Players then return end
 			permissionCache[player.UserId] = {
-				GlobalModeration = moderationOk and moderation == true,
-				GlobalConfig = configOk and config == true,
+				GlobalModeration = snapshotOk and typeof(snapshot) == "table" and snapshot.GlobalModeration == true,
+				GlobalAnnouncement = snapshotOk and typeof(snapshot) == "table" and snapshot.GlobalAnnouncement == true,
+				GlobalConfig = snapshotOk and typeof(snapshot) == "table" and snapshot.GlobalConfig == true,
 				expiresAt = os.clock() + 15,
 			}
 		end)
@@ -119,16 +149,32 @@ return function(_K: any)
 		end
 	end)
 
-	-- Local per-server token bucket. It deliberately creates no MemoryStore entries.
-	local buckets: {[number]: {tokens: number, updatedAt: number}} = {}
-	local function consumeBudget(userId: number): boolean
-		local now = os.clock()
-		local entry = buckets[userId]
-		if not entry then
-			entry = {tokens = 5, updatedAt = now}
-			buckets[userId] = entry
+	-- Small per-server buckets are split by risk class so routine moderation
+	-- cannot consume the budget reserved for privilege/world-changing operations.
+	-- This is synchronous, bounded by active players, and creates no MemoryStore entries.
+	local BUDGETS = {
+		Moderation = {capacity = 5, refillPerSecond = 0.5},
+		Privilege = {capacity = 2, refillPerSecond = 1 / 30},
+		Asset = {capacity = 2, refillPerSecond = 1 / 10},
+		Broadcast = {capacity = 2, refillPerSecond = 1 / 15},
+		World = {capacity = 2, refillPerSecond = 1 / 30},
+		General = {capacity = 5, refillPerSecond = 0.5},
+	}
+	local buckets: {[number]: {[string]: {tokens: number, updatedAt: number}}} = {}
+	local function consumeBudget(userId: number, budgetName: string?): boolean
+		local config = BUDGETS[budgetName or "General"] or BUDGETS.General
+		local userBuckets = buckets[userId]
+		if not userBuckets then
+			userBuckets = {}
+			buckets[userId] = userBuckets
 		end
-		entry.tokens = math.min(5, entry.tokens + math.max(0, now - entry.updatedAt) / 2)
+		local now = os.clock()
+		local entry = userBuckets[budgetName or "General"]
+		if not entry then
+			entry = {tokens = config.capacity, updatedAt = now}
+			userBuckets[budgetName or "General"] = entry
+		end
+		entry.tokens = math.min(config.capacity, entry.tokens + math.max(0, now - entry.updatedAt) * config.refillPerSecond)
 		entry.updatedAt = now
 		if entry.tokens < 1 then return false end
 		entry.tokens -= 1
@@ -231,16 +277,16 @@ return function(_K: any)
 	local function logAction(command: any, policy: any, targets: {Player}, value: any, targetCount: number)
 		local id = actorUserId(command)
 		local valueText = if value == nil then "default" elseif typeof(value) == "boolean" then tostring(value) else tostring(value)
-		local commandName = tostring(command.definition.name)
+		local commandName = tostring(command.alias or command.definition.name)
 		local message = string.format(
-			"Security-authorized Kohl's command: command=%s property=%s targets=%d value=%s",
+			"Kohl's administrative command invoked: command=%s property=%s targets=%d value=%s",
 			commandName, policy.property, targetCount, string.sub(valueText, 1, 24)
 		)
 		if type(_K.log) == "function" then
 			local ok, err = pcall(_K.log, message, "COMMAND", id)
 			if not ok then warn("[Tiki Tide Security][Kohl's] Kohl's log failed: " .. tostring(err)) end
 		end
-		-- Successful moderation actions enter the existing unified SecurityCore Audit.
+		-- Sensitive command invocations enter the existing unified SecurityCore Audit.
 		local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 		local audit = api and api:IsA("Folder") and api:FindFirstChild("RecordGlobalAuditEvent")
 		if audit and audit:IsA("BindableFunction") then
@@ -258,7 +304,8 @@ return function(_K: any)
 	end
 
 	local wrappedDefinitions = setmetatable({}, {__mode = "k"})
-	local function wrapHandler(command: any, policy: any)
+	local authorityRegistrationWarned = false
+	local function wrapHandler(command: any)
 		local definition = command.definition
 		if wrappedDefinitions[definition] then return end
 		local original = definition.run
@@ -267,46 +314,57 @@ return function(_K: any)
 		definition.run = function(context: any, ...)
 			local args = table.pack(...)
 			local result = table.pack(original(context, table.unpack(args, 1, args.n)))
+			local aliasName = string.lower(tostring(context.alias or definition.name))
+			local activePolicy = POLICY[aliasName] or POLICY[string.lower(tostring(definition.name))]
+			if not activePolicy then return table.unpack(result, 1, result.n) end
+
 			local targets: {Player} = {}
-			local targetCount = if policy.targetSelf then 1 else 0
-			local targetArg = policy.targetArg
-			if targetArg then
-				local rawTargets = args[targetArg]
-				if typeof(rawTargets) == "Instance" and rawTargets:IsA("Player") then
-					table.insert(targets, rawTargets)
-					targetCount = 1
-				elseif typeof(rawTargets) == "table" then
-					targetCount = #rawTargets
-					for _, target in ipairs(rawTargets) do
-						if typeof(target) == "Instance" and target:IsA("Player") then table.insert(targets, target) end
-					end
-				end
-			end
-			local value = if policy.valueArg then args[policy.valueArg] else nil
-			if policy.property == "JumpImpulse" then value = true end
-			if policy.property == "BodyScale" and (value == nil or context.undo) then value = 1 end
-			if policy.property == "Flight" then value = command.definition.name ~= "unfly" end
-			if policy.property == "Frozen" then value = command.definition.name ~= "thaw" end
-			if value == nil then value = "DEFAULT" end
-			local actorId = actorUserId(context)
-			if actorId then
-				if policy.authority == true then
-					if policy.targetSelf then
-						local registerOk = (authority :: BindableFunction):Invoke("Register", actorId, actorId, policy.property, "DEFAULT", "KohlsAdmin", 120)
-						if registerOk ~= true then warn("[Tiki Tide Security][Kohl's] Could not register self-teleport authority.") end
-					elseif policy.global then
-						local globalValue = value
-						if globalValue == "DEFAULT" and policy.property == "WorldGravity" and context.env then globalValue = context.env.gravity end
-						local registerOk = (authority :: BindableFunction):Invoke("Register", actorId, 0, policy.property, globalValue, "KohlsAdmin", 120)
-						if registerOk ~= true then warn("[Tiki Tide Security][Kohl's] Could not register global movement authority.") end
-					else
-						for _, target in ipairs(targets) do
-							local registerOk = (authority :: BindableFunction):Invoke("Register", actorId, target.UserId, policy.property, value, "KohlsAdmin", 120)
-							if registerOk ~= true then warn("[Tiki Tide Security][Kohl's] Could not register target movement authority.") end
+			local targetCount = if activePolicy.targetSelf then 1 else 0
+			for _, targetIndex in ipairs({activePolicy.targetArg, activePolicy.targetArg2}) do
+				if targetIndex then
+					local rawTargets = args[targetIndex]
+					if typeof(rawTargets) == "Instance" and rawTargets:IsA("Player") then
+						table.insert(targets, rawTargets)
+						targetCount += 1
+					elseif typeof(rawTargets) == "table" then
+						targetCount += #rawTargets
+						for _, target in ipairs(rawTargets) do
+							if typeof(target) == "Instance" and target:IsA("Player") then table.insert(targets, target) end
 						end
 					end
 				end
-				logAction(context, policy, targets, value, targetCount)
+			end
+
+			local value = if activePolicy.valueArg then args[activePolicy.valueArg] else nil
+			if activePolicy.property == "JumpImpulse" then value = true end
+			if activePolicy.property == "BodyScale" and (value == nil or context.undo) then value = 1 end
+			if activePolicy.property == "Flight" then value = aliasName ~= "unfly" and not context.undo end
+			if activePolicy.property == "Frozen" then value = aliasName ~= "thaw" and aliasName ~= "unfreeze" and not context.undo end
+			if value == nil then value = "DEFAULT" end
+
+			local actorId = actorUserId(context)
+			if actorId then
+				if activePolicy.authority == true then
+					local function registerAuthority(targetId: number, propertyValue: any)
+						local invokeOk, registered = pcall(function()
+							return (authority :: BindableFunction):Invoke("Register", actorId, targetId, activePolicy.property, propertyValue, "KohlsAdmin", 120)
+						end)
+						if (not invokeOk or registered ~= true) and not authorityRegistrationWarned then
+							authorityRegistrationWarned = true
+							warn("[Tiki Tide Security][Kohl's] MovementAuthority registration failed; command audit remains active.")
+						end
+					end
+					if activePolicy.targetSelf then
+						registerAuthority(actorId, "DEFAULT")
+					elseif activePolicy.global then
+						local globalValue = value
+						if globalValue == "DEFAULT" and activePolicy.property == "WorldGravity" and context.env then globalValue = context.env.gravity end
+						registerAuthority(0, globalValue)
+					else
+						for _, target in ipairs(targets) do registerAuthority(target.UserId, value) end
+					end
+				end
+				logAction(context, activePolicy, targets, value, targetCount)
 			end
 			return table.unpack(result, 1, result.n)
 		end
@@ -320,7 +378,8 @@ return function(_K: any)
 
 	local filter = function(command: any): (boolean, string?)
 		if typeof(command) ~= "table" or typeof(command.definition) ~= "table" then return true end
-		local commandName = string.lower(tostring(command.definition.name or ""))
+		local commandName = string.lower(tostring(command.alias or command.definition.name or ""))
+		local definitionName = string.lower(tostring(command.definition.name or ""))
 		if BLOCKED_COMMANDS[commandName] then
 			local actorId = actorUserId(command)
 			if actorId then
@@ -334,7 +393,7 @@ return function(_K: any)
 			end
 			return false, BLOCKED_COMMANDS[commandName]
 		end
-		local policy = POLICY[commandName]
+		local policy = POLICY[commandName] or POLICY[definitionName]
 		if not policy then return true end
 
 		local actorId = actorUserId(command)
@@ -351,7 +410,7 @@ return function(_K: any)
 				then "Tiki Tide owner/co-owner authorization is required for this server-wide command."
 				else "Tiki Tide administrator authorization is required for this moderation or player-control command."
 		end
-		if not consumeBudget(actorId) then
+		if not consumeBudget(actorId, policy.budget) then
 			return false, "Regular administrative commands are being rate-limited. Wait a moment and retry."
 		end
 
@@ -369,7 +428,7 @@ return function(_K: any)
 			return false, string.format("The requested %s value is invalid.", policy.property)
 		end
 
-		wrapHandler(command, policy)
+		wrapHandler(command)
 		return true
 	end
 
