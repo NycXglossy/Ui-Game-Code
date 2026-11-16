@@ -12,6 +12,7 @@ local VALID_STATES = {
 	Healthy = true,
 	Degraded = true,
 	Unavailable = true,
+	NotInstalled = true,
 	Disabled = true,
 }
 
@@ -109,7 +110,7 @@ end
 
 function Registry:GetStatus(): {[string]: any}
 	local services = {}
-	local counts = {Healthy = 0, Degraded = 0, Unavailable = 0, Starting = 0, Disabled = 0}
+	local counts = {Healthy = 0, Degraded = 0, Unavailable = 0, NotInstalled = 0, Starting = 0, Disabled = 0}
 	local requiredIssues = {}
 	for name, entry in pairs(self.services) do
 		local copy = table.clone(entry)
