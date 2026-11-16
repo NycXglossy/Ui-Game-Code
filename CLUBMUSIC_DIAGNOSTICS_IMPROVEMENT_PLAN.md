@@ -41,7 +41,7 @@ Existing cross-server ClubMusic features remain separate; diagnostics reports on
 5. **ErrorHistory** — `ClubMusicErrorHandler.lua`
    - Retains a maximum of 50 records and 100 recent deduplication keys.
    - Aggregates repeated errors, timestamps records, and exposes local status counters.
-   - Keeps detailed messages and tracebacks server-side; the admin view displays metadata only.
+   - Keeps detailed messages and tracebacks server-side; the client-facing admin view receives aggregate counts only.
 
 6. **Global Service and trusted admin integration**
    - `ClubMusic_Global_Service_server_1.lua` wires the registry, ServerHealth, Watchdog, and ErrorHistory into the existing ServerStorage BindableFunction snapshot.
