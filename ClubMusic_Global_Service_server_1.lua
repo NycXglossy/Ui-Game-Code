@@ -605,6 +605,13 @@ local SECURITY_MODULE_EXPORTS: {[string]: string} = {
 }
 local cachedSecurityBundle: any = nil
 local securityBundleLoadAttempted = false
+local EXPECTED_SECURITY_CORE_RELEASE = "895544e81e485842c6e30edd9816cc501a77072e"
+local securityCoreInstallStatus: {[string]: any} = {
+ state = "NotChecked",
+ expectedRelease = EXPECTED_SECURITY_CORE_RELEASE,
+ installedRelease = nil,
+ manifestPresent = false,
+}
 
 local function loadOptionalGlobalModule(moduleName: string): any?
 	local securityExport = SECURITY_MODULE_EXPORTS[moduleName]
@@ -615,8 +622,28 @@ local function loadOptionalGlobalModule(moduleName: string): any?
 		local privateCore = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
 		if privateCore then
 			if not privateCore:IsA("Folder") then
+				securityCoreInstallStatus.state = "InvalidContainer"
 				warn("[ClubMusic Global] Private security core has an invalid container type.")
 				return nil
+			end
+			local manifest = privateCore:FindFirstChild("InstallManifest")
+			if manifest then
+				if not manifest:IsA("StringValue") then
+					securityCoreInstallStatus.state = "InvalidManifest"
+					warn("[ClubMusic Global] Security Core install manifest has the wrong class.")
+					return nil
+				end
+				local installedRelease = string.match(manifest.Value, "release=([%w]+)")
+				securityCoreInstallStatus.manifestPresent = true
+				securityCoreInstallStatus.installedRelease = installedRelease
+				if installedRelease ~= EXPECTED_SECURITY_CORE_RELEASE then
+					securityCoreInstallStatus.state = "VersionMismatch"
+					warn("[ClubMusic Global] Security Core release mismatch; refusing split modules.")
+					return nil
+				end
+				securityCoreInstallStatus.state = "VersionVerified"
+			else
+				securityCoreInstallStatus.state = "InstalledUnversioned"
 			end
 			local privateModule = privateCore:FindFirstChild(securityExport)
 			if not privateModule or not privateModule:IsA("ModuleScript") then
@@ -1212,6 +1239,7 @@ bindFunction("AuthorizeGlobalAction", function(actorUserId: any, permission: any
 end)
 bindFunction("GetGlobalSecurityStatus", function()
 	return true, {
+		SecurityCoreInstall = table.clone(securityCoreInstallStatus),
 		Authorization = if globalAuthorizationService then globalAuthorizationService:GetStatus() else {state = "Unavailable"},
 		Monitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else {state = "Unavailable"},
 		MessageValidation = if globalMessageValidationService then globalMessageValidationService:GetStatus() else {state = "Unavailable"},
