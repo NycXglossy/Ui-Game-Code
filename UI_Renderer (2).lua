@@ -2548,7 +2548,6 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		buildNowPlaying(content, true, true)
 
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else {}
-		local staffLevel = perm()
 		if canUseDJBooth() then
 			local playbackControls = card(88)
 			label(playbackControls, "LOCAL PLAYBACK", UDim2.fromOffset(12, 5), UDim2.new(1, -24, 0, 15), C.Muted, 9, true)
@@ -3586,13 +3585,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local rank = make("Frame", {Name="QueuePosition", Position=UDim2.fromOffset(12, 17), Size=UDim2.fromOffset(30, 30), BackgroundColor3=C.SurfaceLight, BorderSizePixel=0}, qcard)
 			corner(rank, 9)
 			local rankText = make("TextLabel", {Size=UDim2.fromScale(1, 1), BackgroundTransparency=1, Text=string.format("%02d", index), TextColor3=C.Gold, TextSize=11, Font=BOLD}, rank)
-			local textWidth = if level >= 3 then -100 else -24
+			local textWidth = if canManage then -100 else -24
 			local trackName = nz(item.title, nz(item.trackId, "Unknown track"))
 			local who = if item.source == "player" then "Requested by " .. nz(item.requestedBy, "a guest") else "Auto DJ pick"
 			if item.vip == true then who ..= "  •  VIP" end
 			label(qcard, trackName, UDim2.fromOffset(52, 7), UDim2.new(1, textWidth, 0, 22), C.White, 12, true)
 			label(qcard, who .. "  •  " .. formatTime(tonumber(item.duration) or 0), UDim2.fromOffset(52, 33), UDim2.new(1, textWidth, 0, 17), C.Muted, 10, false)
-			if level >= 3 then
+			if canManage then
 				local queueId = tostring(item.id)
 				if index > 1 then
 					local up = actionButton(qcard, "▲", UDim2.new(1, -88, 0.5, -15), UDim2.fromOffset(34, 30), function()
