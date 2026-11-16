@@ -234,3 +234,23 @@ Before production release, verify:
 8. **Add bounded analytics** only after operational reliability is established.
 
 Do not implement every item at once. Each phase should be reviewed, tested, and committed independently on the working branch. Mark a checkbox complete only when its stated exit criteria have evidence; source code existing is not proof of runtime correctness.
+
+
+## Phase 10 — Social Action Protection
+
+**Current status: Implemented in source for the audited Tiki Tide player-teleport pathway; broader place audit and runtime tests remain open.**
+
+- [x] Validate player teleport targets as server-resolved live players; reject invalid IDs and self-targeting.
+- [x] Require live actor/recipient characters and living Humanoids.
+- [x] Preserve recipient opt-in and the existing authorized GlobalModeration exception.
+- [x] Revalidate both sessions, character identities, entitlement, and recipient consent after potentially yielding permission checks.
+- [x] Revalidate character/root identity immediately before the server-authorized movement.
+- [x] Add non-yielding per-actor and per-recipient cooldown reservations to reduce spam and concurrent duplicate actions.
+- [x] Clean per-session budgets when players leave; keep existing ingress rate limiting.
+- [ ] Audit the complete place for additional social actions/remotes not present in the inspected repository snapshot.
+- [ ] Test multi-client consent, staff override, respawn/departure races, simultaneous recipient targeting, and rate-limit boundaries in Studio and published servers.
+- [ ] Add equivalent controls only for additional social actions that are confirmed to exist; reuse shared validation and rate-limit infrastructure.
+
+**Exit criteria:** every actual social action has server-side actor/target validation, consent/permission checks, per-player/per-target budgets, duplicate/race protection, bounded state, and regression evidence. Source review is not runtime verification.
+
+**Implementation note:** see `CLUBMUSIC_PHASE10_SOCIAL_ACTION_PROTECTION.md`. The inspected Utility Bar actions are self-only or environment-wide; no separate friend/follow/invite/trade/emote remote was found in the files audited for this phase.
