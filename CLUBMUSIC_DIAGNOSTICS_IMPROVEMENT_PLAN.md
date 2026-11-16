@@ -128,9 +128,9 @@ This is a static compatibility pass, not proof that every consumer in all embedd
 
 - Traced the UI Server Controller's dynamic `globalInvoke` bridge and its late-folder/event discovery logic.
 - Compared the explicitly invoked Global API names with provider-side signatures.
-- Found a confirmed return-contract mismatch: `GetGlobalAudit` returns its entries directly, while the Kohl's/admin bridge helper requires the first provider return to be `true`. The `OperationalSecurityLog` path can therefore reject a successful audit read. This is documented for a narrow compatibility fix; provider behavior is not changed in this audit commit.
+- Fixed the `GetGlobalAudit` consumer mismatch in `UI_Server_Controller_server (1).lua`: the admin bridge now normalizes that one read-only list getter at the consumer boundary. The Global Service provider return contract remains unchanged.
 - Verified that the Global Service source has 45 unique BindableFunction registrations, but only 42 are unconditional; the three SafeCall-related functions depend on optional module availability.
 - The repository fetch for the Kohl's Admin export returned empty content, so that embedded package remains unverified. The separate adapter source is still the supported inspection boundary.
 - Added a Studio compatibility test matrix covering startup order, late API discovery, event replacement, optional SafeCall availability, and the audit return-shape mismatch.
 
-**Next implementation task:** fix the `GetGlobalAudit` consumer contract without changing the provider's existing return shape, then run static contract checks before Studio verification. No runtime test is claimed.
+**Next verification task:** run static contract checks and Studio tests for `OperationalSecurityLog` with populated, empty, and unavailable audit results. No runtime test is claimed.
