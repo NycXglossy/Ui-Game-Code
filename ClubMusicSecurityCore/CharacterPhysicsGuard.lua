@@ -183,15 +183,28 @@ function Service:_watchCharacter(player: Player, character: Model)
 				if not current or not baseline then return end
 				local factor = scaleFactor(current, baseline)
 				if not factor or not finite(factor) then return end
-				if math.abs(factor - 1) <= SCALE_EPSILON then
+				local minRatio, maxRatio = math.huge, -math.huge
+				local outsideLimits = false
+				for name, baseValue in pairs(baseline) do
+					if math.abs(baseValue) > 0.001 then
+						local ratio = current[name] / baseValue
+						minRatio = math.min(minRatio, ratio)
+						maxRatio = math.max(maxRatio, ratio)
+						if ratio < LIMITS.BodyScale.min or ratio > LIMITS.BodyScale.max then
+							outsideLimits = true
+						end
+					end
+				end
+				local inconsistentScale = maxRatio - minRatio > 0.15
+				if math.abs(factor - 1) <= SCALE_EPSILON and not inconsistentScale and not outsideLimits then
 					state.baseline.Scales = current
 					return
 				end
-				local outsideLimits = factor < LIMITS.BodyScale.min or factor > LIMITS.BodyScale.max
-				local authorized = self:_checkAuthority(player.UserId, "BodyScale", factor)
+				local authorized = not inconsistentScale and not outsideLimits
+					and self:_checkAuthority(player.UserId, "BodyScale", factor)
 				if outsideLimits then
 					self:_emit("movement_limit_exceeded", player, "BodyScale=" .. string.format("%.3f", factor))
-				elseif not authorized then
+				elseif inconsistentScale or not authorized then
 					self:_emit("unverified_movement_change", player, "BodyScale=" .. string.format("%.3f", factor))
 				end
 				state.baseline.Scales = current
