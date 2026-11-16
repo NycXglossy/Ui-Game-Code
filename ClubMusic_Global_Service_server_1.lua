@@ -1031,7 +1031,7 @@ ownConnection(globalEventBindable.Event:Connect(function(event)
 			pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", event.actorUserId, tostring(event.field or "moderation"), tostring(event.field or "moderation"))
 		end
 	end
-end)
+end))
 
 local function getMessagingStatus(): {[string]: any}
 	local active, total = 0, 0
