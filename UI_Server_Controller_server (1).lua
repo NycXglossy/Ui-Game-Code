@@ -3685,7 +3685,20 @@ ControllerFunctions.applyReceiptToMemory = function(profile: Profile, productDat
 	end
 end
 
+-- Bounded per-server fast-path cache only. Durable per-purchase journals remain
+-- authoritative, so cache eviction never deletes or weakens receipt history.
 local processedReceipts: {[string]: boolean} = {}
+local processedReceiptOrder: {string?} = table.create(512)
+local processedReceiptCursor = 0
+local processedReceiptCount = 0
+local function rememberProcessedReceipt(receiptId: string)
+	if processedReceipts[receiptId] then return end
+	processedReceiptCursor = (processedReceiptCursor % 512) + 1
+	local evicted = processedReceiptOrder[processedReceiptCursor]
+	if evicted then processedReceipts[evicted] = nil else processedReceiptCount += 1 end
+	processedReceiptOrder[processedReceiptCursor] = receiptId
+	processedReceipts[receiptId] = true
+end
 
 local productReceiptJournalStore = DataStoreService:GetDataStore("ClubMusic_ProductReceipts_v1")
 
@@ -3904,18 +3917,26 @@ ControllerFunctions.persistReceipt = function(userId: number, receiptId: string,
 end
 
 MarketplaceService.ProcessReceipt = function(receiptInfo: any)
-	local userId = receiptInfo.PlayerId
-	local productId = receiptInfo.ProductId
-	local receiptId = tostring(receiptInfo.PurchaseId)
-	print(string.format("[ClubMusic][PurchaseServer] ProcessReceiptReached | UserId=%s | ProductId=%s | PurchaseId=%s | PlaceId=%d | GameId=%d",
-		tostring(userId), tostring(productId), string.sub(receiptId, 1, 32), game.PlaceId, game.GameId))
-	if typeof(userId) == "number" and typeof(productId) == "number" then
-		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
-	end
-	if typeof(userId) ~= "number" or typeof(productId) ~= "number"
-		or receiptId == "" or #receiptId > 128 then
+	-- MarketplaceService supplies this server callback. Treat every field as
+	-- untrusted input until its shape and identity are checked.
+	if typeof(receiptInfo) ~= "table" then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
+	local userId = receiptInfo.PlayerId
+	local productId = receiptInfo.ProductId
+	local receiptId = receiptInfo.PurchaseId
+	local validUserId = typeof(userId) == "number" and userId == userId
+		and userId > 0 and userId < math.huge and userId % 1 == 0 and userId <= 9007199254740991
+	local validProductId = typeof(productId) == "number" and productId == productId
+		and productId > 0 and productId < math.huge and productId % 1 == 0 and productId <= 9007199254740991
+	local validReceiptId = typeof(receiptId) == "string" and #receiptId >= 1 and #receiptId <= 128
+	if not validUserId or not validProductId or not validReceiptId then
+		warn("[ClubMusic][PurchaseServer] Malformed receipt metadata; leaving receipt unprocessed for retry.")
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	print(string.format("[ClubMusic][PurchaseServer] ProcessReceiptReached | UserId=%s | ProductId=%s | PurchaseId=%s | PlaceId=%d | GameId=%d",
+		tostring(userId), tostring(productId), string.sub(receiptId, 1, 32), game.PlaceId, game.GameId))
+	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
 	if processedReceipts[receiptId] then return Enum.ProductPurchaseDecision.PurchaseGranted end
 	local player = Players:GetPlayerByUserId(userId)
 	local profile = profiles[userId]
