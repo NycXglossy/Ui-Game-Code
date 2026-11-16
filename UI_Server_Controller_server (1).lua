@@ -5146,6 +5146,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if safeTexts then safeTexts[slotNumber] = nil end
 		if profile.activeSlot == slotNumber then
 			profile.activeSlot = ControllerFunctions.firstFilledSlot(profile) or 1
+			if profile.titleSlots[profile.activeSlot] then
+				ControllerFunctions.ensureFilteredTitleSlot(player, profile, profile.activeSlot)
+			end
 		end
 		ControllerFunctions.applyTitleAttributes(player, profile)
 		ControllerFunctions.scheduleProfileSave(player)
