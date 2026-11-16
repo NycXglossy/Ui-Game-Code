@@ -974,7 +974,7 @@ else
 end
 if not globalAuthorizationService then
 	-- Keep a strict built-in fallback if the separately installed module is absent
-	-- or malformed. The trusted controller resolver remains mandatory.
+	-- or malformed. Its resolver uses the optional controller bridge or native group policy.
 	local allowedPermissions = {
 		GlobalDJ = true,
 		GlobalModeration = true,
