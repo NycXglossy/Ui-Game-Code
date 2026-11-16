@@ -10,7 +10,6 @@ Service.__index = Service
 
 local SAMPLE_WINDOW_SECONDS = 60
 local MEMORY_SAMPLE_SECONDS = 30
-local MAX_FRAME_SAMPLES = 240
 local SLOW_FRAME_SECONDS = 0.05
 local SEVERE_FRAME_SECONDS = 0.1
 local SLOW_FRAME_LIMIT = 8
@@ -28,11 +27,7 @@ function Service.new(options: {[string]: any}?)
 		running = false,
 		connection = nil,
 		memoryThread = nil,
-		frames = {},
-		frameTotal = 0,
-		slowFrames = 0,
-		severeFrames = 0,
-		maxFrameSeconds = 0,
+		frameBuckets = {},
 		lastFrameAt = 0,
 		memoryMb = nil,
 		memorySampleAt = nil,
@@ -45,14 +40,19 @@ end
 function Service:_recordFrame(deltaTime: number)
 	local now = os.clock()
 	self.lastFrameAt = now
-	self.frameTotal += deltaTime
-	self.maxFrameSeconds = math.max(self.maxFrameSeconds, deltaTime)
-	if deltaTime >= SLOW_FRAME_SECONDS then self.slowFrames += 1 end
-	if deltaTime >= SEVERE_FRAME_SECONDS then self.severeFrames += 1 end
-	table.insert(self.frames, {at = now, delta = deltaTime})
-	if #self.frames > MAX_FRAME_SAMPLES then table.remove(self.frames, 1) end
-	while #self.frames > 0 and now - self.frames[1].at > SAMPLE_WINDOW_SECONDS do
-		table.remove(self.frames, 1)
+	local second = math.floor(now)
+	local bucket = self.frameBuckets[second]
+	if not bucket then
+		bucket = {count = 0, total = 0, max = 0, slow = 0, severe = 0}
+		self.frameBuckets[second] = bucket
+	end
+	bucket.count += 1
+	bucket.total += deltaTime
+	bucket.max = math.max(bucket.max, deltaTime)
+	if deltaTime >= SLOW_FRAME_SECONDS then bucket.slow += 1 end
+	if deltaTime >= SEVERE_FRAME_SECONDS then bucket.severe += 1 end
+	for key in pairs(self.frameBuckets) do
+		if now - key > SAMPLE_WINDOW_SECONDS then self.frameBuckets[key] = nil end
 	end
 end
 
@@ -92,13 +92,13 @@ function Service:GetStatus(): {[string]: any}
 	local frameMax = 0
 	local slow = 0
 	local severe = 0
-	for _, sample in ipairs(self.frames) do
-		if now - sample.at <= SAMPLE_WINDOW_SECONDS then
-			frameCount += 1
-			frameTotal += sample.delta
-			frameMax = math.max(frameMax, sample.delta)
-			if sample.delta >= SLOW_FRAME_SECONDS then slow += 1 end
-			if sample.delta >= SEVERE_FRAME_SECONDS then severe += 1 end
+	for second, bucket in pairs(self.frameBuckets) do
+		if now - second <= SAMPLE_WINDOW_SECONDS then
+			frameCount += bucket.count
+			frameTotal += bucket.total
+			frameMax = math.max(frameMax, bucket.max)
+			slow += bucket.slow
+			severe += bucket.severe
 		end
 	end
 	local average = if frameCount > 0 then frameTotal / frameCount else nil
