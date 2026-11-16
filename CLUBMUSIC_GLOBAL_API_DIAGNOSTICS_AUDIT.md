@@ -109,3 +109,85 @@ These are overlapping but not interchangeable:
 ## Runtime status
 
 No Roblox Studio or published-server execution was performed by this static audit. Runtime behavior remains unverified.
+
+## Second pass — dynamic consumers, signatures, and packaged assets (2026-11-16)
+
+### Dynamic bridge and late-start behavior
+
+The UI Server Controller implements `ControllerFunctions.globalInvoke(name, ...)`. It:
+- Re-resolves `ServerStorage.ClubMusicGlobalAPI` when the cached folder is missing, replaced, or no longer parented to ServerStorage.
+- Looks up the requested child by name and requires it to be a `BindableFunction`.
+- Packs and forwards the original arguments through `Invoke` inside `pcall`.
+- Returns the invocation-success flag followed by up to three provider return values.
+
+The event subscriber independently watches the initial API folder, a late-created API folder, and a late-created `GlobalEvent` child. It keys connections by event instance, so a replacement event can be attached without duplicating a connection to the same instance.
+
+### Verified dynamic consumer names
+
+The UI Server Controller contains dynamic invocations for:
+- `GetGlobalXPBoost`
+- `RecordLocalWatchdogPulse`
+- `IsTrackBlocked`
+- `ActivateGlobalXPBoost`
+- `PublishCatalogChange`
+- `SetRequestBlocked`
+- `AuthorizeGlobalAction`
+- `ReportSignal`
+- `GetModerationHistory`
+- `GetGlobalSecurityStatus`
+- `GetGlobalSecurityIncidents`
+- `OpenGlobalSecurityIncident`
+- `ResolveGlobalSecurityIncident`
+- `GetGlobalSecurityPolicy`
+- `SetGlobalSecurityPolicy`
+- `GetGlobalHealth`
+- `GetGlobalDiagnostics`
+- `GetGlobalOperationalStatus`
+- `GetGlobalMetrics`
+- `GetGlobalAudit`
+- `GetGlobalConfig`
+- `RunGlobalReconciliation`
+- `SetGlobalMaintenance`
+- `IsEnabled`
+- `GetModerationState`
+
+The Global Service source contains exactly 45 unique `bindFunction` registrations. Three SafeCall-related registrations (`GetGlobalMemoryStoreStatus`, `GetGlobalSafeCallStatus`, and `GetGlobalSafeCallRecent`) are conditional on the optional SafeCall module being available; therefore the runtime API may expose fewer than 45 functions when that optional module is absent. The rest are registered directly by the Global Service.
+
+### Confirmed return-contract mismatch
+
+**Finding: `GetGlobalAudit` is incompatible with the current admin bridge helper.**
+
+- Provider: `GetGlobalAudit` returns `globalAuditService:GetRecent(...)` directly; it does not prefix the result with `true`.
+- Consumer: the UI Server Controller calls it through `adminBridgeGlobalCall`.
+- Bridge behavior: `adminBridgeGlobalCall` requires the provider's first return value to be exactly `true`, interpreting that first value as an acceptance flag.
+- Result: if `GetRecent` returns its normal entries table as the first value, the bridge rejects a successful read and reports the operation as rejected. The `OperationalSecurityLog` command therefore has a source-level contract defect.
+
+**Remediation decision:** preserve the existing `GetGlobalAudit` provider contract until all callers are known; update the admin bridge in a narrowly scoped compatibility patch to accept this read-only list-returning API, or introduce a separately named normalized wrapper after confirming no other consumer relies on the current return shape. Do not change the provider return shape blindly.
+
+Other inspected diagnostics getters used by the UI bridge (`GetGlobalHealth`, `GetGlobalDiagnostics`, `GetGlobalOperationalStatus`, `GetGlobalMetrics`, and `GetGlobalConfig`) explicitly return `true, payload`, matching the bridge convention.
+
+### Packaged assets and installer boundary
+
+- The packaged `ClubMusic_Global_Optional_Services.rbxmx` contains an embedded `ClubMusic_Global_SafeCall_Service` ModuleScript source. The standalone Lua module remains a second source representation; edits must keep them synchronized if both are distributed.
+- The Security Core installer source inspected in this pass does not install or reference the Optional Services package. It only looks up the Global API's `RecordGlobalSecuritySignal` BindableFunction for CharacterPhysicsGuard signal reporting. This does not establish which separate Studio workflow deploys Optional Services.
+- A repository fetch of `Kohl's Admin.rbxmx txt.txt` returned empty content in this pass. Treat the Kohl's Admin package scan as **unverified**, not as a clean bill of health. The separate `RegularCommandsSecurityServer.lua` adapter remains the known integration boundary to inspect.
+- No client RemoteEvent/RemoteFunction exposure of `ClubMusicGlobalAPI` was found in the inspected Global Service and UI Server Controller; the API folder is under ServerStorage and uses BindableFunction/BindableEvent instances.
+
+### Second-pass decisions
+
+1. Keep all 45 registered API names stable; account for the three optional SafeCall registrations when checking runtime presence.
+2. Keep the Global API server-only and preserve the current dynamic late-discovery behavior.
+3. Record `GetGlobalAudit` as a confirmed return-shape mismatch requiring a focused compatibility fix before declaring admin diagnostics consumers fully compatible.
+4. Do not claim the Kohl's Admin export or all embedded models have been exhaustively scanned; the fetched export content was empty.
+5. Keep the Optional Services package and standalone SafeCall source synchronized until the actual Studio distribution path is confirmed.
+
+### Compatibility test cases to run in Studio
+
+- Start UI Server Controller before Global Service; verify calls fail closed while unavailable, then recover once the API folder appears.
+- Start Global Service before UI Server Controller; verify the initial folder/event connection is established.
+- Remove and recreate `GlobalEvent`; verify the controller attaches to the replacement exactly once.
+- Invoke every diagnostics getter and producer with valid and invalid arguments; verify expected first-return success flag and payload shape.
+- Specifically exercise `OperationalSecurityLog` and verify `GetGlobalAudit` returns entries through the admin bridge after the compatibility fix.
+- Run with SafeCall installed and absent; verify optional API presence is reported accurately and no core global feature depends on it.
+- Confirm no raw SafeCall tracebacks or client-originated diagnostics are exposed to players.
+
