@@ -379,3 +379,13 @@ The repository installation path is now explicit for the active playback inspect
 - `ServerMusicAudioHandler.luau` remains unreferenced by the controller and is not installed by the current installer. It remains a rollback/reference file; do not delete it as part of this change.
 
 **Live-place gate remains open:** the repository installer now defines the expected placement, but it cannot establish which source is currently present in an already-published place. In Studio, run the updated installer in a backed-up stopped-place copy, verify `ServerStorage.MusicPlaybackManager` is a ModuleScript with source matching the pinned standalone file, and confirm the controller starts without a module-loader error. Then exercise modern AudioPlayer quality snapshots, watchdog classifications, pause/restart/reload, recovery, and the legacy fallback path. Do not retire legacy Sound objects or delete `ServerMusicAudioHandler.luau` until those checks pass.
+
+
+## Playback quality diagnostics — 2026-11-17
+
+- The controller's server-only `GetClubMusicLocalDiagnostics` bridge now includes the active `MusicPlaybackManager:InspectQuality()` result in its playback summary.
+- Added bounded, non-sensitive fields: `qualityState`, `qualityReason`, `qualityBackend`, `qualityLoaded`, and `qualityLength`. No asset IDs, player names, raw errors, or client telemetry are exposed.
+- This makes the watchdog's existing quality classifications independently observable during Studio validation without adding a second polling loop or changing watchdog/recovery behavior.
+- Static source review confirmed the modern backend snapshot is sourced through the controller's injected `GetAudioSnapshot`; legacy Sound inspection remains only a guarded fallback. The adapter continues to preserve the watchdog states `Idle`, `SilentCatalogTrack`, `Unavailable`, `Playing`, `Paused`, `StoppedAfterLoad`, and `BufferingOrStopped`.
+- No legacy fallback removal is included. The next acceptance gate is owner-run Studio testing: confirm `migrationSucceeded=true`, `backend=AudioPlayer`, and `qualityState=Playing` during playback; verify `Paused` during pause and correct recovery/quality state after reload and a forced recoverable stop. Then verify a normal track transition and watchdog behavior before any legacy Sound retirement.
+- This is a static code change only; no Luau compilation or Roblox runtime test was performed by the repository workflow.
