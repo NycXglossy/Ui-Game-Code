@@ -456,3 +456,12 @@ The repository installation path is now explicit for the active playback inspect
 - After ownership transfer, outgoing-backend cleanup failures are now logged instead of being silently discarded. The incoming backend remains the active source; cleanup failure is diagnostic and does not roll back an already committed track.
 - Cancellation still restores outgoing gain before the settlement callback clears its reference. Failure reporting remains available after cancellation because the manager retains its controller context until explicit teardown.
 - **Static checks required:** settlement is notified on both commit and cancellation; the controller clears all transition-scoped references; outgoing cleanup failures are surfaced; queue and source ownership remain controller-owned. No Luau compilation, Studio, or published-server test has been run.
+
+
+### Crossfade commit ownership boundary audit (2026-11-17)
+
+- The controller commit callback now treats queue consumption plus active-source assignment as the ownership-transfer boundary. Before that boundary, failures restore the outgoing source and allow coordinator cancellation; after it, bookkeeping failures must not be returned as commit failures because coordinator cancellation would destroy the incoming deck that is already active.
+- After queue consumption and source assignment, the controller increments the source revision and wraps Now Playing mutation/publication in `pcall`. Failure is warned and the incoming deck remains committed.
+- Deferred automatic queue top-up and state publication are independently protected and report failures without reversing the audio ownership transfer. Outgoing deck cleanup remains protected and warning-only after commit.
+- The queue manager's `PopNext` releases the consumed entry's reserved slot. Its `Insert` method does not re-reserve that slot, so rollback after PopNext is not a safe generic compensation. The commit path therefore keeps all ordinary rejection paths before queue consumption and treats post-consumption bookkeeping as non-fatal.
+- Static source review only. Studio acceptance must still exercise commit-time publication failure, deferred scheduling failure where reproducible, cancellation before commit, queue-slot accounting, repeated crossfades, and outgoing cleanup failure. No Roblox runtime verification is claimed.
