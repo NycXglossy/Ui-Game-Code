@@ -2392,7 +2392,8 @@ end
 local entitlementAuthority: any = nil
 local blockedUsers: {[number]: boolean} = {}
 local skipVotes: {[number]: boolean} = {}
-local requestsLocked = false
+local requestsLocked = false -- Emergency request lock only; DJ Control Mode is separate.
+local djControlModeEnabled = false
 local recentTracks: {string} = {}
 local lastAutoGenre = ""
 
@@ -4317,7 +4318,7 @@ ControllerFunctions.requestBlockReason = function(player: Player, trackId: strin
 	end
 	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
 	if ControllerFunctions.isTrackBlocked(trackId) then return "That track has been blocked by ClubMusic staff." end
-	if requestsLocked and ControllerFunctions.getLevel(player) < 3 then return "DJ Control Mode is active. Normal song requests are temporarily locked." end
+	if requestsLocked and ControllerFunctions.getLevel(player) < 3 then return "Emergency request lock is active on this server." end
 	if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
 	local cooldown = ControllerFunctions.cooldownFor(player)
 	local sinceLast = now - (lastRequestAt[player.UserId] or -1000)
@@ -4674,13 +4675,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not track then return end
 		if not isPlayableTrack(track) then notify(player, "That catalog entry is a temporary placeholder and is not playable yet.", "warn"); return end
 
-		local level = ControllerFunctions.getLevel(player)
 		if blockedUsers[player.UserId] then
 			notify(player, "Your requests are disabled by staff.", "warn")
-			return
-		end
-		if requestsLocked and level < 3 then
-			notify(player, "DJ Control Mode is active. Normal song requests are temporarily locked.", "warn")
 			return
 		end
 		if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then
@@ -4817,6 +4813,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "ReloadSong" then
+		if not ControllerFunctions.canUseDJBooth(player) then
+			return false, "DJ Booth access is required to reload playback."
+		end
 		local last = lastReloadAt[player.UserId] or -1000
 		if now - last < CONFIG.ReloadCooldownSeconds then return end
 		lastReloadAt[player.UserId] = now
@@ -4986,10 +4985,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJToggleLock" then
 		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
-		requestsLocked = not requestsLocked
-		ControllerFunctions.broadcast(if requestsLocked then "DJ Control Mode is ON. Normal player song requests are locked on this server." else "DJ Control Mode is OFF. Normal song requests are open on this server.", "info")
+		djControlModeEnabled = not djControlModeEnabled
+		ControllerFunctions.broadcast(if djControlModeEnabled then "DJ Control Mode is ON. Normal player requests and Auto DJ remain available." else "DJ Control Mode is OFF. Normal player requests and Auto DJ remain available.", "info")
 		publishState(nil)
-		return true, if requestsLocked then "DJ Control Mode enabled on this server." else "DJ Control Mode disabled on this server."
+		return true, if djControlModeEnabled then "DJ Control Mode enabled; player requests remain available." else "DJ Control Mode disabled."
 	end
 
 	if action == "ModBlockUser" then
@@ -5442,7 +5441,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local currentTitle = if typeof(nowPlaying.title) == "string" and nowPlaying.title ~= "" then nowPlaying.title else "Nothing playing"
 		local currentArtist = if typeof(nowPlaying.artist) == "string" then nowPlaying.artist else ""
 		local playbackLabel = if playbackPaused then "PAUSED" else "PLAYING"
-		local requestLabel = if requestsLocked then "LOCKED" else "OPEN"
+		local requestLabel = if requestsLocked then "EMERGENCY LOCK" else "OPEN"
 		local queueCount = #queue
 		local elapsed = math.max(0, math.floor(tonumber(nowPlaying.elapsed) or 0))
 		local duration = math.max(0, math.floor(tonumber(nowPlaying.duration) or 0))
@@ -5610,7 +5609,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	end
 	if operation == "EmergencyLock" then
 		requestsLocked = true
-		ControllerFunctions.broadcast("ClubMusic requests have been emergency-locked on this server by staff.", "warn")
+		ControllerFunctions.broadcast("ClubMusic requests have been emergency-locked on this server by staff. Auto DJ playback/refill remains server-managed.", "warn")
 		publishState(nil)
 		return true, "ClubMusic requests are now locked on this server. Use ;cmlock after the incident to reopen them."
 	end
