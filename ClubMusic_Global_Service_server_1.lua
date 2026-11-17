@@ -3,8 +3,9 @@
 -- Place as a Script in ServerScriptService.
 -- Cross-server coordination for the secured Club Music UI.
 --
--- Uses MemoryStore for expiring shared budgets, DataStore for durable moderation,
--- and MessagingService for best-effort cross-server notifications/commands.
+-- Uses DataStore for durable global moderation/configuration/receipts and
+-- MessagingService for best-effort cross-server notifications/commands.
+-- Rate limiting is bounded and server-local; audio playback is server-local too.
 -- Every receiving server validates messages and applies only allowlisted commands.
 -- MessagingService is not a durable queue; periodic reconciliation handles moderation state.
 
@@ -31,16 +32,7 @@ local CONFIG = {
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
-	BudgetMapName = "ClubMusic_GlobalBudgets_v1",
-	-- A shared bucket limits aggregate activity across all live servers.
-	GlobalActionCapacity = 900,
-	GlobalActionRefillPerSecond = 300,
-	GlobalPlayerCapacity = 45,
-	GlobalPlayerRefillPerSecond = 12,
-	GlobalAudioCapacity = 18,
-	GlobalAudioRefillPerSecond = 3,
-	BudgetKeyTtlSeconds = 90,
-	-- Temporary local fallback is conservative if MemoryStore is unavailable.
+	-- Bounded per-server budgets; no shared MemoryStore limiter.
 	FallbackPlayerCapacity = 20,
 	FallbackPlayerRefillPerSecond = 5,
 	ModerationReconcileSeconds = 180,
@@ -76,11 +68,6 @@ local globalIdempotencyService: any = nil
 local globalIncidentResponseService: any = nil
 local globalSecurityPolicyService: any = nil
 local authorizeGlobalActor: (any, string) -> boolean
--- Cross-server stores are created only when cross-server operation is enabled.
--- In isolated Studio sessions, requiring this controller must not touch DataStore
--- or MemoryStore APIs (the place may be unpublished and API access unavailable).
-local budgetMap: any = nil
-local budgetMapInitializationError: string? = nil
 local moderationStore: any = nil
 local globalControlStore: any = nil
 local globalConfigStore: any = nil
@@ -92,7 +79,7 @@ local MAX_PURCHASE_ID_LENGTH = 128
 
 if SERVICE_ENABLED then
 	-- Durable DataStore handles are required for global moderation, configuration,
-	-- and purchase records. MemoryStore rate-limit allocation remains disabled.
+	-- and purchase records. Request budgets remain server-local.
 	local storesOk, storesError = pcall(function()
 		moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 		globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
@@ -103,11 +90,6 @@ if SERVICE_ENABLED then
 		SERVICE_ENABLED = false
 		warn("[ClubMusic Global] DataStore handle initialization failed; global features are disabled safely: "
 			.. tostring(storesError))
-	else
-		-- MemoryStore rate-limit records are intentionally disabled to minimize
-		-- universe-wide allocation. Cross-server requests use bounded local limits.
-		budgetMap = nil
-		budgetMapInitializationError = "MemoryStore total memory budget disabled for minimal storage mode."
 	end
 end
 
@@ -231,79 +213,16 @@ local function fallbackBucket(key: string, capacity: number, refill: number, cos
 	return true
 end
 
-local memoryStoreCapacityLimited = false
-local memoryStoreCapacityError = nil
-
-local function isMemoryCapacityError(err: any): boolean
- local message = string.lower(tostring(err or ""))
- return string.find(message, "total memory", 1, true) ~= nil
-  or string.find(message, "memory limit", 1, true) ~= nil
-  or string.find(message, "memory usage", 1, true) ~= nil
-end
-
 local function consumeShared(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
- if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
- -- Shared MemoryStore rate-limit allocation is intentionally disabled in
- -- minimal-storage mode. Use bounded per-server buckets directly; do not
- -- classify this deliberate configuration as a capacity failure.
- if budgetMap == nil then
-  return fallbackBucket(key, math.min(capacity, CONFIG.FallbackPlayerCapacity), CONFIG.FallbackPlayerRefillPerSecond, cost), false
- end
- -- Consolidate the three per-player limiter records (user/state/audio) into
- -- one expiring MemoryStore item per player. This lowers key cardinality
- -- without merging their independent token buckets or changing their limits.
- local bucketName, playerId = string.match(key, "^(%a+):(%d+)$")
- if bucketName ~= "user" and bucketName ~= "state" and bucketName ~= "audio" then
-  bucketName, playerId = nil, nil
- end
- local storageKey = if playerId then "player:" .. playerId else key
- if not memoryStoreCapacityLimited then
-  local now = os.time()
-  local ok, allowed = pcall(function()
-   local result = budgetMap:UpdateAsync(storageKey, function(old)
-    if playerId then
-     local record = if typeof(old) == "table" then table.clone(old) else {}
-     local buckets = if typeof(record.buckets) == "table" then table.clone(record.buckets) else {}
-     for name, saved in pairs(buckets) do
-      if typeof(saved) ~= "table" or not finiteNumber(saved.updated)
-       or now - saved.updated > CONFIG.BudgetKeyTtlSeconds then
-       buckets[name] = nil
-      end
-     end
-     local state = if typeof(buckets[bucketName]) == "table" then buckets[bucketName] else {}
-     local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
-     local updated = if finiteNumber(state.updated) then state.updated else now
-     tokens = math.min(capacity, tokens + math.max(0, now - updated) * refill)
-     local permit = tokens >= cost
-     if permit then tokens -= cost end
-     buckets[bucketName] = {tokens = tokens, updated = now}
-     record.buckets = buckets
-     record.lastUpdated = now
-     record.allowed = permit
-     return record
-    end
-    local state = if typeof(old) == "table" then old else {}
-    local tokens = if finiteNumber(state.tokens) then state.tokens else capacity
-    local updated = if finiteNumber(state.updated) then state.updated else now
-    tokens = math.min(capacity, tokens + math.max(0, now - updated) * refill)
-    local permit = tokens >= cost
-    if permit then tokens -= cost end
-    return {tokens = tokens, updated = now, allowed = permit}
-   end, CONFIG.BudgetKeyTtlSeconds)
-   return typeof(result) == "table" and result.allowed == true
-  end)
-  if ok then return allowed == true, true end
-  if isMemoryCapacityError(allowed) then
-   -- Stop issuing more MemoryStore writes while the allocation is full.
-   -- The per-server fallback remains bounded and does not bypass authorization.
-   memoryStoreCapacityLimited = true
-   memoryStoreCapacityError = string.sub(tostring(allowed), 1, 300)
-   warn("[ClubMusic Global] MemoryStore total memory limit reached; shared rate limiting is temporarily using bounded per-server fallback.")
-  else
-   warn("[ClubMusic Global] MemoryStore budget unavailable; using local fallback: " .. tostring(allowed))
-  end
- end
- return fallbackBucket(key, math.min(capacity, CONFIG.FallbackPlayerCapacity), CONFIG.FallbackPlayerRefillPerSecond, cost), false
+	if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
+	-- This limiter is intentionally local to this server. The bounded token
+	-- buckets do not depend on MemoryStore availability or shared state.
+	return fallbackBucket(
+		key,
+		math.min(capacity, CONFIG.FallbackPlayerCapacity),
+		CONFIG.FallbackPlayerRefillPerSecond,
+		cost
+	), false
 end
 
 local function userKey(userId: number): string?
@@ -314,13 +233,9 @@ end
 local function getModeration(userId: number): {[string]: any}
 	local key = userKey(userId)
 	if not key then return {} end
-	-- Bound durable reads across all servers. If the shared limiter itself is
-	-- unavailable, report a lookup failure so callers can fail closed.
-	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
-	-- consumeShared already applies a conservative per-server fallback when
-	-- MemoryStore is unavailable. Only an exhausted limiter should block the
-	-- durable read; a MemoryStore outage alone must not manufacture an unknown
-	-- moderation result when DataStore is still reachable.
+	-- Bound durable reads with a per-server token bucket. Exhaustion fails closed;
+	-- no MemoryStore request or shared budget is involved.
+	local budgetAllowed = consumeShared("all:datastore", 90, 15, 1)
 	if not budgetAllowed then
 		return {lookupFailed = true}
 	end
@@ -338,8 +253,7 @@ local function updateModeration(userId: number, field: string, value: any, actor
 	local key = userKey(userId)
 	if not key or (field ~= "globalBan" and field ~= "requestBlocked") then return false end
 	local budgetAllowed = consumeShared("all:datastore", 90, 15, 1)
-	-- Shared MemoryStore budgets are intentionally disabled in minimal-storage mode.
-	-- The bounded per-server fallback remains mandatory; reject only when it is exhausted.
+	-- The bounded per-server token bucket remains mandatory; reject only when exhausted.
 	if not budgetAllowed then
 		warn("[ClubMusic Global] Moderation update rejected: local DataStore budget exhausted.")
 		return false
@@ -794,13 +708,15 @@ if safeCallModule then
 end
 if globalSafeCall then
 	bindFunction("GetGlobalMemoryStoreStatus", function()
-	return {
-		sharedRateLimitsEnabled = budgetMap ~= nil and not memoryStoreCapacityLimited,
-		capacityLimited = memoryStoreCapacityLimited,
-		lastCapacityError = memoryStoreCapacityError,
-		mode = if budgetMap == nil then "LocalOnly" else (if memoryStoreCapacityLimited then "LocalFallback" else "Shared")
-	}
-end)
+		-- Compatibility diagnostic: the global shared limiter has been retired.
+		return {
+			sharedRateLimitsEnabled = false,
+			capacityLimited = false,
+			lastCapacityError = nil,
+			mode = "LocalOnly",
+			detail = "Bounded per-server rate limits are active; no shared limiter is provisioned."
+		}
+	end)
 
 bindFunction("GetGlobalSafeCallStatus", function()
 		return globalSafeCall:GetStatus()
@@ -946,7 +862,7 @@ if diagnosticsModule then
 				return if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function"
 					then globalErrorHandler.GetStatus() else nil
 			end,
-			getMemoryStoreStatus = function() return {capacityLimited = memoryStoreCapacityLimited, lastCapacityError = memoryStoreCapacityError} end,
+			getMemoryStoreStatus = function() return {sharedRateLimitsEnabled = false, mode = "LocalOnly", detail = "Bounded per-server rate limits are active."} end,
 			getAuthorizationStatus = function() return if globalAuthorizationService then globalAuthorizationService:GetStatus() else nil end,
 			getRateLimitStatus = function() return if globalRateLimitService then globalRateLimitService:GetStatus() else nil end,
 			getSecurityPolicyStatus = function() return if globalSecurityPolicyService then globalSecurityPolicyService:GetStatus() else nil end,
