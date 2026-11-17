@@ -5375,6 +5375,34 @@ localDiagnosticsBindable.OnInvoke = function()
 		local ok, result = pcall(ControllerFunctions.getAudioSnapshot)
 		if ok and typeof(result) == "table" then audioSnapshot = result end
 	end
+	local playbackQuality = nil
+	local playbackAdapter = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playback
+	if playbackAdapter and type(playbackAdapter.InspectQuality) == "function" then
+		local ok, result = pcall(function() return playbackAdapter:InspectQuality() end)
+		if ok and typeof(result) == "table" then playbackQuality = result end
+	end
+	return {
+		state = if remotes:GetAttribute("Ready") == true then "Healthy" else "Starting",
+		scope = "ServerLocal",
+		purchase = table.clone(purchaseDiagnosticStats),
+		moderation = table.clone(moderationDiagnosticStats),
+		playback = {
+			backend = if typeof(audioSnapshot) == "table" then tostring(audioSnapshot.kind or "Unavailable") else "Unavailable",
+			playing = typeof(audioSnapshot) == "table" and audioSnapshot.playing == true,
+			paused = typeof(audioSnapshot) == "table" and audioSnapshot.paused == true,
+			qualityState = if typeof(playbackQuality) == "table" then tostring(playbackQuality.state or "Unknown") else "Unavailable",
+			qualityReason = if typeof(playbackQuality) == "table" and typeof(playbackQuality.reason) == "string" then playbackQuality.reason else "",
+			qualityBackend = if typeof(playbackQuality) == "table" and typeof(playbackQuality.backend) == "string" then playbackQuality.backend else "",
+			qualityLoaded = typeof(playbackQuality) == "table" and playbackQuality.loaded == true,
+			qualityLength = if typeof(playbackQuality) == "table" and ControllerFunctions.isFiniteNumber(playbackQuality.length) then math.max(0, playbackQuality.length) else 0,
+			queueDepth = #queue,
+			modernBackendConfigured = CONFIG.UseModernAudioBackend == true,
+			migrationSucceeded = modernAudioMigrationSucceeded,
+			migrationFailureCount = modernAudioMigrationFailureCount,
+		},
+		updatedAt = os.time(),
+	}
+end
 	return {
 		state = if remotes:GetAttribute("Ready") == true then "Healthy" else "Starting",
 		scope = "ServerLocal",
