@@ -5572,6 +5572,60 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1900)
 	end
+	if operation == "SecurityThreatIntelligence" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic administrator permission is required."
+		end
+		local targetUserId: number? = nil
+		local queryLimit = 15
+		local rawArgument = if typeof(argument) == "string" then string.gsub(argument, "^%s*(.-)%s*$", "%1") else ""
+		if rawArgument ~= "" then
+			local userPart, limitPart = string.match(rawArgument, "^(%d+)%s*(%d*)$")
+			if not userPart then return false, "Use ;cmthreat [UserId] [Limit]." end
+			local parsedUserId = tonumber(userPart)
+			if not parsedUserId or parsedUserId < 1 or parsedUserId > 9007199254740991
+				or parsedUserId % 1 ~= 0 then return false, "Threat-intelligence target UserId is invalid." end
+			targetUserId = parsedUserId
+			if limitPart ~= "" then
+				local parsedLimit = tonumber(limitPart)
+				if not parsedLimit or parsedLimit < 1 or parsedLimit > 30 or parsedLimit % 1 ~= 0 then
+					return false, "Threat-intelligence limit must be an integer from 1 to 30."
+				end
+				queryLimit = parsedLimit
+			end
+		end
+		local endpoint = ServerStorage:FindFirstChild("TikiTideThreatIntelligence")
+		if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= ServerStorage then
+			return false, "Threat intelligence is unavailable on this server."
+		end
+		local queryOk, allowed, incidents, queryError = pcall(function()
+			return endpoint:Invoke("Query", caller, targetUserId, queryLimit)
+		end)
+		if not queryOk or allowed ~= true or typeof(incidents) ~= "table" then
+			return false, if typeof(queryError) == "string" then queryError else "Threat-intelligence query failed."
+		end
+		if #incidents == 0 then
+			return true, if targetUserId then "No correlated review items for UserId " .. tostring(targetUserId) .. " on this server."
+				else "No correlated threat-review items are currently retained on this server."
+		end
+		local lines = {"Tiki Tide Threat Intelligence (server-local review only):"}
+		for index, item in ipairs(incidents) do
+			if index > queryLimit then break end
+			if typeof(item) == "table" then
+				local age = if typeof(item.lastAt) == "number" then math.floor(math.max(0, os.clock() - item.lastAt)) else 0
+				local categories = if typeof(item.categories) == "table" then table.concat(item.categories, ",") else "n/a"
+				local signals = if typeof(item.signals) == "table" then table.concat(item.signals, ",") else "n/a"
+				table.insert(lines, string.format("%s | UserId %d | %s confidence | score %d | %d events | %ds ago",
+					tostring(item.id or "?"), typeof(item.subjectUserId) == "number" and item.subjectUserId or 0,
+					tostring(item.confidence or "Low"), typeof(item.score) == "number" and item.score or 0,
+					typeof(item.eventCount) == "number" and item.eventCount or 0, age))
+				table.insert(lines, "  Categories: " .. string.sub(categories, 1, 180))
+				table.insert(lines, "  Signals: " .. string.sub(signals, 1, 180))
+			end
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1850)
+	end
 	if operation == "SecurityStatus" then
 		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
 			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
@@ -5580,7 +5634,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local ok, status = ControllerFunctions.adminBridgeGlobalCall("GetGlobalSecurityStatus")
 		if not ok or typeof(status) ~= "table" then return false, tostring(status or "Security status is unavailable.") end
 		local lines = {"ClubMusic Global Security Status:"}
-		for _, key in ipairs({"Authorization", "Monitor", "MessageValidation", "Idempotency", "IncidentResponse"}) do
+		for _, key in ipairs({"Authorization", "Monitor", "MessageValidation", "Idempotency", "IncidentResponse", "ThreatIntelligence"}) do
 			local item = status[key]
 			local state = if typeof(item) == "table" then tostring(item.state or "Unknown") else "Unavailable"
 			table.insert(lines, key .. ": " .. state)
