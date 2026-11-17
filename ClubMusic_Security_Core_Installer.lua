@@ -387,11 +387,13 @@ replayStatus.OnInvoke = function() return replay:GetStatus() end
 script.Destroying:Connect(function()
  replay:Stop()
  if threatService then threatService:Stop() end
+ if honeypotService then honeypotService:Stop() end
  if loadManager then loadManager:Stop() end
 end)
 print("[Tiki Tide][SecurityReplay] Bounded server-local event history ready; persistent writes=0; frame capture=false.")
 if loadManager then print("[Tiki Tide][AdaptiveLoad] Adaptive optional-work budgets started; essential security paths remain unrestricted.") end
-if threatService then print("[Tiki Tide][ThreatIntelligence] Bounded local correlation ready; automatic enforcement=false.") end\nif honeypotService then print("[Tiki Tide][Honeypot] Isolated decoy remotes active; detection-only; automatic enforcement=false.") end
+if threatService then print("[Tiki Tide][ThreatIntelligence] Bounded local correlation ready; automatic enforcement=false.") end
+if honeypotService then print("[Tiki Tide][Honeypot] Isolated decoy remotes active; detection-only; automatic enforcement=false.") end
 ]=]
 
 local stagedBootstrap = Instance.new("Script")
