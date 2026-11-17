@@ -29,6 +29,15 @@ The current audio package contains six ModuleScripts:
 
 Keep server-only modules in ServerStorage. Only the client preferences/routing module belongs in ReplicatedStorage.
 
+## Runtime audio-instance placement
+
+The server creates the shared modern playback graph under `SoundService` (managed backend folder, `AudioPlayer`, EQ, server gain fader, and server-side wires). Do **not** move this graph into `ReplicatedStorage`: Roblox's documented 2D audio layout uses `SoundService`, and the current controller/backend already use that location.
+
+Each client discovers the replicated server-owned graph and creates its own local `AudioFader`, `AudioDeviceOutput`, and local wires under that client's `SoundService`. Do not create one server-owned `AudioDeviceOutput` for all listeners; per-client routing is what preserves independent volume and mute.
+
+The server remains authoritative for asset selection, playback commands, readiness checks, crossfade, queue, permissions, and recovery. In particular, `AudioPlayer.IsReady` is not replicated and must remain a server-side readiness check. `MemoryStoreService` is unrelated to Instance parenting and remains reserved for the existing cross-server coordination features.
+
+
 ## Recommended installation: Command Bar installer
 
 The repository's `ClubMusic_Studio_CommandBar_Installer.lua` is pinned to the same audited source snapshot for all six modules. Prefer it over older locally saved copies of the RBXMX packages, which may contain an earlier module revision.
