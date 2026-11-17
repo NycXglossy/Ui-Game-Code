@@ -397,7 +397,7 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [ ] Verify client bootstrap installation and local-only access.
 - [ ] Complete playback, queue, sync, purchase, moderation, Utility Bar, Settings and spectator regression tests.
 
-**Explicit exclusions:** HoneypotManager, client-integrity sensors and client error-log aggregation are not present in this branch. No diagnostic counts are fabricated for them. No automatic enforcement or cross-server diagnostics aggregation is added.
+**Explicit exclusions at Phase 16 completion:** HoneypotManager and client-integrity sensors were not yet present; Phase 17 and Phase 18 subsequently add those as separate security telemetry systems. Client error-log aggregation remains unimplemented. The Phase 16 client FPS/memory/ping diagnostics remain local-only; Phase 18's fixed-code security reports use a separate bounded server endpoint and are explicitly untrusted. No automatic enforcement or cross-server diagnostics aggregation is added.
 
 
 ## Phase 17 — Honeypot Manager
@@ -418,3 +418,21 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 **Important limitations:** decoys are visible under ReplicatedStorage and are not secrets. They detect probing/interaction; they cannot prevent exploiters from discovering real remotes or replace server-side authorization. A hit is not proof and is never a standalone punishment trigger. Honeypot signals are server-local and are not shared cross-server.
 
 **Implementation note:** see `CLUBMUSIC_PHASE17_HONEYPOT_MANAGER.md`.
+
+
+## Phase 18 — Client Integrity Telemetry
+
+**Status: Source implementation committed; runtime acceptance remains open.**
+
+- [x] Add an optional-by-installation client dependency observer for expected ClubMusic modules and remotes, with a 60-second startup grace period.
+- [x] Transmit only fixed, allowlisted missing-dependency codes and a probe-completed code; no free-form client data or device/performance telemetry.
+- [x] Validate server-derived Player identity, cap reports at eight unique codes/player, apply a one-second interval, cap tracked subjects at 200, and clean up on PlayerRemoving.
+- [x] Record accepted observations only as Info-level events in the existing server-local SecurityReplay timeline.
+- [x] Keep client reports out of ThreatIntelligence scoring, authorization, moderation, and enforcement.
+- [x] Add a ServerStorage-only status endpoint and staff diagnostics counters.
+- [x] Extend installer module pinning, LocalScript staging, backup, promotion, and rollback.
+- [ ] Test normal/missing dependencies, forged/malformed/burst reports, quotas, cleanup, and replay-only routing in Studio.
+- [ ] Verify the client-local FPS/memory/ping sampler remains untransmitted.
+- [ ] Profile overhead and complete published-server gameplay regression tests.
+
+**Trust boundary:** this checks dependency presence only. A client can suppress or forge reports; a completed probe is not proof of untampered code, and absence of a report is not evidence of cheating. The server remains authoritative. See CLUBMUSIC_PHASE18_CLIENT_INTEGRITY_TELEMETRY.md.
