@@ -17,8 +17,8 @@
 - [ ] Verify the live place hierarchy and all installed scripts match the documented integration guide.
 - [ ] Inspect binary Roblox assets and third-party packages, or explicitly exclude them from the security certification scope.
 - [ ] Run the Studio multiplayer authorization, remote abuse, incident, spectator, movement, purchase and lifecycle test matrices.
-- [ ] Run a published test server with two-server MemoryStore/MessagingService tests using isolated test data.
-- [ ] Confirm the modern AudioPlayer controller, crossfade, local queues and optional playback-only global sync are unchanged and working.
+- [ ] Run published two-server tests for retained global moderation/configuration/announcement/receipt features only, using isolated test data. Do not test or enable cross-server playback sync.
+- [ ] Confirm the modern AudioPlayer controller, crossfade, independent per-server playback clocks, Auto DJ selection and local queues work independently in two servers. Confirm no playback leader, shared snapshot, playback lease, or cross-server queue reconciliation is active.
 - [ ] Confirm developer-product receipt idempotency and profile/session-save recovery.
 - [ ] Confirm UtilityBar, Tiki Tide Settings, VIP access, DJ 100, Moderator 150, Admin 200, Co-owner 254 and Owner 255 behavior.
 - [ ] Profile load, memory, server shutdown, reconnect and repeated installer execution.
@@ -45,3 +45,12 @@
 ## Sign-off
 
 A release is production-ready only after the owner confirms the live-place revision and the complete test matrix passes. Source commits, static checks and owner-reported operation are useful evidence, but they do not replace a reproducible test record.
+
+## Retired playback sync and storage minimization
+
+- Global playback synchronization is retired. Each server owns its own active track, playback clock, Auto DJ selection, crossfade lifecycle, and request queue.
+- Playback must not depend on MemoryStore, DataStore, or MessagingService. A server restart starts a new local playback lifecycle.
+- The Global Service's shared MemoryStore rate-limit map is disabled in minimal-storage mode; bounded per-server rate limits remain active.
+- MemoryStore-backed SecurityCore/global operations services (idempotency, audit, incident snapshots) require separate consumer and acceptance-test review. They are not playback services and must not be removed until their live callers and required staff workflows are reconciled.
+- Keep DataStore/MessagingService only for separately approved global features with demonstrated consumers, such as moderation/configuration/announcements/catalog invalidation/receipt protection. Their existence does not authorize playback synchronization.
+- SecurityCore movement authorization remains a bounded, expiring server-local ledger and must not acquire a DataStore or MemoryStore dependency.
