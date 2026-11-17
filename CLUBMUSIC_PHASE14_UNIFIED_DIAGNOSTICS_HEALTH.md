@@ -86,3 +86,8 @@ The final static pass resolved two boundedness/packaging gaps and completed the 
 - SafeCall and ErrorHistory remain separate by design: SafeCall records protected-operation outcomes and recovery counters, while ErrorHistory captures broader controller/module error records with its own deduplication semantics. Both remain bounded and are consumed separately.
 
 **Phase 14 source status:** the source integration and in-repository text-source checks are complete. This does not close the release gate. Studio/published-server pulse behavior, historical degraded-warning reconciliation, load profiling, full binary/third-party package review, and live-place revision/hierarchy verification remain external acceptance items. No legacy diagnostics implementation has been retired.
+
+
+## Phase 15 compatibility note
+
+Phase 15 adds a read-only ThreatIntelligence status provider to the existing operational snapshot and observability component summary. It does not change Phase 14's server-local/observational boundaries or retire any diagnostics implementation. The threat-correlation status is optional and reports Unavailable/NotInstalled when its installer endpoint is absent.
