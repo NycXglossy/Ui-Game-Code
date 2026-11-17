@@ -30,7 +30,7 @@
 - [ ] Replay/threat/honeypot signal bursts and bounded memory behavior.
 - [ ] Diagnostics snapshot calls during active playback and queue churn.
 - [ ] MemoryStore/DataStore throttling, temporary outage, and recovery.
-- [ ] Adaptive Normal/Reduced/Critical transitions and hysteresis.
+- [ ] Adaptive Normal/Reduced/Critical transitions and hysteresis, including ReplayQueries and ThreatReviewQueries budgets.
 - [ ] Staff spectator at maximum configured observer count.
 - [ ] Character physics observer under respawn, custom rigs, launch pads, vehicles and latency.
 - [ ] Profile on low-end mobile, desktop and console; verify UI responsiveness and input controls.
