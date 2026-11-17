@@ -1,6 +1,6 @@
 # Phase 26 — Server-Authoritative Movement Envelope
 
-**Status:** Source inventory and measurement plan committed. No new movement thresholds, path enforcement, correction, or punishment is enabled. Runtime movement measurement and acceptance remain open.
+**Status:** Source inventory and bounded passive displacement measurement committed. No anomaly thresholds, path enforcement, correction, or punishment is enabled. Live movement-source inventory, representative runtime measurements, and acceptance remain open.
 
 **Branch:** `fix/security-core-release-and-queue-loop`
 
@@ -65,16 +65,25 @@ Do not add displacement/path thresholds until legitimate movement sources have b
 - Existing movement settings, Utility Bar Size, teleport ticket contract, Kohl's adapter, SecurityCore permissions, and installer architecture remain unchanged.
 - The live Roblox place, packaged binary assets, and external Kohl's Admin internals are not represented completely by this text-source audit. Their absence from the repository tree is not proof that the corresponding gameplay systems do not exist.
 
+## Bounded passive measurement now implemented
+
+- CharacterPhysicsGuard samples the server-observed HumanoidRootPart position every 0.5 seconds while the same player/character/root remain live.
+- Samples are accepted only when the elapsed interval is 0.2–1.5 seconds; invalid coordinates and timing gaps are counted separately.
+- The observer computes displacement divided by elapsed time and increments fixed aggregate speed bands. It also records fixed context buckets (grounded/airborne/seated/other), network-owner buckets (server/client/unknown), and server-observed latency buckets.
+- Only the immediately previous position/time is retained per active character. No position history, path, per-player movement record, persistent storage, cross-server telemetry, or client-supplied physics value is retained.
+- These bands are measurement bins, not movement limits or exploit verdicts. They do not emit anomaly signals and cannot change gameplay. The existing coarse velocity observer remains detection-only and unchanged.
+- The installer release pin now points to the commit containing the updated CharacterPhysicsGuard source. The module remains server-only.
+
 ## Runtime measurement and acceptance matrix — outstanding
 
-- Collect baseline traces for normal players on PC, mobile, and console; default and Tiki Tide movement profiles; R6/R15/custom rigs; low/medium/high latency; and normal server load.
-- Exercise Utility Bar scale endpoints and intermediate values, respawn, entitlement revoke, and character replacement.
-- Test every actual mount/vehicle and every knockback/launch/impulse source.
-- Test teleport ticket success, expiry, replay, destination mismatch, actor/target departure, respawn during action, and external teleport origins.
-- Test network ownership changes, seats, moving platforms, collisions, swimming, slopes, stairs, and large but legitimate impulses.
-- Measure false-positive rates before defining any displacement/path anomaly threshold. Document sample counts, time windows, device/network conditions, and confidence limits.
-- Verify bounded memory/CPU cost and cleanup under player churn and burst events.
-- Confirm telemetry never changes gameplay and all SecurityCore/entitlement checks remain authoritative.
+- [ ] Collect baseline traces for normal players on PC, mobile, and console; default and Tiki Tide movement profiles; R6/R15/custom rigs; low/medium/high latency; and normal server load.
+- [ ] Exercise Utility Bar scale endpoints and intermediate values, respawn, entitlement revoke, and character replacement.
+- [ ] Test every actual mount/vehicle and every knockback/launch/impulse source.
+- [ ] Test teleport ticket success, expiry, replay, destination mismatch, actor/target departure, respawn during action, and external teleport origins.
+- [ ] Test network ownership changes, seats, moving platforms, collisions, swimming, slopes, stairs, and large but legitimate impulses.
+- [ ] Measure false-positive rates before defining any displacement/path anomaly threshold. Document sample counts, time windows, device/network conditions, and confidence limits.
+- [ ] Verify bounded memory/CPU cost and cleanup under player churn and burst events.
+- [ ] Confirm telemetry never changes gameplay and all SecurityCore/entitlement checks remain authoritative.
 
 ## Exit criteria
 
