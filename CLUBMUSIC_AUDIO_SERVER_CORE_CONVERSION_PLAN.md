@@ -489,3 +489,5 @@ The repository installation path is now explicit for the active playback inspect
 - Controller CreateDeck now wraps post-construction trim/player setup and invokes Backend Cleanup if setup fails before returning the deck to the transition manager.
 - Manager cancellation and rejected-start cleanup now recognize a deck Cleanup method that returns false (not only a thrown error), and report cleanup failure through the controller failure callback.
 - Static source checks only. Studio tests must verify no ClubMusicCrossfadeDeck roots or child instances accumulate after repeated transitions, injected setup failures, cancellation, and manager teardown. No Luau compilation or Roblox runtime verification is claimed.
+
+- **Teardown follow-ups:** `c91e6e437c6d349cc61b3c3f15da346cd70b1461` and `68bc1f78e87edcd57797c513bf228b6f77e0271a` make child fallback teardown work even when the root reference is unavailable and preserve sparse child references safely.
