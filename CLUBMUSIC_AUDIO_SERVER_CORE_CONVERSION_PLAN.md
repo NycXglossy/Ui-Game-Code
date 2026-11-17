@@ -228,7 +228,7 @@ Spatial routing remains a separate optional server resource service. Client pref
 
 ## Rollback and release gates
 
-- Do not change profile schema, receipt ledger, product/pass IDs, remote contract, global playback sync semantics, or per-server queue ownership as part of module consolidation.
+- Do not change profile schema, receipt ledger, product/pass IDs, remote contract, or per-server queue ownership as part of module consolidation. Global playback sync is retired and must not be reintroduced.
 - Keep the last known functional modern AudioPlayer implementation and current installer revision available for rollback.
 - If a conversion causes playback/watchdog/queue regressions, restore the previous server module set before attempting further consolidation.
 - Static source inspection is not a substitute for Roblox Studio or published-server testing.
@@ -242,7 +242,7 @@ Spatial routing remains a separate optional server resource service. Client pref
 - The duplicate `.luau` queue implementation includes a legacy config-backed API.
 - The controller expects `MusicValidationService`; a second `.luau` implementation exists and must be consumer-audited before retirement.
 - The modern AudioPlayer backend is already the intended primary source, but the controller still contains a guarded legacy Sound fallback. This plan does not remove it prematurely.
-- The global playback-only sync and local queue ownership model are preserved.
+- Global playback sync is retired; independent per-server queue ownership is preserved.
 
 
 ## Implementation log
@@ -421,9 +421,9 @@ The repository installation path is now explicit for the active playback inspect
 - The controller entry point rejects crossfade requests while the guarded fallback is active and returns a clear reason; ordinary track advancement remains available and unchanged.
 - The commit callback independently revalidates the outgoing source kind and backend reference before it can stop the outgoing deck or transfer ownership. The stop/rollback transaction now uses only the backend contract: if signal binding or queue consumption fails after stopping, it restores the previous backend at its captured playhead.
 - Removed legacy Sound-specific crossfade stop, hard-mute, delayed decoder-tail cleanup, and rollback branches from the coordinator path. This does not remove the bootstrap Sound, its startup migration path, client volume compatibility, or any non-crossfade fallback behavior.
-- Existing manager generation fencing, cancellation cleanup, outgoing-gain restoration, queue-head identity check, per-server queue pop, transition token check, and global playback-only sync behavior are unchanged.
+- Existing manager generation fencing, cancellation cleanup, outgoing-gain restoration, queue-head identity check, per-server queue pop, and transition token checks are unchanged. Each server advances only its own queue.
 - Static source checks confirmed fallback rejection at the entry point and gain-capture boundary, backend-only commit validation, no Sound-specific branch in the crossfade factory, and both rollback paths restoring the previous AudioPlayer backend.
-- **Not yet verified:** Luau compilation, cancellation during decoder preparation/fade, queue-head changes during fade, bind failure/queue-pop failure rollback, gain restoration after interruption, fallback normal track advance, modern crossfade, and global playback-only sync in Studio/published servers. No Roblox runtime test was performed in this pass.
+- **Not yet verified:** Luau compilation, cancellation during decoder preparation/fade, queue-head changes during fade, bind failure/queue-pop failure rollback, gain restoration after interruption, fallback normal track advance, and modern crossfade in Studio/published servers. No Roblox runtime test was performed in this pass. Global playback sync is retired and is not a test target.
 - **Next gate:** owner-run Studio tests for the listed transition cases. Keep the guarded startup Sound and remaining client compatibility until the full public-server regression gate passes.
 
 
@@ -522,7 +522,7 @@ The repository installation path is now explicit for the active playback inspect
 - Controller-retired backends already undergoing asynchronous retries are allowed to finish before the final pending-only retry pass. A resource that still fails remains explicitly pending and is warned about rather than being silently discarded.
 - Player departure intentionally does not destroy the server-wide crossfade manager or active music backend: those resources belong to the server playback session, not to an individual player. Existing per-player profile cleanup remains separate.
 - **Static review only:** verify teardown ordering, pending-registry retention, and that the active source is stopped/retired only after crossfade cancellation. No Luau compilation, Studio test, or published-server test was performed.
-- **Studio acceptance:** shut down during deck creation, decoder readiness wait, mid-fade, and immediately after commit; force deck/backend `Cleanup()` to throw and return `false`; verify retries and warnings, no new transition after manager destruction, restored outgoing gain on cancellation, no orphaned `ClubMusicCrossfadeDeck` graph, and no impact on playback in another live server. Also verify ordinary PlayerRemoving leaves server playback and the shared playback-only sync lifecycle intact.
+- **Studio acceptance:** shut down during deck creation, decoder readiness wait, mid-fade, and immediately after commit; force deck/backend `Cleanup()` to throw and return `false`; verify retries and warnings, no new transition after manager destruction, restored outgoing gain on cancellation, no orphaned `ClubMusicCrossfadeDeck` graph, and no impact on playback in another live server. Also verify ordinary PlayerRemoving leaves that server's independent playback session intact.
 
 ### Modern-only transition and recovery dependency audit — 2026-11-17
 
@@ -530,7 +530,7 @@ The repository installation path is now explicit for the active playback inspect
 
 **Current dependency classification:**
 
-- **Modern source of truth:** `activeAudioSource` remains controller-owned. The `Backend` source delegates asset, playhead, gain, playback speed, play/stop/pause/resume, readiness, and recovery to `ClubMusicAudioBackend`. Queue mutation, track clocks, transition generations, and global playback-only sync remain outside the backend.
+- **Modern source of truth:** `activeAudioSource` remains controller-owned. The `Backend` source delegates asset, playhead, gain, playback speed, play/stop/pause/resume, readiness, and recovery to `ClubMusicAudioBackend`. Queue mutation, track clocks, and transition generations remain controller-owned and server-local.
 - **Modern recovery:** replacement recovery builds a muted candidate, verifies asset/readiness/playhead/speed/playing state and gain, fences against concurrent source changes, and commits only after verification. Failed candidates are retired without replacing the selected source.
 - **Restart/reload:** restart uses the normalized source snapshot and source-neutral controls. Reload is modern-backend recovery; when the guarded Sound bootstrap is active, it attempts verified modern adoption and leaves the fallback untouched if adoption fails.
 - **Watchdog/diagnostics:** watchdog decisions consume normalized snapshots and playback-quality classifications. Error context follows the currently active source rather than always reporting the bootstrap Sound.
