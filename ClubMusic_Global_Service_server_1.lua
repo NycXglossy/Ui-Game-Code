@@ -954,6 +954,7 @@ if diagnosticsModule then
 			getSecurityReplayStatus = function() return readServerStorageStatus("GetTikiTideSecurityReplayStatus") end,
 			getThreatIntelligenceStatus = function() return readServerStorageStatus("GetTikiTideThreatIntelligenceStatus") end,
 			getControllerDiagnostics = function() return readServerStorageStatus("GetClubMusicLocalDiagnostics") end,
+			getCharacterPhysicsStatus = function() return readServerStorageStatus("GetTikiTideCharacterPhysicsGuardStatus") end,
 			getSafeCallStatus = function()
 				if not globalSafeCall then return nil end
 				local result = globalSafeCall:GetStatus()
