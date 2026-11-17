@@ -49,6 +49,7 @@ function SafeCall.new(dependencies: {[string]: any}?)
 		counts = {calls = 0, failures = 0, recovered = 0},
 		lastSuccess = nil,
 		lastFailure = nil,
+		lastOutcome = "None",
 		lastWarnings = {},
 	}, SafeCall)
 end
@@ -66,6 +67,7 @@ function SafeCall:Run(serviceName: string, operation: string, callback: (...any)
 	local op = clean(operation)
 	if ok then
 		self.lastSuccess = {service = service, operation = op, at = now}
+		self.lastOutcome = "Success"
 		return table.unpack(packed, 1, packed.n)
 	end
 
@@ -77,6 +79,7 @@ function SafeCall:Run(serviceName: string, operation: string, callback: (...any)
 	end
 	self.counts.failures += 1
 	self.lastFailure = {service = service, operation = op, error = err, traceback = trace, at = now}
+	self.lastOutcome = "Failure"
 	local record = table.clone(self.lastFailure)
 	table.insert(self.records, 1, record)
 	while #self.records > MAX_RECORDS do table.remove(self.records) end
@@ -97,6 +100,7 @@ function SafeCall:RecordFailure(serviceName: string, operation: string, detail: 
 	local err = clean(detail)
 	self.counts.failures += 1
 	self.lastFailure = {service = service, operation = op, error = err, traceback = err, at = now}
+	self.lastOutcome = "Failure"
 	table.insert(self.records, 1, table.clone(self.lastFailure))
 	while #self.records > MAX_RECORDS do table.remove(self.records) end
 	if type(self.d.onFailure) == "function" then pcall(self.d.onFailure, service, op) end
@@ -111,6 +115,7 @@ function SafeCall:RecordRecovery(serviceName: string, operation: string)
 	self.counts.recovered += 1
 	local record = {service = clean(serviceName), operation = clean(operation), at = os.time()}
 	self.lastSuccess = record
+	self.lastOutcome = "Recovered"
 	print("[ClubMusic][SafeCall] Operation recovered; service=" .. record.service .. "; operation=" .. record.operation)
 end
 
@@ -136,6 +141,7 @@ function SafeCall:GetStatus(): {[string]: any}
 		recovered = self.counts.recovered,
 		lastSuccess = if self.lastSuccess then table.clone(self.lastSuccess) else nil,
 		lastFailure = if self.lastFailure then table.clone(self.lastFailure) else nil,
+		lastOutcome = self.lastOutcome,
 		recentFailureCount = #self.records,
 	}
 end
