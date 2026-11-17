@@ -493,3 +493,12 @@ The repository installation path is now explicit for the active playback inspect
 - **Teardown follow-ups:** `c91e6e437c6d349cc61b3c3f15da346cd70b1461` and `68bc1f78e87edcd57797c513bf228b6f77e0271a` make child fallback teardown work even when the root reference is unavailable and preserve sparse child references safely.
 
 - **Cleanup retry follow-up:** `93d5e8e8eeb314f993f368a3b669cf778dff9f1a` retains references to instances whose Destroy call fails and retries those instances on a subsequent Cleanup call, rather than dropping the only references after a failed teardown attempt.
+
+
+### Controller active-source retirement audit (2026-11-17)
+
+- **Controller commits:** `f3f79b3b77c272d4298859d8c9486658cc0a0ab7`, `1d31496fba304c65464a4da84185c147c0c3ae21`
+- Added a controller-owned backend retirement helper for non-crossfade source replacement. It checks both thrown errors and explicit `false` cleanup results, logs the reason, retries cleanup up to three times with backoff, and retains failed backend references in a registry for diagnosis and later retry.
+- Routed adoption rejection, backend adoption, new-track startup retirement, modern startup candidate discard, startup source replacement, recovery candidate abandonment, and watchdog recovery replacement through the helper.
+- Crossfade deck ownership remains with the crossfade manager; its incoming cancellation and outgoing post-commit cleanup are intentionally not routed through the general active-source helper.
+- Static source checks only. Studio acceptance must exercise failed adoption, stale startup cancellation, fallback-to-modern migration, watchdog recovery, and repeated track changes while checking SoundService for orphaned backend roots and verifying failed cleanup retries. No Luau compilation or Roblox runtime verification is claimed.
