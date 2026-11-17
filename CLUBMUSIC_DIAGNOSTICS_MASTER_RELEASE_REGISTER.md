@@ -1,7 +1,7 @@
 # ClubMusic Diagnostics & Security — Master Release Register
 
 **Date:** 2026-11-16  
-**Branch:** `feature/sultan-settings-2026-11-10`  
+**Branch:** `security/phase1-foundation`  
 **Purpose:** Single release record for the diagnostics/security work, implemented changes, audit scope, and items that must remain open before installation.
 
 ## Release decision
@@ -125,3 +125,25 @@ These changes close the in-repository source integration tasks for Phase 14 only
 - Threat correlation is advisory, per-server memory only, and does not kick, ban, restrict, alter gameplay, or automatically create a persistent IncidentResponse case. Existing IncidentResponse remains an independent staff-managed workflow.
 
 **Still not release-ready:** no Roblox Studio or published-server runtime tests have been performed. Installer rollback, authorization, threshold/cap/expiry behavior, adapter fidelity, client isolation, performance, historical watchdog/registry/memory warning reconciliation, binary/third-party package scope, live-place hierarchy, and regression tests remain required. Do not publish this branch to production until the dedicated test-place matrix passes.
+
+
+## Phase 16 — Diagnostics Completion (2026-11-16)
+
+**Source status:** Implemented. **Runtime status:** Open; do not mark production-ready.
+
+- [x] Add bounded 20-sample server memory trend, freshness and stale-state reporting.
+- [x] Add server-only aggregate controller diagnostics for authoritative receipt outcomes, purchase prompt telemetry distinction, join moderation lookup outcomes, and playback backend/queue state.
+- [x] Include controller diagnostics and CharacterPhysicsGuard in the unified health snapshot.
+- [x] Expand `;cmdiagnostics` with purchase, moderation, playback, memory trend, SecurityMonitor and physics signal summaries.
+- [x] Add outcome-aware bounded global metric recording while preserving legacy three-argument API calls.
+- [x] Add explicit latest SafeCall outcome and synchronize packaged SafeCall source.
+- [x] Add client-local memory/ping sample freshness and a disabled-by-default local diagnostics bootstrap.
+- [x] Confirm client measurements are never transmitted and cannot authorize/enforce.
+- [ ] Install the optional client module/bootstrap in a test place and verify local-only status.
+- [ ] Run Studio and published-server receipt, moderation, playback, watchdog, memory and authorization tests.
+- [ ] Reconcile historic watchdog/registry/memory warnings against fresh server output.
+- [ ] Profile diagnostics sampling/snapshot overhead and complete gameplay regression matrix.
+
+**Not included:** HoneypotManager and client-integrity sensor sources do not exist in this branch. Diagnostics explicitly reports them as not installed; no activity is fabricated. Client error-log aggregation is not implemented. Full per-action moderation outcome counters are not claimed; join lookup health and existing Audit/IncidentResponse summaries remain the available evidence.
+
+**Boundaries preserved:** diagnostics are server-local/client-local, no diagnostics DataStore/MemoryStore/MessagingService writes or client-to-server diagnostic remotes, no automatic recovery/enforcement/gameplay changes, and no legacy diagnostics code retired.
