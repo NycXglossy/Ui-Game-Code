@@ -329,3 +329,29 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 **Exit criteria:** bounded server-only operation, stable mode transitions, optional-work throttling under pressure, essential-path availability in every mode, successful replay-query behavior, and passing Studio/published-server load tests.
 
 **Implementation note:** see `CLUBMUSIC_PHASE13_ADAPTIVE_SECURITY_LOAD_MANAGER.md`.
+
+## Phase 14 — Unified Diagnostics & Health
+
+**Current status: Existing diagnostics foundation confirmed; Phase 14 source integration adds Phase 12 replay, Phase 13 adaptive-load, SafeCall, and a bounded observability summary to the existing server-local snapshot and authorized staff output. Runtime verification and legacy retirement audit remain open.**
+
+- [x] Preserve the existing Diagnostics coordinator, ServiceRegistry, ServerHealth, observational Watchdog, ErrorHistory, SafeCall, and SecurityCore status providers; do not replace them.
+- [x] Expose the dedicated AdaptiveSecurityLoadManager status through the existing server-only diagnostics provider.
+- [x] Expose SecurityReplay status counters through its dedicated read-only ServerStorage BindableFunction; do not return replay event contents in the health snapshot.
+- [x] Include SafeCall call/failure/recovery counters without exposing detailed errors or tracebacks to clients.
+- [x] Add a bounded observability-health summary with component counts and explicit partial/unavailable/degraded states.
+- [x] Add adaptive-load mode, replay retention/capacity, and SafeCall counters to the existing authorized staff OperationalDiagnostics output.
+- [x] Preserve existing Global API names, metric counters, server-local scope, and observational-only boundaries.
+- [ ] Audit dynamic consumers, packaged models, and embedded third-party packages before retiring obsolete diagnostics code.
+- [ ] Decide whether SafeCall and ErrorHistory remain separate after consumer/semantics review; do not merge or delete either prematurely.
+- [ ] Verify watchdog pulse expectations during long tracks, paused playback, AutoDJ idle periods, and disabled recovery.
+- [ ] Reconcile previously reported degraded watchdog, detail-registry, and memory warnings against fresh runtime output.
+- [ ] Test missing optional diagnostics dependencies and confirm they are reported accurately without breaking ClubMusic startup.
+- [ ] Test all snapshot/status APIs, staff permissions, client isolation, bounded storage, and output privacy in Studio and published servers.
+- [ ] Profile diagnostics sampling and snapshot-call overhead under controlled load.
+- [ ] Complete playback, queue, global playback-only sync, purchases, moderation, Utility Bar, Settings, and spectator regression tests.
+
+**Important limitations:** this phase does not fix a watchdog warning merely by displaying it. It does not infer memory pressure from an arbitrary threshold, change health policy, repair services, restart systems, or perform moderation. No obsolete diagnostic implementation is retired in this phase. Runtime verification remains mandatory.
+
+**Exit criteria:** one accurate, bounded, server-local health view; clear component state distinctions; authorized staff visibility without private traces; preserved compatibility; successful Studio/published-server tests; and a completed consumer audit before any legacy cleanup.
+
+**Implementation note:** see `CLUBMUSIC_PHASE14_UNIFIED_DIAGNOSTICS_HEALTH.md`.
