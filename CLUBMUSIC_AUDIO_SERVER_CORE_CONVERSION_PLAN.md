@@ -446,3 +446,13 @@ The repository installation path is now explicit for the active playback inspect
 - The same reporting path now covers synchronous incoming-deck initialization failures after the coordinator has registered the deck. The normal track-advance fallback remains controller-owned and unchanged.
 - This is diagnostic hardening only: it does not change queue ownership, transition timing, source selection, commit semantics, or guarded legacy startup fallback.
 - **Static verification required:** confirm every asynchronous abort funnels through the reporting helper, manager generation invalidation precedes cleanup, and the controller warning callback is present. No Luau compilation, Studio, or published-server test has been run for this change.
+
+
+### Transition settlement and outgoing-deck cleanup — 2026-11-17
+
+- **Manager commit:** `c8e265061ac2fe5af76a02e5c763c54038303d12`
+- **Controller commit:** `6f096d80dcdf02170e60a4260cd1973a22005ad2`
+- Added a settlement callback for both successful commit and cancellation. The controller now clears the transition closure's references to the outgoing source, its source revision, and the captured outgoing gain once the transition no longer needs them. This avoids retaining a cleaned-up backend through the long-lived manager context between transitions.
+- After ownership transfer, outgoing-backend cleanup failures are now logged instead of being silently discarded. The incoming backend remains the active source; cleanup failure is diagnostic and does not roll back an already committed track.
+- Cancellation still restores outgoing gain before the settlement callback clears its reference. Failure reporting remains available after cancellation because the manager retains its controller context until explicit teardown.
+- **Static checks required:** settlement is notified on both commit and cancellation; the controller clears all transition-scoped references; outgoing cleanup failures are surfaced; queue and source ownership remain controller-owned. No Luau compilation, Studio, or published-server test has been run.
