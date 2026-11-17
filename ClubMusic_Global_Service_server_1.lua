@@ -144,6 +144,16 @@ local function finiteNumber(value: any): boolean
 	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
 
+local function recordSecurityReplay(eventType: string, userId: number, targetUserId: number, severity: string, source: string, metadata: {[string]: any}?)
+	local storage = game:GetService("ServerStorage")
+	local endpoint = storage:FindFirstChild("TikiTideSecurityReplay")
+	if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= storage then return false end
+	local ok, recorded = pcall(function()
+		return endpoint:Invoke("Record", eventType, userId, targetUserId, severity, source, metadata or {})
+	end)
+	return ok and recorded == true
+end
+
 local function cleanText(value: any, maxLength: number): string?
 	if typeof(value) ~= "string" or #value == 0 or #value > maxLength then return nil end
 	local clean = value:gsub("[%c]", " "):gsub("^%s+", ""):gsub("%s+$", "")
@@ -342,6 +352,11 @@ local function updateModeration(userId: number, field: string, value: any, actor
 		warn("[ClubMusic Global] Moderation update failed for " .. key .. ": " .. tostring(result))
 		return false
 	end
+	recordSecurityReplay("moderation_" .. field, userId, 0, "Warning", "GlobalModeration", {
+		actorUserId = actorUserId,
+		value = value,
+		reason = reason or "",
+	})
 	local message = {
 		version = 1, senderJob = JOB_ID, id = HttpService:GenerateGUID(false),
 		kind = "Moderation", userId = userId, field = field, value = value,
@@ -1309,11 +1324,15 @@ bindFunction("GetGlobalDiagnostics", function()
 end)
 
 bindFunction("ReportSignal", function(userId: any, signal: any, detail: any)
-	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
 	local cleanSignal = cleanText(signal, 48)
 	local cleanDetail = if detail == nil then "" else cleanText(detail, 180)
 	if not key or not cleanSignal then return false end
+	-- Local replay remains available even when cross-server DataStore services are disabled.
+	recordSecurityReplay(cleanSignal, tonumber(key) or 0, 0, "Warning", "GlobalSecuritySignal", {
+		detail = cleanDetail or "",
+	})
+	if not SERVICE_ENABLED then return true end
 	local reportKey = key .. ":" .. cleanSignal
 	local previous = signalCounts[reportKey]
 	if previous == nil then
