@@ -7,7 +7,6 @@ local Service = {}
 Service.__index = Service
 
 local SERVER_CAPACITY = 2048
-local PLAYER_CAPACITY = 128
 local MAX_EVENT_TYPE = 48
 local MAX_SOURCE = 32
 local MAX_METADATA_KEYS = 12
@@ -146,7 +145,6 @@ function Service:GetStatus()
 		recorded = self.recorded,
 		retained = self.count,
 		capacity = SERVER_CAPACITY,
-		perPlayerCapacity = PLAYER_CAPACITY,
 		dropped = self.dropped,
 		deniedQueries = self.denied,
 		scope = "PerServerMemoryOnly",
