@@ -456,3 +456,14 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 **Important limitations:** no automatic movement correction, kick, ban, freeze, or gameplay restriction is introduced. Physics anomalies are detection signals only. Do not enable velocity-based enforcement until legitimate movement and network ownership behavior has been measured. No Roblox runtime or exploit tests are claimed by the source commit.
 
 **Implementation note:** see `CLUBMUSIC_PHASE19_MOVEMENT_ACTION_VALIDATION.md`.
+
+
+### Phase 19 follow-up — delayed rigs and Kohl's adapter coverage
+
+- [x] Change CharacterPhysicsGuard initialization to wait up to 10 seconds for custom Humanoids and HumanoidRootParts, with lifecycle revalidation after yielding.
+- [x] Audit the supplied RegularCommandsSecurityServer alias map and confirm SecurityCore authorization plus bounded target/value validation runs in the command filter before native handlers.
+- [x] Document that Kohl's MovementAuthority records are post-handler observer markers, not the permission gate; Flight/Frozen/Teleport/JumpImpulse/StarterWalkSpeed markers are not currently consumed by CharacterPhysicsGuard.
+- [ ] Studio-test late-assembling rigs, respawn/departure/shutdown during waits, and every mapped Kohl's movement alias.
+- [ ] Inspect actual Kohl's handler implementations and third-party mount/vehicle/knockback scripts before asserting their physics behavior is covered.
+
+**Boundary:** adapter mapping and source-level permission flow are verified from the supplied integration file; native Kohl's internal movement behavior and runtime effects are not certified. See `CLUBMUSIC_PHASE19_MOVEMENT_ACTION_VALIDATION.md`.
