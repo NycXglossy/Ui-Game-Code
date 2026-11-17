@@ -10,7 +10,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "371dedcc43d5a9cad9d6f1a3c518bd8cc63153dc"
+local RELEASE_COMMIT = "01e4038fbc9ef1fff61e06ae0fea5a3c234215ab"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
 local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
@@ -134,10 +134,11 @@ if not spectatorOk or typeof(spectatorExport) ~= "table" or type(spectatorExport
 end
 local auth = authExport.GetShared()
 local globalApi = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
-local auditFunction = globalApi and globalApi:FindFirstChild("RecordGlobalAuditEvent")
 local spectator = spectatorExport.new({
 	authorize = function(userId, permission) return auth:Check(userId, permission) end,
 	audit = function(actorUserId, targetUserId, action)
+		local currentApi = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+		local auditFunction = currentApi and currentApi:FindFirstChild("RecordGlobalAuditEvent")
 		if auditFunction and auditFunction:IsA("BindableFunction") then
 			pcall(function() auditFunction:Invoke("AdminAction", actorUserId, tostring(targetUserId), action) end)
 		else
@@ -183,16 +184,18 @@ stagedCamera.Parent = StarterPlayerScripts
 if oldBackup then oldBackup:Destroy() end
 if bootstrapBackup then bootstrapBackup:Destroy() end
 if cameraBackup then cameraBackup:Destroy() end
+local activeBootstrapWasDisabled = activeBootstrap and activeBootstrap.Disabled
+local activeCameraWasDisabled = activeCamera and activeCamera.Disabled
 local promotedFolder, promotedBootstrap, promotedCamera = false, false, false
 local ok, installError = pcall(function()
  if active then active.Name = BACKUP_NAME end
  stage.Name = FOLDER_NAME
  promotedFolder = true
- if activeBootstrap then activeBootstrap.Name = BOOTSTRAP_BACKUP_NAME end
+ if activeBootstrap then activeBootstrap.Name = BOOTSTRAP_BACKUP_NAME; activeBootstrap.Disabled = true end
  stagedBootstrap.Name = BOOTSTRAP_NAME
  promotedBootstrap = true
  stagedBootstrap.Disabled = false
- if activeCamera then activeCamera.Name = CAMERA_BACKUP_NAME end
+ if activeCamera then activeCamera.Name = CAMERA_BACKUP_NAME; activeCamera.Disabled = true end
  stagedCamera.Name = CAMERA_NAME
  promotedCamera = true
  stagedCamera.Disabled = false
@@ -204,10 +207,10 @@ if not ok then
   if active and active.Parent then active.Name = FOLDER_NAME end
   local failedScript = ServerScriptService:FindFirstChild(BOOTSTRAP_NAME)
   if failedScript and failedScript ~= activeBootstrap then failedScript:Destroy() end
-  if activeBootstrap and activeBootstrap.Parent then activeBootstrap.Name = BOOTSTRAP_NAME end
+  if activeBootstrap and activeBootstrap.Parent then activeBootstrap.Name = BOOTSTRAP_NAME; activeBootstrap.Disabled = activeBootstrapWasDisabled end
   local failedCamera = StarterPlayerScripts:FindFirstChild(CAMERA_NAME)
   if failedCamera and failedCamera ~= activeCamera then failedCamera:Destroy() end
-  if activeCamera and activeCamera.Parent then activeCamera.Name = CAMERA_NAME end
+  if activeCamera and activeCamera.Parent then activeCamera.Name = CAMERA_NAME; activeCamera.Disabled = activeCameraWasDisabled end
   local failedCameraStage = StarterPlayerScripts:FindFirstChild(CAMERA_STAGE_NAME)
   if failedCameraStage then failedCameraStage:Destroy() end
   local failedStage = ServerStorage:FindFirstChild(STAGE_NAME)
