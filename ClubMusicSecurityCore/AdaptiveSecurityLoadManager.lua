@@ -115,6 +115,7 @@ function Service:_evaluate(averageDelta: number, maxDelta: number)
 		self:_transition("Critical", "Persistent elevated server heartbeat delay")
 	elseif self.mode == "Critical" and self.healthyStreak >= 4 then
 		self:_transition("Reduced", "Server heartbeat recovered; staged recovery")
+		self.healthyStreak = 0
 	elseif self.mode == "Reduced" and self.healthyStreak >= 6 then
 		self:_transition("Normal", "Server heartbeat stable; normal budgets restored")
 	end
