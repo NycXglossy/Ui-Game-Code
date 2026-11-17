@@ -12,8 +12,9 @@ Implemented:
 - Reload retries the current track through the same verified modern-only startup path when no AudioPlayer is active; active-backend reload can rebuild a replacement AudioPlayer.
 
 Not yet release-enabled:
-- Modern-only startup and fail-closed recovery are implemented but this exact revision still requires Studio validation. The legacy Sound and MusicGroup objects remain inert rollback objects; they are not activated by the controller.
-- Do not delete `ServerMusicSound` or `MusicGroup` until this modern-only revision passes startup, control, reload-recovery, pause-preservation, crossfade, and multiplayer regression tests.
+- The user has confirmed the modern-only playback revision works in Studio.
+- The controller no longer creates, reads, writes, or plays `ServerMusicSound` or `MusicGroup`; it also no longer migrates the old `ClubMusic` SoundGroup.
+- Existing place instances and the standalone legacy `Music Group.rbxm` asset are not automatically removed by a repository source change. Before deleting those place instances, confirm no unrelated scripts or sounds still reference the old group.
 
 ## Update 2 — Crossfade transition integration
 
@@ -31,7 +32,7 @@ Remaining:
 Implemented:
 - Renderer local preference integration now applies gain to a private client AudioFader and AudioDeviceOutput for each replicated main/crossfade deck, plus the local staff-preview fader.
 - The server backend no longer creates a shared AudioDeviceOutput; its replicated MusicFader remains the shared transition-gain stage.
-- The renderer still contains a dormant MusicGroup compatibility branch, but the modern-only controller no longer publishes Sound as the active source. Modern volume uses private client AudioFader and AudioDeviceOutput routes.
+- The renderer's legacy MusicGroup lookup and volume fallback have been removed. Modern volume uses private client AudioFader and AudioDeviceOutput routes.
 - Client preference profile names are restricted to Standard, Soft, Bass, and Night; failed profile application restores the previous selection.
 
 Validation still required:
@@ -79,5 +80,6 @@ Not executed from the repository connection. Required release checklist:
 
 - Source changes committed: guarded modern migration, EQ graph/profile support, spatial graph hardening, local profile validation, replacement AudioPlayer recovery, and per-player output routing.
 - Studio validation: the user confirmed the modern recovery and independent client-volume updates are functional.
-- The controller publishes `SoundService.ClubMusicAudioSourceKind` as `AudioPlayer` or `Unavailable`; it no longer selects `Sound` as an active source. The renderer's MusicGroup volume branch is therefore dormant while modern playback uses private `PlayerMusicGain` faders.
-- The controller's modern-only startup, no-fallback failure handling, and Reload Song retry path are implemented on the current feature branch. This exact revision still needs Studio validation before deleting the inert `ServerMusicSound` and `MusicGroup` compatibility objects.
+- The controller publishes `SoundService.ClubMusicAudioSourceKind` as `AudioPlayer` or `Unavailable`; it never selects `Sound` as an active source.
+- The controller and renderer no longer contain legacy Sound playback or MusicGroup volume paths. Existing legacy instances in a place are now unused by these scripts, but must be checked for unrelated consumers before manual deletion.
+- The user reports that the modern-only playback path works. Repository static checks confirm the legacy adapter references are absent; Studio execution was not performed by this repository workflow.
