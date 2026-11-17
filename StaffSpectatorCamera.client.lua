@@ -4,12 +4,12 @@
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
+local controls: any = nil
 
 local active = false
 local targetPlayer: Player? = nil
 local targetCharacterConnection: RBXScriptConnection? = nil
 local targetRemovingConnection: RBXScriptConnection? = nil
-local ownCharacterConnection: RBXScriptConnection? = nil
 
 local function disconnectTarget()
 	if targetCharacterConnection then targetCharacterConnection:Disconnect(); targetCharacterConnection = nil end
@@ -17,8 +17,28 @@ local function disconnectTarget()
 	if targetPlayer then targetPlayer = nil end
 end
 
+local function setControlsEnabled(enabled: boolean)
+	if not controls then
+		local playerScripts = localPlayer:FindFirstChildOfClass("PlayerScripts")
+		local playerModule = playerScripts and playerScripts:FindFirstChild("PlayerModule")
+		if playerModule then
+			local ok, module = pcall(require, playerModule)
+			if ok and type(module) == "table" and type(module.GetControls) == "function" then
+				local controlsOk, result = pcall(function() return module:GetControls() end)
+				if controlsOk then controls = result end
+			end
+		end
+	end
+	if controls then
+		pcall(function()
+			if enabled then controls:Enable() else controls:Disable() end
+		end)
+	end
+end
+
 local function restoreOwnCamera()
 	disconnectTarget()
+	setControlsEnabled(true)
 	local character = localPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if camera and humanoid then
@@ -63,6 +83,7 @@ local function refresh()
 		return
 	end
 	active = true
+	setControlsEnabled(false)
 	local target = Players:GetPlayerByUserId(targetId)
 	if target then
 		if targetPlayer ~= target then watchTarget(target) end
@@ -76,6 +97,10 @@ localPlayer:GetAttributeChangedSignal("TikiTideSpectatorActive"):Connect(refresh
 localPlayer:GetAttributeChangedSignal("TikiTideSpectatorTargetUserId"):Connect(refresh)
 localPlayer.CharacterAdded:Connect(function()
 	if not active then task.defer(restoreOwnCamera) else task.defer(refresh) end
+end)
+workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	camera = workspace.CurrentCamera
+	task.defer(refresh)
 end)
 Players.PlayerAdded:Connect(function(player)
 	if active and player.UserId == localPlayer:GetAttribute("TikiTideSpectatorTargetUserId") then
