@@ -391,9 +391,9 @@ function Backend:Cleanup(): (boolean, string?)
 	local cleanupErrors = {}
 	local root = self.root
 	local owned = {}
-	for _, instance in ipairs({ self.player, self.equalizer, self.fader }) do
-		if instance then table.insert(owned, instance) end
-	end
+	if self.player then table.insert(owned, self.player) end
+	if self.equalizer then table.insert(owned, self.equalizer) end
+	if self.fader then table.insert(owned, self.fader) end
 	for _, wire in ipairs(self.wires or {}) do
 		if wire then table.insert(owned, wire) end
 	end
