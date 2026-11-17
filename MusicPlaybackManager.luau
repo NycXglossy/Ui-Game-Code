@@ -29,6 +29,14 @@ local function call(callback: any, ...)
 	return result == true, if typeof(message) == "string" then message else nil
 end
 
+local function finiteNonNegative(value: any): number
+	local numberValue = tonumber(value)
+	if numberValue == nil or numberValue ~= numberValue or math.abs(numberValue) == math.huge then
+		return 0
+	end
+	return math.max(0, numberValue)
+end
+
 function MusicPlaybackManager.new(context: Context)
 	assert(typeof(context) == "table", "Playback manager requires an injected controller context.")
 	assert(typeof(context.GetSnapshot) == "function", "Playback context requires GetSnapshot.")
@@ -105,8 +113,58 @@ function MusicPlaybackManager:GetElapsedTime(): number
 	return if sound then math.max(0, sound.TimePosition) else 0
 end
 
+-- One backend-neutral, read-only snapshot contract replaces the former
+-- ServerMusicAudioHandler inspection surface. The controller supplies the
+-- canonical active-source snapshot; Sound access remains a guarded rollback fallback.
+function MusicPlaybackManager:GetPlaybackSnapshot()
+	if self.destroyed then
+		return { kind = "Unavailable", ready = false, playing = false, paused = false, position = 0, length = 0, asset = "" }
+	end
+	if typeof(self.context.GetAudioSnapshot) == "function" then
+		local ok, value = pcall(self.context.GetAudioSnapshot)
+		if ok and typeof(value) == "table" then
+			return {
+				kind = if typeof(value.kind) == "string" then value.kind else "Unavailable",
+				ready = value.ready == true,
+				playing = value.playing == true,
+				paused = value.paused == true or self:IsPaused(),
+				position = finiteNonNegative(value.position),
+				length = finiteNonNegative(value.length),
+				asset = if typeof(value.asset) == "string" then value.asset else "",
+			}
+		end
+	end
+	local sound = self:GetSound()
+	if not sound then
+		return { kind = "Unavailable", ready = false, playing = false, paused = self:IsPaused(), position = 0, length = 0, asset = "" }
+	end
+	local loaded = sound.IsLoaded
+	return {
+		kind = "Sound",
+		ready = loaded,
+		playing = sound.IsPlaying,
+		paused = self:IsPaused(),
+		position = finiteNonNegative(sound.TimePosition),
+		length = if loaded then finiteNonNegative(sound.TimeLength) else 0,
+		asset = sound.SoundId,
+	}
+end
+
+function MusicPlaybackManager:GetTimePosition(): number
+	return self:GetPlaybackSnapshot().position
+end
+
+function MusicPlaybackManager:GetTimeLength(): number
+	return self:GetPlaybackSnapshot().length
+end
+
+function MusicPlaybackManager:GetCurrentSoundId(): string?
+	local asset = self:GetPlaybackSnapshot().asset
+	return if typeof(asset) == "string" and asset ~= "" then asset else nil
+end
+
 -- Passive quality inspection; caller owns scheduling and recovery policy.
--- No task loop, playback mutation, or automatic track transition is started here.
+-- Keep the established state labels consumed by the controller watchdog.
 function MusicPlaybackManager:InspectQuality()
 	if self.destroyed then return { state = "Unavailable", reason = "AdapterDestroyed" } end
 	local song = self:GetCurrentSong()
@@ -117,39 +175,24 @@ function MusicPlaybackManager:InspectQuality()
 		return { state = "SilentCatalogTrack" }
 	end
 
-	local snapshot = nil
-	if typeof(self.context.GetAudioSnapshot) == "function" then
-		local ok, value = pcall(self.context.GetAudioSnapshot)
-		if ok and typeof(value) == "table" then snapshot = value end
+	local snapshot = self:GetPlaybackSnapshot()
+	if snapshot.kind == "Unavailable" then
+		return { state = "Unavailable", reason = "AudioInstanceMissing" }
 	end
-	if snapshot then
-		local elapsed = self:GetElapsedTime()
-		local isReady = snapshot.ready == true
-		local isPlaying = snapshot.playing == true
-		local length = if isReady then math.max(0, tonumber(snapshot.length) or 0) else 0
-		if isPlaying then
-			return { state = "Playing", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length }
-		end
-		if snapshot.paused == true then
-			return { state = "Paused", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length }
-		end
-		if isReady and length > 0 then
-			return { state = "StoppedAfterLoad", backend = snapshot.kind, elapsed = elapsed, loaded = true, length = length }
-		end
-		return { state = "BufferingOrStopped", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length }
-	end
-
-	local sound = self:GetSound()
-	if not sound then return { state = "Unavailable", reason = "AudioInstanceMissing" } end
 	local elapsed = self:GetElapsedTime()
-	local isPlaying = sound.IsPlaying
-	local isLoaded = sound.IsLoaded
-	local length = if isLoaded then sound.TimeLength else 0
-	if isPlaying then return { state = "Playing", elapsed = elapsed, loaded = isLoaded, length = length } end
-	if isLoaded and length > 0 then
-		return { state = "StoppedAfterLoad", elapsed = elapsed, loaded = true, length = length }
+	local isReady = snapshot.ready == true
+	local isPlaying = snapshot.playing == true
+	local length = if isReady then finiteNonNegative(snapshot.length) else 0
+	if isPlaying then
+		return { state = "Playing", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length }
 	end
-	return { state = "BufferingOrStopped", elapsed = elapsed, loaded = isLoaded, length = length }
+	if snapshot.paused == true then
+		return { state = "Paused", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length }
+	end
+	if isReady and length > 0 then
+		return { state = "StoppedAfterLoad", backend = snapshot.kind, elapsed = elapsed, loaded = true, length = length }
+	end
+	return { state = "BufferingOrStopped", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length }
 end
 
 function MusicPlaybackManager:GetRemainingTime(): number
