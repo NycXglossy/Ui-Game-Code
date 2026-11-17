@@ -235,3 +235,20 @@ Static review extended the diagnostics/security boundary across the Global Servi
 - Confirmed SafeCall and ErrorHistory have distinct consumers and semantics; keep both rather than merging them.
 
 Source integration and the scoped in-repository text audit are complete. Runtime acceptance, historical warning reconciliation, performance profiling, full binary/third-party package review, and live-place verification remain open. No legacy diagnostics code is retired.
+
+
+## Phase 16 diagnostics completion update (2026-11-16)
+
+Source-side additions are now implemented and documented in `CLUBMUSIC_PHASE16_DIAGNOSTICS_COMPLETION.md`:
+
+- ServerHealth retains a bounded 20-sample process-memory trend and marks samples stale after 90 seconds.
+- The controller exposes aggregate purchase/receipt, join-moderation lookup, and playback health through a server-only ServerStorage BindableFunction. No purchase secrets, names, track identifiers, or raw errors are included.
+- Global Diagnostics now includes the controller status and CharacterPhysicsGuard status.
+- Staff `;cmdiagnostics` includes memory trend, receipt outcome counters, moderation lookup health, playback source/queue state, SecurityMonitor and physics signal counts, and the client-local telemetry boundary.
+- `RecordGlobalMetric` accepts optional validated Success/Failure/Observed outcomes and records bounded latency/outcome metadata while preserving existing three-argument calls.
+- SafeCall exposes explicit latest outcome and the embedded RBXMX copy is synchronized.
+- The existing client-local FPS/frame-time, memory and ping module now reports stale sample states. A disabled-by-default LocalScript bootstrap provides a local-only BindableFunction when explicitly enabled for testing.
+
+**Explicit exclusions:** no HoneypotManager or client-integrity sensor exists in this branch, so diagnostics reports those sensors as not installed rather than inventing activity. Client error-log collection/transmission is not implemented. Client measurements remain untrusted and local. Full per-action moderation outcome counters are not claimed; join lookup health is measured and moderation decisions remain in existing audit/incident sources.
+
+**Status:** Phase 16 source work implemented; Studio/published-server verification, performance profiling, warning reconciliation, and full gameplay regression remain mandatory. No legacy diagnostic service is retired.
