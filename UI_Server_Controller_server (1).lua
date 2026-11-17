@@ -1258,7 +1258,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 		end,
 		GetOutgoingGain = function()
 			if activeAudioSource.kind ~= "Backend" or not activeAudioSource.backend then
-				error("Crossfade requires the modern AudioPlayer backend; guarded Sound fallback remains transition-free.")
+				error("Crossfade requires the modern AudioPlayer backend; no legacy Sound fallback is available.")
 			end
 			transitionOutgoing = activeAudioSource
 			transitionRevision = audioSourceRevision
@@ -1394,7 +1394,7 @@ ControllerFunctions.beginAudioCrossfade = function(asset: string, duration: numb
 	if not crossfade then return false, "Audio crossfade manager is not initialized." end
 	if playbackPaused then return false, "Cannot crossfade while playback is paused." end
 	if activeAudioSource.kind ~= "Backend" or not activeAudioSource.backend then
-		return false, "Crossfade requires the modern AudioPlayer backend; normal track advance remains available on the guarded fallback."
+		return false, "Crossfade requires the modern AudioPlayer backend; normal track advance remains available while the backend is unavailable."
 	end
 	local snapshot = ControllerFunctions.getAudioSnapshot()
 	if typeof(snapshot) ~= "table" or snapshot.playing ~= true then
@@ -6076,19 +6076,14 @@ end
 -- playback loops, sounds, queues, playlist cursors, or vote timers.
 ControllerFunctions.ChildManagers = {}
 local childManagerModules = ControllerFunctions.ChildManagerModules
--- The controller's canonical source snapshot is injected directly. The
--- separate ServerMusicAudioHandler facade duplicated this same snapshot path
--- and had no consumers; playback inspection remains in one server adapter.
+-- The controller's canonical modern-source snapshot is injected directly.
+-- Playback inspection remains in this single server adapter.
 local playbackManagerOk, playbackManager = pcall(childManagerModules.MusicPlaybackManager.new, {
 	GetSnapshot = function()
 		return {
 			nowPlaying = table.clone(nowPlaying),
 			playbackPaused = playbackPaused,
 		}
-	end,
-	GetSound = function()
-		local source = activeAudioSource
-		return if source.kind == "Sound" then source.instance else nil
 	end,
 	GetAudioSnapshot = function() return ControllerFunctions.getAudioSnapshot() end,
 	GetElapsedTime = function() return nowPlaying.elapsed end,
