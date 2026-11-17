@@ -91,3 +91,8 @@ The final static pass resolved two boundedness/packaging gaps and completed the 
 ## Phase 15 compatibility note
 
 Phase 15 adds a read-only ThreatIntelligence status provider to the existing operational snapshot and observability component summary. It does not change Phase 14's server-local/observational boundaries or retire any diagnostics implementation. The threat-correlation status is optional and reports Unavailable/NotInstalled when its installer endpoint is absent.
+
+
+## Phase 16 completion integration
+
+The Phase 16 diagnostics completion work extends the existing coordinator rather than replacing it. The server snapshot now reads the controller's server-only aggregate diagnostics endpoint and CharacterPhysicsGuard status; ServerHealth reports a bounded memory trend; SafeCall reports an explicit latest outcome; and staff diagnostics include purchase, moderation lookup, playback, and security signal summaries. Client measurements remain local and opt-in. See `CLUBMUSIC_PHASE16_DIAGNOSTICS_COMPLETION.md` for implementation scope and remaining runtime acceptance.
