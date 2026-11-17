@@ -2394,6 +2394,7 @@ local blockedUsers: {[number]: boolean} = {}
 local skipVotes: {[number]: boolean} = {}
 local requestsLocked = false -- Emergency request lock only; DJ Control Mode is separate.
 local djControlModeEnabled = false
+local djControlModeUserId: number? = nil
 local recentTracks: {string} = {}
 local lastAutoGenre = ""
 
@@ -3562,6 +3563,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		requests = { used = requestCounts[player.UserId] or 0, limit = ControllerFunctions.requestLimitFor(player) },
 		locked = requestsLocked,
 		djControlMode = djControlModeEnabled,
+		djControlModeUserId = djControlModeUserId,
 		blocked = blockedUsers[player.UserId] == true,
 		vipPerks = {
 			slots = CONFIG.VipMaxRequestsPerPlayer,
@@ -4319,6 +4321,7 @@ ControllerFunctions.requestBlockReason = function(player: Player, trackId: strin
 	end
 	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
 	if ControllerFunctions.isTrackBlocked(trackId) then return "That track has been blocked by ClubMusic staff." end
+	if djControlModeEnabled and djControlModeUserId ~= player.UserId then return "DJ Control Mode is active. Only the current DJ controller can submit requests." end
 	if requestsLocked and ControllerFunctions.getLevel(player) < 3 then return "Emergency request lock is active on this server." end
 	if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
 	local cooldown = ControllerFunctions.cooldownFor(player)
@@ -4676,6 +4679,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not track then return end
 		if not isPlayableTrack(track) then notify(player, "That catalog entry is a temporary placeholder and is not playable yet.", "warn"); return end
 
+		if djControlModeEnabled and djControlModeUserId ~= player.UserId then
+			notify(player, "DJ Control Mode is active. Only the current DJ controller can submit requests.", "warn")
+			return
+		end
 		if blockedUsers[player.UserId] then
 			notify(player, "Your requests are disabled by staff.", "warn")
 			return
@@ -4814,9 +4821,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "ReloadSong" then
-		if not ControllerFunctions.canUseDJBooth(player) then
-			return false, "DJ Booth access is required to reload playback."
-		end
+		-- Self-service recovery: any live player may reload audio when it fails.
+		-- Per-player cooldown and the global action budget still protect this operation.
 		local last = lastReloadAt[player.UserId] or -1000
 		if now - last < CONFIG.ReloadCooldownSeconds then return end
 		lastReloadAt[player.UserId] = now
@@ -4986,10 +4992,19 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJToggleLock" then
 		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
-		djControlModeEnabled = not djControlModeEnabled
-		ControllerFunctions.broadcast(if djControlModeEnabled then "DJ Control Mode is ON. Normal player requests and Auto DJ remain available." else "DJ Control Mode is OFF. Normal player requests and Auto DJ remain available.", "info")
+		if djControlModeEnabled then
+			if djControlModeUserId ~= player.UserId then
+				return false, "Only the player currently controlling the DJ booth can turn DJ Control Mode off."
+			end
+			djControlModeEnabled = false
+			djControlModeUserId = nil
+		else
+			djControlModeEnabled = true
+			djControlModeUserId = player.UserId
+		end
+		ControllerFunctions.broadcast(if djControlModeEnabled then "DJ Control Mode is ON. Only the current DJ controller can submit player requests; Auto DJ remains active." else "DJ Control Mode is OFF. Normal player requests are open; Auto DJ remains active.", "info")
 		publishState(nil)
-		return true, if djControlModeEnabled then "DJ Control Mode enabled; player requests remain available." else "DJ Control Mode disabled."
+		return true, if djControlModeEnabled then "DJ Control Mode enabled. Your requests remain permitted; other player requests are blocked." else "DJ Control Mode disabled. Normal player requests are open."
 	end
 
 	if action == "ModBlockUser" then
@@ -5442,7 +5457,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local currentTitle = if typeof(nowPlaying.title) == "string" and nowPlaying.title ~= "" then nowPlaying.title else "Nothing playing"
 		local currentArtist = if typeof(nowPlaying.artist) == "string" then nowPlaying.artist else ""
 		local playbackLabel = if playbackPaused then "PAUSED" else "PLAYING"
-		local requestLabel = if requestsLocked then "EMERGENCY LOCK" elseif djControlModeEnabled then "OPEN (DJ CONTROL)" else "OPEN"
+		local requestLabel = if requestsLocked then "EMERGENCY LOCK" elseif djControlModeEnabled then "DJ CONTROL (CURRENT DJ ONLY)" else "OPEN"
 		local queueCount = #queue
 		local elapsed = math.max(0, math.floor(tonumber(nowPlaying.elapsed) or 0))
 		local duration = math.max(0, math.floor(tonumber(nowPlaying.duration) or 0))
@@ -6803,6 +6818,12 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
+	if djControlModeEnabled and djControlModeUserId == userId then
+		djControlModeEnabled = false
+		djControlModeUserId = nil
+		ControllerFunctions.broadcast("DJ Control Mode ended because the current DJ controller left. Normal player requests are open again.", "info")
+		publishState(nil)
+	end
 	filteredTitleTextByUserId[userId] = nil
 	local djSessionManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
 	if djSessionManager then
