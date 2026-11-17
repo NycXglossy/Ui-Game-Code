@@ -80,3 +80,8 @@
 ## Phase 17 follow-up — Honeypot integration
 
 The previously listed HoneypotManager exclusion was the Phase 16 scope at that time. Phase 17 now adds a separate detection-only HoneypotManager and exposes its server-local status through the existing diagnostics snapshot and staff output. Phase 16's other runtime acceptance requirements remain open; Phase 17 has its own runtime acceptance checklist in `CLUBMUSIC_PHASE17_HONEYPOT_MANAGER.md`.
+
+
+## Phase 18 follow-up — Separate security telemetry from local diagnostics
+
+Phase 16's client FPS/frame-time/memory/ping diagnostics remain client-local and are not transmitted. Phase 18 adds a distinct, bounded security-signal RemoteEvent for fixed dependency-presence observations only. It does not transmit diagnostic metrics or logs, and accepted client reports are untrusted Info-level replay entries only; they are excluded from ThreatIntelligence scoring and all authorization/enforcement decisions. See CLUBMUSIC_PHASE18_CLIENT_INTEGRITY_TELEMETRY.md.
