@@ -2142,7 +2142,6 @@ end
 local MusicQueueManager = queueManagerRequireResult
 ControllerFunctions.ChildManagerModules = {}
 for _, moduleName in ipairs({
-	"ServerMusicAudioHandler",
 	"MusicPlaybackManager",
 	"MusicPlaylistManager",
 	"MusicSkipVoteManager",
@@ -6229,18 +6228,9 @@ end
 -- playback loops, sounds, queues, playlist cursors, or vote timers.
 ControllerFunctions.ChildManagers = {}
 local childManagerModules = ControllerFunctions.ChildManagerModules
-local audioManagerOk, audioManager = pcall(childManagerModules.ServerMusicAudioHandler.new, {
-	Sound = musicSound,
-	GetSound = function()
-		local source = activeAudioSource
-		return if source.kind == "Sound" then source.instance else nil
-	end,
-	GetSnapshot = function() return ControllerFunctions.getAudioSnapshot() end,
-	GetPaused = function() return playbackPaused end,
-})
-if not audioManagerOk then error("[ClubMusic] ServerMusicAudioHandler initialization failed: " .. tostring(audioManager)) end
-ControllerFunctions.ChildManagers.Audio = audioManager
-
+-- The controller's canonical source snapshot is injected directly. The
+-- separate ServerMusicAudioHandler facade duplicated this same snapshot path
+-- and had no consumers; playback inspection remains in one server adapter.
 local playbackManagerOk, playbackManager = pcall(childManagerModules.MusicPlaybackManager.new, {
 	GetSnapshot = function()
 		return {
@@ -6252,7 +6242,7 @@ local playbackManagerOk, playbackManager = pcall(childManagerModules.MusicPlayba
 		local source = activeAudioSource
 		return if source.kind == "Sound" then source.instance else nil
 	end,
-	GetAudioSnapshot = function() return audioManager:GetPlaybackSnapshot() end,
+	GetAudioSnapshot = function() return ControllerFunctions.getAudioSnapshot() end,
 	GetElapsedTime = function() return nowPlaying.elapsed end,
 	TogglePause = function(player: Player)
 		return ControllerFunctions.handleAction(player, "DJPause", {}, false)
