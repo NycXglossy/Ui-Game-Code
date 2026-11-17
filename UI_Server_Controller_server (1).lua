@@ -1163,6 +1163,9 @@ local function drainRetiredAudioBackends(reason: string): boolean
 	return allClean
 end
 
+-- Initialize source telemetry/playing-count for the unavailable pre-track state.
+ControllerFunctions.bindActiveAudioPlayingSignal()
+
 -- One controller-owned cancellation seam for every dual-deck transition.
 -- Pending queue metadata is invalidated even when the manager is absent or cleanup reports failure.
 ControllerFunctions.cancelAudioTransition = function(reason: string?)
