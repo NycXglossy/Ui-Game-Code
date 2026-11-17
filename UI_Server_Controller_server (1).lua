@@ -1361,6 +1361,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			return math.max(0, (tonumber(nowPlaying.duration) or 0) - (tonumber(nowPlaying.elapsed) or 0))
 		end,
 		GetOutgoingGain = function()
+			if activeAudioSource.kind ~= "Backend" or not activeAudioSource.backend then
+				error("Crossfade requires the modern AudioPlayer backend; guarded Sound fallback remains transition-free.")
+			end
 			transitionOutgoing = activeAudioSource
 			transitionRevision = audioSourceRevision
 			local ok, value = ControllerFunctions.getAudioGain(transitionOutgoing)
@@ -1369,15 +1372,15 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			return value
 		end,
 		SetOutgoingGain = function(value: number)
-			if not transitionOutgoing or activeAudioSource ~= transitionOutgoing
-				or audioSourceRevision ~= transitionRevision then return false end
+			if not transitionOutgoing or transitionOutgoing.kind ~= "Backend" or not transitionOutgoing.backend
+				or activeAudioSource ~= transitionOutgoing or audioSourceRevision ~= transitionRevision then return false end
 			return ControllerFunctions.setAudioGain(value, transitionOutgoing)
 		end,
 		OnCommit = function(incoming: any): boolean
 			local outgoing = transitionOutgoing
 			local entry = pendingCrossfadeEntry
-			if not outgoing or activeAudioSource ~= outgoing
-				or audioSourceRevision ~= transitionRevision or playbackPaused
+			if not outgoing or outgoing.kind ~= "Backend" or not outgoing.backend
+				or activeAudioSource ~= outgoing or audioSourceRevision ~= transitionRevision or playbackPaused
 				or not entry or pendingCrossfadeToken ~= audioTransitionTrackToken then
 				return false
 			end
@@ -1396,40 +1399,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			local outgoingPosition = if typeof(outgoingSnapshot) == "table"
 				then math.max(0, tonumber(outgoingSnapshot.position) or 0) else 0
 			local stopOk, stopResult = pcall(function()
-				if outgoing.kind == "Backend" and outgoing.backend then
-					-- Stop the retired AudioPlayer before ownership changes; Cleanup
-					-- below then destroys its complete output graph.
-					local stopped, stopError = outgoing.backend:Stop()
-					if stopped == false then error(tostring(stopError or "Outgoing AudioPlayer did not stop.")) end
-					return true
-				elseif outgoing.kind == "Sound" and outgoing.instance
-					and outgoing.instance:IsA("Sound") then
-					-- Sound can retain a short decoded tail after Stop(). Hard-mute
-					-- the retired deck first, then stop and rewind it so no buffered
-					-- fragment leaks over the newly committed AudioPlayer.
-					local sound = outgoing.instance
-					local soundParent = sound.Parent
-					-- Mute before stopping so the retired legacy deck cannot remain
-					-- audible while clients process the replicated stop/position update.
-					sound.Volume = 0
-					sound:Stop()
-					sound.TimePosition = 0
-					sound:Stop()
-					-- A small delayed reassertion closes an intermittent replication/
-					-- decoder-tail race observed at the end of otherwise successful fades.
-					-- Do not touch it if another path has already made this Sound active again.
-					task.delay(0.15, function()
-						if sound.Parent and sound.Parent == soundParent and activeAudioSource ~= outgoing then
-							pcall(function()
-								sound.Volume = 0
-							sound:Stop()
-							sound.TimePosition = 0
-						end)
-						end
-					end)
-					return not sound.IsPlaying
-				end
-				return false
+				local stopped, stopError = outgoing.backend:Stop()
+				if stopped == false then error(tostring(stopError or "Outgoing AudioPlayer did not stop.")) end
+				return true
 			end)
 			if not stopOk or stopResult == false then
 				return false
@@ -1443,12 +1415,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				if recoverCommittedGlobalTrack() then return true end
 				if outgoingWasPlaying then
 					pcall(function()
-						if outgoing.kind == "Backend" then
-							outgoing.backend:Play(nil, outgoingPosition)
-						elseif outgoing.kind == "Sound" then
-							outgoing.instance.TimePosition = outgoingPosition
-							outgoing.instance:Play()
-						end
+						outgoing.backend:Play(nil, outgoingPosition)
 					end)
 				end
 				return false
@@ -1464,8 +1431,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
 				if outgoingWasPlaying then
 					pcall(function()
-						if outgoing.kind == "Backend" then outgoing.backend:Play(nil, outgoingPosition)
-						elseif outgoing.kind == "Sound" then outgoing.instance.TimePosition = outgoingPosition; outgoing.instance:Play() end
+						outgoing.backend:Play(nil, outgoingPosition)
 					end)
 				end
 				return false
@@ -1476,7 +1442,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				ControllerFunctions.topUpAuto()
 				publishState(nil)
 			end)
-			if outgoing.kind == "Backend" and outgoing.backend ~= incoming then
+			if outgoing.backend ~= incoming then
 				pcall(function() outgoing.backend:Cleanup() end)
 			end
 			return true
@@ -1499,6 +1465,9 @@ ControllerFunctions.beginAudioCrossfade = function(asset: string, duration: numb
 	local crossfade = managers and managers.Crossfade
 	if not crossfade then return false, "Audio crossfade manager is not initialized." end
 	if playbackPaused then return false, "Cannot crossfade while playback is paused." end
+	if activeAudioSource.kind ~= "Backend" or not activeAudioSource.backend then
+		return false, "Crossfade requires the modern AudioPlayer backend; normal track advance remains available on the guarded fallback."
+	end
 	local snapshot = ControllerFunctions.getAudioSnapshot()
 	if typeof(snapshot) ~= "table" or snapshot.playing ~= true then
 		return false, "The active music source is not playing."
