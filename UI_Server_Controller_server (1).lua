@@ -787,11 +787,9 @@ end
 local SESSION_TOKEN = if game.JobId ~= "" then game.JobId else HttpService:GenerateGUID(false)
 local random = Random.new()
 
--- One server-owned Sound drives the entire server. Reuse the supplied
--- SoundService.ServerMusicSound and SoundService.MusicGroup instances so the
--- existing assets are not shadowed by duplicate playback objects.
--- The controller remains the only playback authority; clients may adjust the
--- canonical SoundGroup locally for their own volume preference.
+-- Keep the historical Sound and SoundGroup instances temporarily so existing
+-- place assets are not shadowed while the modern-only rollout is validated.
+-- They are inert compatibility objects: controller playback is AudioPlayer-only.
 local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGroup", "MusicGroup") :: SoundGroup
 local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
 local activeAudioSource: any = { kind = "Unavailable" }
@@ -833,6 +831,7 @@ musicSound.Looped = false
 musicSound.PlaybackSpeed = 1
 musicSoundGroup.Volume = 1
 musicSound:SetAttribute("ManagedByClubMusicController", true)
+pcall(function() musicSound:Stop(); musicSound.TimePosition = 0 end)
 
 -- Publish the number of active controller-owned main outputs (0 or 1).
 -- The binding is refreshed whenever the canonical source changes.
