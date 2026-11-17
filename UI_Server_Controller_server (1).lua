@@ -4363,6 +4363,7 @@ ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number,
 		notify(player, "That title can't be used.", "warn")
 		return false
 	end
+	ControllerFunctions.recordTextReplayEvent(player, "custom_title_filtered")
 	clean.text = filtered
 
 	-- The profile may have been unloaded while the filter request yielded.
@@ -5311,6 +5312,14 @@ ControllerFunctions.recordAudioReplayEvent = function(player: Player, eventType:
 	if replay and replay:IsA("BindableFunction") then
 		pcall(function()
 			replay:Invoke("Record", eventType, player.UserId, 0, "Info", "ClubMusicAudioValidation", {})
+		end)
+	end
+end
+ControllerFunctions.recordTextReplayEvent = function(player: Player, eventType: string)
+	local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+	if replay and replay:IsA("BindableFunction") then
+		pcall(function()
+			replay:Invoke("Record", eventType, player.UserId, 0, "Info", "ClubMusicTextValidation", {})
 		end)
 	end
 end
