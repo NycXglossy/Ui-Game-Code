@@ -132,11 +132,12 @@ function Manager:Begin(asset: string, duration: number)
 	end
 	local function rejectStart(message: string, deck: any?): (boolean, string)
 		if deck then safeMethod(deck, "Cleanup") end
-		if startIsCurrent() then
+		local stillCurrent = startIsCurrent()
+		if stillCurrent then
 			self.starting = false
 			notifySettled(self, "rejected")
 		end
-		return false, if startIsCurrent() then message else "Crossfade start was cancelled."
+		return false, if stillCurrent then message else "Crossfade start was cancelled."
 	end
 
 	local createOk, incoming = pcall(self.context.CreateDeck)
