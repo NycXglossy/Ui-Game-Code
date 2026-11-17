@@ -74,3 +74,15 @@ This phase does not replace these services, create a second watchdog, merge inde
 ## Exit criteria
 
 The consolidated snapshot must report accurate local health and distinguish healthy, degraded, unavailable, not-installed, and partial states; all state reads remain observational and bounded; authorized staff see the new high-level operational data without private traces; no legacy component is retired before consumer audit and runtime tests pass. Source review alone is not runtime verification.
+
+
+## Final source-level diagnostics closure pass (2026-11-16)
+
+The final static pass resolved two boundedness/packaging gaps and completed the source-level watchdog pulse review:
+
+- Synchronized the embedded `ClubMusic_Global_SafeCall_Service` ModuleScript inside `ClubMusic_Global_Optional_Services.rbxmx` with the standalone source. Both now cap recent failures at 50 records and warning-deduplication keys at 100 with 120-second expiry; the embedded copy no longer has an unbounded warning-key table.
+- Bounded watchdog pulse metadata to at most 8 primitive fields, with short validated keys, 140-character strings, and finite numeric values capped at an absolute value of 1,000,000,000. This prevents a trusted server-side pulse caller from retaining an arbitrarily large metadata table.
+- Confirmed statically that Playback pulses every second, including while paused or audio reload is in progress; Queue and AutoDJ are sampled every 30 seconds and on refill; Recovery is event-driven and not required to pulse while idle; Moderation is optional/event-driven. Playback has a 12-second stale window; Queue and AutoDJ have 900-second stale windows. AutoDJ intentionally reports degraded when it cannot meet the configured queue target, rather than silently treating an empty/unplayable catalog as healthy.
+- SafeCall and ErrorHistory remain separate by design: SafeCall records protected-operation outcomes and recovery counters, while ErrorHistory captures broader controller/module error records with its own deduplication semantics. Both remain bounded and are consumed separately.
+
+**Phase 14 source status:** the source integration and in-repository text-source checks are complete. This does not close the release gate. Studio/published-server pulse behavior, historical degraded-warning reconciliation, load profiling, full binary/third-party package review, and live-place revision/hierarchy verification remain external acceptance items. No legacy diagnostics implementation has been retired.
