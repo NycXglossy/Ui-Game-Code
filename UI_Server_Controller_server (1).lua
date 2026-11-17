@@ -4363,11 +4363,11 @@ ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number,
 		notify(player, "That title can't be used.", "warn")
 		return false
 	end
-	ControllerFunctions.recordTextReplayEvent(player, "custom_title_filtered")
 	clean.text = filtered
 
 	-- The profile may have been unloaded while the filter request yielded.
 	if profiles[player.UserId] ~= profile or player.Parent ~= Players then return false end
+	ControllerFunctions.recordTextReplayEvent(player, "custom_title_filtered")
 	local safeTexts = filteredTitleTextByUserId[player.UserId]
 	if not safeTexts then safeTexts = {}; filteredTitleTextByUserId[player.UserId] = safeTexts end
 	safeTexts[slotNumber] = filtered
