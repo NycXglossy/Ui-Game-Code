@@ -10,9 +10,9 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "2911f939a0f4530d23dd739b2081a532ffcc8fb7"
+local RELEASE_COMMIT = "3208dc2092e6759be51aeaa358ecea0f2eb514c9"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
-local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService"}
+local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 local BOOTSTRAP_NAME = "TikiTideCharacterPhysicsGuardBootstrap"
 local STAGE_NAME = FOLDER_NAME .. "_Staging"
@@ -201,9 +201,72 @@ if not replayEndpoint then
  replayEndpoint.Name = "TikiTideSecurityReplay"
  replayEndpoint.Parent = ServerStorage
 end
+
+-- Adaptive budgets apply only to optional workload. Core security paths and replay
+-- event recording remain available in every mode.
+local loadManager = nil
+local loadModule = core:FindFirstChild("AdaptiveSecurityLoadManager")
+if loadModule and loadModule:IsA("ModuleScript") then
+ local loadOk, loadExport = pcall(require, loadModule)
+ if loadOk and typeof(loadExport) == "table" and type(loadExport.new) == "function" then
+  loadManager = loadExport.new({
+   onModeChanged = function(previousMode, nextMode, averageDelta, maximumDelta, reason)
+    pcall(function()
+     replayEndpoint:Invoke("Record", "security_load_mode_changed", 0, 0,
+      if nextMode == "Critical" then "Warning" else "Info",
+      "AdaptiveSecurityLoadManager",
+      {previousMode = previousMode, mode = nextMode, averageHeartbeatDelta = averageDelta,
+       maximumHeartbeatDelta = maximumDelta, reason = reason})
+    end)
+   end,
+  })
+  local loadStarted, loadResult = pcall(function() return loadManager:Start() end)
+  if not loadStarted or loadResult ~= true then
+   warn("[Tiki Tide][AdaptiveLoad] Startup failed: " .. tostring(loadResult))
+   loadManager = nil
+  end
+ else
+  warn("[Tiki Tide][AdaptiveLoad] Module failed to load: " .. tostring(loadExport))
+ end
+else
+ warn("[Tiki Tide][AdaptiveLoad] Module is missing; optional workload remains ungated.")
+end
+
+local loadControl = ServerStorage:FindFirstChild("TikiTideSecurityLoadManager")
+if loadManager then
+ if loadControl and not loadControl:IsA("BindableFunction") then
+  warn("[Tiki Tide][AdaptiveLoad] Control endpoint has wrong class; endpoint not exposed.")
+ else
+  if not loadControl then
+   loadControl = Instance.new("BindableFunction")
+   loadControl.Name = "TikiTideSecurityLoadManager"
+   loadControl.Parent = ServerStorage
+  end
+  loadControl.OnInvoke = function(action, taskName, amount)
+   if action == "Status" then return loadManager:GetStatus() end
+   if action == "GetBudget" then return loadManager:GetBudget(taskName) end
+   if action == "TryConsume" then return loadManager:TryConsume(taskName, amount) end
+   return false, "Unsupported adaptive-load operation."
+  end
+  local loadStatus = ServerStorage:FindFirstChild("GetTikiTideSecurityLoadStatus")
+  if loadStatus and not loadStatus:IsA("BindableFunction") then loadStatus:Destroy(); loadStatus = nil end
+  if not loadStatus then
+   loadStatus = Instance.new("BindableFunction")
+   loadStatus.Name = "GetTikiTideSecurityLoadStatus"
+   loadStatus.Parent = ServerStorage
+  end
+  loadStatus.OnInvoke = function() return loadManager:GetStatus() end
+ end
+end
+
 replayEndpoint.OnInvoke = function(action, ...)
  if action == "Record" then return replay:Record(...) end
- if action == "Query" then return replay:Query(...) end
+ if action == "Query" then
+  if loadManager and not loadManager:TryConsume("ReplayQueries") then
+   return false, {}, "Replay review is temporarily rate-limited while the server is under load."
+  end
+  return replay:Query(...)
+ end
  if action == "Status" then return replay:GetStatus() end
  return false, "Unsupported replay action."
 end
@@ -215,8 +278,12 @@ if not replayStatus then
  replayStatus.Parent = ServerStorage
 end
 replayStatus.OnInvoke = function() return replay:GetStatus() end
-script.Destroying:Connect(function() replay:Stop() end)
+script.Destroying:Connect(function()
+ replay:Stop()
+ if loadManager then loadManager:Stop() end
+end)
 print("[Tiki Tide][SecurityReplay] Bounded server-local event history ready; persistent writes=0; frame capture=false.")
+if loadManager then print("[Tiki Tide][AdaptiveLoad] Adaptive optional-work budgets started; essential security paths remain unrestricted.") end
 ]=]
 
 local stagedBootstrap = Instance.new("Script")
