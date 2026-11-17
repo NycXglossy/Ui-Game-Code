@@ -193,7 +193,7 @@ return function(_K: any)
 			OperationalSecurityLog = true, OperationalServers = true,
 			OperationalRateLimit = true, OperationalConfig = true,
 			OperationalRecovery = true, OperationalReconcile = true,
-			PurchaseDiagnostics = true, SecurityReplay = true,
+			PurchaseDiagnostics = true, SecurityReplay = true, SecurityThreatIntelligence = true,
 			OperationalMaintenance = true,
 			RequestMute = true, ClearUserQueue = true, EmergencyLock = true,
 			TrackBlock = true, ForceStop = true,
