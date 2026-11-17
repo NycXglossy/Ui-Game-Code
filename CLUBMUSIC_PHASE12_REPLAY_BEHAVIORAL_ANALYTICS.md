@@ -1,6 +1,6 @@
 # Phase 12 — Replay & Behavioral Analytics
 
-**Status:** Bounded server-local replay timeline, staff authorization, installer wiring, and selected event adapters are implemented in source. Roblox Studio and published-server verification remain outstanding.
+**Status:** Bounded server-local replay timeline, staff authorization, installer wiring, and the repository-snapshot remote/audio/text/social source audit with privacy-safe event adapters are implemented in source. Roblox Studio and published-server verification remain outstanding.
 
 ## Scope delivered
 
