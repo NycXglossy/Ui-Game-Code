@@ -88,18 +88,21 @@ function Service:Start(): boolean
 	local folder = Instance.new("Folder")
 	folder.Name = FOLDER_NAME
 	for _, decoy in ipairs(DECOYS) do
-		if decoy.kind == "RemoteEvent" then
+		local decoyName = decoy.name
+		local decoyKind = decoy.kind
+		local decoySignal = decoy.signal
+		if decoyKind == "RemoteEvent" then
 			local remote = Instance.new("RemoteEvent")
-			remote.Name = decoy.name
+			remote.Name = decoyName
 			remote.OnServerEvent:Connect(function(player)
-				self:_record(player, decoy.kind, decoy.signal)
+				self:_record(player, decoyKind, decoySignal)
 			end)
 			remote.Parent = folder
 		else
 			local remote = Instance.new("RemoteFunction")
-			remote.Name = decoy.name
+			remote.Name = decoyName
 			remote.OnServerInvoke = function(player)
-				self:_record(player, decoy.kind, decoy.signal)
+				self:_record(player, decoyKind, decoySignal)
 				return false, "Request unavailable."
 			end
 			remote.Parent = folder
