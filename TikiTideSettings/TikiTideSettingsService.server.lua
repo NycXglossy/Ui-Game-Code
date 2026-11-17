@@ -218,6 +218,14 @@ do
 			and type(exported.Cancel) == "function" then
 			local startOk, started = pcall(exported.Start, {
 				onSignal = function(signal: string, targetUserId: number, detail: string)
+					local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+					if replay and replay:IsA("BindableFunction") then
+						pcall(function()
+							replay:Invoke("Record", signal, targetUserId, 0, "Warning", "TeleportValidation", {
+							detail = detail,
+						})
+						end)
+					end
 					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 					local recorder = api and api:FindFirstChild("RecordGlobalSecuritySignal")
 					if recorder and recorder:IsA("BindableFunction") then
