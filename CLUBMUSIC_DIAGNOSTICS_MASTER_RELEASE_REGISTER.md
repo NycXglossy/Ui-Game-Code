@@ -173,3 +173,46 @@ These changes close the in-repository source integration tasks for Phase 14 only
 - [ ] Studio/published tests, malformed/burst/forgery tests, dependency-failure tests, replay fidelity, and overhead/regression profile.
 
 **Trust boundary:** client reports are untrusted and can be suppressed or forged. Dependency-presence checks are not cryptographic attestation. Existing client FPS/memory/ping diagnostics remain local-only.
+
+
+## Owner-reported runtime acceptance and Phases 20–24 update (2026-11-16)
+
+The project owner reports that the previously implemented Tiki Tide/ClubMusic systems and earlier phases are working in their experience. This is recorded as owner-reported runtime acceptance; it is not an independent reproduction or a substitute for retaining test logs. The new Phase 20–24 source edits in this update have not been run in Roblox Studio or a published test server during this work session.
+
+### Phase 20 — Security Coverage Closure
+- Added CLUBMUSIC_PHASE20_SECURITY_COVERAGE_CLOSURE.md.
+- Recorded the tracked text-source remote/action inventory and its server owners: ClubMusic RequestAction/state/catalog/playlists/purchase telemetry, Tiki Tide Settings, UtilityBar, Kohl's adapter, teleport tickets, movement observer, spectator and local diagnostics/security services.
+- Explicitly bounded the audit: no additional client-triggered ProximityPrompt/ClickDetector/DragDetector handler was found in the inspected text sources; binary assets, native Kohl's internals and the live place still require separate inspection.
+- No broad new remote, client authority, or permissive fallback was introduced.
+
+### Phase 21 — Unified Incident Response
+- Fixed ClubMusicSecurityCore/IncidentResponse.lua so an existing incident's eventCount is incremented from old.eventCount, not the uninitialized nextItem.
+- Added ;cmthreatcase TTI-ID. An authorized IncidentResponse user can explicitly convert a retained current-server threat review item into a MemoryStore ManualReview case.
+- Controller validates the ID, queries the server-local ThreatIntelligence endpoint, constructs a bounded summary from fixed metadata, and calls the existing incident service. The threat service and incident service retain independent SecurityCore permission checks.
+- No automatic case creation, kick, ban, shadow restriction, movement correction or gameplay restriction was added.
+
+### Phase 22 — Staff Security Console
+- Added ;cmspectate UserId, ;cmspectateswitch UserId, ;cmspectateoff and ;cmspectatestate through the existing Kohl's Admin Administration command group.
+- Controller checks SecurityCore GlobalModeration and calls the ServerStorage-only spectator endpoint. StaffSpectatorService independently rechecks authorization.
+- No client remote or mobile UI change was added. Existing visibility and NoWorldActions limitations remain documented.
+
+### Phase 23 — Performance & Compatibility Hardening
+- Added a phase document recording bounded capacities and required performance/device/regression tests.
+- Preserved essential security-path bypass from adaptive optional-work budgets.
+- No runtime load profile or device test is claimed.
+
+### Phase 24 — Production Release & Legacy Retirement
+- Added a release/rollback procedure and production sign-off checklist.
+- The legacy standalone Music System remains reference-only; do not install it beside the current controller.
+- No diagnostics implementation, SafeCall/ErrorHistory store, watchdog, registry, compatibility alias or rollback asset is deleted in this update.
+- Installer pinning must be updated to a commit that contains the approved Phase 20–24 sources before the installer is used.
+
+### Phase 20–24 source commits
+- Phase 21 incident coalescing fix: 47871142fcf96f1e66a4e308ed52cc1d423be596
+- Staff spectator controller bridge: 81b5ec94616a06d620fa1d1a3866a719576be4c5
+- Staff spectator addon commands: fedbeed719aebed0ce9e3ff76193828051102feb
+- Threat-review case escalation: ea8c512ca7b6eb9789d11ee4537748eb3eb69750
+- Threat-review addon command: c1d18e35aba5bfe850a03aad81b41ef446ae4bd4
+- Phase 20–24 documentation commits are recorded in the branch history and linked from the roadmap.
+
+**Release status:** The five phases have source/docs updates. Production readiness still requires exact installer pinning, Studio/published acceptance of the new commands and incident coalescing fix, binary/third-party/live-place inspection, and the release checklist in Phase 24. Do not describe these new changes as runtime-tested until those tests are recorded.
