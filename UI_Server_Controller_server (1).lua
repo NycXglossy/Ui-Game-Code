@@ -6011,13 +6011,22 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		if not ok or typeof(metrics) ~= "table" then return false, tostring(metrics or "Metrics are unavailable or disabled.") end
 		local aggregate = if typeof(metrics.aggregate) == "table" then metrics.aggregate else {}
 		local counters = if typeof(aggregate.counters) == "table" then aggregate.counters else {}
+		local structuredCounters = if typeof(metrics.counters) == "table" then metrics.counters else {}
 		local keys = {}
 		for key in pairs(counters) do table.insert(keys, tostring(key)) end
 		table.sort(keys)
 		local lines = {"ClubMusic Metrics (" .. tostring(metrics.state or "Unknown") .. "):"}
 		for index = 1, math.min(#keys, 12) do
 			local key = keys[index]
-			table.insert(lines, key .. " = " .. tostring(counters[key]))
+			local detail = structuredCounters[key]
+			if typeof(detail) == "table" then
+				table.insert(lines, key .. " = " .. tostring(counters[key])
+					.. " | success " .. tostring(detail.successCount or 0)
+					.. " | failure " .. tostring(detail.failureCount or 0)
+					.. " | last " .. tostring(detail.lastOutcome or "Observed"))
+			else
+				table.insert(lines, key .. " = " .. tostring(counters[key]))
+			end
 		end
 		if #keys == 0 then table.insert(lines, "No aggregated counters are available yet.") end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1400)
