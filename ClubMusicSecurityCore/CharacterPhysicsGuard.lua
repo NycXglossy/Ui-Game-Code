@@ -75,6 +75,10 @@ function Service.new(dependencies)
 		movementSampleGaps = 0,
 		movementSampleInvalid = 0,
 		movementSpeedBands = {under1 = 0, under4 = 0, under8 = 0, under16 = 0, under32 = 0, over32 = 0},
+		-- Separate aggregate axes support later horizontal-speed and vertical/fly analysis.
+		-- These are measurement bins only; no thresholds or enforcement consume them.
+		movementHorizontalSpeedBands = {under1 = 0, under4 = 0, under8 = 0, under16 = 0, under32 = 0, over32 = 0},
+		movementVerticalSpeedBands = {under1 = 0, under4 = 0, under8 = 0, under16 = 0, under32 = 0, over32 = 0},
 		movementContexts = {grounded = 0, airborne = 0, seated = 0, other = 0},
 		movementOwners = {server = 0, client = 0, unknown = 0},
 		movementLatencyBands = {under50ms = 0, under100ms = 0, under200ms = 0, over200ms = 0, unknown = 0},
@@ -261,15 +265,22 @@ function Service:_watchCharacter(player: Player, character: Model)
 						if elapsed < 0.2 or elapsed > 1.5 then
 							self.movementSampleGaps += 1
 						else
-							local distance = (position - previousPosition).Magnitude
-						local observedSpeed = distance / elapsed
+							local displacement = position - previousPosition
+						local observedSpeed = displacement.Magnitude / elapsed
+						local horizontalSpeed = Vector3.new(displacement.X, 0, displacement.Z).Magnitude / elapsed
+						local verticalSpeed = math.abs(displacement.Y) / elapsed
 						self.movementSamples += 1
-						if observedSpeed < 1 then self.movementSpeedBands.under1 += 1
-						elseif observedSpeed < 4 then self.movementSpeedBands.under4 += 1
-						elseif observedSpeed < 8 then self.movementSpeedBands.under8 += 1
-						elseif observedSpeed < 16 then self.movementSpeedBands.under16 += 1
-						elseif observedSpeed < 32 then self.movementSpeedBands.under32 += 1
-						else self.movementSpeedBands.over32 += 1 end
+						local function incrementSpeedBand(bands, speed: number)
+							if speed < 1 then bands.under1 += 1
+							elseif speed < 4 then bands.under4 += 1
+							elseif speed < 8 then bands.under8 += 1
+							elseif speed < 16 then bands.under16 += 1
+							elseif speed < 32 then bands.under32 += 1
+							else bands.over32 += 1 end
+						end
+						incrementSpeedBand(self.movementSpeedBands, observedSpeed)
+						incrementSpeedBand(self.movementHorizontalSpeedBands, horizontalSpeed)
+						incrementSpeedBand(self.movementVerticalSpeedBands, verticalSpeed)
 
 							local context = "other"
 						if humanoid.SeatPart ~= nil then context = "seated"
@@ -387,6 +398,8 @@ function Service:GetStatus()
 			gaps = self.movementSampleGaps,
 			invalidSamples = self.movementSampleInvalid,
 			observedSpeedBandsStudsPerSecond = table.clone(self.movementSpeedBands),
+			horizontalSpeedBandsStudsPerSecond = table.clone(self.movementHorizontalSpeedBands),
+			verticalSpeedBandsStudsPerSecond = table.clone(self.movementVerticalSpeedBands),
 			contexts = table.clone(self.movementContexts),
 			networkOwners = table.clone(self.movementOwners),
 			latencyBands = table.clone(self.movementLatencyBands),
