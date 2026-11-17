@@ -50,11 +50,6 @@ end
 
 function Service:_report(player: Player, signal: any)
 	if not self.started or player.Parent ~= Players then return end
-	if typeof(signal) ~= "string" or not ALLOWED_SIGNALS[signal] then
-		self.rejectedReports = increment(self.rejectedReports)
-		return
-	end
-
 	local key = tostring(player.UserId)
 	local subject = self.subjects[key]
 	if not subject then
@@ -68,13 +63,19 @@ function Service:_report(player: Player, signal: any)
 		self.subjects[key] = subject
 	end
 
-	if subject.seen[signal] then
-		self.duplicateReports = increment(self.duplicateReports)
-		return
-	end
+	-- Throttle every inbound attempt, including malformed codes and duplicates.
 	local now = os.clock()
 	if subject.lastAt > 0 and now - subject.lastAt < MIN_REPORT_INTERVAL then
 		self.throttledReports = increment(self.throttledReports)
+		return
+	end
+	subject.lastAt = now
+	if typeof(signal) ~= "string" or #signal > 48 or not ALLOWED_SIGNALS[signal] then
+		self.rejectedReports = increment(self.rejectedReports)
+		return
+	end
+	if subject.seen[signal] then
+		self.duplicateReports = increment(self.duplicateReports)
 		return
 	end
 	if subject.count >= MAX_REPORTS_PER_PLAYER then
@@ -84,7 +85,6 @@ function Service:_report(player: Player, signal: any)
 
 	subject.seen[signal] = true
 	subject.count += 1
-	subject.lastAt = now
 	self.lastReportAt = now
 	self.acceptedReports = increment(self.acceptedReports)
 
