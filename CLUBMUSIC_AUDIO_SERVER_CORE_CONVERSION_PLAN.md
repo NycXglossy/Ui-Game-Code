@@ -11,6 +11,21 @@ Finish converting the remaining ClubMusic core responsibilities to a clear, serv
 
 The server controller remains the authority for playback state, per-server queue ownership, track selection, request accounting, action validation, DJ permissions, and state replication. Client modules may render state and store local preferences, but must not own authoritative playback, queue, playlist, DJ, or permission state.
 
+## Audio instance and replication boundary audit (2026-11-16)
+
+**Decision: do not move the modern AudioPlayer graph into ReplicatedStorage.** The existing runtime already uses the appropriate separation: server-created shared playback graph under `SoundService`, server-only modules in `ServerStorage`, and the per-listener output route created locally by the client preferences module.
+
+- `UI_Server_Controller_server (1).lua` explicitly passes `SoundService` as the parent when creating the main modern backend, crossfade deck, and recovery replacement.
+- `ClubMusicAudioBackend.luau` creates a managed folder containing the server-owned `AudioPlayer`, `AudioEqualizer`, `AudioFader`, and the two server-side `Wire` connections. The graph remains under `SoundService`.
+- `ClubMusicPlayerPreferences.luau` observes replicated managed backend folders under the client's `SoundService`, then creates that client's private `AudioFader`, `AudioDeviceOutput`, and local `Wire` connections under its own local `SoundService`. This preserves per-listener volume without changing server gain or another player's output.
+- The server ModuleScripts remain under `ServerStorage/ClubMusicAudioModules`; the client-only preferences ModuleScript remains under `ReplicatedStorage/ClubMusicClientAudioModules`.
+- Do not replicate `AudioDeviceOutput` or the private output wires from the server. Each client creates its own output route.
+- Keep queue state, catalog validation, playlist persistence, DJ sessions, authorization, transition ownership, recovery, and watchdog logic server-side. None belongs in `ReplicatedStorage`.
+- `MemoryStoreService` is a separate cross-server ephemeral data service. Moving Instances into `ReplicatedStorage` does not preserve, replace, or reduce MemoryStore usage. The optional playback-only sync may continue using its existing server-side MemoryStore coordination independently of the audio graph.
+- Roblox's audio documentation describes the 2D output graph using `SoundService` and identifies `AudioPlayer:Play()` / `Stop()` as server-to-client replicated actions. `AudioPlayer.IsReady` is explicitly not replicated, so decoder readiness must remain a server-side check; clients must not be made authoritative by reading it.
+
+**Implementation result:** no runtime parent change is required for this boundary. The controller and backend already construct the server-owned graph in `SoundService`, and the client module already constructs local output routing. Moving the graph to `ReplicatedStorage` would be an unnecessary architectural change and could break the established audio routing. This is a verified source-layout decision, not a claim of Roblox Studio runtime certification.
+
 ## Non-negotiable invariants
 
 1. Modern `AudioPlayer` is the only intended long-term playback source; the controller remains its lifecycle owner.
