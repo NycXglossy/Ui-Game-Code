@@ -134,6 +134,8 @@ function Service:Start(): boolean
 		local observersToExit = {}
 		for actorId, targetId in pairs(self.active) do
 			if actorId == leaving.UserId then
+				local target = Players:GetPlayerByUserId(targetId)
+				self:_audit(leaving, target, "spectator-staff-left")
 				self.active[actorId] = nil
 			elseif targetId == leaving.UserId then
 				local observer = Players:GetPlayerByUserId(actorId)
