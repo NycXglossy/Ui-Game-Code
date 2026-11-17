@@ -221,7 +221,8 @@ do
 					local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
 					if replay and replay:IsA("BindableFunction") then
 						pcall(function()
-							replay:Invoke("Record", signal, targetUserId, 0, "Warning", "TeleportValidation", {
+								replay:Invoke("Record", signal, targetUserId, 0,
+								if signal == "TeleportVerified" then "Info" else "Warning", "TeleportValidation", {
 							detail = detail,
 						})
 						end)
