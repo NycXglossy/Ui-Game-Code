@@ -5363,7 +5363,8 @@ if not localDiagnosticsEndpoint then
 	localDiagnosticsEndpoint.Name = "GetClubMusicLocalDiagnostics"
 	localDiagnosticsEndpoint.Parent = ServerStorage
 end
-localDiagnosticsEndpoint.OnInvoke = function()
+local localDiagnosticsBindable = localDiagnosticsEndpoint :: BindableFunction
+localDiagnosticsBindable.OnInvoke = function()
 	local audioSnapshot = nil
 	if type(ControllerFunctions.getAudioSnapshot) == "function" then
 		local ok, result = pcall(ControllerFunctions.getAudioSnapshot)
