@@ -100,6 +100,7 @@ end
 
 function Service:Enter(actor: Player, targetUserId: any): (boolean, string)
 	if not self:_authorized(actor) then self.denied += 1; return false, "Staff observation permission denied." end
+	if self.active[actor.UserId] ~= nil then return false, "You are already observing; use SwitchTarget instead." end
 	if not validUserId(targetUserId) then self.denied += 1; return false, "Invalid observation target." end
 	local target = Players:GetPlayerByUserId(targetUserId)
 	if not livePlayer(target) or target == actor then self.denied += 1; return false, "That player cannot be observed." end
