@@ -278,3 +278,26 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 **Exit criteria:** trusted server commands/UI can call the server-only BindableFunction; all required gameplay actions honor spectator restriction state; movement and camera state restore safely under all lifecycle paths; runtime tests pass.
 
 **Implementation note:** see `CLUBMUSIC_PHASE11_STAFF_SPECTATOR_SERVICE.md`.
+
+
+## Phase 12 — Replay & Behavioral Analytics
+
+**Current status: Bounded server-local event timeline, staff authorization, installer wiring, and selected event adapters implemented in source; runtime verification remains open.**
+
+- [x] Add a fixed-capacity server-local event ring (2,048 events) with actor/target IDs, timestamps, event type, severity, source, and bounded metadata.
+- [x] Sanitize metadata and reject invalid IDs/non-finite values; do not retain Instances, arbitrary nested payloads, raw user text, credentials, or secrets.
+- [x] Add staff-authorized query API using existing `GlobalModeration` permission.
+- [x] Keep record/query endpoints server-only under ServerStorage; add no client remote.
+- [x] Wire CharacterPhysicsGuard signals and StaffSpectatorService lifecycle events into the timeline.
+- [x] Add status counters and installer staging/rollback integration.
+- [x] Avoid frame capture, persistence writes, new MemoryStore maps, and background polling workers.
+- [ ] Add adapters for additional confirmed sources (teleport outcomes, remote validation failures, avatar/audio/chat/social validation, receipt state transitions, and moderation decisions) only after inspecting their actual call paths.
+- [ ] Add staff-facing review UI/command adapter; do not expose raw query access to clients.
+- [ ] Test authorization, filters, overflow, cleanup, bounded memory, and event fidelity in Studio and published servers.
+- [ ] Measure overhead under load and verify it does not degrade essential validation or existing gameplay.
+
+**Important limitations:** this is a per-server in-memory event timeline, not durable or cross-server history. It does not capture every frame or full-session video, does not alter threat scores, and does not enforce moderation. Only the two listed event sources are currently wired.
+
+**Exit criteria:** bounded memory, server-only record access, permission-checked review, complete adapters for confirmed security event sources, and successful runtime/performance tests.
+
+**Implementation note:** see `CLUBMUSIC_PHASE12_REPLAY_BEHAVIORAL_ANALYTICS.md`.
