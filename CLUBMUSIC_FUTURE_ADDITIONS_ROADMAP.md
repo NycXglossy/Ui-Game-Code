@@ -581,8 +581,13 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 ## Phase 30 — Audio, Animation & Media Abuse Protection
 - Audit all audio, boombox, animation, image/artwork, and media mutation entry points.
 - Preserve modern AudioPlayer as the single playback authority and keep per-server queues independent under optional playback-only global sync.
-- Validate server-owned catalog policy and permissions for DJ/staff actions.
+- Complete the server-first core conversion and module consolidation required by [the Audio Server-Core Conversion Plan](CLUBMUSIC_AUDIO_SERVER_CORE_CONVERSION_PLAN.md): consolidate thin playback/audio facades, playlist and skip-vote facades; canonicalize queue and validation services; preserve server ownership and client-only preferences.
+- Keep backend lifecycle, crossfade transitions, optional spatial routing, DJ session authority, catalog/playlist persistence, watchdog, recovery and diagnostics on their correct server-side boundaries.
+- Establish one canonical source for standalone modules and embedded RBXMX bundles; reconcile installer manifests and live-place consumers before deleting duplicates.
+- Convert all watchdog, reload, recovery, pause/restart, crossfade, and diagnostics consumers before retiring the guarded legacy Sound fallback.
+- Validate server-owned catalog policy and permissions for DJ/staff actions. SecurityCore remains the sole permission authority.
 - Do not install the standalone legacy Music System or create another playback controller.
+- Do not certify Phase 30 until Studio and published two-server tests pass for playback, queue isolation, playback-only sync/failover, DJ/playlist/voting, watchdog recovery, and PC/mobile/console compatibility.
 
 ## Phase 31 — Chat, Text & Social Safety Closure
 - Audit every announcement, title, custom message, AFK text, bubble, teleport, and player-to-player action.
