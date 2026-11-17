@@ -9,8 +9,12 @@ local Service = {}
 Service.__index = Service
 
 local FOLDER_NAME = "TikiTideSecurityDecoys"
-local EVENT_NAME = "TTHP_RemoteEvent_7F3A"
-local FUNCTION_NAME = "TTHP_RemoteFunction_91C2"
+local DECOYS = {
+	{ name = "TTHP_AdminPrivilegeEvent", kind = "RemoteEvent", signal = "honeypot_admin_privilege_remote" },
+	{ name = "TTHP_PurchaseReceiptFunction", kind = "RemoteFunction", signal = "honeypot_purchase_receipt_remote" },
+	{ name = "TTHP_VIPEntitlementEvent", kind = "RemoteEvent", signal = "honeypot_vip_entitlement_remote" },
+	{ name = "TTHP_ModerationActionFunction", kind = "RemoteFunction", signal = "honeypot_moderation_action_remote" },
+}
 local COOLDOWN_SECONDS = 5
 local MAX_SUBJECTS = 256
 local MAX_USER_ID = 9007199254740991
@@ -38,7 +42,7 @@ function Service.new(dependencies: {[string]: any})
 	}, Service)
 end
 
-function Service:_record(player: Player, kind: string)
+function Service:_record(player: Player, kind: string, signal: string)
 	if not self.started or player.Parent ~= Players or not validUserId(player.UserId) then return end
 	local now = os.clock()
 	local key = tostring(player.UserId)
@@ -65,7 +69,6 @@ function Service:_record(player: Player, kind: string)
 		self.functionHits = math.min(1000000000, self.functionHits + 1)
 	end
 
-	local signal = if kind == "RemoteEvent" then "honeypot_remote_event" else "honeypot_remote_function"
 	pcall(self.d.recordThreat, signal, player.UserId, "HoneypotManager", "Warning")
 	pcall(self.d.recordReplay, signal, player.UserId, kind)
 end
@@ -84,20 +87,24 @@ function Service:Start(): boolean
 
 	local folder = Instance.new("Folder")
 	folder.Name = FOLDER_NAME
-	local eventRemote = Instance.new("RemoteEvent")
-	eventRemote.Name = EVENT_NAME
-	eventRemote.OnServerEvent:Connect(function(player)
-		self:_record(player, "RemoteEvent")
-	end)
-	eventRemote.Parent = folder
-
-	local functionRemote = Instance.new("RemoteFunction")
-	functionRemote.Name = FUNCTION_NAME
-	functionRemote.OnServerInvoke = function(player)
-		self:_record(player, "RemoteFunction")
-		return false, "Request unavailable."
+	for _, decoy in ipairs(DECOYS) do
+		if decoy.kind == "RemoteEvent" then
+			local remote = Instance.new("RemoteEvent")
+			remote.Name = decoy.name
+			remote.OnServerEvent:Connect(function(player)
+				self:_record(player, decoy.kind, decoy.signal)
+			end)
+			remote.Parent = folder
+		else
+			local remote = Instance.new("RemoteFunction")
+			remote.Name = decoy.name
+			remote.OnServerInvoke = function(player)
+				self:_record(player, decoy.kind, decoy.signal)
+				return false, "Request unavailable."
+			end
+			remote.Parent = folder
+		end
 	end
-	functionRemote.Parent = folder
 
 	folder.Parent = ReplicatedStorage
 	self.folder = folder
@@ -115,7 +122,7 @@ function Service:GetStatus()
 		state = if self.started then "Observing" else "Stopped",
 		scope = "ServerLocal",
 		decoyFolderPresent = self.folder ~= nil and self.folder.Parent == ReplicatedStorage,
-		decoyRemoteCount = if self.started then 2 else 0,
+		decoyRemoteCount = if self.started then #DECOYS else 0,
 		totalHits = self.totalHits,
 		remoteEventHits = self.eventHits,
 		remoteFunctionHits = self.functionHits,
