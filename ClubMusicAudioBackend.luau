@@ -19,13 +19,6 @@ local function finite(value: any): boolean
 	return typeof(value) == "number" and value == value and math.abs(value) < math.huge
 end
 
-local function makeWire(parent: Instance, source: Instance, target: Instance): Wire
-	local wire = Instance.new("Wire")
-	wire.SourceInstance = source
-	wire.TargetInstance = target
-	wire.Parent = parent
-	return wire
-end
 
 function Backend.new(config: Config?)
 	config = config or {}
@@ -392,15 +385,42 @@ function Backend:GetPlayer(): AudioPlayer?
 	return if self:IsAvailable() then self.player else nil
 end
 
-function Backend:Cleanup()
-	if self.destroyed then return end
+function Backend:Cleanup(): (boolean, string?)
+	if self.destroyed then return true, nil end
 	self.destroyed = true
-	if self.root then pcall(function() self.root:Destroy() end) end
+	local cleanupErrors = {}
+	local root = self.root
+	local owned = { self.player, self.equalizer, self.fader }
+	for _, wire in ipairs(self.wires or {}) do
+		table.insert(owned, wire)
+	end
+	local rootOk = true
+	if root then
+		rootOk = pcall(function() root:Destroy() end)
+		if not rootOk then
+			table.insert(cleanupErrors, "Audio graph root destruction failed.")
+		end
+	end
+	-- If the root failed to destroy, independently release every retained
+	-- child reference so a partial engine failure cannot orphan the graph.
+	if not rootOk then
+		for index = #owned, 1, -1 do
+			local instance = owned[index]
+			if instance then
+				local childOk = pcall(function() instance:Destroy() end)
+				if not childOk then
+					table.insert(cleanupErrors, "An AudioPlayer graph child could not be destroyed.")
+				end
+			end
+		end
+	end
 	self.root = nil
 	self.player = nil
 	self.fader = nil
 	self.equalizer = nil
 	table.clear(self.wires)
+	if #cleanupErrors > 0 then return false, table.concat(cleanupErrors, " ") end
+	return true, nil
 end
 
 return Backend
