@@ -2143,7 +2143,6 @@ local MusicQueueManager = queueManagerRequireResult
 ControllerFunctions.ChildManagerModules = {}
 for _, moduleName in ipairs({
 	"MusicPlaybackManager",
-	"MusicPlaylistManager",
 }) do
 	local moduleScript = ServerStorageForQueue:FindFirstChild(moduleName)
 	if not moduleScript then
@@ -4875,15 +4874,13 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not playlistStorageReady or not MusicPlaylistService:IsReady() then
 			notify(player, "Playlist storage is unavailable.", "warn"); return
 		end
-		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playlist
-		if manager and manager:StartRotation(player, payload.playlistId) then publishState(nil) end
+		if ControllerFunctions.startPlaylistRotation(player, payload.playlistId) then publishState(nil) end
 		return
 	end
 
 	if action == "DJStopPlaylist" then
 		if not ControllerFunctions.isDJBoothController(player) then notify(player, "The DJ Booth is restricted to the Owner and Co-Owner.", "warn"); return end
-		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playlist
-		if manager and manager:StopRotation(player) then publishState(nil) end
+		if ControllerFunctions.stopPlaylistRotation(player) then publishState(nil) end
 		return
 	end
 
@@ -6263,31 +6260,6 @@ local playbackManagerOk, playbackManager = pcall(childManagerModules.MusicPlayba
 if not playbackManagerOk then error("[ClubMusic] MusicPlaybackManager initialization failed: " .. tostring(playbackManager)) end
 ControllerFunctions.ChildManagers.Playback = playbackManager
 
-local playlistManagerOk, playlistManager = pcall(childManagerModules.MusicPlaylistManager.new, {
-	Service = MusicPlaylistService,
-	GetRotationState = function()
-		local trackIds = {}
-		for _, track in ipairs(activePlaylistTracks) do table.insert(trackIds, track.id) end
-		return {
-			playlistId = activePlaylistId,
-			name = activePlaylistName,
-			cursor = activePlaylistCursor,
-			trackIds = trackIds,
-			global = false,
-		}
-	end,
-	StartRotation = function(player: Player, playlistId: any)
-		return ControllerFunctions.startPlaylistRotation(player, playlistId), nil
-	end,
-	StopRotation = function(player: Player)
-		return ControllerFunctions.stopPlaylistRotation(player), nil
-	end,
-	SelectNextTrack = function()
-		return ControllerFunctions.nextPlaylistTrack()
-	end,
-})
-if not playlistManagerOk then error("[ClubMusic] MusicPlaylistManager initialization failed: " .. tostring(playlistManager)) end
-ControllerFunctions.ChildManagers.Playlist = playlistManager
 
 ControllerFunctions.castSkipVote = function(player: Player): (boolean, string)
 	if player.Parent ~= Players then return false, "A connected player is required." end
