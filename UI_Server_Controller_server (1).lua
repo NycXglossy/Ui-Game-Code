@@ -794,10 +794,8 @@ local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGrou
 local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
 local activeAudioSource: any = { kind = "Unavailable" }
 local audioSourceRevision = 0
-local modernAudioMigrationSucceeded = false
-local modernAudioMigrationInProgress = false
-local modernAudioMigrationNextAttemptAt = 0
-local modernAudioMigrationFailureCount = 0
+local modernBackendStartSucceeded = false
+local modernBackendStartFailureCount = 0
 local modernAudioStartToken = 0
 -- Forward-declared state is shared with the early-created crossfade factory.
 local queue: any = {}
@@ -1165,244 +1163,6 @@ local function drainRetiredAudioBackends(reason: string): boolean
 	return allClean
 end
 
--- Replace the canonical source only after a prepared backend is ready and can
--- start silently. On any failure, restore the previous source and playhead.
--- The controller invokes this after the first valid track starts; the legacy
--- Sound remains available only as a guarded bootstrap/emergency fallback.
-ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, string?)
-	if typeof(candidate) ~= "table" then return false, "A prepared audio backend is required." end
-	for _, methodName in ipairs({ "IsReady", "GetReadinessSnapshot", "IsPlaying", "GetTimePosition", "GetTimeLength", "GetPlayer", "SetAsset", "SetGain", "SetPlaybackSpeed", "Play", "Stop", "Pause", "Resume", "Seek", "Cleanup" }) do
-		if typeof(candidate[methodName]) ~= "function" then return false, "Audio backend is missing " .. methodName .. "." end
-	end
-	local playerOk, player = pcall(function() return candidate:GetPlayer() end)
-	if not playerOk or typeof(player) ~= "Instance" or not player:IsA("AudioPlayer") then
-		return false, "Incoming audio backend has no valid AudioPlayer."
-	end
-	if activeAudioSource.kind == "Backend" and activeAudioSource.backend == candidate then
-		return false, "The candidate is already the active audio backend."
-	end
-
-	local outgoing = activeAudioSource
-	local outgoingSnapshot = ControllerFunctions.getAudioSnapshot()
-	local asset = tostring(outgoingSnapshot.asset or "")
-	if asset == "" then return false, "There is no active track to transfer." end
-	local position = math.max(0, tonumber(outgoingSnapshot.position) or 0)
-	local wasPaused = playbackPaused == true
-	local wasPlaying = outgoingSnapshot.playing == true and not wasPaused
-	if not wasPlaying and not wasPaused then
-		return false, "Outgoing audio is not playing; handoff was not committed."
-	end
-	local expectedRevision = audioSourceRevision
-	ControllerFunctions.cancelAudioTransition("audio-source-adoption")
-
-	local function candidateCleanup()
-		pcall(function() candidate:Stop() end)
-		retireAudioBackend(candidate, "adoption candidate rejected")
-	end
-	local function outgoingStillCurrent(): boolean
-		local current = ControllerFunctions.getAudioSnapshot()
-		return activeAudioSource == outgoing
-			and audioSourceRevision == expectedRevision
-			and current.asset == asset
-			and playbackPaused == wasPaused
-	end
-	local function restoreOutgoing(): boolean
-		local ok, result = pcall(function()
-			if outgoing.kind == "Backend" then
-				local started, message = outgoing.backend:Play(asset, position)
-				if started ~= true then error(message or "Previous backend could not restart.") end
-				if wasPaused then
-					local paused, pauseMessage = outgoing.backend:Pause()
-					if paused ~= true then error(pauseMessage or "Previous backend could not restore pause.") end
-				end
-			else
-				outgoing.instance.SoundId = asset
-				outgoing.instance.TimePosition = position
-				outgoing.instance:Play()
-				if wasPaused then outgoing.instance:Pause() end
-			end
-		end)
-		return ok and result ~= false
-	end
-
-	local outgoingGainOk, outgoingGain = ControllerFunctions.getAudioGain(outgoing)
-	if not outgoingGainOk then
-		candidateCleanup()
-		return false, "Outgoing audio gain could not be read safely."
-	end
-	local gainOk, gainResult = pcall(function() return candidate:SetGain(0) end)
-	if not gainOk or gainResult == false then
-		candidateCleanup()
-		return false, "Incoming audio backend could not be muted for handoff."
-	end
-	local assetOk, assetResult = pcall(function() return candidate:SetAsset(asset) end)
-	if not assetOk or assetResult == false then
-		candidateCleanup()
-		return false, "Incoming audio backend could not load the current asset."
-	end
-	local trackId = tostring(nowPlaying and nowPlaying.trackId or "")
-	local playbackSpeed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId] or 1
-	local speedOk, speedResult = pcall(function() return candidate:SetPlaybackSpeed(playbackSpeed) end)
-	if not speedOk or speedResult == false then
-		candidateCleanup()
-		return false, "Incoming audio backend could not apply the current track playback speed."
-	end
-
-	local deadline = os.clock() + 8
-	local ready = false
-	while os.clock() < deadline do
-		if not outgoingStillCurrent() then
-			candidateCleanup()
-			return false, "Playback changed while the incoming backend was loading."
-		end
-		local readinessOk, readiness = pcall(function() return candidate:GetReadinessSnapshot() end)
-		if readinessOk and typeof(readiness) == "table"
-			and readiness.ready == true
-			and readiness.asset == asset
-			and typeof(readiness.length) == "number"
-			and ControllerFunctions.isFiniteNumber(readiness.length)
-			and readiness.length > 0 then
-			ready = true
-			break
-		end
-		task.wait(0.1)
-	end
-	if not ready then
-		candidateCleanup()
-		return false, "Incoming audio backend did not become ready with a valid duration before the handoff timeout."
-	end
-	if not outgoingStillCurrent() then
-		candidateCleanup()
-		return false, "Playback changed before the audio handoff could start."
-	end
-
-	local playOk, playResult = pcall(function() return candidate:Play(nil, position) end)
-	if not playOk or playResult == false then
-		candidateCleanup()
-		return false, "Incoming audio backend could not start for handoff."
-	end
-	-- AudioPlayer:Play can return before its playback state is observable.
-	-- Keep the candidate muted and the legacy source authoritative until the
-	-- new deck reports IsPlaying; abandon the cutover if it never starts.
-	local startDeadline = os.clock() + 2
-	local candidatePlaying = false
-	while os.clock() < startDeadline do
-		if not outgoingStillCurrent() then
-			candidateCleanup()
-			return false, "Playback changed while the incoming backend was starting."
-		end
-		local playingOk, playingValue = pcall(function() return candidate:IsPlaying() end)
-		if playingOk and playingValue == true then
-			candidatePlaying = true
-			break
-		end
-		task.wait(0.05)
-	end
-	if not candidatePlaying then
-		candidateCleanup()
-		return false, "Incoming audio backend did not enter the playing state; legacy playback was kept."
-	end
-	-- Confirm the decoder still owns the intended asset after Play reports
-	-- IsPlaying; stale/empty readiness must never be committed as the new source.
-	local finalReadinessOk, finalReadiness = pcall(function() return candidate:GetReadinessSnapshot() end)
-	if not finalReadinessOk or typeof(finalReadiness) ~= "table"
-		or finalReadiness.ready ~= true or finalReadiness.asset ~= asset
-		or not ControllerFunctions.isFiniteNumber(finalReadiness.length) or finalReadiness.length <= 0 then
-		candidateCleanup()
-		return false, "Incoming audio readiness changed during startup; legacy playback was kept."
-	end
-	if wasPaused then
-		local pauseOk, pauseResult = pcall(function() return candidate:Pause() end)
-		if not pauseOk or pauseResult == false then
-			candidateCleanup()
-			return false, "Incoming audio backend could not preserve the paused state."
-		end
-	end
-
-	-- Re-check immediately before source ownership changes. No yielding occurs
-	-- between this check, stopping the outgoing source, and committing the swap.
-	if not outgoingStillCurrent() then
-		candidateCleanup()
-		return false, "Playback changed before the audio handoff could commit."
-	end
-	local outgoingStopOk, outgoingStopResult = pcall(function()
-		if outgoing.kind == "Backend" then return outgoing.backend:Stop() end
-		outgoing.instance:Stop()
-		return true
-	end)
-	if not outgoingStopOk or outgoingStopResult == false then
-		candidateCleanup()
-		restoreOutgoing()
-		return false, "Outgoing audio could not be stopped; the previous source was restored."
-	end
-
-	local fullGainOk, fullGainResult = pcall(function() return candidate:SetGain(outgoingGain) end)
-	if not fullGainOk or fullGainResult == false then
-		restoreOutgoing()
-		candidateCleanup()
-		return false, "Incoming gain could not be restored; the previous source was restored."
-	end
-
-	activeAudioSource = { kind = "Backend", backend = candidate }
-	ControllerFunctions.bindActiveAudioPlayingSignal()
-	if outgoing.kind == "Backend" and outgoing.backend ~= candidate then
-		retireAudioBackend(outgoing.backend, "audio backend adoption")
-	end
-	return true, nil
-end
-
-ControllerFunctions.bindActiveAudioPlayingSignal()
-
--- Enabled one-time migration after the first valid track starts. If preparation
--- or handoff fails, adoptAudioBackend cleans the candidate and the guarded
--- bootstrap Sound continues until a later bounded retry succeeds.
-ControllerFunctions.tryModernAudioBackendMigration = function()
-	if not CONFIG.UseModernAudioBackend or modernAudioMigrationSucceeded or modernAudioMigrationInProgress then return false end
-	if os.clock() < modernAudioMigrationNextAttemptAt then return false end
-	modernAudioMigrationInProgress = true
-
-	local function finish(success: boolean, message: string?): boolean
-		modernAudioMigrationInProgress = false
-		if success then
-			modernAudioMigrationSucceeded = true
-			modernAudioMigrationFailureCount = 0
-			modernAudioMigrationNextAttemptAt = 0
-			return true
-		end
-		modernAudioMigrationFailureCount += 1
-		-- A transient module/load/readiness failure must not permanently strand
-		-- this server on legacy Sound. Retry on a later track with bounded backoff.
-		local delaySeconds = math.min(60, 5 * (2 ^ math.min(modernAudioMigrationFailureCount - 1, 4)))
-		modernAudioMigrationNextAttemptAt = os.clock() + delaySeconds
-		if message then warn("[ClubMusic][AudioBackend] " .. message .. " Legacy Sound remains active; retrying in " .. tostring(delaySeconds) .. "s.") end
-		return false
-	end
-
-	local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
-	if not backendModule or not backendModule:IsA("ModuleScript") then
-		return finish(false, "Modern backend ModuleScript is missing.")
-	end
-	local requireOk, BackendClass = pcall(require, backendModule)
-	if not requireOk or typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
-		return finish(false, "Modern backend module could not be loaded.")
-	end
-	local createOk, candidate = pcall(BackendClass.new, {
-		Name = "ClubMusicMainAudioBackend",
-		Parent = SoundService,
-		Volume = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or "")),
-		InitialGain = 0,
-	})
-	if not createOk or typeof(candidate) ~= "table" then
-		return finish(false, "Modern backend could not be constructed.")
-	end
-	local adopted, message = ControllerFunctions.adoptAudioBackend(candidate)
-	if not adopted then
-		return finish(false, "Safe handoff was rejected: " .. tostring(message))
-	end
-	print("[ClubMusic][AudioBackend] Modern AudioPlayer is now the controller-owned main source.")
-	return finish(true, nil)
-end
-
 -- One controller-owned cancellation seam for every dual-deck transition.
 -- Pending queue metadata is invalidated even when the manager is absent or cleanup reports failure.
 ControllerFunctions.cancelAudioTransition = function(reason: string?)
@@ -1701,6 +1461,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 
 	local function reportModernStartupFailure(reason: string?)
 		if not isCurrentStart() then return end
+		modernBackendStartFailureCount += 1
 		warn("[ClubMusic][AudioBackend] Modern-only startup failed; no legacy fallback was started: "
 			.. tostring(reason or "UseModernAudioBackend is disabled."))
 	end
@@ -1788,9 +1549,8 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 			if previousSource.kind == "Backend" and previousSource.backend then
 				retireAudioBackend(previousSource.backend, "modern startup source replacement")
 			end
-			modernAudioMigrationSucceeded = true
-			modernAudioMigrationFailureCount = 0
-			modernAudioMigrationNextAttemptAt = 0
+			modernBackendStartSucceeded = true
+			modernBackendStartFailureCount = 0
 			print("[ClubMusic][AudioBackend] Modern AudioPlayer started as the primary track source.")
 		end)
 		discardCandidate()
@@ -5465,8 +5225,9 @@ localDiagnosticsBindable.OnInvoke = function()
 			qualityLength = if typeof(playbackQuality) == "table" and ControllerFunctions.isFiniteNumber(playbackQuality.length) then math.max(0, playbackQuality.length) else 0,
 			queueDepth = #queue,
 			modernBackendConfigured = CONFIG.UseModernAudioBackend == true,
-			migrationSucceeded = modernAudioMigrationSucceeded,
-			migrationFailureCount = modernAudioMigrationFailureCount,
+			modernBackendStartSucceeded = modernBackendStartSucceeded,
+			modernBackendStartFailureCount = modernBackendStartFailureCount,
+			activeSourceKind = activeAudioSource.kind,
 		},
 		updatedAt = os.time(),
 	}
