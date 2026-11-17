@@ -467,3 +467,72 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [ ] Inspect actual Kohl's handler implementations and third-party mount/vehicle/knockback scripts before asserting their physics behavior is covered.
 
 **Boundary:** adapter mapping and source-level permission flow are verified from the supplied integration file; native Kohl's internal movement behavior and runtime effects are not certified. See `CLUBMUSIC_PHASE19_MOVEMENT_ACTION_VALIDATION.md`.
+
+
+## Phase 20 — Security Coverage Closure
+
+**Status:** Scoped text-source inventory completed; binary/third-party review and the live-place acceptance matrix remain explicit gates.
+
+- [x] Inventory the current ClubMusic, Tiki Tide Settings, UtilityBar, Kohl's adapter, teleport, movement, diagnostics, replay, threat, honeypot and spectator server boundaries.
+- [x] Record server owners and trust boundaries for client-to-server remotes and server-only BindableFunctions.
+- [x] Confirm the inspected text-source set contains no additional ProximityPrompt, ClickDetector or DragDetector handlers; do not generalize this to binary assets.
+- [x] Document SecurityCore permission versus entitlement boundaries and preserve fail-closed behavior for unknown integrations.
+- [ ] Inspect binary Roblox models, packaged third-party assets and the actual live-place hierarchy.
+- [ ] Verify native Kohl's handlers and every actual vehicle/mount/knockback/prompt interaction before claiming complete coverage.
+- [ ] Run the authorization, remote-abuse and cross-system regression matrix.
+
+**Implementation note:** see CLUBMUSIC_PHASE20_SECURITY_COVERAGE_CLOSURE.md.
+
+## Phase 21 — Unified Incident Response
+
+**Status:** Source integration committed; incident storage and threat escalation acceptance tests remain open.
+
+- [x] Fix the IncidentResponse existing-record coalescing callback to increment from old.eventCount rather than reading an uninitialized nextItem.
+- [x] Add explicit ;cmthreatcase TTI-ID staff escalation from a retained server-local review item to the existing MemoryStore ManualReview case workflow.
+- [x] Require IncidentResponse at the controller and case service, and preserve the threat service's independent GlobalModeration check.
+- [x] Generate a bounded summary from fixed review metadata; reject server-level review conversion to a player case.
+- [x] Keep case creation manual; no automatic persistent case opening or automatic punishment.
+- [ ] Test first-write and repeated/coalesced event counts, throttles, storage failures, TTL, resolution and permissions.
+
+**Implementation note:** see CLUBMUSIC_PHASE21_UNIFIED_INCIDENT_RESPONSE.md.
+
+## Phase 22 — Staff Security Console
+
+**Status:** Existing staff command bridge extended; runtime authorization and lifecycle tests remain open.
+
+- [x] Add ;cmspectate UserId, ;cmspectateswitch UserId, ;cmspectateoff and ;cmspectatestate commands to the existing Administration group.
+- [x] Route commands through the server-only admin bridge and spectator BindableFunction.
+- [x] Recheck SecurityCore GlobalModeration in the controller and StaffSpectatorService.
+- [x] Preserve existing camera adapter, audit/replay events, bounded command output and mobile UI.
+- [ ] Test each command, unauthorized callers, target/staff departure, respawn, shutdown and movement restoration.
+- [ ] Verify actual gameplay services that should honor TikiTideSpectatorNoWorldActions; do not claim universal lockdown until audited.
+
+**Implementation note:** see CLUBMUSIC_PHASE22_STAFF_SECURITY_CONSOLE.md.
+
+## Phase 23 — Performance & Compatibility Hardening
+
+**Status:** Resource bounds and compatibility contracts documented; load/device profiling remains open.
+
+- [x] Record existing bounded capacities and essential-task bypass requirements across replay, threat intelligence, honeypots, client integrity, spectator, incident storage and diagnostics.
+- [x] Preserve the adaptive manager's policy that essential validation, authorization, rate limiting, receipts, moderation enforcement and event recording are never throttled.
+- [x] Document PC/mobile/console, modern AudioPlayer, crossfade, independent local queues, playback-only global sync, purchase, entitlement and UtilityBar regression requirements.
+- [ ] Profile high-player-count Heartbeat, remote bursts, memory, MemoryStore/DataStore pressure, adaptive mode transitions and maximum spectator load.
+- [ ] Test low-end mobile, desktop and console input/UI behavior and published-server shutdown/installer lifecycle.
+- [ ] Confirm no essential security path is dropped under Reduced/Critical load.
+
+**Implementation note:** see CLUBMUSIC_PHASE23_PERFORMANCE_COMPATIBILITY_HARDENING.md.
+
+## Phase 24 — Production Release & Legacy Retirement
+
+**Status:** Release and rollback procedure documented; production sign-off remains gated.
+
+- [x] Define the exact branch/revision pinning rule for the installer and test-place rollout.
+- [x] Document rollback steps that preserve receipt ledgers, profile/session state and cross-server configuration.
+- [x] Confirm the standalone legacy Music System remains reference-only and must not be installed beside the current controller.
+- [x] Defer obsolete diagnostics retirement until dynamic consumers, embedded assets and live-place references are reconciled.
+- [ ] Complete binary/third-party scope review and live-place hierarchy verification.
+- [ ] Pass Studio and published two-server acceptance matrices and record the exact tested commit.
+- [ ] Only then approve production rollout and any legacy cleanup.
+
+**Implementation note:** see CLUBMUSIC_PHASE24_PRODUCTION_RELEASE_AND_RETIREMENT.md.
+
