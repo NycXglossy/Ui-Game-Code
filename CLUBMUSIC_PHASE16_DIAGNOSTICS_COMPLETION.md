@@ -75,3 +75,8 @@
 12. Re-run modern playback controls, crossfade, independent local queues, playback-only global sync, purchases, moderation, Utility Bar, Settings, and spectator regression tests.
 
 **Release note:** Source implementation is not Roblox runtime verification. Do not publish or retire legacy diagnostics code until the runtime matrix passes.
+
+
+## Phase 17 follow-up — Honeypot integration
+
+The previously listed HoneypotManager exclusion was the Phase 16 scope at that time. Phase 17 now adds a separate detection-only HoneypotManager and exposes its server-local status through the existing diagnostics snapshot and staff output. Phase 16's other runtime acceptance requirements remain open; Phase 17 has its own runtime acceptance checklist in `CLUBMUSIC_PHASE17_HONEYPOT_MANAGER.md`.
