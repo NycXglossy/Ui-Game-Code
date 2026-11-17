@@ -4675,10 +4675,12 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		end
 		local assetId = payload.assetId
 		if not ControllerFunctions.isValidAudioAssetId(assetId) then
+			ControllerFunctions.recordAudioValidationSignal(player, "audio_asset_invalid_id")
 			notify(player, "That audio asset ID isn't valid.", "warn")
 			return
 		end
 		if CONFIG.RestrictAudioToAllowlist and not table.find(CONFIG.AllowedAudioAssetIds, assetId) then
+			ControllerFunctions.recordAudioValidationSignal(player, "audio_asset_not_allowlisted")
 			notify(player, "That audio asset isn't on the approved list.", "warn")
 			return
 		end
@@ -4752,6 +4754,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		queueManager:Insert(ControllerFunctions.insertIndex(ControllerFunctions.passTier(player)), entry)
 		requestCounts[player.UserId] = (requestCounts[player.UserId] or 0) + 1
 		lastRequestAt[player.UserId] = recheckNow
+		ControllerFunctions.recordAudioReplayEvent(player, "audio_asset_queued")
 		notify(player, "Audio queued: " .. titleOrError, "ok")
 		publishState(nil)
 		return
@@ -5289,6 +5292,27 @@ ControllerFunctions.adminBridgeAuthorize = function(caller: Player, permission: 
 end
 ControllerFunctions.adminBridgeReportSignal = function(caller: Player, signal: string, detail: string)
 	pcall(ControllerFunctions.globalInvoke, "ReportSignal", caller.UserId, signal, detail)
+end
+
+-- Audio validation signals contain only a fixed event name and server-known actor ID.
+-- No asset IDs, client payloads, provider metadata, or user text enter the replay timeline.
+ControllerFunctions.recordAudioValidationSignal = function(player: Player, signal: string)
+	local invoked, accepted = ControllerFunctions.globalInvoke("ReportSignal", player.UserId, signal)
+	if invoked and accepted == true then return end
+	local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+	if replay and replay:IsA("BindableFunction") then
+		pcall(function()
+			replay:Invoke("Record", signal, player.UserId, 0, "Warning", "ClubMusicAudioValidation", {})
+		end)
+	end
+end
+ControllerFunctions.recordAudioReplayEvent = function(player: Player, eventType: string)
+	local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+	if replay and replay:IsA("BindableFunction") then
+		pcall(function()
+			replay:Invoke("Record", eventType, player.UserId, 0, "Info", "ClubMusicAudioValidation", {})
+		end)
+	end
 end
 
 local adminBridge = ControllerFunctions.getOrCreate(ServerStorage, "BindableFunction", "ClubMusicAdminBridge") :: BindableFunction
