@@ -14,7 +14,7 @@ Phase 13 adds a small server-only workload manager that reduces optional securit
   - **Normal:** normal optional diagnostics, replay-query, analytics, and maintenance budgets.
   - **Reduced:** lower optional workload budgets after three consecutive overloaded windows.
   - **Critical:** optional work is paused after two consecutive severe windows, or six consecutive overloaded windows while Reduced.
-- Recovery is staged: four consecutive healthy windows move Critical to Reduced; six consecutive healthy windows move Reduced to Normal.
+- Recovery is staged: four consecutive healthy windows move Critical to Reduced; the healthy streak resets at that transition, then six additional consecutive healthy windows are required to move Reduced to Normal.
 - Thresholds are intentionally conservative and hysteretic:
   - overloaded: average Heartbeat delta at least 0.10 seconds or maximum delta at least 0.45 seconds in the window;
   - critical: average at least 0.20 seconds or maximum at least 0.75 seconds;
