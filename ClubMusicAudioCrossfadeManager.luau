@@ -228,16 +228,26 @@ function Manager:Begin(asset: string, duration: number)
 		while elapsed < duration and self.generation == generation and not self.destroyed do
 			local alpha = math.clamp(elapsed / duration, 0, 1)
 			local incomingOk, incomingResult = safeMethod(incoming, "SetGain", outgoingBaseGain * alpha)
+			if self.generation ~= generation or self.incoming ~= incoming or not self.active or self.destroyed then return end
 			if not incomingOk or incomingResult == false then cancelGenerationAfterFailure(self, generation, incoming, "Incoming deck gain update failed during crossfade."); return end
-			if not setOutgoingGain(self.context, outgoingBaseGain * (1 - alpha)) then cancelGenerationAfterFailure(self, generation, incoming, "Outgoing deck gain update failed during crossfade."); return end
+			local outgoingOk = setOutgoingGain(self.context, outgoingBaseGain * (1 - alpha))
+			if self.generation ~= generation or self.incoming ~= incoming or not self.active or self.destroyed then return end
+			if not outgoingOk then cancelGenerationAfterFailure(self, generation, incoming, "Outgoing deck gain update failed during crossfade."); return end
 			task.wait(step)
 			elapsed += step
 		end
 		if self.generation ~= generation or self.destroyed or self.incoming ~= incoming then return end
 
 		local fullGainOk, fullGainResult = safeMethod(incoming, "SetGain", outgoingBaseGain)
-		if not fullGainOk or fullGainResult == false or not setOutgoingGain(self.context, 0) then
-			cancelGenerationAfterFailure(self, generation, incoming, "Could not finalize crossfade gains.")
+		if self.generation ~= generation or self.incoming ~= incoming or not self.active or self.destroyed then return end
+		if not fullGainOk or fullGainResult == false then
+			cancelGenerationAfterFailure(self, generation, incoming, "Could not finalize incoming deck gain.")
+			return
+		end
+		local outgoingMuteOk = setOutgoingGain(self.context, 0)
+		if self.generation ~= generation or self.incoming ~= incoming or not self.active or self.destroyed then return end
+		if not outgoingMuteOk then
+			cancelGenerationAfterFailure(self, generation, incoming, "Could not finalize outgoing deck gain.")
 			return
 		end
 
