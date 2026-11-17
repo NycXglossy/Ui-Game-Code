@@ -222,9 +222,7 @@ do
 					if replay and replay:IsA("BindableFunction") then
 						pcall(function()
 								replay:Invoke("Record", signal, targetUserId, 0,
-								if signal == "TeleportVerified" then "Info" else "Warning", "TeleportValidation", {
-							detail = detail,
-						})
+								if signal == "TeleportVerified" then "Info" else "Warning", "TeleportValidation", {})
 						end)
 					end
 					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
@@ -589,7 +587,7 @@ request.OnServerInvoke = function(player: Player, action: any, payload: any)
 		if replay and replay:IsA("BindableFunction") then
 			pcall(function()
 				replay:Invoke("Record", "settings_remote_handler_error", player.UserId, 0,
-					"Warning", "TikiTideSettingsRemote", {action = if typeof(action) == "string" then string.sub(action, 1, 40) else "invalid"})
+					"Warning", "TikiTideSettingsRemote", {actionType = typeof(action)})
 			end)
 		end
 		warn("[Tiki Tide] Request failed: " .. tostring(result))
