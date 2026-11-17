@@ -10,9 +10,9 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "7ca90bef3882edb381e26a9820799274fcc1c390"
+local RELEASE_COMMIT = "2911f939a0f4530d23dd739b2081a532ffcc8fb7"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
-local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService"}
+local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 local BOOTSTRAP_NAME = "TikiTideCharacterPhysicsGuardBootstrap"
 local STAGE_NAME = FOLDER_NAME .. "_Staging"
@@ -104,6 +104,13 @@ local guardModule = core:WaitForChild("CharacterPhysicsGuard")
 local ok, exported = pcall(require, guardModule)
 if not ok or typeof(exported) ~= "table" or type(exported.new) ~= "function" then warn("[Tiki Tide][CharacterPhysicsGuard] Module failed to load: " .. tostring(exported)); return end
 local guard = exported.new({onSignal = function(signal, subject, detail)
+ local replayEndpoint = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+ local subjectId = tonumber(subject) or 0
+ if replayEndpoint and replayEndpoint:IsA("BindableFunction") then
+  pcall(function()
+   replayEndpoint:Invoke("Record", signal, subjectId, 0, "Warning", "CharacterPhysicsGuard", {detail = detail})
+  end)
+ end
  local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
  local recorder = api and api:FindFirstChild("RecordGlobalSecuritySignal")
  if recorder and recorder:IsA("BindableFunction") then
@@ -166,6 +173,44 @@ if not statusFunction then statusFunction = Instance.new("BindableFunction"); st
 statusFunction.OnInvoke = function() return spectator:GetStatus() end
 script.Destroying:Connect(function() spectator:Stop() end)
 print("[Tiki Tide][StaffSpectator] Server-authorized observation service started; no gameplay powers granted.")
+
+-- Bounded server-local event timeline. This endpoint is in ServerStorage and
+-- is callable only by trusted server scripts; staff queries re-check authorization.
+local replayModule = core:WaitForChild("SecurityReplayService")
+local replayOk, replayExport = pcall(require, replayModule)
+if not replayOk or typeof(replayExport) ~= "table" or type(replayExport.new) ~= "function" then
+ warn("[Tiki Tide][SecurityReplay] Service failed to load: " .. tostring(replayExport))
+ return
+end
+local replay = replayExport.new({
+ authorize = function(userId, permission) return auth:Check(userId, permission) end,
+})
+if not replay:Start() then warn("[Tiki Tide][SecurityReplay] Startup failed."); return end
+local replayEndpoint = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+if replayEndpoint and not replayEndpoint:IsA("BindableFunction") then
+ warn("[Tiki Tide][SecurityReplay] Endpoint has wrong class."); replay:Stop(); return
+end
+if not replayEndpoint then
+ replayEndpoint = Instance.new("BindableFunction")
+ replayEndpoint.Name = "TikiTideSecurityReplay"
+ replayEndpoint.Parent = ServerStorage
+end
+replayEndpoint.OnInvoke = function(action, ...)
+ if action == "Record" then return replay:Record(...) end
+ if action == "Query" then return replay:Query(...) end
+ if action == "Status" then return replay:GetStatus() end
+ return false, "Unsupported replay action."
+end
+local replayStatus = ServerStorage:FindFirstChild("GetTikiTideSecurityReplayStatus")
+if replayStatus and not replayStatus:IsA("BindableFunction") then replayStatus:Destroy(); replayStatus = nil end
+if not replayStatus then
+ replayStatus = Instance.new("BindableFunction")
+ replayStatus.Name = "GetTikiTideSecurityReplayStatus"
+ replayStatus.Parent = ServerStorage
+end
+replayStatus.OnInvoke = function() return replay:GetStatus() end
+script.Destroying:Connect(function() replay:Stop() end)
+print("[Tiki Tide][SecurityReplay] Bounded server-local event history ready; persistent writes=0; frame capture=false.")
 ]=]
 
 local stagedBootstrap = Instance.new("Script")
