@@ -72,6 +72,7 @@ function Manager.new(context)
 		context = context,
 		generation = 0,
 		active = false,
+		starting = false,
 		destroyed = false,
 		incoming = nil,
 	}, Manager)
@@ -81,6 +82,7 @@ function Manager:Cancel(): (boolean, string?)
 	-- Invalidate first so a sleeping transition coroutine cannot commit afterward.
 	self.generation += 1
 	self.active = false
+	self.starting = false
 	local incoming = self.incoming
 	self.incoming = nil
 	local restoreGain = self.outgoingBaseGain
@@ -110,7 +112,7 @@ function Manager:Begin(asset: string, duration: number)
 	if self.destroyed or typeof(self.context) ~= "table" then
 		return false, "Crossfade manager is unavailable."
 	end
-	if self.active then return false, "A crossfade is already in progress." end
+	if self.active or self.starting then return false, "A crossfade is already in progress." end
 	if typeof(asset) ~= "string" or #asset > 64 or not string.match(asset, "^rbxassetid://%d+$") then
 		return false, "Invalid incoming audio asset."
 	end
@@ -118,31 +120,53 @@ function Manager:Begin(asset: string, duration: number)
 		return false, "Crossfade duration must be between 0.25 and 12 seconds."
 	end
 
+	-- Reserve the generation before invoking injected callbacks. Those callbacks
+	-- may yield; a concurrent Begin must see the reservation, and Cancel/Cleanup
+	-- must invalidate it before a late setup continuation can register a deck.
+	self.generation += 1
+	local generation = self.generation
+	self.starting = true
+	local function startIsCurrent(): boolean
+		return self.generation == generation and self.starting
+			and not self.destroyed and typeof(self.context) == "table"
+	end
+	local function rejectStart(message: string, deck: any?): (boolean, string)
+		if deck then safeMethod(deck, "Cleanup") end
+		if startIsCurrent() then
+			self.starting = false
+			notifySettled(self, "rejected")
+		end
+		return false, if startIsCurrent() then message else "Crossfade start was cancelled."
+	end
+
 	local createOk, incoming = pcall(self.context.CreateDeck)
 	if not createOk or typeof(incoming) ~= "table" then
-		return false, "Could not create the incoming audio deck."
+		return rejectStart("Could not create the incoming audio deck.")
+	end
+	if not startIsCurrent() then
+		return rejectStart("Crossfade start was cancelled.", incoming)
 	end
 	for _, methodName in ipairs({ "Play", "SetGain", "SetAsset", "IsReady", "Stop", "Cleanup" }) do
 		if typeof(incoming[methodName]) ~= "function" then
-			pcall(function() incoming:Cleanup() end)
-			return false, "Incoming audio deck is missing " .. methodName .. "."
+			return rejectStart("Incoming audio deck is missing " .. methodName .. ".", incoming)
 		end
 	end
 
 	local gainOk, outgoingBaseGain = readOutgoingGain(self.context)
 	if not gainOk then
-		safeMethod(incoming, "Cleanup")
-		return false, "Could not read the outgoing audio gain."
+		return rejectStart("Could not read the outgoing audio gain.", incoming)
+	end
+	if not startIsCurrent() then
+		return rejectStart("Crossfade start was cancelled.", incoming)
 	end
 
-	local generation = self.generation + 1
-	self.generation = generation
 	self.outgoingBaseGain = outgoingBaseGain
 	self.incoming = incoming
 	self.active = true
+	self.starting = false
 
-	local gainOk, gainResult, gainError = safeMethod(incoming, "SetGain", 0)
-	if not gainOk or gainResult == false then
+	local incomingGainOk, gainResult, gainError = safeMethod(incoming, "SetGain", 0)
+	if not incomingGainOk or gainResult == false then
 		cancelAfterFailure(self, "Could not initialize incoming deck gain.")
 		return false, tostring(gainError or "Could not initialize incoming deck gain.")
 	end
@@ -154,7 +178,7 @@ function Manager:Begin(asset: string, duration: number)
 
 	-- Wait for the incoming asset before fading; otherwise the outgoing deck
 	-- could be attenuated while the AudioPlayer is still buffering.
-	task.spawn(function()
+	local spawnOk, spawnError = pcall(task.spawn, function()
 		local readyDeadline = os.clock() + 8
 		local ready = false
 		while os.clock() < readyDeadline and self.generation == generation
@@ -214,13 +238,19 @@ function Manager:Begin(asset: string, duration: number)
 		self.active = false
 		notifySettled(self, "committed")
 	end)
+	if not spawnOk then
+		cancelAfterFailure(self, "Could not schedule the crossfade worker: " .. tostring(spawnError))
+		return false, "Could not schedule the crossfade worker."
+	end
 	return true, nil
 end
 
 function Manager:Cleanup(): (boolean, string?)
 	if self.destroyed then return true, nil end
-	local cancelOk, cancelError = self:Cancel()
+	-- Close admission before cancellation touches resources. If cleanup yields
+	-- inside a deck method, no new Begin may reserve this manager meanwhile.
 	self.destroyed = true
+	local cancelOk, cancelError = self:Cancel()
 	self.context = nil
 	if not cancelOk then return false, cancelError end
 	return true, nil
