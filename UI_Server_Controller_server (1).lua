@@ -1047,6 +1047,39 @@ ControllerFunctions.resumeAudio = function()
 	return true, nil
 end
 
+-- Keep failed backend retirements reachable and retry transient Destroy failures.
+-- A backend may be retired only after controller ownership has moved elsewhere.
+local retiredAudioBackends: {[any]: boolean} = {}
+local function retireAudioBackend(backend: any, reason: string): boolean
+	if typeof(backend) ~= "table" then return true end
+	local ok, result, detail = pcall(function()
+		return backend:Cleanup()
+	end)
+	if ok and result ~= false then
+		retiredAudioBackends[backend] = nil
+		return true
+	end
+	if retiredAudioBackends[backend] then return false end
+	retiredAudioBackends[backend] = true
+	warn("[ClubMusic][AudioBackend] Backend retirement failed (" .. reason .. "): " .. tostring(detail or result))
+	task.spawn(function()
+		for attempt = 1, 3 do
+			task.wait(attempt)
+			local retryOk, retryResult, retryDetail = pcall(function()
+				return backend:Cleanup()
+			end)
+			if retryOk and retryResult ~= false then
+				retiredAudioBackends[backend] = nil
+				return
+			end
+			warn("[ClubMusic][AudioBackend] Backend cleanup retry " .. tostring(attempt)
+				.. " failed (" .. reason .. "): " .. tostring(retryDetail or retryResult))
+		end
+		-- Keep the reference in the registry for diagnosis and any later retry.
+	end)
+	return false
+end
+
 -- Replace the canonical source only after a prepared backend is ready and can
 -- start silently. On any failure, restore the previous source and playhead.
 -- The controller invokes this after the first valid track starts; the legacy
@@ -1079,7 +1112,7 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 
 	local function candidateCleanup()
 		pcall(function() candidate:Stop() end)
-		pcall(function() candidate:Cleanup() end)
+		retireAudioBackend(candidate, "adoption candidate rejected")
 	end
 	local function outgoingStillCurrent(): boolean
 		local current = ControllerFunctions.getAudioSnapshot()
@@ -1228,7 +1261,7 @@ ControllerFunctions.adoptAudioBackend = function(candidate: any): (boolean, stri
 	activeAudioSource = { kind = "Backend", backend = candidate }
 	ControllerFunctions.bindActiveAudioPlayingSignal()
 	if outgoing.kind == "Backend" and outgoing.backend ~= candidate then
-		pcall(function() outgoing.backend:Cleanup() end)
+		retireAudioBackend(outgoing.backend, "audio backend adoption")
 	end
 	return true, nil
 end
@@ -1559,7 +1592,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	-- guarded Sound fallback while that candidate loads, and retire the stopped
 	-- previous backend so the active-source contract never points at a dead deck.
 	if retiredSource.kind == "Backend" and retiredSource.backend then
-		pcall(function() retiredSource.backend:Cleanup() end)
+		retireAudioBackend(retiredSource.backend, "new track startup")
 	end
 	activeAudioSource = { kind = "Sound", instance = musicSound }
 	ControllerFunctions.bindActiveAudioPlayingSignal()
@@ -1615,7 +1648,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 		local function discardCandidate()
 			if candidate then
 				pcall(function() candidate:Stop() end)
-				pcall(function() candidate:Cleanup() end)
+				retireAudioBackend(candidate, "modern startup candidate discarded")
 				candidate = nil
 			end
 		end
@@ -1686,7 +1719,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 				musicSound.TimePosition = 0
 			end)
 			if previousSource.kind == "Backend" and previousSource.backend then
-				pcall(function() previousSource.backend:Cleanup() end)
+				retireAudioBackend(previousSource.backend, "modern startup source replacement")
 			end
 			modernAudioMigrationSucceeded = true
 			modernAudioMigrationFailureCount = 0
@@ -1790,7 +1823,7 @@ local function rebuildModernAudioBackend(source: any, asset: string, position: n
 	end
 	local function abandon(message: string): (boolean, string?)
 		pcall(function() candidate:Stop() end)
-		pcall(function() candidate:Cleanup() end)
+		retireAudioBackend(candidate, "modern recovery candidate abandoned")
 		return false, message
 	end
 	local selected, selectError = candidate:SetAsset(asset)
@@ -1839,7 +1872,7 @@ local function rebuildModernAudioBackend(source: any, asset: string, position: n
 
 	activeAudioSource = { kind = "Backend", backend = candidate }
 	ControllerFunctions.bindActiveAudioPlayingSignal()
-	pcall(function() source.backend:Cleanup() end)
+	retireAudioBackend(source.backend, "watchdog backend recovery")
 	print("[ClubMusic][AudioBackend] Recovered playback with a replacement modern AudioPlayer.")
 	return true, nil
 end
