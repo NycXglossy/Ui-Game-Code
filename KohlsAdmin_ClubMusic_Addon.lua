@@ -112,6 +112,7 @@ return function(_K: any)
 		OperationalServers = true, OperationalRateLimit = true, OperationalConfig = true,
 		OperationalRecovery = true, OperationalReconcile = true,
 		PurchaseDiagnostics = true, SecurityReplay = true, SecurityThreatIntelligence = true,
+		StaffSpectatorState = true,
 	}
 	game:GetService("Players").PlayerRemoving:Connect(function(player: Player)
 		lastInspectionAt[player.UserId] = nil
@@ -194,6 +195,7 @@ return function(_K: any)
 			OperationalRateLimit = true, OperationalConfig = true,
 			OperationalRecovery = true, OperationalReconcile = true,
 			PurchaseDiagnostics = true, SecurityReplay = true, SecurityThreatIntelligence = true,
+			StaffSpectatorEnter = true, StaffSpectatorSwitch = true, StaffSpectatorExit = true, StaffSpectatorState = true,
 			OperationalMaintenance = true,
 			RequestMute = true, ClearUserQueue = true, EmergencyLock = true,
 			TrackBlock = true, ForceStop = true,
@@ -267,6 +269,14 @@ return function(_K: any)
 	register("clubmusic-threat-intelligence", "Review correlated server-local threat signals; optionally filter by UserId and limit.", "Administration", "SecurityThreatIntelligence", {"cmthreat"}, {
 		{type = "string", name = "UserIdAndLimit", description = "Optional UserId and optional limit (1-30), for example 123456 20.", optional = true},
 	})
+	register("clubmusic-spectate", "Silently observe a live player using the server-authorized staff spectator service.", "Administration", "StaffSpectatorEnter", {"cmspectate"}, {
+		{type = "string", name = "UserId", description = "Numeric Roblox UserId of the live player to observe.", optional = false},
+	})
+	register("clubmusic-spectateswitch", "Switch the active staff observation target.", "Administration", "StaffSpectatorSwitch", {"cmspectateswitch"}, {
+		{type = "string", name = "UserId", description = "Numeric Roblox UserId of the next live target.", optional = false},
+	})
+	register("clubmusic-spectateoff", "Exit staff observation and restore your movement.", "Administration", "StaffSpectatorExit", {"cmspectateoff"})
+	register("clubmusic-spectatestate", "Show your current staff observation target.", "Administration", "StaffSpectatorState", {"cmspectatestate"})
 	register("clubmusic-security", "Show ClubMusic global security service status.", "Administration", "SecurityStatus", {"cmsecurity"})
 	register("clubmusic-incidents", "List recent ClubMusic security incidents.", "Administration", "SecurityIncidents", {"cmincidents"})
 	register("clubmusic-incident", "Open a ClubMusic security incident.", "Administration", "SecurityIncidentOpen", {"cmincident"}, {
