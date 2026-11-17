@@ -563,6 +563,7 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - Audit lighting, gravity, stage/club controls, terrain and protected environment state.
 - Identify each legitimate server-side writer and its SecurityCore permission.
 - Add detection-only drift checks for protected properties with bounded event-driven sampling.
+- Reconcile VIP-zone boundary checks and entitlement validation with the existing EntitlementAuthority; do not create a second VIP role system.
 - Do not overwrite live environment state automatically; staff or an explicitly authorized owner action must resolve drift.
 
 ## Phase 28 — Avatar, Tool, Mount & Vehicle Protection
@@ -611,7 +612,8 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - Design reversible, scoped restrictions with expiry, reason codes, issuer, and audit trail.
 - Separate containment from punishment; do not silently alter core player progression or purchases.
 - Require confidence/evidence thresholds and staff authorization.
-- Provide safe rollback and appeal paths before enabling any live restriction.
+- Add reviewed delayed ban-wave workflows only for strongly correlated, independently reviewed incidents; a single signal must never enter a ban wave.
+- Provide safe rollback, appeal, and reversal paths before enabling any live restriction.
 
 ## Phase 36 — Cross-Server Moderation Consistency
 - Use durable storage as the source of truth and MessagingService only as a best-effort notification path.
