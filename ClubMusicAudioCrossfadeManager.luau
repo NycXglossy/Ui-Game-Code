@@ -50,6 +50,57 @@ local function notifySettled(self: any, outcome: string)
 	end
 end
 
+-- Failed deck teardown must remain reachable after transition ownership is released.
+-- Retries are bounded; a final failure stays in the manager registry for a later
+-- explicit Cleanup() call rather than being abandoned or retried forever.
+local function cleanupRetiredDeck(self: any, deck: any, reason: string): boolean
+	if deck == nil then return true end
+	self.retiredDecks = self.retiredDecks or {}
+	if self.retiredDecks[deck] == "retrying" then return false end
+	local cleanupOk, cleanupResult, cleanupError = safeMethod(deck, "Cleanup")
+	if cleanupOk and cleanupResult ~= false then
+		self.retiredDecks[deck] = nil
+		return true
+	end
+
+	self.retiredDecks[deck] = "retrying"
+	local detail = tostring(cleanupError or cleanupResult)
+	local context = self.context
+	if typeof(context) == "table" and typeof(context.OnFailure) == "function" then
+		pcall(context.OnFailure, "Retired deck cleanup failed (" .. reason .. "): " .. detail)
+	end
+	task.spawn(function()
+		for attempt = 1, 3 do
+			task.wait(attempt)
+			local retryOk, retryResult, retryError = safeMethod(deck, "Cleanup")
+			if retryOk and retryResult ~= false then
+				self.retiredDecks[deck] = nil
+				return
+			end
+			if typeof(self.context) == "table" and typeof(self.context.OnFailure) == "function" then
+				pcall(self.context.OnFailure, "Retired deck cleanup retry " .. tostring(attempt)
+					.. " failed (" .. reason .. "): " .. tostring(retryError or retryResult))
+			end
+		end
+		if self.retiredDecks[deck] == "retrying" then
+			self.retiredDecks[deck] = "pending"
+		end
+	end)
+	return false
+end
+
+local function retryPendingDecks(self: any): boolean
+	local allClean = true
+	for deck, status in pairs(self.retiredDecks or {}) do
+		if status == "pending" and not cleanupRetiredDeck(self, deck, "manager cleanup retry") then
+			allClean = false
+		elseif status == "retrying" then
+			allClean = false
+		end
+	end
+	return allClean
+end
+
 local function cancelAfterFailure(self: any, reason: string)
 	local cancelOk, cancelError = self:Cancel()
 	local detail = reason
@@ -83,6 +134,7 @@ function Manager.new(context)
 		starting = false,
 		destroyed = false,
 		incoming = nil,
+		retiredDecks = {},
 	}, Manager)
 end
 
@@ -100,8 +152,7 @@ function Manager:Cancel(): (boolean, string?)
 	if incoming then
 		local stopOk, stopResult = safeMethod(incoming, "Stop")
 		if not stopOk or stopResult == false then cleanupFailed = true end
-		local cleanupOk, cleanupResult = safeMethod(incoming, "Cleanup")
-		if not cleanupOk or cleanupResult == false then cleanupFailed = true end
+		if not cleanupRetiredDeck(self, incoming, "cancelled incoming deck") then cleanupFailed = true end
 	end
 
 	-- Restore the still-controller-owned outgoing deck after an interrupted fade.
@@ -139,15 +190,9 @@ function Manager:Begin(asset: string, duration: number)
 			and not self.destroyed and typeof(self.context) == "table"
 	end
 	local function rejectStart(message: string, deck: any?): (boolean, string)
-		local cleanupOk, cleanupResult, cleanupError = true, true, nil
-		if deck then cleanupOk, cleanupResult, cleanupError = safeMethod(deck, "Cleanup") end
+		local cleanupOk = true
+		if deck then cleanupOk = cleanupRetiredDeck(self, deck, "rejected incoming deck") end
 		local stillCurrent = startIsCurrent()
-		if not cleanupOk or cleanupResult == false then
-			local context = self.context
-			if typeof(context) == "table" and typeof(context.OnFailure) == "function" then
-				pcall(context.OnFailure, "Rejected incoming deck cleanup failed: " .. tostring(cleanupError or cleanupResult))
-			end
-		end
 		if stillCurrent then
 			self.starting = false
 			notifySettled(self, "rejected")
@@ -278,13 +323,19 @@ function Manager:Begin(asset: string, duration: number)
 end
 
 function Manager:Cleanup(): (boolean, string?)
-	if self.destroyed then return true, nil end
+	if self.destroyed then
+		local pendingClean = retryPendingDecks(self)
+		if not pendingClean then return false, "One or more retired crossfade decks remain pending cleanup." end
+		return true, nil
+	end
 	-- Close admission before cancellation touches resources. If cleanup yields
 	-- inside a deck method, no new Begin may reserve this manager meanwhile.
 	self.destroyed = true
 	local cancelOk, cancelError = self:Cancel()
+	local pendingClean = retryPendingDecks(self)
 	self.context = nil
 	if not cancelOk then return false, cancelError end
+	if not pendingClean then return false, "One or more retired crossfade decks remain pending cleanup." end
 	return true, nil
 end
 
