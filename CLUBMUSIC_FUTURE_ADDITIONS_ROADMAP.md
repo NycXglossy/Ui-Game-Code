@@ -254,3 +254,27 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 **Exit criteria:** every actual social action has server-side actor/target validation, consent/permission checks, per-player/per-target budgets, duplicate/race protection, bounded state, and regression evidence. Source review is not runtime verification.
 
 **Implementation note:** see `CLUBMUSIC_PHASE10_SOCIAL_ACTION_PROTECTION.md`. The inspected Utility Bar actions are self-only or environment-wide; no separate friend/follow/invite/trade/emote remote was found in the files audited for this phase.
+
+
+## Phase 11 — StaffSpectatorService
+
+**Current status: Server-authoritative observation service, client camera adapter, and installer integration committed; runtime tests and command/UI adapter remain open.**
+
+- [x] Add staff-only server authorization using the existing SecurityCore `GlobalModeration` permission.
+- [x] Validate live staff actor, target user ID, live target, non-self target, and living target Humanoid.
+- [x] Keep observation state server-owned; client attributes only select the camera subject.
+- [x] Add target switching, state query, exit, bounded active-observer capacity, and lifecycle cleanup.
+- [x] Suspend staff Humanoid movement while observing and restore captured movement/jump/rotation settings on exit.
+- [x] Add camera follow, target respawn/leave handling, local movement-control disable/restore, and observer camera restoration.
+- [x] Audit entry, target switching, exit, and departure through the existing global audit endpoint when available.
+- [x] Add module and StarterPlayerScripts camera adapter to the staged installer with rollback copies.
+- [ ] Add a trusted Kohl's Admin command or staff UI adapter; no client-facing control remote is introduced by this phase.
+- [ ] Ensure every relevant gameplay action service rejects actions while `TikiTideSpectatorNoWorldActions` is true before claiming complete interaction lockdown.
+- [ ] Test permission denial, entry/switch/exit, movement restoration, target/observer respawn and departure, audit, and installer rollback in Studio.
+- [ ] Test mobile, desktop, and console camera/control behavior and run published-server regression tests.
+
+**Important limitations:** The staff avatar remains visible in the world; this is not invisibility or an untraceable mode. No explicit spectator notification is sent to the observed player. No automatic moderation enforcement is performed. The client adapter is presentation only, while server authorization and movement suspension remain authoritative.
+
+**Exit criteria:** trusted server commands/UI can call the server-only BindableFunction; all required gameplay actions honor spectator restriction state; movement and camera state restore safely under all lifecycle paths; runtime tests pass.
+
+**Implementation note:** see `CLUBMUSIC_PHASE11_STAFF_SPECTATOR_SERVICE.md`.
