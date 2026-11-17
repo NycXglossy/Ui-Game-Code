@@ -22,6 +22,11 @@ local TASK_POLICIES = {
 		Reduced = {rate = 0.1, burst = 1},
 		Critical = {rate = 0, burst = 0},
 	},
+	ThreatReviewQueries = {
+		Normal = {rate = 0.5, burst = 2},
+		Reduced = {rate = 0.1, burst = 1},
+		Critical = {rate = 0, burst = 0},
+	},
 	AnalyticsAggregation = {
 		Normal = {rate = 2, burst = 4},
 		Reduced = {rate = 0.5, burst = 1},
