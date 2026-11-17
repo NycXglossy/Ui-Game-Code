@@ -216,3 +216,6 @@ The project owner reports that the previously implemented Tiki Tide/ClubMusic sy
 - Phase 20–24 documentation commits are recorded in the branch history and linked from the roadmap.
 
 **Release status:** The five phases have source/docs updates. Production readiness still requires exact installer pinning, Studio/published acceptance of the new commands and incident coalescing fix, binary/third-party/live-place inspection, and the release checklist in Phase 24. Do not describe these new changes as runtime-tested until those tests are recorded.
+
+- Phase 23 follow-up: AdaptiveSecurityLoadManager now has a separate ThreatReviewQueries token bucket (Normal 0.5/s burst 2; Reduced 0.1/s burst 1; Critical disabled). The SecurityCore installer gates only optional threat-review Query operations with this budget; Record, authorization, incident creation, and all essential security paths remain unthrottled.
+- Phase 24 installer pin: ClubMusic_Security_Core_Installer.lua now pins source commit eba230a9606465fb2d19fd4e4a803df66e3a3c82, which contains the Phase 20–24 code and staff command integrations. The installer pin update is commit 9501945f385a0cc921bbaede63b458942e491fea.
