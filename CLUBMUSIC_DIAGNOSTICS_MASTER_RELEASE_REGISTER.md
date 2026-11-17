@@ -147,3 +147,16 @@ These changes close the in-repository source integration tasks for Phase 14 only
 **Not included:** HoneypotManager and client-integrity sensor sources do not exist in this branch. Diagnostics explicitly reports them as not installed; no activity is fabricated. Client error-log aggregation is not implemented. Full per-action moderation outcome counters are not claimed; join lookup health and existing Audit/IncidentResponse summaries remain the available evidence.
 
 **Boundaries preserved:** diagnostics are server-local/client-local, no diagnostics DataStore/MemoryStore/MessagingService writes or client-to-server diagnostic remotes, no automatic recovery/enforcement/gameplay changes, and no legacy diagnostics code retired.
+
+
+## Phase 17 — Honeypot Manager (2026-11-16)
+
+**Source status:** Implemented and integrated with existing SecurityCore installer, ThreatIntelligence, SecurityReplay, diagnostics, and staff `;cmdiagnostics`. **Runtime status:** Open.
+
+- [x] Four inert decoy remotes isolated in a dedicated ReplicatedStorage folder.
+- [x] Fixed signal codes only; no raw client arguments or payload retention.
+- [x] Five-second per-player cooldown, 256-subject cap, aggregate counters, and leave cleanup.
+- [x] ServerStorage-only status endpoint and local diagnostics exposure.
+- [x] No automatic enforcement, persistent writes, cross-server sharing, or real remote contract changes.
+- [ ] Studio/published-server tests, installer rollback/cleanup, collision behavior, signal fidelity, bounded-load profiling, and gameplay regression matrix.
+
