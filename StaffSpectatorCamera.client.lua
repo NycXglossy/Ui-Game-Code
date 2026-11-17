@@ -77,6 +77,11 @@ localPlayer:GetAttributeChangedSignal("TikiTideSpectatorTargetUserId"):Connect(r
 localPlayer.CharacterAdded:Connect(function()
 	if not active then task.defer(restoreOwnCamera) else task.defer(refresh) end
 end)
+Players.PlayerAdded:Connect(function(player)
+	if active and player.UserId == localPlayer:GetAttribute("TikiTideSpectatorTargetUserId") then
+		task.defer(refresh)
+	end
+end)
 Players.PlayerRemoving:Connect(function(player)
 	if targetPlayer == player then
 		disconnectTarget()
