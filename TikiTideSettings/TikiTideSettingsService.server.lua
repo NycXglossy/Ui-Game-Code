@@ -352,6 +352,16 @@ local function fail(message: string)
 	return {ok = false, message = message}
 end
 
+-- Store only the fact that server-filtered text was accepted; never retain the text itself.
+local function recordFilteredTextEvent(player: Player, eventType: string)
+	local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+	if replay and replay:IsA("BindableFunction") then
+		pcall(function()
+			replay:Invoke("Record", eventType, player.UserId, 0, "Info", "TikiTideTextValidation", {})
+		end)
+	end
+end
+
 local function handleRequest(player: Player, action: any, payload: any)
 	if player.Parent ~= Players then return fail("Player is no longer connected.") end
 	local now = os.clock()
@@ -402,6 +412,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 		end
 		settings.afk = payload.enabled
 		settings.afkMessage = message
+		if settings.afk then recordFilteredTextEvent(player, "afk_text_filtered") end
 		player:SetAttribute("TikiTideAFK", settings.afk)
 		player:SetAttribute("TikiTideAFKMessage", settings.afkMessage)
 		return {ok = true, message = if settings.afk then "AFK mode enabled." else "AFK mode disabled.", data = snapshot(player)}
@@ -545,6 +556,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 		end
 		lastBubbleAt[player.UserId] = broadcastAt
 		broadcast:FireAllClients("Bubble", player.UserId, filtered)
+		recordFilteredTextEvent(player, "filtered_bubble_broadcast")
 		return {ok = true, message = "Overhead broadcast sent."}
 	elseif action == "Announcement" then
 		if not hasClubPermission(player, "GlobalAnnouncement") then return fail("Administrator announcement permission is required.") end
@@ -565,6 +577,7 @@ local function handleRequest(player: Player, action: any, payload: any)
 		end
 		lastAnnouncementAt = broadcastAt
 		broadcast:FireAllClients("Announcement", player.UserId, filtered)
+		recordFilteredTextEvent(player, "filtered_announcement")
 		return {ok = true, message = "Announcement sent to this server."}
 	end
 
