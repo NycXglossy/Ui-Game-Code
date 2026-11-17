@@ -380,3 +380,21 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 **Important limitations:** the correlation service is per-server memory only, advisory, and not durable or cross-server. Its confidence labels are evidence-diversity triage levels, not probabilities. No kick, ban, shadow restriction, gameplay nerf, movement correction, or other automatic enforcement is performed. The existing MemoryStore-backed IncidentResponse service remains independent and is still opened/resolved only through its existing authorized workflow.
 
 **Implementation note:** see `CLUBMUSIC_PHASE15_THREAT_INTELLIGENCE.md`.
+
+
+## Phase 16 — Diagnostics Completion
+
+**Status: Source implementation committed; runtime acceptance remains open.**
+
+- [x] Add server process-memory trend/freshness with a bounded 20-sample window.
+- [x] Add controller-local aggregate diagnostics for purchase receipts, join moderation lookup outcomes, and playback backend/queue state.
+- [x] Include controller and CharacterPhysicsGuard health in the unified snapshot.
+- [x] Expand staff `;cmdiagnostics` with purchase, moderation, playback, memory, security-monitor and physics summaries.
+- [x] Add validated Success/Failure/Observed metric outcomes and explicit SafeCall latest-outcome reporting.
+- [x] Add optional client-local diagnostics bootstrap, disabled by default, with FPS/frame-time, memory and ping status available only through a local BindableFunction.
+- [x] Keep client telemetry untrusted and untransmitted.
+- [ ] Run Studio and published-server acceptance tests, reconcile watchdog/registry/memory warnings, and profile overhead.
+- [ ] Verify client bootstrap installation and local-only access.
+- [ ] Complete playback, queue, sync, purchase, moderation, Utility Bar, Settings and spectator regression tests.
+
+**Explicit exclusions:** HoneypotManager, client-integrity sensors and client error-log aggregation are not present in this branch. No diagnostic counts are fabricated for them. No automatic enforcement or cross-server diagnostics aggregation is added.
