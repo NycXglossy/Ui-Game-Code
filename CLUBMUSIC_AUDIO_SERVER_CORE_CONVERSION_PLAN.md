@@ -21,7 +21,7 @@ The server controller remains the authority for playback state, per-server queue
 - The server ModuleScripts remain under `ServerStorage/ClubMusicAudioModules`; the client-only preferences ModuleScript remains under `ReplicatedStorage/ClubMusicClientAudioModules`.
 - Do not replicate `AudioDeviceOutput` or the private output wires from the server. Each client creates its own output route.
 - Keep queue state, catalog validation, playlist persistence, DJ sessions, authorization, transition ownership, recovery, and watchdog logic server-side. None belongs in `ReplicatedStorage`.
-- `MemoryStoreService` is a separate cross-server ephemeral data service. Moving Instances into `ReplicatedStorage` does not preserve, replace, or reduce MemoryStore usage. The optional playback-only sync may continue using its existing server-side MemoryStore coordination independently of the audio graph.
+- `MemoryStoreService` is not part of the audio runtime. Cross-server playback synchronization, leader leases, shared playback snapshots, and playback peer coordination are retired; each server owns its own playback, clock, Auto DJ selection, transitions, and request queue. Do not add MemoryStore or MessagingService dependencies to playback. Any remaining MemoryStore use must be justified by a separate, actively consumed security/operations feature and audited independently.
 - Roblox's audio documentation describes the 2D output graph using `SoundService` and identifies `AudioPlayer:Play()` / `Stop()` as server-to-client replicated actions. `AudioPlayer.IsReady` is explicitly not replicated, so decoder readiness must remain a server-side check; clients must not be made authoritative by reading it.
 
 **Implementation result:** no runtime parent change is required for this boundary. The controller and backend already construct the server-owned graph in `SoundService`, and the client module already constructs local output routing. Moving the graph to `ReplicatedStorage` would be an unnecessary architectural change and could break the established audio routing. This is a verified source-layout decision, not a claim of Roblox Studio runtime certification.
@@ -29,7 +29,7 @@ The server controller remains the authority for playback state, per-server queue
 ## Non-negotiable invariants
 
 1. Modern `AudioPlayer` is the only intended long-term playback source; the controller remains its lifecycle owner.
-2. Each server owns its own request queue. Optional global playback-only sync shares the playing track/state only; it must never become a shared request queue.
+2. Each server independently owns its playback state, playback clock, Auto DJ selection, transitions, and request queue. Global playback sync and shared playback authority are retired.
 3. `SecurityCore.Authorization` remains the sole permission authority. DJ/session modules may call injected authorization but must not implement a parallel role system.
 4. Normal player song requests and Auto DJ remain available to all players; DJ Control Mode allows the current controller to request tracks while blocking other players. Requests remain subject to server-side catalog validation, request cooldowns/limits, queue capacity, idempotency, and abuse controls.
 5. Pause, restart, DJ skip, playlist/catalog management, and DJ session/handoff actions require the appropriate SecurityCore-backed DJ/staff permission. `ReloadSong` is explicitly excluded: it is a self-service recovery action available to every live player under its existing cooldown and ingress limits. Read-only Now Playing/queue access and skip voting retain their existing player-facing behavior.
@@ -544,3 +544,24 @@ The repository installation path is now explicit for the active playback inspect
 **Next safe gate:** run the installed-place regression matrix and capture diagnostics showing `migrationSucceeded=true`, `backend=AudioPlayer`, and `qualityState=Playing`; verify pause/resume, restart, reload while playing and paused, forced candidate failure, watchdog recovery, repeated crossfades/cancellation, normal track advance during fallback, independent per-server queues, and optional playback-only global sync. Only after these pass should a separate change make startup AudioPlayer-only while retaining an explicit emergency rollback switch. Remove `ServerMusicSound`, `MusicGroup`, Sound adapter branches, and client SoundGroup compatibility in a later isolated retirement after the startup-only cutover is validated.
 
 **Static verification:** source paths and callsites were re-inspected on branch `security/phase1-foundation`. No Luau compilation, Roblox Studio test, or published-server test was performed in this audit.
+
+## Retired global playback sync and MemoryStore dependency boundary (2026-11-17)
+
+**Playback-sync decision:** global playback synchronization is retired, not optional. The controller's stale `DJToggleGlobalPlaybackSync` action returns a clear retired-feature response; the Global Service diagnostic reports `LocalOnly`; no leader election, shared playback snapshot, playback heartbeat, or cross-server queue/playback reconciliation is part of the target architecture. The historical architecture document is marked retired and must not be used as an implementation guide.
+
+**Audio runtime storage rule:** local playback, per-server queues, Auto DJ, transitions, playback recovery, and watchdog decisions must not require DataStore, MemoryStore, or MessagingService. A server restart begins a new local playback lifecycle; it does not inherit another server's queue or playback clock.
+
+**MemoryStore inventory from the current source audit:**
+- The Global Service's shared rate-limit map is deliberately set to `nil` in minimal-storage mode. Its actual request budgets use bounded per-server token buckets. The MemoryStore import/status diagnostics around this disabled path are candidates for removal, not a live shared limiter.
+- `ClubMusic_Global_Security_Service.lua` still provisions MemoryStore-backed cross-server idempotency, audit batches, and incident snapshots. These are security/operations features, not audio synchronization. Their API consumers and staff-console requirements must be mapped before retirement; do not remove audit or incident visibility or weaken receipt/operation idempotency as a side effect.
+- The SecurityCore movement-authority ledger is explicitly server-local, bounded, expiring, and independent of DataStore/MemoryStore. Preserve that property.
+- DataStore and MessagingService uses for separately approved global moderation, configuration, announcements, catalog invalidation, XP boosts, or purchase receipt protection are not playback sync. Retain only where a live consumer and security requirement are demonstrated.
+
+**Retirement order:**
+1. Remove stale playback-sync controls, status APIs, leader/snapshot/lease modules, topics, and installer/bundle references after a full consumer search. Preserve the local-only diagnostic response only if the UI/diagnostics contract still consumes it.
+2. Remove the disabled shared MemoryStore rate-limit scaffolding from the Global Service; retain its bounded local rate limits and fail-closed authorization.
+3. Map every MemoryStore-backed SecurityCore/global operations API to its actual caller and acceptance test. Convert unused or duplicate storage-backed services to bounded server-local state where the feature semantics permit; retain cross-server persistence only where explicitly required.
+4. Update installers, embedded RBXMX bundles, diagnostics and release tests to match the reduced dependency graph.
+5. Re-run two-server tests for genuinely retained global moderation/configuration/announcement/receipt features only. Playback tests must prove two servers remain independent and work with MemoryStore/MessagingService unavailable.
+
+**No blanket MemoryStore deletion:** a storage service is not removed merely because its name contains “global” or because playback sync is retired. Every removal must preserve SecurityCore authorization, local rate limits, audit/incident workflows that remain in use, purchase idempotency, and durable profile/moderation/configuration semantics.
