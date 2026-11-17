@@ -355,7 +355,6 @@ local function updateModeration(userId: number, field: string, value: any, actor
 	recordSecurityReplay("moderation_" .. field, userId, 0, "Warning", "GlobalModeration", {
 		actorUserId = actorUserId,
 		value = value,
-		reason = reason or "",
 	})
 	local message = {
 		version = 1, senderJob = JOB_ID, id = HttpService:GenerateGUID(false),
@@ -1329,9 +1328,7 @@ bindFunction("ReportSignal", function(userId: any, signal: any, detail: any)
 	local cleanDetail = if detail == nil then "" else cleanText(detail, 180)
 	if not key or not cleanSignal then return false end
 	-- Local replay remains available even when cross-server DataStore services are disabled.
-	recordSecurityReplay(cleanSignal, tonumber(key) or 0, 0, "Warning", "GlobalSecuritySignal", {
-		detail = cleanDetail or "",
-	})
+	recordSecurityReplay(cleanSignal, tonumber(key) or 0, 0, "Warning", "GlobalSecuritySignal", {})
 	if not SERVICE_ENABLED then return true end
 	local reportKey = key .. ":" .. cleanSignal
 	local previous = signalCounts[reportKey]
