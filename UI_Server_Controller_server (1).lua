@@ -5993,7 +5993,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " failures " .. tostring(storageGuard.failuresInWindow or 0),
 			"Client telemetry: " .. tostring(clientTelemetry.state or "Unavailable")
 				.. " | local-only, untrusted, not transmitted",
-			"Honeypot/client-integrity sensors: not installed in this branch; no activity is inferred.",
+			"Client integrity reports are untrusted dependency observations; absence is not proof of tampering.",
 			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s):",
 		}
 		for index = math.max(1, #purchaseDiagnosticEntries - 3), #purchaseDiagnosticEntries do
