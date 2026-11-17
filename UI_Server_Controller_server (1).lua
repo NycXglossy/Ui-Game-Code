@@ -3561,6 +3561,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		skip = { votes = votes, needed = needed, voted = voted },
 		requests = { used = requestCounts[player.UserId] or 0, limit = ControllerFunctions.requestLimitFor(player) },
 		locked = requestsLocked,
+		djControlMode = djControlModeEnabled,
 		blocked = blockedUsers[player.UserId] == true,
 		vipPerks = {
 			slots = CONFIG.VipMaxRequestsPerPlayer,
@@ -5441,7 +5442,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local currentTitle = if typeof(nowPlaying.title) == "string" and nowPlaying.title ~= "" then nowPlaying.title else "Nothing playing"
 		local currentArtist = if typeof(nowPlaying.artist) == "string" then nowPlaying.artist else ""
 		local playbackLabel = if playbackPaused then "PAUSED" else "PLAYING"
-		local requestLabel = if requestsLocked then "EMERGENCY LOCK" else "OPEN"
+		local requestLabel = if requestsLocked then "EMERGENCY LOCK" elseif djControlModeEnabled then "OPEN (DJ CONTROL)" else "OPEN"
 		local queueCount = #queue
 		local elapsed = math.max(0, math.floor(tonumber(nowPlaying.elapsed) or 0))
 		local duration = math.max(0, math.floor(tonumber(nowPlaying.duration) or 0))
