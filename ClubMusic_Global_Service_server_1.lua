@@ -936,7 +936,7 @@ if diagnosticsModule then
 			getEventLogStatus = function() return if globalEventLogService then globalEventLogService:GetStatus() else nil end,
 			getIncidentResponseStatus = function() return if globalIncidentResponseService then globalIncidentResponseService:GetStatus() else nil end,
 			getAdaptiveLoadStatus = function() return readServerStorageStatus("GetTikiTideSecurityLoadStatus") end,
-			getSecurityReplayStatus = function() return readServerStorageStatus("TikiTideSecurityReplay", "Status") end,
+			getSecurityReplayStatus = function() return readServerStorageStatus("GetTikiTideSecurityReplayStatus") end,
 			getSafeCallStatus = function()
 				if not globalSafeCall then return nil end
 				local result = globalSafeCall:GetStatus()
@@ -1258,7 +1258,7 @@ bindFunction("GetGlobalOperationalStatus", function()
 		ServerHealth = if globalServerHealthService then globalServerHealthService:GetStatus() else {state = "NotInstalled"},
 		Watchdog = if globalLocalWatchdog then globalLocalWatchdog:GetStatus() else {state = "NotInstalled"},
 		AdaptiveLoad = readServerStorageStatus("GetTikiTideSecurityLoadStatus"),
-		SecurityReplay = readServerStorageStatus("TikiTideSecurityReplay", "Status"),
+		SecurityReplay = readServerStorageStatus("GetTikiTideSecurityReplayStatus"),
 		SafeCall = if globalSafeCall then globalSafeCall:GetStatus() else {state = "Unavailable"},
 		ErrorHistory = if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function" then globalErrorHandler.GetStatus() else {state = "Unavailable"},
 		ServiceRegistry = if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "NotInstalled"},
