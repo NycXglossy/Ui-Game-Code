@@ -5896,6 +5896,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local securityReplay = if typeof(services.securityReplay) == "table" then services.securityReplay else {}
 		local safeCall = if typeof(services.safeCall) == "table" then services.safeCall else {}
 		local threatIntelligence = if typeof(services.threatIntelligence) == "table" then services.threatIntelligence else {}
+		local honeypot = if typeof(services.honeypot) == "table" then services.honeypot else {}
 		local controller = if typeof(services.controller) == "table" then services.controller else {}
 		local purchase = if typeof(controller.purchase) == "table" then controller.purchase else {}
 		local moderation = if typeof(controller.moderation) == "table" then controller.moderation else {}
@@ -5941,6 +5942,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | review items " .. tostring(threatIntelligence.openReviewItems or 0)
 				.. "/" .. tostring(threatIntelligence.maxReviewItems or 0)
 				.. " | tracked subjects " .. tostring(threatIntelligence.trackedSubjects or 0),
+			"Honeypot: " .. tostring(honeypot.state or "NotInstalled")
+				.. " | hits " .. tostring(honeypot.totalHits or 0)
+				.. " | suppressed " .. tostring(honeypot.suppressedHits or 0)
+				.. " | decoys " .. tostring(honeypot.decoyRemoteCount or 0),
 			"SecurityCore health: " .. tostring(securityHealth.state or "Unavailable")
 				.. " (" .. tostring(securityHealth.observedComponents or 0) .. "/" .. tostring(securityHealth.totalComponents or 0) .. " observed)"
 				.. " | Auth " .. tostring(securityComponents.authorization or "Unavailable")
