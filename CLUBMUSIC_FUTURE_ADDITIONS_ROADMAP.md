@@ -295,7 +295,8 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [x] Avoid frame capture, persistence writes, new MemoryStore maps, and background polling workers.
 - [x] Record sanitized server-submitted security signals through the existing ReportSignal gateway and committed global ban/request-block changes.
 - [x] Record successful TeleportValidationService destination verification as an informational replay event.
-- [ ] Audit every remote ingress and audio/chat/social validator to confirm which paths submit validated ReportSignal events; do not claim full domain coverage until each confirmed call path is wired.
+- [x] Add malformed-envelope and handler-exception replay adapters at the confirmed ClubMusic RequestAction and Tiki Tide Settings remote boundaries; ordinary rejections/cooldowns are not scored as exploit evidence.
+- [ ] Audit remaining remote ingress and each audio/chat/social validator to confirm which paths submit validated ReportSignal events; do not claim full domain coverage until each confirmed call path is wired.
 - [x] Add the staff-only ;cmreplay Kohl's Admin command with optional UserId/limit filtering; query remains server-only and requires GlobalModeration.
 - [ ] Test authorization, filters, overflow, cleanup, bounded memory, and event fidelity in Studio and published servers.
 - [ ] Measure overhead under load and verify it does not degrade essential validation or existing gameplay.
