@@ -80,7 +80,7 @@ function Service:Open(kind,summary,actorUserId,subjectUserId)
 			local nextItem
 			if typeof(old)=="table" and old.state=="Open" then
 				nextItem=table.clone(old)
-				nextItem.eventCount=(tonumber(nextItem.eventCount) or 1)+1+(self.pendingFlags[userId] or 0)
+				nextItem.eventCount=(tonumber(old.eventCount) or 1)+1+(self.pendingFlags[userId] or 0)
 				nextItem.lastFlagAt=os.time()
 				nextItem.lastKind=kind
 				nextItem.summary=string.sub(summary,1,120)
