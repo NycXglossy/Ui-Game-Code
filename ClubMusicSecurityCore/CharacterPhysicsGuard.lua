@@ -223,6 +223,10 @@ function Service:_watchCharacter(player: Player, character: Model)
 		-- Observe only sustained extreme assembly motion. Ordinary running,
 		-- jumping, and seated movement are intentionally below these thresholds.
 		local rootPart = character:WaitForChild("HumanoidRootPart", 10)
+		-- WaitForChild yields; re-check lifecycle state before attaching any
+		-- late connections so respawn/shutdown cannot leave stale observers.
+		if not self.started or player.Parent ~= Players or player.Character ~= character
+			or self.playerStates[player.UserId] ~= state then return end
 		if rootPart and rootPart:IsA("BasePart") then
 			local function checkVelocity(property: string, threshold: number, signal: string)
 				if state.pending[property] then return end
