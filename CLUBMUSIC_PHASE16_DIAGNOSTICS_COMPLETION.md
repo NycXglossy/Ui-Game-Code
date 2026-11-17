@@ -34,6 +34,13 @@
 - Added `ClubMusic_Client_Diagnostics_Bootstrap.client.lua`, disabled by default. When explicitly enabled in a test client, it creates a local-only `PlayerScripts.GetClubMusicClientDiagnostics` BindableFunction for reading FPS/frame-time, frame spikes, memory, and ping.
 - No client telemetry is sent to the server, and it cannot authorize, restrict, or punish players.
 
+
+### Optional status-provider startup guard (source hardening follow-up)
+- The global diagnostics reader now checks that a ServerStorage status BindableFunction has an assigned `OnInvoke` callback before calling `Invoke`.
+- If the endpoint exists but its owner has not bound the callback yet, the snapshot reports `Starting` instead of invoking an unbound BindableFunction and potentially yielding indefinitely.
+- This guard applies to the optional adaptive-load, replay, threat-intelligence, controller, and CharacterPhysicsGuard status providers.
+- It does not create endpoints, change authorization, or add recovery behavior.
+
 ## Explicitly not implemented by this phase
 
 - **Honeypot sensors:** this branch does not contain an installed HoneypotManager/decoy-remote subsystem. Diagnostics reports this as not installed rather than inventing activation counts. Honeypot creation and integration belongs to a separate security implementation phase.
