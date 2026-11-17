@@ -115,9 +115,21 @@ function MovementAuthority.Check(targetId: any, property: any, value: any): (boo
 		entries[key] = nil
 		return false
 	end
-	-- "ANY" is a server-only presence check used by physics telemetry to
-	-- recognize a recently authorized fling without guessing its resulting velocity.
-	if value == "ANY" then return true, entry.origin end
+	-- Player-scoped grants are invalid as soon as the target leaves, even if
+	-- PlayerRemoving cleanup has not run yet. WorldGravity uses target ID 0.
+	if targetId > 0 then
+		local targetPlayer = Players:GetPlayerByUserId(math.floor(targetId))
+		if not targetPlayer or targetPlayer.Parent ~= Players then
+			entries[key] = nil
+			return false
+		end
+	end
+	-- "ANY" is intentionally restricted to the Fling marker used by
+	-- CharacterPhysicsGuard. It must never act as a wildcard for other properties.
+	if value == "ANY" then
+		if property ~= "Fling" then return false end
+		return true, entry.origin
+	end
 	if typeof(value) == "number" and typeof(entry.value) == "number" then
 		return math.abs(value - entry.value) <= 0.05, entry.origin
 	end
