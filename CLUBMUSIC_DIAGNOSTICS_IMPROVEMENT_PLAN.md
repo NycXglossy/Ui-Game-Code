@@ -244,7 +244,7 @@ Source-side additions are now implemented and documented in `CLUBMUSIC_PHASE16_D
 - ServerHealth retains a bounded 20-sample process-memory trend and marks samples stale after 90 seconds.
 - The controller exposes aggregate purchase/receipt, join-moderation lookup, and playback health through a server-only ServerStorage BindableFunction. No purchase secrets, names, track identifiers, or raw errors are included.
 - Global Diagnostics now includes the controller status and CharacterPhysicsGuard status.
-- Staff `;cmdiagnostics` includes memory trend, receipt outcome counters, moderation lookup health, playback source/queue state, SecurityMonitor and physics signal counts, and the client-local telemetry boundary.
+- Staff `;cmdiagnostics` includes memory trend, receipt outcome counters, moderation lookup health, playback source/queue state, SecurityMonitor and physics signal counts, ResourceGuard lane occupancy/rejections, StorageGuard circuit state, and the client-local telemetry boundary.
 - `RecordGlobalMetric` accepts optional validated Success/Failure/Observed outcomes and records bounded latency/outcome metadata while preserving existing three-argument calls.
 - SafeCall exposes explicit latest outcome and the embedded RBXMX copy is synchronized.
 - The existing client-local FPS/frame-time, memory and ping module now reports stale sample states. A disabled-by-default LocalScript bootstrap provides a local-only BindableFunction when explicitly enabled for testing.
