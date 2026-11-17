@@ -502,3 +502,13 @@ The repository installation path is now explicit for the active playback inspect
 - Routed adoption rejection, backend adoption, new-track startup retirement, modern startup candidate discard, startup source replacement, recovery candidate abandonment, and watchdog recovery replacement through the helper.
 - Crossfade deck ownership remains with the crossfade manager; its incoming cancellation and outgoing post-commit cleanup are intentionally not routed through the general active-source helper.
 - Static source checks only. Studio acceptance must exercise failed adoption, stale startup cancellation, fallback-to-modern migration, watchdog recovery, and repeated track changes while checking SoundService for orphaned backend roots and verifying failed cleanup retries. No Luau compilation or Roblox runtime verification is claimed.
+
+### Crossfade failed-deck retention audit (2026-11-17)
+
+- **Manager commit:** `a7bbbaca3c8faf7dda32e16f62d4eb9239c4b483`
+- **Controller commit:** `89a859778702978baf4da586e885b61f95d8d8ab`
+- The crossfade manager now keeps references to incoming decks whose `Cleanup()` throws or returns `false`. It retries teardown up to three times with bounded backoff and leaves a final failure in a manager-owned pending registry for a later explicit `Cleanup()` attempt.
+- Both cancellation and rejected-start cleanup use the same retention path. Manager teardown can be called again after destruction to retry pending decks; it does not admit new transitions, and a pending cleanup is reported rather than silently treated as complete.
+- After a successful crossfade ownership transfer, the controller now retires the outgoing backend through its controller-owned retirement registry. Failed outgoing cleanup therefore remains reachable for bounded retries and later diagnosis; the newly committed incoming backend is not passed to cleanup.
+- Ownership boundary remains explicit: the manager retires cancelled/rejected incoming decks; the controller retires the outgoing backend only after the incoming backend has become authoritative.
+- Static source checks only. Studio acceptance should force `Cleanup()` to throw and return `false` during cancellation and rejected startup, verify retry/pending retention across repeated manager teardown calls, then complete a successful commit and confirm the incoming AudioPlayer remains active while the outgoing deck is retired. Also test rapid repeated transitions and inspect SoundService for orphaned deck graphs. No Luau compilation or Roblox runtime test was performed in this pass.
