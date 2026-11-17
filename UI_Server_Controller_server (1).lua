@@ -5403,23 +5403,6 @@ localDiagnosticsBindable.OnInvoke = function()
 		updatedAt = os.time(),
 	}
 end
-	return {
-		state = if remotes:GetAttribute("Ready") == true then "Healthy" else "Starting",
-		scope = "ServerLocal",
-		purchase = table.clone(purchaseDiagnosticStats),
-		moderation = table.clone(moderationDiagnosticStats),
-		playback = {
-			backend = if typeof(audioSnapshot) == "table" then tostring(audioSnapshot.kind or "Unavailable") else "Unavailable",
-			playing = typeof(audioSnapshot) == "table" and audioSnapshot.playing == true,
-			paused = typeof(audioSnapshot) == "table" and audioSnapshot.paused == true,
-			queueDepth = #queue,
-			modernBackendConfigured = CONFIG.UseModernAudioBackend == true,
-			migrationSucceeded = modernAudioMigrationSucceeded,
-			migrationFailureCount = modernAudioMigrationFailureCount,
-		},
-		updatedAt = os.time(),
-	}
-end
 
 -- Audio validation signals contain only a fixed event name and server-known actor ID.
 -- No asset IDs, client payloads, provider metadata, or user text enter the replay timeline.
