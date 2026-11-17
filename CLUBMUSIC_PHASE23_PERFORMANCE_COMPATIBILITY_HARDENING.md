@@ -11,7 +11,7 @@
 - StaffSpectatorService: maximum 64 active observers and lifecycle cleanup.
 - IncidentResponse: 256-entry local indexes, 32-entry read cache, bounded incident size and TTL, ResourceGuard/StorageGuard gates.
 - Diagnostics: server-local bounded histories and snapshots; no cross-server diagnostics aggregation or diagnostic writes.
-- Adaptive Security Load Manager: optional replay queries can be budget-gated; essential validation, authorization, rate limiting, receipt processing, moderation enforcement and event recording are never throttled.
+- Adaptive Security Load Manager: optional replay and threat-review queries can be budget-gated; essential validation, authorization, rate limiting, receipt processing, moderation enforcement and event recording are never throttled.
 
 ## Compatibility requirements
 
