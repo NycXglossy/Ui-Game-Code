@@ -8,12 +8,12 @@ Implemented:
 - `CONFIG.UseModernAudioBackend = true`; the user-confirmed Studio log records successful controller ownership handoff to the modern AudioPlayer.
 - Track startup now constructs and prepares the modern AudioPlayer first; it waits for matching asset readiness, starts at the initial playhead, verifies `IsPlaying`, then commits source ownership and binds the source signal.
 - A per-start token and source-revision guard prevent a late decoder completion from replacing a newer track or control action.
-- The legacy Sound starts only when modern construction, readiness, playback verification, or commit preparation fails. The existing guarded migration remains available as a bounded recovery path after fallback.
-- The previous post-start migration on every first track has been removed; successful modern startup marks the modern route as active directly.
+- The controller now starts modern AudioPlayer only. If construction, readiness, playback verification, or commit preparation fails, the source remains unavailable and no legacy Sound is started.
+- Reload retries the current track through the same verified modern-only startup path when no AudioPlayer is active; active-backend reload can rebuild a replacement AudioPlayer.
 
 Not yet release-enabled:
-- Modern-first startup is now implemented but awaits Studio validation. Keep the legacy Sound as the guarded emergency fallback until first-track startup, failure fallback, pause preservation, and multiplayer behavior pass testing.
-- Do not delete `ServerMusicSound` or `MusicGroup` until remaining Sound-based transition/recovery compatibility paths and rollout are validated.
+- Modern-only startup and fail-closed recovery are implemented but this exact revision still requires Studio validation. The legacy Sound and MusicGroup objects remain inert rollback objects; they are not activated by the controller.
+- Do not delete `ServerMusicSound` or `MusicGroup` until this modern-only revision passes startup, control, reload-recovery, pause-preservation, crossfade, and multiplayer regression tests.
 
 ## Update 2 — Crossfade transition integration
 
@@ -31,7 +31,7 @@ Remaining:
 Implemented:
 - Renderer local preference integration now applies gain to a private client AudioFader and AudioDeviceOutput for each replicated main/crossfade deck, plus the local staff-preview fader.
 - The server backend no longer creates a shared AudioDeviceOutput; its replicated MusicFader remains the shared transition-gain stage.
-- MusicGroup is adjusted only on the local client as a temporary legacy Sound fallback, never as the modern volume path.
+- The renderer still contains a dormant MusicGroup compatibility branch, but the modern-only controller no longer publishes Sound as the active source. Modern volume uses private client AudioFader and AudioDeviceOutput routes.
 - Client preference profile names are restricted to Standard, Soft, Bass, and Night; failed profile application restores the previous selection.
 
 Validation still required:
@@ -66,9 +66,9 @@ Boundary:
 
 Not executed from the repository connection. Required release checklist:
 
-1. With the default flag off, verify legacy Sound playback is unchanged.
-2. Enable `UseModernAudioBackend` only in a test place; verify the first track starts directly on AudioPlayer, matching asset readiness, playback verification, pause preservation, and that only one main output is audible. Confirm a failed modern start activates the guarded Sound fallback.
-3. Force missing-module, invalid-asset, timeout, and candidate-start failures; verify the legacy bootstrap remains safe. Then force a modern decoder reload failure and verify the controller rebuilds a replacement AudioPlayer without changing queue ownership or track position.
+1. In a test place, verify `UseModernAudioBackend` is enabled and the first track starts directly on AudioPlayer with matching asset readiness, playback verification, pause preservation, and only one audible main output.
+2. Force missing-module, invalid-asset, timeout, and candidate-start failures; verify the source remains unavailable and no legacy Sound starts. Then use Reload Song and verify it retries modern startup without changing track identity or the saved playhead.
+3. With an active AudioPlayer, force a decoder reload failure and verify the controller rebuilds a replacement AudioPlayer without changing queue ownership or track position.
 4. Test crossfade cancellation for skip, clear, pause, restart, source reconciliation, and server shutdown; verify outgoing gain restoration and no duplicate outputs.
 5. With two clients, independently change volume and mute; verify each listener hears only their own local gain while the server-controlled crossfade affects both equally.
 6. Apply all four EQ profiles on the modern backend and verify band changes and profile rollback on failure.
@@ -79,5 +79,5 @@ Not executed from the repository connection. Required release checklist:
 
 - Source changes committed: guarded modern migration, EQ graph/profile support, spatial graph hardening, local profile validation, replacement AudioPlayer recovery, and per-player output routing.
 - Studio validation: the user confirmed the modern recovery and independent client-volume updates are functional.
-- The controller publishes `SoundService.ClubMusicAudioSourceKind` as `AudioPlayer` or `Sound` whenever source ownership is rebound. The renderer changes `MusicGroup.Volume` only while the guarded legacy Sound fallback is authoritative; modern playback continues to use private `PlayerMusicGain` faders.
-- Modern-first startup is implemented in the controller but is not yet Studio-validated. `ServerMusicSound` and `MusicGroup` remain guarded emergency fallback objects; Sound-based transition and recovery compatibility branches still exist. Do not retire them until the modern-first startup and fallback regression pass.
+- The controller publishes `SoundService.ClubMusicAudioSourceKind` as `AudioPlayer` or `Unavailable`; it no longer selects `Sound` as an active source. The renderer's MusicGroup volume branch is therefore dormant while modern playback uses private `PlayerMusicGain` faders.
+- The controller's modern-only startup, no-fallback failure handling, and Reload Song retry path are implemented on the current feature branch. This exact revision still needs Studio validation before deleting the inert `ServerMusicSound` and `MusicGroup` compatibility objects.
