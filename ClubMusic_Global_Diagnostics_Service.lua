@@ -76,7 +76,7 @@ function Service.new(dependencies: {[string]: any})
 	}, Service)
 end
 
-function Service:Record(name: any, value: any, latencySeconds: any): boolean
+function Service:Record(name: any, value: any, latencySeconds: any, outcome: any): boolean
 	if typeof(name) ~= "string" or #name == 0 or #name > 48
 		or not string.match(name, "^[%w_:%-%.]+$") then return false end
 	local amount = if type(value) == "number" and value == value and value >= 0 and value < math.huge then value else 1
@@ -85,9 +85,22 @@ function Service:Record(name: any, value: any, latencySeconds: any): boolean
 		local metricCount = 0
 		for _ in pairs(self.metrics) do metricCount += 1 end
 		if metricCount >= MAX_METRICS then return false end
-		item = {count = 0, latencyCount = 0, latencyTotal = 0, latencyMax = 0}
+		item = {count = 0, latencyCount = 0, latencyTotal = 0, latencyMax = 0, successCount = 0, failureCount = 0, lastSuccessAt = nil, lastFailureAt = nil, lastOutcome = "Observed"}
 	end
 	item.count = math.min(1000000000, item.count + amount)
+	if outcome == "Success" then
+		item.successCount = math.min(1000000000, item.successCount + amount)
+		item.lastSuccessAt = os.time()
+		item.lastOutcome = "Success"
+	elseif outcome == "Failure" then
+		item.failureCount = math.min(1000000000, item.failureCount + amount)
+		item.lastFailureAt = os.time()
+		item.lastOutcome = "Failure"
+	elseif outcome == "Observed" or outcome == nil then
+		item.lastOutcome = "Observed"
+	else
+		return false
+	end
 	if type(latencySeconds) == "number" and latencySeconds == latencySeconds
 		and latencySeconds >= 0 and latencySeconds <= 120 then
 		item.latencyCount += 1
