@@ -2440,6 +2440,14 @@ do
 		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
 			local createOk, instance = pcall(exported.new, {
 				onSignal = function(signal: string, subject: number, detail: string)
+					local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+					if replay and replay:IsA("BindableFunction") then
+						pcall(function()
+							replay:Invoke("Record", signal, subject, 0, "Warning", "AvatarAccessoryValidation", {
+								detail = detail,
+							})
+						end)
+					end
 					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 					local recorder = api and api:FindFirstChild("RecordGlobalSecuritySignal")
 					if recorder and recorder:IsA("BindableFunction") then
@@ -4032,6 +4040,19 @@ ControllerFunctions.persistReceipt = function(userId: number, receiptId: string,
 	return true, alreadyProcessed, nil
 end
 
+local function recordReceiptReplayEvent(eventType: string, userId: number, productId: number, severity: string, outcome: string)
+	-- Never place PurchaseId or other receipt secrets in replay metadata.
+	local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+	if replay and replay:IsA("BindableFunction") then
+		pcall(function()
+			replay:Invoke("Record", eventType, userId, 0, severity, "PurchaseReceipt", {
+				productId = productId,
+				outcome = outcome,
+			})
+		end)
+	end
+end
+
 MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	-- MarketplaceService supplies this server callback. Treat every field as
 	-- untrusted input until its shape and identity are checked.
@@ -4053,17 +4074,20 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	print(string.format("[ClubMusic][PurchaseServer] ProcessReceiptReached | UserId=%s | ProductId=%s | PurchaseId=%s | PlaceId=%d | GameId=%d",
 		tostring(userId), tostring(productId), string.sub(receiptId, 1, 32), game.PlaceId, game.GameId))
 	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
+	recordReceiptReplayEvent("receipt_received", userId, productId, "Info", "RobloxReceiptCallback")
 	if processedReceipts[receiptId] then return Enum.ProductPurchaseDecision.PurchaseGranted end
 	local player = Players:GetPlayerByUserId(userId)
 	local profile = profiles[userId]
 	if not player or not profile then
 		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "AwaitingPlayerProfile", "Player or loaded profile is not available; Roblox receipt will retry")
+		recordReceiptReplayEvent("receipt_waiting_profile", userId, productId, "Info", "RetryPending")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	local productData = PRODUCT_MAP[productId]
 	if not productData then
 		warn(string.format("[ClubMusic] Unregistered Developer Product ID %d (receipt %s).", productId, receiptId))
 		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "RejectedUnregisteredProduct", "Receipt ID is not in PRODUCT_MAP; purchase remains ungranted")
+		recordReceiptReplayEvent("receipt_unknown_product", userId, productId, "Warning", "NotProcessedYet")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
@@ -4084,6 +4108,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 			if not activateOk or activated ~= true then
 				warn("[ClubMusic] Global XP boost activation failed; receipt will be retried.")
 				recordPurchaseDiagnostic("ServerReceipt", userId, productId, "XPBoostActivationFailed", "Global XP service rejected or failed activation; Roblox receipt will retry")
+				recordReceiptReplayEvent("receipt_activation_failed", userId, productId, "Warning", "RetryPending")
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
 			if typeof(expiry) == "number" and (effectiveMultiplier == 1 or effectiveMultiplier == 2 or effectiveMultiplier == 4) then
@@ -4096,6 +4121,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		-- Do not write XP receipts into the legacy profile receipt map.
 		rememberProcessedReceipt(receiptId)
 		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Global XP boost activation completed")
+		recordReceiptReplayEvent("receipt_granted", userId, productId, "Info", "XPBoost")
 		notify(player, string.format("%dx global XP boost activated!", productData.multiplier), "ok")
 		publishState(nil)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
@@ -4104,6 +4130,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	if not ok then
 		warn("[ClubMusic] Receipt persistence failed for " .. receiptId .. ": " .. tostring(err))
 		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptPersistenceFailed", tostring(err))
+		recordReceiptReplayEvent("receipt_persistence_failed", userId, productId, "Warning", "RetryPending")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	-- A receipt already in the durable ledger was granted by an earlier callback/server.
@@ -4117,6 +4144,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	receiptMemoryApplied[receiptId] = nil
 	rememberProcessedReceipt(receiptId)
 	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Receipt persistence completed and reward application proceeded")
+	recordReceiptReplayEvent("receipt_granted", userId, productId, "Info", "DurableReceiptCommitted")
 	player:SetAttribute("Tickets", profile.tickets)
 	player:SetAttribute("Coins", profile.coins)
 	player:SetAttribute("Glowsticks", profile.glowsticks)
