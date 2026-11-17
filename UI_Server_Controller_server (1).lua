@@ -5719,6 +5719,41 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1850)
 	end
+	if operation == "StaffSpectatorEnter" or operation == "StaffSpectatorSwitch" or operation == "StaffSpectatorExit" or operation == "StaffSpectatorState" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic administrator permission is required."
+		end
+		local endpoint = ServerStorage:FindFirstChild("TikiTideStaffSpectatorControl")
+		if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= ServerStorage then
+			return false, "Staff observation is unavailable on this server."
+		end
+		local action = if operation == "StaffSpectatorEnter" then "Enter"
+			elseif operation == "StaffSpectatorSwitch" then "SwitchTarget"
+			elseif operation == "StaffSpectatorExit" then "Exit" else "GetState"
+		local targetUserId: number? = nil
+		if action == "Enter" or action == "SwitchTarget" then
+			if typeof(argument) ~= "string" or #argument < 1 or #argument > 16
+				or not string.match(argument, "^%d+$") then
+				return false, if action == "Enter" then "Usage: ;cmspectate <UserId>" else "Usage: ;cmspectateswitch <UserId>"
+			end
+			targetUserId = tonumber(argument)
+			if not targetUserId or targetUserId < 1 or targetUserId % 1 ~= 0 or targetUserId > 9007199254740991 then
+				return false, "Provide a valid numeric Roblox UserId."
+			end
+		end
+		local invokeOk, accepted, result = pcall(function()
+			return endpoint:Invoke(action, caller.UserId, targetUserId)
+		end)
+		if not invokeOk or accepted ~= true then
+			return false, if typeof(result) == "string" then result else "Staff observation request was rejected."
+		end
+		if action == "GetState" then
+			if typeof(result) ~= "table" or result.active ~= true then return true, "Staff observation is not active." end
+			return true, "Observing " .. tostring(result.targetName or "player") .. " (UserId " .. tostring(result.targetUserId or 0) .. ")."
+		end
+		return true, if typeof(result) == "string" then result else "Staff observation request completed."
+	end
 	if operation == "SecurityStatus" then
 		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
 			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
