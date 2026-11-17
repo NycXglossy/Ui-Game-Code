@@ -787,11 +787,7 @@ end
 local SESSION_TOKEN = if game.JobId ~= "" then game.JobId else HttpService:GenerateGUID(false)
 local random = Random.new()
 
--- Keep the historical Sound and SoundGroup instances temporarily so existing
--- place assets are not shadowed while the modern-only rollout is validated.
--- They are inert compatibility objects: controller playback is AudioPlayer-only.
-local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGroup", "MusicGroup") :: SoundGroup
-local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
+-- Main playback is owned exclusively by the modern AudioPlayer backend.
 local activeAudioSource: any = { kind = "Unavailable" }
 local audioSourceRevision = 0
 local modernBackendStartSucceeded = false
@@ -811,27 +807,7 @@ local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
 local audioTransitionTrackToken = 0
 
--- Migrate any legacy ClubMusic-routed sounds to the supplied canonical group.
--- This preserves other SoundService audio while removing the obsolete group.
-local legacyMusicGroup = SoundService:FindFirstChild("ClubMusic")
-if legacyMusicGroup and legacyMusicGroup:IsA("SoundGroup") and legacyMusicGroup ~= musicSoundGroup then
-	for _, descendant in ipairs(SoundService:GetDescendants()) do
-		if descendant:IsA("Sound") and descendant.SoundGroup == legacyMusicGroup then
-			descendant.SoundGroup = musicSoundGroup
-		end
-	end
-	legacyMusicGroup:Destroy()
-end
-
-musicSound.SoundGroup = musicSoundGroup
-musicSound.Volume = 1
-musicSound.Looped = false
-musicSound.PlaybackSpeed = 1
-musicSoundGroup.Volume = 1
-musicSound:SetAttribute("ManagedByClubMusicController", true)
-pcall(function() musicSound:Stop(); musicSound.TimePosition = 0 end)
-
--- Publish the number of active controller-owned main outputs (0 or 1).
+legacy group migration and setup-- Publish the number of active controller-owned main outputs (0 or 1).
 -- The binding is refreshed whenever the canonical source changes.
 local activeAudioPlayingConnection: RBXScriptConnection? = nil
 ControllerFunctions.refreshActiveMusicSoundCount = function()
@@ -847,15 +823,11 @@ ControllerFunctions.bindActiveAudioPlayingSignal = function()
 	local source = activeAudioSource
 	-- Publish the active output type. Unavailable means modern startup/recovery
 	-- failed and no legacy Sound fallback is authoritative.
-	local sourceKind = if source.kind == "Backend" then "AudioPlayer"
-		elseif source.kind == "Sound" then "Sound" else "Unavailable"
+	local sourceKind = if source.kind == "Backend" and source.backend then "AudioPlayer" else "Unavailable"
 	SoundService:SetAttribute("ClubMusicAudioSourceKind", sourceKind)
-	local signalInstance = if source.kind == "Backend" and source.backend
-		then source.backend:GetPlayer()
-		elseif source.kind == "Sound" then source.instance else nil
+	local signalInstance = if source.kind == "Backend" and source.backend then source.backend:GetPlayer() else nil
 	if typeof(signalInstance) == "Instance" then
-		local propertyName = if source.kind == "Backend" then "IsPlaying" else "Playing"
-		local ok, signal = pcall(function() return signalInstance:GetPropertyChangedSignal(propertyName) end)
+		local ok, signal = pcall(function() return signalInstance:GetPropertyChangedSignal("IsPlaying") end)
 		if ok and signal then
 			activeAudioPlayingConnection = signal:Connect(ControllerFunctions.refreshActiveMusicSoundCount)
 		end
@@ -869,8 +841,7 @@ local audioReloadInProgress = false
 -- overwriting a newer local control action on the same track.
 local playbackControlRequestId = 0
 
--- One controller-owned source contract. The legacy Sound remains the active
--- implementation until every route is migrated and a Studio cutover is validated.
+-- One controller-owned source contract: modern AudioPlayer or unavailable.
 ControllerFunctions.getAudioSnapshot = function()
 	local source = activeAudioSource
 	if typeof(source) ~= "table" then
@@ -903,23 +874,11 @@ ControllerFunctions.getAudioSnapshot = function()
 			asset = asset,
 		}
 	end
-	local sound = source.instance
-	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then
-		return { kind = "Unavailable", ready = false, playing = false, paused = playbackPaused, position = 0, length = 0, asset = "" }
-	end
-	return {
-		kind = "Sound",
-		ready = sound.IsLoaded,
-		playing = sound.IsPlaying,
-		paused = playbackPaused,
-		position = math.max(0, sound.TimePosition),
-		length = math.max(0, sound.TimeLength),
-		asset = sound.SoundId,
-	}
+	return { kind = "Unavailable", ready = false, playing = false, paused = playbackPaused, position = 0, length = 0, asset = "" }
 end
 -- Per-track loudness trim for the 11 Club Exclusives. A 1.5 multiplier is a
--- first-pass +50% boost. It is applied before the fader so crossfade gain and
--- the player's MusicGroup master-volume preference remain independent.
+-- first-pass +50% boost. It is applied before the fader so crossfade gain
+-- remains independent of each player's private output preference.
 local TRACK_VOLUME_TRIM_OVERRIDES: {[string]: number} = {
 	["custom-100919684616729"] = 1.5, -- CROWN OF THE NIGHT
 	["custom-99973341792058"] = 1.5, -- Midnight Lucid
@@ -954,15 +913,7 @@ ControllerFunctions.getAudioGain = function(sourceOverride: any?): (boolean, num
 			or value < 0 or value > 1 then return false, 0 end
 		return true, value
 	end
-	if source.kind ~= "Sound" then return false, 0 end
-	local sound = source.instance
-	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false, 0 end
-	-- Legacy Sound.Volume carries the per-track trim as well as the fader.
-	-- Expose only the normalized 0..1 fader value to crossfade management.
-	local trim = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or ""))
-	local value = sound.Volume / trim
-	if not ControllerFunctions.isFiniteNumber(value) or value < 0 or value > 1 then return false, 0 end
-	return true, value
+	return false, 0
 end
 ControllerFunctions.setAudioGain = function(value: number, sourceOverride: any?): boolean
 	if not ControllerFunctions.isFiniteNumber(value) or value < 0 or value > 1 then return false end
@@ -972,12 +923,7 @@ ControllerFunctions.setAudioGain = function(value: number, sourceOverride: any?)
 		local ok, result = pcall(function() return source.backend:SetGain(value) end)
 		return ok and result ~= false
 	end
-	if source.kind ~= "Sound" then return false end
-	local sound = source.instance
-	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
-	local trim = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or ""))
-	local ok = pcall(function() sound.Volume = value * trim end)
-	return ok
+	return false
 end
 
 -- Track-specific playback-rate corrections. CROWN OF THE NIGHT's uploaded
@@ -994,11 +940,7 @@ ControllerFunctions.setAudioPlaybackSpeed = function(value: number): boolean
 		local ok, result = pcall(function() return source.backend:SetPlaybackSpeed(value) end)
 		return ok and result ~= false
 	end
-	if source.kind ~= "Sound" then return false end
-	local sound = source.instance
-	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
-	local ok = pcall(function() sound.PlaybackSpeed = value end)
-	return ok
+	return false
 end
 ControllerFunctions.applyTrackPlaybackSpeed = function(trackId: string): boolean
 	local speed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId]
@@ -1025,9 +967,7 @@ ControllerFunctions.setAudioAsset = function(asset: string)
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:SetAsset(asset) end
-	if source.kind ~= "Sound" then return false, "No active audio source is available." end
-	source.instance.SoundId = asset
-	return true, nil
+	return false, "No active audio source is available."
 end
 ControllerFunctions.seekAudio = function(position: number)
 	if not cancelCrossfadeBeforeAudioMutation("seek-audio") then
@@ -1036,9 +976,7 @@ ControllerFunctions.seekAudio = function(position: number)
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Seek(position) end
-	if source.kind ~= "Sound" then return false, "No active audio source is available." end
-	source.instance.TimePosition = position
-	return true, nil
+	return false, "No active audio source is available."
 end
 ControllerFunctions.playAudio = function()
 	if not cancelCrossfadeBeforeAudioMutation("play-audio") then
@@ -1047,9 +985,7 @@ ControllerFunctions.playAudio = function()
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Play() end
-	if source.kind ~= "Sound" then return false, "No active audio source is available." end
-	source.instance:Play()
-	return true, nil
+	return false, "No active audio source is available."
 end
 ControllerFunctions.stopAudio = function()
 	if not cancelCrossfadeBeforeAudioMutation("stop-audio") then
@@ -1058,8 +994,6 @@ ControllerFunctions.stopAudio = function()
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Stop() end
-	if source.kind ~= "Sound" then return true, nil end
-	source.instance:Stop()
 	return true, nil
 end
 ControllerFunctions.pauseAudio = function()
@@ -1069,10 +1003,7 @@ ControllerFunctions.pauseAudio = function()
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Pause() end
-	if source.kind ~= "Sound" then return false, "No active audio source is available." end
-	source.instance:Pause()
-	local position = source.instance.TimePosition
-	return true, nil, if ControllerFunctions.isFiniteNumber(position) then math.max(0, position) else nil
+	return false, "No active audio source is available."
 end
 ControllerFunctions.resumeAudio = function()
 	if not cancelCrossfadeBeforeAudioMutation("resume-audio") then
@@ -1081,9 +1012,7 @@ ControllerFunctions.resumeAudio = function()
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Resume() end
-	if source.kind ~= "Sound" then return false, "No active audio source is available." end
-	source.instance:Resume()
-	return true, nil
+	return false, "No active audio source is available."
 end
 
 -- Keep failed backend retirements reachable and retry transient Destroy failures.
@@ -1439,7 +1368,6 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 		retireAudioBackend(retiredSource.backend, "new track startup")
 	end
 	activeAudioSource = { kind = "Unavailable" }
-	pcall(function() musicSound:Stop(); musicSound.TimePosition = 0 end)
 	ControllerFunctions.bindActiveAudioPlayingSignal()
 	modernAudioStartToken += 1
 	local startToken = modernAudioStartToken
@@ -1545,10 +1473,6 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 			activeAudioSource = { kind = "Backend", backend = candidate }
 			candidate = nil
 			ControllerFunctions.bindActiveAudioPlayingSignal()
-			pcall(function()
-				musicSound:Stop()
-				musicSound.TimePosition = 0
-			end)
 			if previousSource.kind == "Backend" and previousSource.backend then
 				retireAudioBackend(previousSource.backend, "modern startup source replacement")
 			end
@@ -6859,11 +6783,8 @@ task.spawn(function()
 						local source = activeAudioSource
 						if source.kind == "Backend" and source.backend then
 							errorContext = source.backend:GetPlayer()
-						elseif source.instance and source.instance:IsA("Sound") then
-							errorContext = source.instance
-						end
 					end)
-					ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, errorContext or musicSound)
+					ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, errorContext or SoundService)
 				end
 			end
 		end
@@ -6931,8 +6852,6 @@ game:BindToClose(function()
 	if shutdownSource and shutdownSource.kind == "Backend" and shutdownSource.backend then
 		pcall(function() shutdownSource.backend:Stop() end)
 		retireAudioBackend(shutdownSource.backend, "server shutdown active source")
-	else
-		pcall(function() musicSound:Stop() end)
 	end
 	if not drainRetiredAudioBackends("server shutdown") then
 		warn("[ClubMusic][AudioBackend] One or more retired backends remain pending after final shutdown cleanup.")
