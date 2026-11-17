@@ -113,3 +113,15 @@ Run in a dedicated test universe/place, not against production data:
 A final source-level pass synchronized the embedded SafeCall ModuleScript in `ClubMusic_Global_Optional_Services.rbxmx` with the standalone implementation, including the 100-key/120-second warning deduplication bound. The local watchdog pulse metadata is now capped at eight validated primitive fields. Source review confirmed Playback pulses each second even during pause/reload, Queue and AutoDJ pulse every 30 seconds plus refill events, and Recovery/Moderation are optional event-driven probes. SafeCall and ErrorHistory remain separate because they record different failure lifecycles.
 
 These changes close the in-repository source integration tasks for Phase 14 only. They do not satisfy Studio/published-server tests, historical warning reconciliation, load profiling, binary/third-party package review, or live-place revision verification. No legacy diagnostic implementation is retired.
+
+
+## Phase 14 source closure and Phase 15 correlation addendum (2026-11-16)
+
+- Phase 14 source-level diagnostics integration is closed for this branch. The packaged SafeCall copy is synchronized with the standalone bounded implementation, watchdog pulse metadata is capped at eight validated fields, and the controller pulse cadence has been statically reviewed.
+- SafeCall and ErrorHistory remain separate because they capture different operation/error lifecycles. Neither implementation is retired.
+- Phase 15 adds `ClubMusicSecurityCore/SecurityThreatIntelligence.lua`, a server-local, bounded correlation service. It consumes fixed-code events from ReportSignal, RecordGlobalSecuritySignal, SecurityMonitor threshold alerts, unhealthy watchdog pulses, and SafeCall failures.
+- Correlation requires at least two distinct categories and signal codes before creating a Medium review item; one weak or repeatedly duplicated category cannot independently create an item. High confidence requires three categories, three codes, and the higher score threshold.
+- The SecurityCore installer stages the new module. The server-only `TikiTideThreatIntelligence` endpoint and read-only status endpoint are added; the authorized `;cmthreat [UserId] [Limit]` command provides bounded staff review.
+- Threat correlation is advisory, per-server memory only, and does not kick, ban, restrict, alter gameplay, or automatically create a persistent IncidentResponse case. Existing IncidentResponse remains an independent staff-managed workflow.
+
+**Still not release-ready:** no Roblox Studio or published-server runtime tests have been performed. Installer rollback, authorization, threshold/cap/expiry behavior, adapter fidelity, client isolation, performance, historical watchdog/registry/memory warning reconciliation, binary/third-party package scope, live-place hierarchy, and regression tests remain required. Do not publish this branch to production until the dedicated test-place matrix passes.
