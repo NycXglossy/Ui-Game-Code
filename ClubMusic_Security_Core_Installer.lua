@@ -10,9 +10,9 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "5ecb09b9edd07bb1c6e9e067c9037f184751a26b"
+local RELEASE_COMMIT = "0c2a38c50b78717800353a0f0c7481e67a691e3a"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
-local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager"}
+local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 local BOOTSTRAP_NAME = "TikiTideCharacterPhysicsGuardBootstrap"
 local STAGE_NAME = FOLDER_NAME .. "_Staging"
@@ -259,6 +259,59 @@ if loadManager then
  end
 end
 
+-- Correlate multiple independent, sanitized signals into bounded staff-review items.
+-- This service is server-local and never enforces against a player.
+local threatService: any = nil
+local threatModule = core:FindFirstChild("SecurityThreatIntelligence")
+if threatModule and threatModule:IsA("ModuleScript") then
+ local threatOk, threatExport = pcall(require, threatModule)
+ if threatOk and typeof(threatExport) == "table" and type(threatExport.new) == "function" then
+  local createOk, instance = pcall(threatExport.new, {
+   authorize = function(userId, permission) return auth:Check(userId, permission) end,
+  })
+  if createOk and typeof(instance) == "table" and type(instance.Record) == "function"
+   and type(instance.Query) == "function" and type(instance.GetStatus) == "function" then
+   threatService = instance
+   if not threatService:Start() then threatService = nil end
+  else
+   warn("[Tiki Tide][ThreatIntelligence] Service interface validation failed: " .. tostring(instance))
+  end
+ else
+  warn("[Tiki Tide][ThreatIntelligence] Module failed to load: " .. tostring(threatExport))
+ end
+else
+ warn("[Tiki Tide][ThreatIntelligence] Optional module is missing.")
+end
+
+local threatEndpoint = ServerStorage:FindFirstChild("TikiTideThreatIntelligence")
+if threatEndpoint and not threatEndpoint:IsA("BindableFunction") then
+ warn("[Tiki Tide][ThreatIntelligence] Endpoint has wrong class; service remains unavailable.")
+ if threatService then threatService:Stop(); threatService = nil end
+else
+ if not threatEndpoint then
+  threatEndpoint = Instance.new("BindableFunction")
+  threatEndpoint.Name = "TikiTideThreatIntelligence"
+  threatEndpoint.Parent = ServerStorage
+ end
+ threatEndpoint.OnInvoke = function(action, ...)
+  if not threatService then return false, {}, "Threat intelligence is unavailable." end
+  if action == "Record" then return threatService:Record(...) end
+  if action == "Query" then return threatService:Query(...) end
+  if action == "Status" then return threatService:GetStatus() end
+  return false, "Unsupported threat-intelligence action."
+ end
+ local threatStatus = ServerStorage:FindFirstChild("GetTikiTideThreatIntelligenceStatus")
+ if threatStatus and not threatStatus:IsA("BindableFunction") then threatStatus:Destroy(); threatStatus = nil end
+ if not threatStatus then
+  threatStatus = Instance.new("BindableFunction")
+  threatStatus.Name = "GetTikiTideThreatIntelligenceStatus"
+  threatStatus.Parent = ServerStorage
+ end
+ threatStatus.OnInvoke = function()
+  return if threatService then threatService:GetStatus() else {state = "Unavailable", scope = "ServerLocal", automaticEnforcement = false}
+ end
+end
+
 replayEndpoint.OnInvoke = function(action, ...)
  if action == "Record" then return replay:Record(...) end
  if action == "Query" then
@@ -280,10 +333,12 @@ end
 replayStatus.OnInvoke = function() return replay:GetStatus() end
 script.Destroying:Connect(function()
  replay:Stop()
+ if threatService then threatService:Stop() end
  if loadManager then loadManager:Stop() end
 end)
 print("[Tiki Tide][SecurityReplay] Bounded server-local event history ready; persistent writes=0; frame capture=false.")
 if loadManager then print("[Tiki Tide][AdaptiveLoad] Adaptive optional-work budgets started; essential security paths remain unrestricted.") end
+if threatService then print("[Tiki Tide][ThreatIntelligence] Bounded local correlation ready; automatic enforcement=false.") end
 ]=]
 
 local stagedBootstrap = Instance.new("Script")
