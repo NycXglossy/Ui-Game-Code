@@ -7,16 +7,21 @@ local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local StarterPlayer = game:GetService("StarterPlayer")
+local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "89d9248735bf38551259a5d7442653bb4deb7db8"
+local RELEASE_COMMIT = "371dedcc43d5a9cad9d6f1a3c518bd8cc63153dc"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
-local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService"}
+local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 local BOOTSTRAP_NAME = "TikiTideCharacterPhysicsGuardBootstrap"
 local STAGE_NAME = FOLDER_NAME .. "_Staging"
 local BACKUP_NAME = FOLDER_NAME .. "_Previous"
 local BOOTSTRAP_STAGE_NAME = BOOTSTRAP_NAME .. "_Staging"
 local BOOTSTRAP_BACKUP_NAME = BOOTSTRAP_NAME .. "_Previous"
+local CAMERA_NAME = "TikiTideStaffSpectatorCamera"
+local CAMERA_BACKUP_NAME = CAMERA_NAME .. "_Previous"
+local CAMERA_STAGE_NAME = CAMERA_NAME .. "_Staging"
 
 if RunService:IsRunning() then
  error("Installation blocked: stop Play/Run simulation before replacing server modules.")
@@ -34,6 +39,15 @@ local oldStage = getTyped(ServerStorage, STAGE_NAME, "Folder")
 local activeBootstrap = getTyped(ServerScriptService, BOOTSTRAP_NAME, "Script")
 local bootstrapBackup = getTyped(ServerScriptService, BOOTSTRAP_BACKUP_NAME, "Script")
 local oldBootstrapStage = getTyped(ServerScriptService, BOOTSTRAP_STAGE_NAME, "Script")
+local activeCamera = getTyped(StarterPlayerScripts, CAMERA_NAME, "LocalScript")
+local cameraBackup = getTyped(StarterPlayerScripts, CAMERA_BACKUP_NAME, "LocalScript")
+local oldCameraStage = getTyped(StarterPlayerScripts, CAMERA_STAGE_NAME, "LocalScript")
+
+local cameraUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/StaffSpectatorCamera.client.lua"
+local cameraOk, cameraSource = pcall(function() return HttpService:GetAsync(cameraUrl, true) end)
+if not cameraOk or type(cameraSource) ~= "string" or #cameraSource < 100 then
+ error("Could not stage StaffSpectatorCamera.client.lua; active installation was not changed.")
+end
 
 local stagedSources = {}
 for _, name in ipairs(MODULE_NAMES) do
@@ -46,6 +60,7 @@ end
 
 if oldStage then oldStage:Destroy() end
 if oldBootstrapStage then oldBootstrapStage:Destroy() end
+if oldCameraStage then oldCameraStage:Destroy() end
 local stage = Instance.new("Folder")
 stage.Name = STAGE_NAME
 stage.Parent = ServerStorage
@@ -105,6 +120,51 @@ if not statusFunction then statusFunction = Instance.new("BindableFunction"); st
 statusFunction.OnInvoke = function() return guard:GetStatus() end
 script.Destroying:Connect(function() guard:Stop() end)
 print("[Tiki Tide][CharacterPhysicsGuard] Detection-only protection started; automatic enforcement=false.")
+
+-- Staff spectator state is server-authoritative; this LocalScript only renders
+-- the camera subject selected by server-owned player attributes.
+local spectatorModule = core:WaitForChild("StaffSpectatorService")
+local spectatorOk, spectatorExport = pcall(require, spectatorModule)
+local authorizationModule = core:WaitForChild("Authorization")
+local authOk, authExport = pcall(require, authorizationModule)
+if not spectatorOk or typeof(spectatorExport) ~= "table" or type(spectatorExport.new) ~= "function"
+	or not authOk or typeof(authExport) ~= "table" or type(authExport.GetShared) ~= "function" then
+	warn("[Tiki Tide][StaffSpectator] Service or authorization module failed to load.")
+	return
+end
+local auth = authExport.GetShared()
+local globalApi = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+local auditFunction = globalApi and globalApi:FindFirstChild("RecordGlobalAuditEvent")
+local spectator = spectatorExport.new({
+	authorize = function(userId, permission) return auth:Check(userId, permission) end,
+	audit = function(actorUserId, targetUserId, action)
+		if auditFunction and auditFunction:IsA("BindableFunction") then
+			pcall(function() auditFunction:Invoke("AdminAction", actorUserId, tostring(targetUserId), action) end)
+		else
+			warn("[Tiki Tide][StaffSpectator][AuditUnavailable] actor=" .. tostring(actorUserId) .. " target=" .. tostring(targetUserId) .. " action=" .. tostring(action))
+		end
+	end,
+})
+if not spectator:Start() then warn("[Tiki Tide][StaffSpectator] Startup failed."); return end
+local control = ServerStorage:FindFirstChild("TikiTideStaffSpectatorControl")
+if control and not control:IsA("BindableFunction") then warn("[Tiki Tide][StaffSpectator] Control endpoint has wrong class."); spectator:Stop(); return end
+if not control then control = Instance.new("BindableFunction"); control.Name = "TikiTideStaffSpectatorControl"; control.Parent = ServerStorage end
+control.OnInvoke = function(action, actorUserId, targetUserId)
+	if type(actorUserId) ~= "number" or actorUserId % 1 ~= 0 then return false, "Invalid staff actor." end
+	local actor = game:GetService("Players"):GetPlayerByUserId(actorUserId)
+	if not actor then return false, "A live staff player is required." end
+	if action == "Enter" then return spectator:Enter(actor, targetUserId) end
+	if action == "SwitchTarget" then return spectator:SwitchTarget(actor, targetUserId) end
+	if action == "Exit" then return spectator:Exit(actor) end
+	if action == "GetState" then return spectator:GetState(actor) end
+	return false, "Unsupported spectator action."
+end
+local statusFunction = ServerStorage:FindFirstChild("GetTikiTideStaffSpectatorStatus")
+if statusFunction and not statusFunction:IsA("BindableFunction") then statusFunction:Destroy(); statusFunction = nil end
+if not statusFunction then statusFunction = Instance.new("BindableFunction"); statusFunction.Name = "GetTikiTideStaffSpectatorStatus"; statusFunction.Parent = ServerStorage end
+statusFunction.OnInvoke = function() return spectator:GetStatus() end
+script.Destroying:Connect(function() spectator:Stop() end)
+print("[Tiki Tide][StaffSpectator] Server-authorized observation service started; no gameplay powers granted.")
 ]=]
 
 local stagedBootstrap = Instance.new("Script")
@@ -113,10 +173,17 @@ stagedBootstrap.Source = bootstrapSource
 stagedBootstrap.Disabled = true
 stagedBootstrap.Parent = ServerScriptService
 
+local stagedCamera = Instance.new("LocalScript")
+stagedCamera.Name = CAMERA_STAGE_NAME
+stagedCamera.Source = cameraSource
+stagedCamera.Disabled = true
+stagedCamera.Parent = StarterPlayerScripts
+
 -- Keep the last known-good generation as a rollback copy. Promote only after staging succeeds.
 if oldBackup then oldBackup:Destroy() end
 if bootstrapBackup then bootstrapBackup:Destroy() end
-local promotedFolder, promotedBootstrap = false, false
+if cameraBackup then cameraBackup:Destroy() end
+local promotedFolder, promotedBootstrap, promotedCamera = false, false, false
 local ok, installError = pcall(function()
  if active then active.Name = BACKUP_NAME end
  stage.Name = FOLDER_NAME
@@ -125,6 +192,10 @@ local ok, installError = pcall(function()
  stagedBootstrap.Name = BOOTSTRAP_NAME
  promotedBootstrap = true
  stagedBootstrap.Disabled = false
+ if activeCamera then activeCamera.Name = CAMERA_BACKUP_NAME end
+ stagedCamera.Name = CAMERA_NAME
+ promotedCamera = true
+ stagedCamera.Disabled = false
 end)
 if not ok then
  pcall(function()
@@ -134,6 +205,11 @@ if not ok then
   local failedScript = ServerScriptService:FindFirstChild(BOOTSTRAP_NAME)
   if failedScript and failedScript ~= activeBootstrap then failedScript:Destroy() end
   if activeBootstrap and activeBootstrap.Parent then activeBootstrap.Name = BOOTSTRAP_NAME end
+  local failedCamera = StarterPlayerScripts:FindFirstChild(CAMERA_NAME)
+  if failedCamera and failedCamera ~= activeCamera then failedCamera:Destroy() end
+  if activeCamera and activeCamera.Parent then activeCamera.Name = CAMERA_NAME end
+  local failedCameraStage = StarterPlayerScripts:FindFirstChild(CAMERA_STAGE_NAME)
+  if failedCameraStage then failedCameraStage:Destroy() end
   local failedStage = ServerStorage:FindFirstChild(STAGE_NAME)
   if failedStage then failedStage:Destroy() end
   local failedBootstrapStage = ServerScriptService:FindFirstChild(BOOTSTRAP_STAGE_NAME)
@@ -156,4 +232,5 @@ end
 print("[Tiki Tide Security] Installed " .. tostring(#MODULE_NAMES) .. " modules; release=" .. RELEASE_COMMIT)
 print("[Tiki Tide Security] Manifest: ServerStorage/" .. FOLDER_NAME .. "/InstallManifest")
 print("[Tiki Tide Security] Previous release retained under ServerStorage/" .. BACKUP_NAME)
+print("[Tiki Tide Security] Staff spectator camera installed under StarterPlayer/StarterPlayerScripts/" .. CAMERA_NAME)
 print("[Tiki Tide Security] CharacterPhysicsGuard remains detection-only.")
