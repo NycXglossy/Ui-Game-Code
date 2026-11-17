@@ -29,53 +29,75 @@ end
 
 function Backend.new(config: Config?)
 	config = config or {}
-	local parent = config.Parent or game:GetService("SoundService")
-	local name = config.Name or "ClubMusicModernAudio"
-	local root = Instance.new("Folder")
-	root.Name = name
-	root:SetAttribute("ManagedByClubMusicAudioBackend", true)
-	root:SetAttribute("ClubMusicAudioRouteVersion", 2)
-	root.Parent = parent
+	local created = {}
+	local function own(instance: Instance): Instance
+		table.insert(created, instance)
+		return instance
+	end
+	local ok, result = pcall(function()
+		local parent = config.Parent or game:GetService("SoundService")
+		local name = config.Name or "ClubMusicModernAudio"
+		local root = own(Instance.new("Folder"))
+		root.Name = name
+		root:SetAttribute("ManagedByClubMusicAudioBackend", true)
+		root:SetAttribute("ClubMusicAudioRouteVersion", 2)
+		root.Parent = parent
 
-	local player = Instance.new("AudioPlayer")
-	player.Name = "AudioPlayer"
-	player.AutoLoad = true
-	player.AutoPlay = false
-	player.Looping = false
-	player.Volume = math.clamp(if finite(config.Volume) then config.Volume else 1, 0, 10)
-	player.PlaybackSpeed = math.clamp(if finite(config.PlaybackSpeed) then config.PlaybackSpeed else 1, 0.05, 20)
-	player.Parent = root
+		local player = own(Instance.new("AudioPlayer"))
+		player.Name = "AudioPlayer"
+		player.AutoLoad = true
+		player.AutoPlay = false
+		player.Looping = false
+		player.Volume = math.clamp(if finite(config.Volume) then config.Volume else 1, 0, 10)
+		player.PlaybackSpeed = math.clamp(if finite(config.PlaybackSpeed) then config.PlaybackSpeed else 1, 0.05, 20)
+		player.Parent = root
 
-	local equalizer = Instance.new("AudioEqualizer")
-	equalizer.Name = "MusicEqualizer"
-	equalizer.MidRange = NumberRange.new(400, 3000)
-	equalizer.LowGain = 0
-	equalizer.MidGain = 0
-	equalizer.HighGain = 0
-	equalizer.Parent = root
+		local equalizer = own(Instance.new("AudioEqualizer"))
+		equalizer.Name = "MusicEqualizer"
+		equalizer.MidRange = NumberRange.new(400, 3000)
+		equalizer.LowGain = 0
+		equalizer.MidGain = 0
+		equalizer.HighGain = 0
+		equalizer.Parent = root
 
-	local fader = Instance.new("AudioFader")
-	fader.Name = "MusicFader"
-	fader.Volume = math.clamp(if finite(config.InitialGain) then config.InitialGain else 1, 0, 1)
-	fader.Parent = root
+		local fader = own(Instance.new("AudioFader"))
+		fader.Name = "MusicFader"
+		fader.Volume = math.clamp(if finite(config.InitialGain) then config.InitialGain else 1, 0, 1)
+		fader.Parent = root
 
-	-- The server owns synchronized playback, EQ, and transition gain only.
-	-- Each client adds its own local fader and AudioDeviceOutput downstream
-	-- of this replicated MusicFader so volume remains strictly per-listener.
-	local inputWire = makeWire(root, player, equalizer)
-	local equalizerWire = makeWire(root, equalizer, fader)
+		-- The server owns synchronized playback, EQ, and transition gain only.
+		-- Each client adds its own local fader and AudioDeviceOutput downstream
+		-- of this replicated MusicFader so volume remains strictly per-listener.
+		local inputWire = own(Instance.new("Wire")) :: Wire
+		inputWire.SourceInstance = player
+		inputWire.TargetInstance = equalizer
+		inputWire.Parent = root
+		local equalizerWire = own(Instance.new("Wire")) :: Wire
+		equalizerWire.SourceInstance = equalizer
+		equalizerWire.TargetInstance = fader
+		equalizerWire.Parent = root
 
-	return setmetatable({
-		root = root,
-		player = player,
-		fader = fader,
-		equalizer = equalizer,
-		wires = { inputWire, equalizerWire },
-		destroyed = false,
-		paused = false,
-		pausedAt = 0,
-		currentAsset = "",
-	}, Backend)
+		return setmetatable({
+			root = root,
+			player = player,
+			fader = fader,
+			equalizer = equalizer,
+			wires = { inputWire, equalizerWire },
+			destroyed = false,
+			paused = false,
+			pausedAt = 0,
+			currentAsset = "",
+		}, Backend)
+	end)
+	if not ok then
+		-- Construction is transactional: even a failure between Instance.new
+		-- and Parent assignment must release every instance already allocated.
+		for index = #created, 1, -1 do
+			pcall(function() created[index]:Destroy() end)
+		end
+		error("Audio backend construction failed: " .. tostring(result), 2)
+	end
+	return result
 end
 
 function Backend:IsAvailable(): boolean
