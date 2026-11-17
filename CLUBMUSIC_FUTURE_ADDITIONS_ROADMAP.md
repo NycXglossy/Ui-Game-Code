@@ -282,7 +282,7 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 
 ## Phase 12 — Replay & Behavioral Analytics
 
-**Current status: Bounded server-local event timeline, staff authorization, installer wiring, and selected event adapters implemented in source; runtime verification remains open.**
+**Current status: Bounded server-local event timeline, staff authorization, installer wiring, and repository-snapshot remote/audio/text/social source audit with privacy-safe adapters implemented; runtime verification remains open.**
 
 - [x] Add a fixed-capacity server-local event ring (2,048 events) with actor/target IDs, timestamps, event type, severity, source, and bounded metadata.
 - [x] Sanitize metadata and reject invalid IDs/non-finite values; do not retain Instances, arbitrary nested payloads, raw user text, credentials, or secrets.
@@ -296,12 +296,12 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [x] Record sanitized server-submitted security signals through the existing ReportSignal gateway and committed global ban/request-block changes.
 - [x] Record successful TeleportValidationService destination verification as an informational replay event.
 - [x] Add malformed-envelope and handler-exception replay adapters at the confirmed ClubMusic RequestAction and Tiki Tide Settings remote boundaries; ordinary rejections/cooldowns are not scored as exploit evidence.
-- [ ] Audit remaining remote ingress and each audio/chat/social validator to confirm which paths submit validated ReportSignal events; do not claim full domain coverage until each confirmed call path is wired.
+- [x] Audit the repository snapshot's remaining remote ingress and audio/chat/social validation paths; wire fixed-name signals for confirmed malformed/unsupported requests, deterministic audio validation rejections, and privacy-safe filtered text/audio outcomes. Document intentionally excluded read-only queries and untrusted client telemetry.
 - [x] Add the staff-only ;cmreplay Kohl's Admin command with optional UserId/limit filtering; query remains server-only and requires GlobalModeration.
 - [ ] Test authorization, filters, overflow, cleanup, bounded memory, and event fidelity in Studio and published servers.
 - [ ] Measure overhead under load and verify it does not degrade essential validation or existing gameplay.
 
-**Important limitations:** this is a per-server in-memory event timeline, not durable or cross-server history. It does not capture every frame or full-session video, does not alter threat scores, and does not enforce moderation. Current adapters cover CharacterPhysicsGuard, TeleportValidationService failure/success outcomes, AvatarAccessoryValidationService signals, authoritative ProcessReceipt lifecycle outcomes, StaffSpectatorService lifecycle events, validated `ReportSignal` submissions, committed global moderation changes, and malformed/exceptional requests at the confirmed ClubMusic and Tiki Tide Settings remote boundaries.
+**Important limitations:** this is a per-server in-memory event timeline, not durable or cross-server history. It does not capture every frame or full-session video, does not alter threat scores, and does not enforce moderation. Repository-snapshot adapters cover CharacterPhysicsGuard, TeleportValidationService failure/success outcomes, AvatarAccessoryValidationService, authoritative ProcessReceipt outcomes, StaffSpectatorService lifecycle, `ReportSignal` submissions and committed moderation changes, malformed/exceptional ClubMusic and Tiki Tide Settings requests, Utility Bar malformed/unsupported requests, Tool Shop unsupported operations, deterministic Creator Hub audio validation rejections, and successful filtered text/audio outcomes. Read-only query endpoints and untrusted purchase-prompt telemetry are intentionally excluded. External Kohl's Admin internals and scripts/assets absent from the repository are not covered. Roblox Studio/published-server tests and performance profiling remain outstanding.
 
 **Exit criteria:** bounded memory, server-only record access, permission-checked review, complete adapters for confirmed security event sources, and successful runtime/performance tests.
 
