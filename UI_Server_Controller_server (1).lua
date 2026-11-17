@@ -6291,7 +6291,6 @@ ControllerFunctions.ChildManagers.Playlist = playlistManager
 
 ControllerFunctions.castSkipVote = function(player: Player): (boolean, string)
 	if player.Parent ~= Players then return false, "A connected player is required." end
-	if nowPlaying.trackId == "" then return false, "There is no active track to vote on." end
 	if skipVotes[player.UserId] then return false, "You already voted to skip this track." end
 	skipVotes[player.UserId] = true
 	if ControllerFunctions.checkSkipVotes() then
