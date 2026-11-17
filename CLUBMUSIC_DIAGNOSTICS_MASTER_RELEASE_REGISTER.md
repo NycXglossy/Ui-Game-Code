@@ -160,3 +160,16 @@ These changes close the in-repository source integration tasks for Phase 14 only
 - [x] No automatic enforcement, persistent writes, cross-server sharing, or real remote contract changes.
 - [ ] Studio/published-server tests, installer rollback/cleanup, collision behavior, signal fidelity, bounded-load profiling, and gameplay regression matrix.
 
+
+
+## Phase 18 — Client Integrity Telemetry (2026-11-16)
+
+**Source status:** Implemented in the SecurityCore installer and unified diagnostics. **Runtime status:** Open.
+
+- [x] Fixed-code dependency-presence observations for UI_Network, UI_Renderer, and the ClubMusicRemotes contract.
+- [x] Dedicated RemoteEvent receiver with exact allowlist, server-derived identity, per-player interval, eight-report cap, 200-subject cap, and leave cleanup.
+- [x] Accepted reports route only to Info-level server-local SecurityReplay entries; no ThreatIntelligence score, authorization, moderation, or enforcement.
+- [x] Status exposed through ServerStorage and ;cmdiagnostics; installer stages the LocalScript with rollback.
+- [ ] Studio/published tests, malformed/burst/forgery tests, dependency-failure tests, replay fidelity, and overhead/regression profile.
+
+**Trust boundary:** client reports are untrusted and can be suppressed or forged. Dependency-presence checks are not cryptographic attestation. Existing client FPS/memory/ping diagnostics remain local-only.
