@@ -1711,19 +1711,12 @@ ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, strin
 	-- Read only the two properties restart actually needs. A full snapshot also
 	-- queries readiness, duration, and playhead, adding work to a latency-sensitive
 	-- button path without changing the restart decision.
-	local source = activeAudioSource
-	local sourceAsset = ""
-	local sourcePlaying = false
-	local stateOk = pcall(function()
-		if source.kind == "Backend" and source.backend then
-			sourceAsset = source.backend:GetAsset()
-			sourcePlaying = source.backend:IsPlaying()
-		elseif source.instance and source.instance:IsA("Sound") then
-			sourceAsset = source.instance.SoundId
-			sourcePlaying = source.instance.IsPlaying
-		end
-	end)
-	if not stateOk then return false, "The current audio source state could not be read safely." end
+	local snapshotOk, snapshot = pcall(ControllerFunctions.getAudioSnapshot)
+	if not snapshotOk or typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
+		return false, "The current audio source state could not be read safely."
+	end
+	local sourceAsset = tostring(snapshot.asset or "")
+	local sourcePlaying = snapshot.playing == true
 	if sourceAsset ~= soundId then
 		ControllerFunctions.startServerMusic(soundId)
 		return true, nil
@@ -1851,12 +1844,22 @@ local function performReloadServerMusic(): (boolean, string?)
 	end
 
 	local source = activeAudioSource
+	if source.kind ~= "Backend" then
+		-- Reload is a modern-backend recovery operation. If startup is still on
+		-- the guarded Sound fallback, first attempt the normal verified handoff;
+		-- never destructively reset the fallback decoder in place.
+		local migrated = ControllerFunctions.tryModernAudioBackendMigration()
+		if migrated ~= true or activeAudioSource.kind ~= "Backend" then
+			return false, "Modern AudioPlayer is not active; the guarded Sound fallback was left untouched."
+		end
+		source = activeAudioSource
+	end
 	local snapshot = ControllerFunctions.getAudioSnapshot()
-	if (typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable") and source.kind ~= "Backend" then
-		return false, "The active audio source is unavailable."
+	if typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
+		return false, "The active modern AudioPlayer is unavailable."
 	end
 	local duration = math.max(1, tonumber(nowPlaying.duration) or 1)
-	local position = if typeof(snapshot) == "table" and ControllerFunctions.isFiniteNumber(snapshot.position)
+	local position = if ControllerFunctions.isFiniteNumber(snapshot.position)
 		then snapshot.position else math.max(0, tonumber(nowPlaying.elapsed) or 0)
 	position = math.clamp(position, 0, math.max(0, duration - 0.5))
 	local expectedTrackId = tostring(nowPlaying.trackId or "")
@@ -1875,55 +1878,8 @@ local function performReloadServerMusic(): (boolean, string?)
 			if recovered then return true, nil end
 			return false, tostring(recoveryError or reloadError or reloaded or "The modern audio decoder could not be recovered.")
 		end
-	elseif source.kind == "Sound" and source.instance and source.instance:IsA("Sound") then
-		local sound = source.instance
-		if sound.Parent == nil then return false, "The active audio Sound is no longer available." end
-
-		-- Force Roblox to discard the current decoder selection even when the
-		-- SoundId is unchanged. A same-ID assignment alone does not guarantee
-		-- recovery from a stuck/silent decoder.
-		local resetOk, resetError = pcall(function()
-			sound:Stop()
-			sound.SoundId = ""
-		end)
-		if not resetOk then return false, "The audio decoder could not be reset: " .. tostring(resetError) end
-		task.wait()
-		local assignOk, assignError = pcall(function() sound.SoundId = asset end)
-		if not assignOk then return false, "The current track asset could not be reselected: " .. tostring(assignError) end
-
-		local loadDeadline = os.clock() + 8
-		local loaded = false
-		repeat
-			task.wait(0.1)
-			loaded = sound.Parent ~= nil and sound.SoundId == asset
-				and sound.IsLoaded == true and ControllerFunctions.isFiniteNumber(sound.TimeLength)
-				and sound.TimeLength > 0
-		until loaded or os.clock() >= loadDeadline
-		if not loaded then
-			return false, "The audio asset did not finish decoding within 8 seconds. Please try reload again."
-		end
-
-		if not ControllerFunctions.applyTrackPlaybackSpeed(expectedTrackId) then
-			return false, "The current track playback speed could not be restored."
-		end
-		-- Clamp against the freshly decoded duration, not only catalog metadata.
-		position = math.clamp(position, 0, math.max(0, sound.TimeLength - 0.5))
-		local seekOk, seekError = pcall(function() sound.TimePosition = position end)
-		if not seekOk then return false, "The current track position could not be restored: " .. tostring(seekError) end
-		local seekDeadline = os.clock() + 1
-		local actualPosition = -1
-		repeat
-			task.wait(0.05)
-			actualPosition = sound.TimePosition
-		until ControllerFunctions.isFiniteNumber(actualPosition)
-			and math.abs(actualPosition - position) <= 1.5 or os.clock() >= seekDeadline
-		if not ControllerFunctions.isFiniteNumber(actualPosition) or math.abs(actualPosition - position) > 1.5 then
-			return false, "The audio decoder did not accept the restored track position."
-		end
-		local playOk, playError = pcall(function() sound:Play() end)
-		if not playOk then return false, "The audio source could not resume: " .. tostring(playError) end
 	else
-		return false, "The active audio source does not support reload recovery."
+		return false, "The active modern AudioPlayer does not support reload recovery."
 	end
 
 	-- Confirm actual playback and fence out a track change that occurred while
@@ -7000,7 +6956,16 @@ task.spawn(function()
 				local reason = if typeof(quality) == "table" then tostring(quality.state or "Unknown") else "WatchdogStoppedTrack"
 				warn("[ClubMusic] Playback watchdog confirmed an ended or unrecoverable track (" .. reason .. "); advancing safely.")
 				if ControllerFunctions.ErrorHandler then
-					ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, musicSound)
+					local errorContext: Instance? = nil
+					pcall(function()
+						local source = activeAudioSource
+						if source.kind == "Backend" and source.backend then
+							errorContext = source.backend:GetPlayer()
+						elseif source.instance and source.instance:IsA("Sound") then
+							errorContext = source.instance
+						end
+					end)
+					ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, errorContext or musicSound)
 				end
 			end
 		end
