@@ -1700,9 +1700,8 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	end)
 end
 
--- Restart the already-loaded asset in place. Avoid reassigning SoundId and
--- reapplying track gain/speed on every restart; those operations are needed for
--- track changes, not for replaying the current deck.
+-- Restart the active source in place through the normalized controller contract.
+-- Avoid reselecting the asset and reapplying track gain/speed on every restart.
 ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, string?)
 	if typeof(soundId) ~= "string" or #soundId > 64
 		or not string.match(soundId, "^rbxassetid://%d+$") then
@@ -1834,9 +1833,6 @@ local function performReloadServerMusic(): (boolean, string?)
 		or not string.match(asset, "^rbxassetid://%d+$") then
 		return false, "There is no playable audio asset for the current track."
 	end
-	if playbackPaused and activeAudioSource.kind ~= "Backend" then
-		return false, "Legacy playback is paused; resume it before reloading audio."
-	end
 	local managers = ControllerFunctions.ChildManagers
 	local crossfade = managers and managers.Crossfade
 	if crossfade and crossfade.active then
@@ -1892,8 +1888,10 @@ local function performReloadServerMusic(): (boolean, string?)
 			return false, "The current track changed during reload; no stale playback state was committed."
 		end
 		local stateOk, current = pcall(ControllerFunctions.getAudioSnapshot)
-		if stateOk and typeof(current) == "table" and current.playing == true
-			and current.asset == asset then
+		local restoredState = if playbackPaused
+			then typeof(current) == "table" and current.paused == true
+			else typeof(current) == "table" and current.playing == true
+		if stateOk and restoredState and current.asset == asset then
 			return true, nil
 		end
 	until os.clock() >= resumeDeadline
