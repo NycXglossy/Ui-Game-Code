@@ -5,6 +5,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 local DataStoreService = game:GetService("DataStoreService")
 
 local STARTING_COINS = 0 -- Change deliberately when choosing the launch economy.
@@ -26,6 +27,19 @@ if not remote then
 	remote.Parent = folder
 end
 local shopRemote = remote :: RemoteFunction
+
+local function reportShopSignal(player: Player, signal: string)
+	local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+	local report = api and api:IsA("Folder") and api:FindFirstChild("ReportSignal")
+	if report and report:IsA("BindableFunction") then
+		local ok, accepted = pcall(function() return report:Invoke(player.UserId, signal) end)
+		if ok and accepted == true then return end
+	end
+	local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+	if replay and replay:IsA("BindableFunction") then
+		pcall(function() replay:Invoke("Record", signal, player.UserId, 0, "Warning", "ToolShopRemote", {}) end)
+	end
+end
 
 local loaded: {[number]: boolean} = {}
 local saving: {[number]: boolean} = {}
@@ -104,7 +118,10 @@ shopRemote.OnServerInvoke = function(player: Player, operation: any)
 		return {ok = false, message = "Please wait before refreshing the shop."}
 	end
 	lastShopRequestAt[player.UserId] = now
-	if operation ~= "GetShop" then return {ok = false, message = "Unsupported shop request."} end
+	if operation ~= "GetShop" then
+		reportShopSignal(player, "toolshop_operation_unsupported")
+		return {ok = false, message = "Unsupported shop request."}
+	end
 	local coins = getCoinsValue(player)
 	return {
 		ok = loaded[player.UserId] == true,
