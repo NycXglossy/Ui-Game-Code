@@ -5973,7 +5973,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			table.insert(lines, string.format("Purchase %s | ID %d | %s | %s",
 				item.source, item.itemId, item.outcome, string.sub(item.detail, 1, 90)))
 		end
-		return true, string.sub(table.concat(lines, "\n"), 1, 1700)
+		return true, string.sub(table.concat(lines, "\n"), 1, 1900)
 	end
 	if operation == "OperationalServices" then
 		local ok, services = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
