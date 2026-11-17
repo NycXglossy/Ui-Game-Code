@@ -196,6 +196,7 @@ return function(_K: any)
 			OperationalRecovery = true, OperationalReconcile = true,
 			PurchaseDiagnostics = true, SecurityReplay = true, SecurityThreatIntelligence = true,
 			StaffSpectatorEnter = true, StaffSpectatorSwitch = true, StaffSpectatorExit = true, StaffSpectatorState = true,
+			SecurityThreatCaseOpen = true,
 			OperationalMaintenance = true,
 			RequestMute = true, ClearUserQueue = true, EmergencyLock = true,
 			TrackBlock = true, ForceStop = true,
@@ -279,6 +280,9 @@ return function(_K: any)
 	register("clubmusic-spectatestate", "Show your current staff observation target.", "Administration", "StaffSpectatorState", {"cmspectatestate"})
 	register("clubmusic-security", "Show ClubMusic global security service status.", "Administration", "SecurityStatus", {"cmsecurity"})
 	register("clubmusic-incidents", "List recent ClubMusic security incidents.", "Administration", "SecurityIncidents", {"cmincidents"})
+	register("clubmusic-threatcase", "Escalate a retained threat review item into an explicit ManualReview incident for staff investigation.", "Administration", "SecurityThreatCaseOpen", {"cmthreatcase"}, {
+		{type = "string", name = "ReviewId", description = "Threat review ID from ;cmthreat, such as TTI-12.", optional = false},
+	})
 	register("clubmusic-incident", "Open a ClubMusic security incident.", "Administration", "SecurityIncidentOpen", {"cmincident"}, {
 		{type = "string", name = "Incident", description = "Incident type and summary.", optional = false},
 	})
