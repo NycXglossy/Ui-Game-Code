@@ -6062,7 +6062,7 @@ actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload
 		if replay and replay:IsA("BindableFunction") then
 			pcall(function()
 				replay:Invoke("Record", "clubmusic_remote_handler_error", player.UserId, 0,
-					"Warning", "ClubMusicRemote", {action = if typeof(action) == "string" then string.sub(action, 1, 32) else "invalid"})
+					"Warning", "ClubMusicRemote", {actionType = typeof(action)})
 			end)
 		end
 		warn("[ClubMusic] Action handler error: " .. tostring(accepted))
