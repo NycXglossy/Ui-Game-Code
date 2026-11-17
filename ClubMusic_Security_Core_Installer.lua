@@ -144,6 +144,12 @@ local globalApi = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 local spectator = spectatorExport.new({
 	authorize = function(userId, permission) return auth:Check(userId, permission) end,
 	audit = function(actorUserId, targetUserId, action)
+		local replayEndpoint = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+		if replayEndpoint and replayEndpoint:IsA("BindableFunction") then
+			pcall(function()
+				replayEndpoint:Invoke("Record", action, actorUserId, targetUserId, "Info", "StaffSpectator", {})
+			end)
+		end
 		local currentApi = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 		local auditFunction = currentApi and currentApi:FindFirstChild("RecordGlobalAuditEvent")
 		if auditFunction and auditFunction:IsA("BindableFunction") then
