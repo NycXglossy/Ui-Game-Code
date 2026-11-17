@@ -56,4 +56,5 @@ task.delay(CHECK_DELAY_SECONDS, function()
 			task.wait(1.1)
 		end
 	end
+	report("client_integrity_probe_completed")
 end)
