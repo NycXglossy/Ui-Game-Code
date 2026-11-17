@@ -1049,9 +1049,10 @@ end
 
 -- Keep failed backend retirements reachable and retry transient Destroy failures.
 -- A backend may be retired only after controller ownership has moved elsewhere.
-local retiredAudioBackends: {[any]: boolean} = {}
+local retiredAudioBackends: {[any]: string} = {}
 local function retireAudioBackend(backend: any, reason: string): boolean
 	if typeof(backend) ~= "table" then return true end
+	if retiredAudioBackends[backend] == "retrying" then return false end
 	local ok, result, detail = pcall(function()
 		return backend:Cleanup()
 	end)
@@ -1059,8 +1060,7 @@ local function retireAudioBackend(backend: any, reason: string): boolean
 		retiredAudioBackends[backend] = nil
 		return true
 	end
-	if retiredAudioBackends[backend] then return false end
-	retiredAudioBackends[backend] = true
+	retiredAudioBackends[backend] = "retrying"
 	warn("[ClubMusic][AudioBackend] Backend retirement failed (" .. reason .. "): " .. tostring(detail or result))
 	task.spawn(function()
 		for attempt = 1, 3 do
@@ -1075,7 +1075,8 @@ local function retireAudioBackend(backend: any, reason: string): boolean
 			warn("[ClubMusic][AudioBackend] Backend cleanup retry " .. tostring(attempt)
 				.. " failed (" .. reason .. "): " .. tostring(retryDetail or retryResult))
 		end
-		-- Keep the reference in the registry for diagnosis and any later retry.
+		-- Keep the reference in the registry for diagnosis and a later retry.
+		retiredAudioBackends[backend] = "pending"
 	end)
 	return false
 end
