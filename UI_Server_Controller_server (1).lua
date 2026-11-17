@@ -5788,6 +5788,44 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1700)
 	end
+	if operation == "SecurityThreatCaseOpen" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "IncidentResponse") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic incident-response permission is required."
+		end
+		if typeof(argument) ~= "string" or #argument < 5 or #argument > 24
+			or not string.match(argument, "^TTI%-%d+$") then
+			return false, "Usage: ;cmthreatcase <TTI-review-ID>"
+		end
+		local endpoint = ServerStorage:FindFirstChild("TikiTideThreatIntelligence")
+		if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= ServerStorage then
+			return false, "Threat intelligence is unavailable on this server."
+		end
+		local queryOk, allowed, reviews, queryError = pcall(function()
+			return endpoint:Invoke("Query", caller, nil, 30)
+		end)
+		if not queryOk or allowed ~= true or typeof(reviews) ~= "table" then
+			return false, if typeof(queryError) == "string" then queryError else "Threat review lookup failed."
+		end
+		local selected = nil
+		for _, item in ipairs(reviews) do
+			if typeof(item) == "table" and item.id == argument then selected = item; break end
+		end
+		if not selected then return false, "That review item is no longer retained on this server." end
+		local subjectUserId = selected.subjectUserId
+		if typeof(subjectUserId) ~= "number" or subjectUserId < 1 or subjectUserId % 1 ~= 0 then
+			return false, "A server-level review cannot be converted to a player incident."
+		end
+		local confidence = if selected.confidence == "High" then "High" else "Medium"
+		local score = if typeof(selected.score) == "number" then math.clamp(math.floor(selected.score), 0, 1000000) else 0
+		local signals = if typeof(selected.signals) == "table" then table.concat(selected.signals, ",") else "unavailable"
+		local summary = string.sub("Threat review " .. argument .. " | " .. confidence
+			.. " confidence | score " .. tostring(score) .. " | signals " .. signals, 1, 120)
+		local openOk, incidentId = ControllerFunctions.adminBridgeGlobalCall(
+			"OpenGlobalSecurityIncident", "ManualReview", summary, caller.UserId, subjectUserId)
+		if not openOk then return false, tostring(incidentId or "Incident creation failed.") end
+		return true, "Threat review converted to a ManualReview incident: " .. tostring(incidentId)
+	end
 	if operation == "SecurityIncidentOpen" then
 		if not ControllerFunctions.adminBridgeAuthorize(caller, "IncidentResponse") then
 			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
