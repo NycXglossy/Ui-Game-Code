@@ -43,6 +43,7 @@ end
 function SafeCall.new(dependencies: {[string]: any}?)
 	local d = if typeof(dependencies) == "table" then dependencies else {}
 	return setmetatable({
+		d = d,
 		serviceName = clean(d.serviceName or "ClubMusicGlobal"),
 		records = {},
 		counts = {calls = 0, failures = 0, recovered = 0},
@@ -80,6 +81,7 @@ function SafeCall:Run(serviceName: string, operation: string, callback: (...any)
 	table.insert(self.records, 1, record)
 	while #self.records > MAX_RECORDS do table.remove(self.records) end
 
+	if type(self.d.onFailure) == "function" then pcall(self.d.onFailure, service, op) end
 	local signature = service .. "|" .. op .. "|" .. err
 	if shouldWarn(self, signature, now) then
 		warn("[ClubMusic][SafeCall] Operation failed; service=" .. service
@@ -97,6 +99,7 @@ function SafeCall:RecordFailure(serviceName: string, operation: string, detail: 
 	self.lastFailure = {service = service, operation = op, error = err, traceback = err, at = now}
 	table.insert(self.records, 1, table.clone(self.lastFailure))
 	while #self.records > MAX_RECORDS do table.remove(self.records) end
+	if type(self.d.onFailure) == "function" then pcall(self.d.onFailure, service, op) end
 	local signature = service .. "|" .. op .. "|" .. err
 	if shouldWarn(self, signature, now) then
 		warn("[ClubMusic][SafeCall] Operation reported failure; service=" .. service
