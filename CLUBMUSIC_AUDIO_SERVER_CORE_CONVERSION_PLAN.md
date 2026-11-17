@@ -363,3 +363,19 @@ Next source-conversion target: consolidate the remaining playback inspection fac
 - `ServerMusicAudioHandler.luau` remains in the repository as an unreferenced rollback/reference artifact; it was not deleted. The inspected `ClubMusic_Audio_Server_Modules.rbxmx` bundle does not contain either playback facade, so the live-place direct-child `ServerStorage.MusicPlaybackManager` installation dependency still needs explicit installer/live-hierarchy reconciliation before deleting or renaming either source.
 - Static source checks confirmed the new snapshot methods, normalized snapshot path, preserved watchdog labels, and absence of active task/Heartbeat/event-loop ownership. No Luau compilation or Roblox Studio/published-server tests were performed.
 - **Remaining gate:** verify the installed `MusicPlaybackManager` ModuleScript source matches this updated standalone file, exercise watchdog quality classifications with modern AudioPlayer and legacy fallback, and confirm pause/restart/reload plus recovery before considering legacy Sound retirement.
+
+
+## Playback adapter installer reconciliation — 2026-11-16
+
+The repository installation path is now explicit for the active playback inspection adapter:
+
+- The controller's loader uses `ServerStorageForQueue = serverStorage` and performs a direct-child lookup for `MusicPlaybackManager`. It does not search `ServerStorage/ClubMusicAudioModules` for this facade.
+- The controller requires the module at `ServerStorage.MusicPlaybackManager`; a nested copy in `ClubMusicAudioModules` does not satisfy that loader.
+- `ClubMusic_Studio_CommandBar_Installer.lua` previously installed only the five server support modules inside `ServerStorage/ClubMusicAudioModules` and the client preferences module inside `ReplicatedStorage/ClubMusicClientAudioModules`. It did not provision the controller's playback adapter.
+- Updated the installer to stage and install the canonical `MusicPlaybackManager.luau` source as a direct `ServerStorage` child. The adapter source is pinned to commit `44ad160be15ac14eca7907d7158fc81bae865c67`; the five server support modules and client preferences retain their existing audited package pin.
+- The installer preflights the direct-child name and refuses to overwrite a non-ModuleScript. All six package sources and the playback adapter are downloaded and staged before installation begins.
+- Updated `CLUBMUSIC_AUDIO_STUDIO_INSTALLATION.md` to show the required direct-child placement and verification step.
+- The inspected `ClubMusic_Audio_Server_Modules.rbxmx` still does not contain `MusicPlaybackManager` or `ServerMusicAudioHandler`; no bundle regeneration was needed because the controller facade is now provisioned by the Command Bar installer separately.
+- `ServerMusicAudioHandler.luau` remains unreferenced by the controller and is not installed by the current installer. It remains a rollback/reference file; do not delete it as part of this change.
+
+**Live-place gate remains open:** the repository installer now defines the expected placement, but it cannot establish which source is currently present in an already-published place. In Studio, run the updated installer in a backed-up stopped-place copy, verify `ServerStorage.MusicPlaybackManager` is a ModuleScript with source matching the pinned standalone file, and confirm the controller starts without a module-loader error. Then exercise modern AudioPlayer quality snapshots, watchdog classifications, pause/restart/reload, recovery, and the legacy fallback path. Do not retire legacy Sound objects or delete `ServerMusicAudioHandler.luau` until those checks pass.
