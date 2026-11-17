@@ -195,7 +195,55 @@ local purchaseDiagnosticRemote = ControllerFunctions.getOrCreate(remotes, "Remot
 local purchaseDiagnosticEntries: {any} = {}
 local purchaseDiagnosticRate: {[number]: {windowAt: number, count: number}} = {}
 local PURCHASE_DIAGNOSTIC_CAPACITY = 30
+local purchaseDiagnosticStats = {
+	totalEvents = 0, promptEvents = 0, receiptEvents = 0, receiptCallbacks = 0,
+	granted = 0, pending = 0, failures = 0, lastOutcome = nil, lastAt = nil,
+	lastSuccessAt = nil, lastFailureAt = nil,
+}
+local moderationDiagnosticStats = {
+	totalLookups = 0, joinLookups = 0, retryLookups = 0,
+	successfulLookups = 0, failedLookups = 0, pendingChecks = 0,
+	bannedResults = 0, blockedResults = 0, lastLookupAt = nil,
+	lastSuccessAt = nil, lastFailureAt = nil,
+}
+local function recordModerationDiagnostic(source: string, succeeded: boolean, banned: boolean?, blocked: boolean?)
+	moderationDiagnosticStats.totalLookups += 1
+	if source == "Join" then moderationDiagnosticStats.joinLookups += 1
+	else moderationDiagnosticStats.retryLookups += 1 end
+	moderationDiagnosticStats.lastLookupAt = os.time()
+	if succeeded then
+		moderationDiagnosticStats.successfulLookups += 1
+		moderationDiagnosticStats.lastSuccessAt = moderationDiagnosticStats.lastLookupAt
+		if banned == true then moderationDiagnosticStats.bannedResults += 1 end
+		if blocked == true then moderationDiagnosticStats.blockedResults += 1 end
+	else
+		moderationDiagnosticStats.failedLookups += 1
+		moderationDiagnosticStats.pendingChecks += 1
+		moderationDiagnosticStats.lastFailureAt = moderationDiagnosticStats.lastLookupAt
+	end
+end
 local function recordPurchaseDiagnostic(source: string, userId: number, itemId: number, outcome: string, detail: string?)
+	local now = os.time()
+	purchaseDiagnosticStats.totalEvents += 1
+	purchaseDiagnosticStats.lastOutcome = string.sub(outcome, 1, 48)
+	purchaseDiagnosticStats.lastAt = now
+	if source == "ServerReceipt" then
+		purchaseDiagnosticStats.receiptEvents += 1
+		if outcome == "ProcessReceiptReached" then purchaseDiagnosticStats.receiptCallbacks += 1 end
+	else
+		purchaseDiagnosticStats.promptEvents += 1
+	end
+	if outcome == "ReceiptGranted" then
+		purchaseDiagnosticStats.granted += 1
+		purchaseDiagnosticStats.lastSuccessAt = now
+	elseif outcome == "AwaitingPlayerProfile" or outcome == "XPBoostActivationFailed"
+		or outcome == "ReceiptPersistenceFailed" then
+		purchaseDiagnosticStats.pending += 1
+		purchaseDiagnosticStats.lastFailureAt = now
+	elseif outcome == "RejectedUnregisteredProduct" then
+		purchaseDiagnosticStats.failures += 1
+		purchaseDiagnosticStats.lastFailureAt = now
+	end
 	table.insert(purchaseDiagnosticEntries, {
 		at = os.time(),
 		source = source,
@@ -4074,6 +4122,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
 	recordReceiptReplayEvent("receipt_received", userId, productId, "Info", "RobloxReceiptCallback")
 	if processedReceipts[receiptId] then
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptDuplicate", "Receipt was already granted in this server session")
 		recordReceiptReplayEvent("receipt_duplicate", userId, productId, "Info", "AlreadyGrantedInSession")
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
@@ -4137,6 +4186,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	-- A receipt already in the durable ledger was granted by an earlier callback/server.
 	-- The loaded profile already contains its reward, so never apply it twice in memory.
 	if alreadyProcessed or processedReceipts[receiptId] then
+		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptDuplicate", "Receipt was already committed in the durable ledger")
 		recordReceiptReplayEvent("receipt_duplicate", userId, productId, "Info", "AlreadyCommittedInDurableLedger")
 		rememberProcessedReceipt(receiptId)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
@@ -5295,6 +5345,42 @@ ControllerFunctions.adminBridgeReportSignal = function(caller: Player, signal: s
 	pcall(ControllerFunctions.globalInvoke, "ReportSignal", caller.UserId, signal, detail)
 end
 
+-- Server-only aggregate diagnostics bridge. It exposes counters and state only:
+-- no purchase IDs, names, raw errors, reasons, or client telemetry.
+local localDiagnosticsEndpoint = ServerStorage:FindFirstChild("GetClubMusicLocalDiagnostics")
+if localDiagnosticsEndpoint and not localDiagnosticsEndpoint:IsA("BindableFunction") then
+	localDiagnosticsEndpoint:Destroy()
+	localDiagnosticsEndpoint = nil
+end
+if not localDiagnosticsEndpoint then
+	localDiagnosticsEndpoint = Instance.new("BindableFunction")
+	localDiagnosticsEndpoint.Name = "GetClubMusicLocalDiagnostics"
+	localDiagnosticsEndpoint.Parent = ServerStorage
+end
+localDiagnosticsEndpoint.OnInvoke = function()
+	local audioSnapshot = nil
+	if type(ControllerFunctions.getAudioSnapshot) == "function" then
+		local ok, result = pcall(ControllerFunctions.getAudioSnapshot)
+		if ok and typeof(result) == "table" then audioSnapshot = result end
+	end
+	return {
+		state = if remotes:GetAttribute("Ready") == true then "Healthy" else "Starting",
+		scope = "ServerLocal",
+		purchase = table.clone(purchaseDiagnosticStats),
+		moderation = table.clone(moderationDiagnosticStats),
+		playback = {
+			backend = if typeof(audioSnapshot) == "table" then tostring(audioSnapshot.kind or "Unavailable") else "Unavailable",
+			playing = typeof(audioSnapshot) == "table" and audioSnapshot.playing == true,
+			paused = typeof(audioSnapshot) == "table" and audioSnapshot.paused == true,
+			queueDepth = #queue,
+			modernBackendConfigured = CONFIG.UseModernAudioBackend == true,
+			migrationSucceeded = modernAudioMigrationSucceeded,
+			migrationFailureCount = modernAudioMigrationFailureCount,
+		},
+		updatedAt = os.time(),
+	}
+end
+
 -- Audio validation signals contain only a fixed event name and server-known actor ID.
 -- No asset IDs, client payloads, provider metadata, or user text enter the replay timeline.
 ControllerFunctions.recordAudioValidationSignal = function(player: Player, signal: string)
@@ -6279,6 +6365,8 @@ ControllerFunctions.onJoin = function(player: Player)
 	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
 	local moderationVerified = not globalModerationRequired or (moderationCallOk and moderationLookupOk == true)
+	recordModerationDiagnostic("Join", moderationCallOk and moderationLookupOk == true,
+		globallyBanned == true, globallyBlocked == true)
 	ControllerFunctions.recordDiagnosticPulse("Moderation",
 		if not globalModerationRequired then "studio-local-moderation-isolated"
 		elseif moderationVerified then "join-moderation-verified" else "join-moderation-lookup-failed",
@@ -6316,6 +6404,7 @@ ControllerFunctions.onJoin = function(player: Player)
 				if not moderationResolved then
 					local callOk, lookupOk, banned, blocked =
 						ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+					recordModerationDiagnostic("Retry", callOk and lookupOk == true, banned == true, blocked == true)
 					if callOk and lookupOk == true then
 						ControllerFunctions.recordDiagnosticPulse("Moderation", "moderation-retry-verified", true,
 							{lookupSucceeded = true})
