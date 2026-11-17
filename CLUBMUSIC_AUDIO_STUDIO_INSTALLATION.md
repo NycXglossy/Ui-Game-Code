@@ -15,7 +15,7 @@ Audited source snapshot: `8edd537a30f002e39bd437a6d77f74e5ce66c2c6`
 
 ## Module package
 
-The current audio package contains six ModuleScripts:
+The audio support package contains six ModuleScripts, and the controller requires one additional playback adapter:
 
 **ServerStorage / ClubMusicAudioModules**
 - `ClubMusicAudioBackend`
@@ -27,7 +27,10 @@ The current audio package contains six ModuleScripts:
 **ReplicatedStorage / ClubMusicClientAudioModules**
 - `ClubMusicPlayerPreferences`
 
-Keep server-only modules in ServerStorage. Only the client preferences/routing module belongs in ReplicatedStorage.
+**ServerStorage (direct child; not inside either folder)**
+- `MusicPlaybackManager` — required by the current controller as `ServerStorage.MusicPlaybackManager`. Its canonical source is the root-level `MusicPlaybackManager.luau` file.
+
+Keep server-only modules in ServerStorage. Only the client preferences/routing module belongs in ReplicatedStorage. Do not move `MusicPlaybackManager` into `ClubMusicAudioModules`: the controller's loader currently requires it as a direct ServerStorage child.
 
 ## Runtime audio-instance placement
 
@@ -40,13 +43,13 @@ The server remains authoritative for asset selection, playback commands, readine
 
 ## Recommended installation: Command Bar installer
 
-The repository's `ClubMusic_Studio_CommandBar_Installer.lua` is pinned to the same audited source snapshot for all six modules. Prefer it over older locally saved copies of the RBXMX packages, which may contain an earlier module revision.
+The repository's `ClubMusic_Studio_CommandBar_Installer.lua` pins the six audio support modules to their audited package snapshot and pins `MusicPlaybackManager` to its current standalone source commit. Prefer it over older locally saved copies of the RBXMX packages, which may contain an earlier module revision.
 
 1. Make a backup copy of the place and stop all running test servers.
 2. In Studio, open **Game Settings → Security** and enable **Allow HTTP Requests**.
 3. Open **View → Command Bar**.
 4. Open the installer file from this branch, copy its entire contents, paste it into the Command Bar, and run it once.
-5. Confirm that the two folders and all six ModuleScripts appear under the exact parents and names listed above.
+5. Confirm that both folders and all six package ModuleScripts appear under the exact parents and names listed above, and that `MusicPlaybackManager` appears as a direct child of `ServerStorage` (not nested in `ClubMusicAudioModules`). The updated installer stages all seven source files before it changes the place.
 6. Install the matching `UI_Server_Controller_server (1).lua` and `UI_Renderer (2).lua` from this same branch snapshot. Do not mix controller, renderer, and module revisions from different snapshots.
 7. Save the place before starting the test session.
 
