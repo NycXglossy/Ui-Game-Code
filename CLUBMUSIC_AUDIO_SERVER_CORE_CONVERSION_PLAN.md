@@ -435,3 +435,14 @@ The repository installation path is now explicit for the active playback inspect
 - The manager's own generation invalidation, incoming-deck stop/cleanup, and outgoing-gain restoration remain responsible for resource rollback. A reported cleanup failure is still surfaced and is not treated as a successful cancellation.
 - Static checks confirmed both cancellation and destruction clear pending metadata before returning, and the obsolete “future transition” comment was removed.
 - **Not yet verified:** Studio interruption/cancellation behavior, including cancellation before asset readiness, during the fade, and during server shutdown; no Roblox runtime test or Luau compilation was performed.
+
+
+### Asynchronous crossfade failure reporting — 2026-11-17
+
+- **Manager commit:** `535cd0c6fa204ca8202f62ba4421e0f9202ddffc`
+- **Controller commit:** `f66518cd7ff03a3a83c15eead551c2a0691db7f6`
+- Crossfade preparation and fade work runs asynchronously after `Begin` returns. Previously, decoder readiness timeout, incoming playback/gain failures, outgoing gain failures, or controller commit rejection cancelled the transition silently.
+- Added a single failure path that invalidates the manager generation, stops and cleans the incoming deck, attempts to restore the outgoing gain, and reports the reason through the controller's warning logger. If cancellation cleanup itself reports a failure, that detail is included in the warning.
+- The same reporting path now covers synchronous incoming-deck initialization failures after the coordinator has registered the deck. The normal track-advance fallback remains controller-owned and unchanged.
+- This is diagnostic hardening only: it does not change queue ownership, transition timing, source selection, commit semantics, or guarded legacy startup fallback.
+- **Static verification required:** confirm every asynchronous abort funnels through the reporting helper, manager generation invalidation precedes cleanup, and the controller warning callback is present. No Luau compilation, Studio, or published-server test has been run for this change.
