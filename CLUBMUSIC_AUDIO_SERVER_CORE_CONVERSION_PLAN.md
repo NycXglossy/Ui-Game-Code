@@ -413,3 +413,15 @@ The repository installation path is now explicit for the active playback inspect
 - The guarded Sound remains only for initial bootstrap and modern-startup/migration failure. The next retirement work is crossfade rollback and transition cancellation; do not remove the fallback source object or client volume-routing compatibility until those consumers and public-server behavior are validated.
 - **Runtime checks required on this revision:** normal modern restart; modern reload during playback; reload while paused (must remain paused at the restored playhead); fallback startup followed by successful modern adoption; fallback startup with forced migration failure (reload must leave fallback playback untouched); watchdog report context for both source kinds; normal crossfade and interrupted crossfade.
 - **Runtime status:** static source edits and source checks only. No Luau compiler, Studio, or published-server test was run in this pass.
+
+### Modern-only crossfade commit and rollback boundary — 2026-11-17
+
+- **Controller commit:** `b1222a25010bd896b9b0844f21f0942525b397c9`
+- The dual-deck crossfade coordinator now captures and attenuates an outgoing source only when the controller-owned active source is a modern `Backend` (`AudioPlayer`). The guarded bootstrap `Sound` fallback is explicitly transition-free.
+- The controller entry point rejects crossfade requests while the guarded fallback is active and returns a clear reason; ordinary track advancement remains available and unchanged.
+- The commit callback independently revalidates the outgoing source kind and backend reference before it can stop the outgoing deck or transfer ownership. The stop/rollback transaction now uses only the backend contract: if signal binding or queue consumption fails after stopping, it restores the previous backend at its captured playhead.
+- Removed legacy Sound-specific crossfade stop, hard-mute, delayed decoder-tail cleanup, and rollback branches from the coordinator path. This does not remove the bootstrap Sound, its startup migration path, client volume compatibility, or any non-crossfade fallback behavior.
+- Existing manager generation fencing, cancellation cleanup, outgoing-gain restoration, queue-head identity check, per-server queue pop, transition token check, and global playback-only sync behavior are unchanged.
+- Static source checks confirmed fallback rejection at the entry point and gain-capture boundary, backend-only commit validation, no Sound-specific branch in the crossfade factory, and both rollback paths restoring the previous AudioPlayer backend.
+- **Not yet verified:** Luau compilation, cancellation during decoder preparation/fade, queue-head changes during fade, bind failure/queue-pop failure rollback, gain restoration after interruption, fallback normal track advance, modern crossfade, and global playback-only sync in Studio/published servers. No Roblox runtime test was performed in this pass.
+- **Next gate:** owner-run Studio tests for the listed transition cases. Keep the guarded startup Sound and remaining client compatibility until the full public-server regression gate passes.
