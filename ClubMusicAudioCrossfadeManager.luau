@@ -43,6 +43,18 @@ local function setOutgoingGain(context: any, gain: number): boolean
 	return ok and result ~= false
 end
 
+local function cancelAfterFailure(self: any, reason: string)
+	local cancelOk, cancelError = self:Cancel()
+	local detail = reason
+	if not cancelOk then
+		detail ..= " Cleanup also reported: " .. tostring(cancelError)
+	end
+	local context = self.context
+	if typeof(context) == "table" and typeof(context.OnFailure) == "function" then
+		pcall(context.OnFailure, detail)
+	end
+end
+
 function Manager.new(context)
 	assert(typeof(context) == "table", "Crossfade manager requires controller context.")
 	assert(typeof(context.CreateDeck) == "function", "Crossfade manager requires CreateDeck.")
@@ -123,12 +135,12 @@ function Manager:Begin(asset: string, duration: number)
 
 	local gainOk, gainResult, gainError = safeMethod(incoming, "SetGain", 0)
 	if not gainOk or gainResult == false then
-		self:Cancel()
+		cancelAfterFailure(self, "Could not initialize incoming deck gain.")
 		return false, tostring(gainError or "Could not initialize incoming deck gain.")
 	end
 	local assetOk, assetResult, assetError = safeMethod(incoming, "SetAsset", asset)
 	if not assetOk or assetResult == false then
-		self:Cancel()
+		cancelAfterFailure(self, "Could not assign the incoming asset.")
 		return false, tostring(assetError or "Could not assign the incoming asset.")
 	end
 
@@ -144,7 +156,7 @@ function Manager:Begin(asset: string, duration: number)
 			task.wait(0.1)
 		end
 		if self.generation ~= generation or not self.active or self.incoming ~= incoming or self.destroyed then return end
-		if not ready then self:Cancel(); return end
+		if not ready then cancelAfterFailure(self, "Incoming audio did not become ready within 8 seconds."); return end
 
 		-- Prepare early, but do not attenuate the current track until its
 		-- remaining-time window reaches the requested fade duration.
@@ -153,7 +165,7 @@ function Manager:Begin(asset: string, duration: number)
 				local remainingOk, remaining = pcall(self.context.GetRemainingTime)
 				if not remainingOk or typeof(remaining) ~= "number" or remaining ~= remaining
 					or remaining < 0 or remaining == math.huge then
-					self:Cancel()
+					cancelAfterFailure(self, "Could not read a valid remaining playback duration.")
 					return
 				end
 				if remaining <= duration then break end
@@ -163,14 +175,14 @@ function Manager:Begin(asset: string, duration: number)
 		if self.generation ~= generation or not self.active or self.incoming ~= incoming or self.destroyed then return end
 
 		local playOk, playResult = safeMethod(incoming, "Play", nil, 0)
-		if not playOk or playResult == false then self:Cancel(); return end
+		if not playOk or playResult == false then cancelAfterFailure(self, "Incoming AudioPlayer could not start."); return end
 		local elapsed = 0
 		local step = 0.05
 		while elapsed < duration and self.generation == generation and not self.destroyed do
 			local alpha = math.clamp(elapsed / duration, 0, 1)
 			local incomingOk, incomingResult = safeMethod(incoming, "SetGain", outgoingBaseGain * alpha)
-			if not incomingOk or incomingResult == false then self:Cancel(); return end
-			if not setOutgoingGain(self.context, outgoingBaseGain * (1 - alpha)) then self:Cancel(); return end
+			if not incomingOk or incomingResult == false then cancelAfterFailure(self, "Incoming deck gain update failed during crossfade."); return end
+			if not setOutgoingGain(self.context, outgoingBaseGain * (1 - alpha)) then cancelAfterFailure(self, "Outgoing deck gain update failed during crossfade."); return end
 			task.wait(step)
 			elapsed += step
 		end
@@ -178,13 +190,16 @@ function Manager:Begin(asset: string, duration: number)
 
 		local fullGainOk, fullGainResult = safeMethod(incoming, "SetGain", outgoingBaseGain)
 		if not fullGainOk or fullGainResult == false or not setOutgoingGain(self.context, 0) then
-			self:Cancel()
+			cancelAfterFailure(self, "Could not finalize crossfade gains.")
 			return
 		end
 
 		-- OnCommit must atomically transfer controller ownership or return false.
 		local commitOk, commitResult = pcall(self.context.OnCommit, incoming)
-		if not commitOk or commitResult == false then self:Cancel(); return end
+		if not commitOk or commitResult == false then
+			cancelAfterFailure(self, "Controller rejected the crossfade commit.")
+			return
+		end
 		if self.generation ~= generation or self.incoming ~= incoming then return end
 		self.incoming = nil
 		self.outgoingBaseGain = nil
