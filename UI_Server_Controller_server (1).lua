@@ -1003,7 +1003,22 @@ ControllerFunctions.applyTrackPlaybackSpeed = function(trackId: string): boolean
 	return ControllerFunctions.setAudioPlaybackSpeed(speed)
 end
 
+-- A controller mutation must not invalidate the source/revision captured by
+-- an in-flight crossfade. Cancel first so the coordinator restores the outgoing
+-- gain while its ownership guard is still valid; refuse the mutation if that
+-- restoration cannot be completed safely.
+local function cancelCrossfadeBeforeAudioMutation(reason: string): boolean
+	local managers = ControllerFunctions.ChildManagers
+	local crossfade = managers and managers.Crossfade
+	if not crossfade or (not crossfade.active and not crossfade.starting) then return true end
+	if typeof(ControllerFunctions.cancelAudioTransition) ~= "function" then return false end
+	return ControllerFunctions.cancelAudioTransition(reason) == true
+end
+
 ControllerFunctions.setAudioAsset = function(asset: string)
+	if not cancelCrossfadeBeforeAudioMutation("set-audio-asset") then
+		return false, "Active crossfade could not be safely cancelled before changing the audio asset."
+	end
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:SetAsset(asset) end
@@ -1011,6 +1026,9 @@ ControllerFunctions.setAudioAsset = function(asset: string)
 	return true, nil
 end
 ControllerFunctions.seekAudio = function(position: number)
+	if not cancelCrossfadeBeforeAudioMutation("seek-audio") then
+		return false, "Active crossfade could not be safely cancelled before seeking."
+	end
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Seek(position) end
@@ -1018,6 +1036,9 @@ ControllerFunctions.seekAudio = function(position: number)
 	return true, nil
 end
 ControllerFunctions.playAudio = function()
+	if not cancelCrossfadeBeforeAudioMutation("play-audio") then
+		return false, "Active crossfade could not be safely cancelled before playback restart."
+	end
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Play() end
@@ -1025,6 +1046,9 @@ ControllerFunctions.playAudio = function()
 	return true, nil
 end
 ControllerFunctions.stopAudio = function()
+	if not cancelCrossfadeBeforeAudioMutation("stop-audio") then
+		return false, "Active crossfade could not be safely cancelled before stopping playback."
+	end
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Stop() end
@@ -1032,6 +1056,9 @@ ControllerFunctions.stopAudio = function()
 	return true, nil
 end
 ControllerFunctions.pauseAudio = function()
+	if not cancelCrossfadeBeforeAudioMutation("pause-audio") then
+		return false, "Active crossfade could not be safely cancelled before pausing playback."
+	end
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Pause() end
@@ -1040,6 +1067,9 @@ ControllerFunctions.pauseAudio = function()
 	return true, nil, if ControllerFunctions.isFiniteNumber(position) then math.max(0, position) else nil
 end
 ControllerFunctions.resumeAudio = function()
+	if not cancelCrossfadeBeforeAudioMutation("resume-audio") then
+		return false, "Active crossfade could not be safely cancelled before resuming playback."
+	end
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Resume() end
