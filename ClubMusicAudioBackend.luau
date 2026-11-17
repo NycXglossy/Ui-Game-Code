@@ -386,9 +386,21 @@ function Backend:GetPlayer(): AudioPlayer?
 end
 
 function Backend:Cleanup(): (boolean, string?)
-	if self.destroyed then return true, nil end
-	self.destroyed = true
 	local cleanupErrors = {}
+	local pending = {}
+	if self.destroyed then
+		for _, instance in ipairs(self.cleanupPending or {}) do
+			local ok = pcall(function() instance:Destroy() end)
+			if not ok then
+				table.insert(pending, instance)
+				table.insert(cleanupErrors, "A previously failed AudioPlayer graph instance still could not be destroyed.")
+			end
+		end
+		self.cleanupPending = pending
+		if #pending > 0 then return false, table.concat(cleanupErrors, " ") end
+		return true, nil
+	end
+	self.destroyed = true
 	local root = self.root
 	local owned = {}
 	if self.player then table.insert(owned, self.player) end
@@ -402,18 +414,18 @@ function Backend:Cleanup(): (boolean, string?)
 		rootOk = pcall(function() root:Destroy() end)
 		if not rootOk then
 			table.insert(cleanupErrors, "Audio graph root destruction failed.")
+			table.insert(pending, root)
 		end
 	end
-	-- If the root failed to destroy, independently release every retained
-	-- child reference so a partial engine failure cannot orphan the graph.
+	-- If the root failed or was already unavailable, independently release
+	-- each retained child and preserve failed references for a later retry.
 	if not rootOk then
 		for index = #owned, 1, -1 do
 			local instance = owned[index]
-			if instance then
-				local childOk = pcall(function() instance:Destroy() end)
-				if not childOk then
-					table.insert(cleanupErrors, "An AudioPlayer graph child could not be destroyed.")
-				end
+			local childOk = pcall(function() instance:Destroy() end)
+			if not childOk then
+				table.insert(pending, instance)
+				table.insert(cleanupErrors, "An AudioPlayer graph child could not be destroyed.")
 			end
 		end
 	end
@@ -422,6 +434,7 @@ function Backend:Cleanup(): (boolean, string?)
 	self.fader = nil
 	self.equalizer = nil
 	table.clear(self.wires)
+	self.cleanupPending = pending
 	if #cleanupErrors > 0 then return false, table.concat(cleanupErrors, " ") end
 	return true, nil
 end
