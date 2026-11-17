@@ -167,6 +167,7 @@ function TeleportValidationService.Complete(ticketId: any, actor: any, target: a
 		emit("TeleportDestinationMismatch", ticket.targetUserId, ticket.origin)
 		return false, "Observed position did not match the authorized destination."
 	end
+	emit("TeleportVerified", ticket.targetUserId, ticket.origin)
 	return true, ticket.origin
 end
 
