@@ -776,7 +776,12 @@ local safeCallModule = loadOptionalGlobalModule("ClubMusic_Global_SafeCall_Servi
 local globalSafeCall: any = nil
 if safeCallModule then
 	local safeOk, safeInstance = pcall(function()
-		return safeCallModule.new({serviceName = "ClubMusicGlobal", onFailure = function(serviceName, operation)\n\t\t\trecordThreatIntelligence("safe_call_failed", 0, "SafeCall", "Warning")\n\t\tend})
+		return safeCallModule.new({
+			serviceName = "ClubMusicGlobal",
+			onFailure = function(_serviceName, _operation)
+				recordThreatIntelligence("safe_call_failed", 0, "SafeCall", "Warning")
+			end,
+		})
 	end)
 	if safeOk and typeof(safeInstance) == "table"
 		and type(safeInstance.Run) == "function"
@@ -948,10 +953,16 @@ if diagnosticsModule then
 			getAdaptiveLoadStatus = function() return readServerStorageStatus("GetTikiTideSecurityLoadStatus") end,
 			getSecurityReplayStatus = function() return readServerStorageStatus("GetTikiTideSecurityReplayStatus") end,
 			getThreatIntelligenceStatus = function() return readServerStorageStatus("GetTikiTideThreatIntelligenceStatus") end,
+			getControllerDiagnostics = function() return readServerStorageStatus("GetClubMusicLocalDiagnostics") end,
 			getSafeCallStatus = function()
 				if not globalSafeCall then return nil end
 				local result = globalSafeCall:GetStatus()
-				result.state = "Healthy"
+				local failure = result.lastFailure
+				local success = result.lastSuccess
+				local failureIsLatest = typeof(failure) == "table"
+					and (typeof(success) ~= "table" or (tonumber(failure.at) or 0) > (tonumber(success.at) or 0))
+				result.state = if failureIsLatest then "Degraded" else "Healthy"
+				result.detail = if failureIsLatest then "The most recent protected operation ended in failure." else "Protected operation history has no unresolved latest failure."
 				return result
 			end,
 		})
@@ -1277,6 +1288,8 @@ bindFunction("GetGlobalOperationalStatus", function()
 		AdaptiveLoad = readServerStorageStatus("GetTikiTideSecurityLoadStatus"),
 		SecurityReplay = readServerStorageStatus("GetTikiTideSecurityReplayStatus"),
 		ThreatIntelligence = readServerStorageStatus("GetTikiTideThreatIntelligenceStatus"),
+		Controller = readServerStorageStatus("GetClubMusicLocalDiagnostics"),
+		CharacterPhysics = readServerStorageStatus("GetTikiTideCharacterPhysicsGuardStatus"),
 		SafeCall = if globalSafeCall then globalSafeCall:GetStatus() else {state = "Unavailable"},
 		ErrorHistory = if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function" then globalErrorHandler.GetStatus() else {state = "Unavailable"},
 		ServiceRegistry = if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "NotInstalled"},
