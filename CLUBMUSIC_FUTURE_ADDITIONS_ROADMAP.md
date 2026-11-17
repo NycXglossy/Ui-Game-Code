@@ -436,3 +436,23 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [ ] Profile overhead and complete published-server gameplay regression tests.
 
 **Trust boundary:** this checks dependency presence only. A client can suppress or forge reports; a completed probe is not proof of untampered code, and absence of a report is not evidence of cheating. The server remains authoritative. See CLUBMUSIC_PHASE18_CLIENT_INTEGRITY_TELEMETRY.md.
+
+
+## Phase 19 — Server-Authoritative Movement & Action Validation Audit
+
+**Status:** Source audit and narrow ledger hardening committed; Studio and published-server acceptance remains open.
+
+- [x] Audit CharacterPhysicsGuard, MovementAuthority, TeleportValidationService, Tiki Tide Settings movement/teleport actions, Utility Bar Size/Mount, and installer integration.
+- [x] Confirm the existing movement registration paths for Tiki Tide WalkSpeed/JumpPower/WorldGravity and Utility Bar BodyScale.
+- [x] Harden MovementAuthority.Check so departed player targets cannot retain usable grants.
+- [x] Restrict the special `ANY` check to the Fling marker.
+- [x] Document that CharacterPhysicsGuard is detection-only and does not enforce movement, validate paths/displacement, or prove client integrity.
+- [x] Document the Tiki Tide Settings TeleportTo consent, permission, cooldown, ticket, identity, and destination checks.
+- [ ] Verify external Kohl's Admin, flight, vehicle/mount, knockback, freeze, and staff movement call paths before claiming coverage.
+- [ ] Test respawn, latency, network ownership, legitimate launch/knockback, vehicles, and PC/mobile/console movement in Studio and published servers.
+- [ ] Adversarially test client movement tampering, teleport replay, ticket expiry, destination mismatch, and unauthorized action attempts.
+- [ ] Profile observer/ledger overhead and complete the gameplay regression matrix.
+
+**Important limitations:** no automatic movement correction, kick, ban, freeze, or gameplay restriction is introduced. Physics anomalies are detection signals only. Do not enable velocity-based enforcement until legitimate movement and network ownership behavior has been measured. No Roblox runtime or exploit tests are claimed by the source commit.
+
+**Implementation note:** see `CLUBMUSIC_PHASE19_MOVEMENT_ACTION_VALIDATION.md`.
