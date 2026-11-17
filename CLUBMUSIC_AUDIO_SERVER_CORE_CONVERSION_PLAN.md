@@ -154,6 +154,33 @@ Spatial routing remains a separate optional server resource service. Client pref
 - Verify the installed ModuleScript names, source hashes, and server-only placement.
 - Do not leave standalone and embedded copies drifting.
 
+## DJ session and backend configuration boundary audit (2026-11-16)
+
+### DJ session manager — retain as a separate server-only lifecycle module
+
+- The controller loads `ClubMusicDJSessionManager` through `findAudioModule`, supporting the direct ServerStorage location or `ServerStorage/ClubMusicAudioModules`. It is optional: if absent or initialization fails, session commands report that the module is unavailable rather than inventing a fallback authority.
+- The controller injects both callbacks. `Authorize` checks that the player is still connected and calls `ControllerFunctions.isStaff`; `isStaff` derives its level from `authorizationService:GetLevel(player)`.
+- `authorizationService` is obtained from `ServerStorage/ClubMusicSecurityCore/Authorization` via `GetShared`. If unavailable, rank level resolves to zero and staff checks fail closed. The DJ session module contains no role table, group-rank lookup, or independent permission cache.
+- `OnHandoff` verifies both players remain connected and staff-authorized before updating their `ClubMusicActiveDJSession` attributes. The manager changes its current-session record only after that callback accepts the handoff.
+- Session state and bounded history (50 entries) remain local to the manager. The controller handles Start, Handoff, End, status display, and player-departure cleanup. The manager does not own the audio backend, queue, playlist rotation, playback, or transition state.
+- **Decision:** keep `ClubMusicDJSessionManager` separate in ServerStorage. Folding it into the controller would add coupling without removing a duplicate authority or meaningful backend configuration. Preserve its injected SecurityCore-backed authorization and controller-owned handoff callback.
+
+### Audio quality profiles — keep separate, currently dormant
+
+- `ClubMusicAudioQualityProfiles` is a small validated profile catalog (Standard, Soft, Bass, Night) that applies a coordinated playback-speed, server-gain, and equalizer tuple to an injected backend context.
+- The current controller source does not require or reference `ClubMusicAudioQualityProfiles`; the module is provisioned by the package installer but is not an active controller runtime dependency in this branch.
+- The profile module has no independent audio-instance ownership and does not contain per-player output preferences. Its server gain/EQ/speed settings are shared backend settings; client-local volume/mute remains in `ClubMusicPlayerPreferences`.
+- **Decision:** do not fold profile definitions into `ClubMusicAudioBackend`. Backend methods remain low-level validated controls; profile selection/application is a distinct policy layer. Do not describe the profile feature as active until a controller or UI consumer is deliberately connected and tested. Keep the standalone and bundled source as a dormant compatibility module pending a separate product decision.
+
+### Source and installer consistency
+
+- Compared all five standalone server audio modules against the exact installer-pinned source revision `8edd537a30f002e39bd437a6d77f74e5ce66c2c6`: backend, crossfade manager, quality profiles, DJ session manager, and spatial graph all match byte-for-byte.
+- Compared the embedded `ClubMusicAudioQualityProfiles` and `ClubMusicDJSessionManager` ModuleScript sources in `ClubMusic_Audio_Server_Modules.rbxmx` against their standalone files: both match byte-for-byte.
+- The installer creates five server ModuleScripts in `ServerStorage/ClubMusicAudioModules` and one client ModuleScript in `ReplicatedStorage/ClubMusicClientAudioModules`. The controller's module lookup supports the installed folder layout.
+- **Decision:** no installer, bundle, or module-source rewrite is required for this audit. Keep the existing pinned installer snapshot because its five server module sources match the current branch. Do not regenerate or re-pin bundles without a source change that requires it.
+
+**Audit outcome:** the DJ session boundary is appropriately separate and SecurityCore-backed; the quality-profile module is provisioned but not currently consumed by the controller; backend low-level controls remain in the backend; and standalone, embedded, and installer-pinned sources are aligned for the five server audio modules. No runtime code was changed. Roblox Studio and published-server verification remain outstanding.
+
 ## Required runtime acceptance matrix
 
 - Startup and first track; track change; natural end; silent/catalog-only track.
