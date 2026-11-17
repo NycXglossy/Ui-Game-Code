@@ -15,6 +15,8 @@ local PING_SAMPLE_SECONDS = 5
 local SLOW_FRAME_SECONDS = 0.05
 local SEVERE_FRAME_SECONDS = 0.1
 local MAX_BUCKETS = 64
+local MEMORY_STALE_SECONDS = 45
+local PING_STALE_SECONDS = 15
 
 local function finite(value: any): boolean
 	return type(value) == "number" and value == value and value >= 0 and value < math.huge
@@ -146,6 +148,8 @@ function Service:GetStatus(): {[string]: any}
 	end
 	local averageDelta = if frames > 0 then totalDelta / frames else nil
 	local fps = if averageDelta and averageDelta > 0 then 1 / averageDelta else nil
+	local memoryAge = if self.memorySampleAt then math.max(0, os.time() - self.memorySampleAt) else nil
+	local pingAge = if self.pingSampleAt then math.max(0, os.time() - self.pingSampleAt) else nil
 	return {
 		state = if frames > 0 then "Available" else "Starting",
 		scope = "ClientLocalUntrusted",
@@ -159,13 +163,21 @@ function Service:GetStatus(): {[string]: any}
 		slowFrameCount = slow,
 		severeFrameCount = severe,
 		memory = {
-			usageMb = self.memoryMb,
+			state = if self.memoryError then "Unavailable" elseif memoryAge and memoryAge > MEMORY_STALE_SECONDS then "Stale"
+				elseif self.memoryMb ~= nil then "Measured" else "Starting",
+				usageMb = self.memoryMb,
 			sampledAt = self.memorySampleAt,
+			ageSeconds = memoryAge,
+			staleAfterSeconds = MEMORY_STALE_SECONDS,
 			lastError = self.memoryError,
 		},
 		ping = {
+			state = if self.pingError then "Unavailable" elseif pingAge and pingAge > PING_STALE_SECONDS then "Stale"
+				elseif self.pingMs ~= nil then "Measured" else "Starting",
 			milliseconds = self.pingMs,
 			sampledAt = self.pingSampleAt,
+			ageSeconds = pingAge,
+			staleAfterSeconds = PING_STALE_SECONDS,
 			lastError = self.pingError,
 		},
 		uptimeSeconds = math.max(0, now - self.startedAt),
