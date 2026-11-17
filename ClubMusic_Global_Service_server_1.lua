@@ -912,6 +912,12 @@ local function readServerStorageStatus(endpointName: string, action: string?)
 	if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= ServerStorage then
 		return {state = "NotInstalled", available = false}
 	end
+	-- BindableFunction:Invoke() yields indefinitely if OnInvoke has not been
+	-- assigned. Optional diagnostics providers can be created before their
+	-- owning service finishes bootstrapping, so never invoke an unbound endpoint.
+	if type(endpoint.OnInvoke) ~= "function" then
+		return {state = "Starting", available = false, detail = "Status callback is not bound yet."}
+	end
 	local ok, result = pcall(function()
 		if action then return endpoint:Invoke(action) end
 		return endpoint:Invoke()
