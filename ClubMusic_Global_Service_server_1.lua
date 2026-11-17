@@ -1341,9 +1341,10 @@ bindFunction("RecordLocalWatchdogPulse", function(name: any, detail: any, health
 	end
 	return recorded
 end)
-bindFunction("RecordGlobalMetric", function(name: any, value: any, latencySeconds: any)
-	if not globalDiagnosticsService or typeof(name) ~= "string" or #name > 48 then return false end
-	return globalDiagnosticsService:Record(name, value, latencySeconds)
+bindFunction("RecordGlobalMetric", function(name: any, value: any, latencySeconds: any, outcome: any)
+	if not globalDiagnosticsService or typeof(name) ~= "string" or #name > 48
+		or (outcome ~= nil and outcome ~= "Success" and outcome ~= "Failure" and outcome ~= "Observed") then return false end
+	return globalDiagnosticsService:Record(name, value, latencySeconds, outcome)
 end)
 bindFunction("RecordGlobalAuditEvent", function(kind: any, actorUserId: any, target: any, action: any)
 	if not globalAuditService then return false end
