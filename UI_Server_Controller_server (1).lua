@@ -5802,6 +5802,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local adaptiveLoad = if typeof(services.adaptiveLoad) == "table" then services.adaptiveLoad else {}
 		local securityReplay = if typeof(services.securityReplay) == "table" then services.securityReplay else {}
 		local safeCall = if typeof(services.safeCall) == "table" then services.safeCall else {}
+		local threatIntelligence = if typeof(services.threatIntelligence) == "table" then services.threatIntelligence else {}
 		local _, globalOperational = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
 		local messaging = if typeof(globalOperational) == "table" and typeof(globalOperational.Messaging) == "table" then globalOperational.Messaging else {}
 		local memoryStore = if typeof(services.memoryStore) == "table" then services.memoryStore else {}
@@ -5829,6 +5830,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " (" .. tostring(securityReplay.retained or 0) .. "/" .. tostring(securityReplay.capacity or 0) .. ")",
 			"SafeCall: " .. tostring(safeCall.calls or 0) .. " calls | failures "
 				.. tostring(safeCall.failures or 0) .. " | recovered " .. tostring(safeCall.recovered or 0),
+			"Threat intelligence: " .. tostring(threatIntelligence.state or "NotInstalled")
+				.. " | review items " .. tostring(threatIntelligence.openReviewItems or 0)
+				.. "/" .. tostring(threatIntelligence.maxReviewItems or 0)
+				.. " | tracked subjects " .. tostring(threatIntelligence.trackedSubjects or 0),
 			"SecurityCore health: " .. tostring(securityHealth.state or "Unavailable")
 				.. " (" .. tostring(securityHealth.observedComponents or 0) .. "/" .. tostring(securityHealth.totalComponents or 0) .. " observed)"
 				.. " | Auth " .. tostring(securityComponents.authorization or "Unavailable")
