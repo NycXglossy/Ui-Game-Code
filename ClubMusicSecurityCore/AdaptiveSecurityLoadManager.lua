@@ -18,8 +18,8 @@ local TASK_POLICIES = {
 		Critical = {rate = 0, burst = 0},
 	},
 	ReplayQueries = {
-		Normal = {rate = 0.2, burst = 1},
-		Reduced = {rate = 0.05, burst = 0.25},
+		Normal = {rate = 0.5, burst = 2},
+		Reduced = {rate = 0.1, burst = 1},
 		Critical = {rate = 0, burst = 0},
 	},
 	AnalyticsAggregation = {
