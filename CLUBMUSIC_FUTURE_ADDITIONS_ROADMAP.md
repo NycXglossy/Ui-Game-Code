@@ -306,3 +306,26 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 **Exit criteria:** bounded memory, server-only record access, permission-checked review, complete adapters for confirmed security event sources, and successful runtime/performance tests.
 
 **Implementation note:** see `CLUBMUSIC_PHASE12_REPLAY_BEHAVIORAL_ANALYTICS.md`.
+
+## Phase 13 — Adaptive Security Load Manager
+
+**Current status: Implemented in source for server-heartbeat-driven optional-work budgeting; runtime/load verification remains open.**
+
+- [x] Add a server-only adaptive workload manager with bounded five-second Heartbeat sampling and Normal/Reduced/Critical modes.
+- [x] Add hysteresis for overload entry and staged recovery to avoid rapid mode flapping.
+- [x] Define bounded budgets for optional diagnostics sampling, replay queries, analytics aggregation, and background maintenance.
+- [x] Guarantee essential validation, authorization, rate limiting, purchase receipt processing, moderation enforcement, and security-event recording are never throttled.
+- [x] Expose status, budget lookup, and token consumption only through ServerStorage BindableFunctions; add no client remotes.
+- [x] Gate staff replay queries under the optional ReplayQueries budget while leaving replay event recording available in every mode.
+- [x] Record load-mode transitions in the existing bounded replay timeline without user text or client-provided metadata.
+- [x] Add installer staging and pin the release source to the module commit.
+- [ ] Test threshold transitions, hysteresis, token refill/burst limits, and essential-task bypass in Studio.
+- [ ] Test replay review behavior under Normal, Reduced, and Critical load.
+- [ ] Profile Heartbeat callback overhead, memory footprint, and gameplay behavior in Studio and published servers.
+- [ ] Verify installer rollback and shutdown disconnect the manager without duplicate services.
+
+**Important limitations:** the automatic signal currently measures server Heartbeat delay only; it does not directly measure total memory, network saturation, CPU utilization, or DataStore queue depth. Existing ResourceGuard and StorageGuard remain authoritative for storage limits. Only replay queries are budget-gated in this phase; other optional subsystems require reviewed call-site integrations. No essential security path is throttled and no automatic moderation enforcement is added.
+
+**Exit criteria:** bounded server-only operation, stable mode transitions, optional-work throttling under pressure, essential-path availability in every mode, successful replay-query behavior, and passing Studio/published-server load tests.
+
+**Implementation note:** see `CLUBMUSIC_PHASE13_ADAPTIVE_SECURITY_LOAD_MANAGER.md`.
