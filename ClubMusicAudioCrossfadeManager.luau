@@ -43,6 +43,13 @@ local function setOutgoingGain(context: any, gain: number): boolean
 	return ok and result ~= false
 end
 
+local function notifySettled(self: any, outcome: string)
+	local context = self.context
+	if typeof(context) == "table" and typeof(context.OnSettled) == "function" then
+		pcall(context.OnSettled, outcome)
+	end
+end
+
 local function cancelAfterFailure(self: any, reason: string)
 	local cancelOk, cancelError = self:Cancel()
 	local detail = reason
@@ -92,9 +99,10 @@ function Manager:Cancel(): (boolean, string?)
 	if typeof(restoreGain) == "number" and not setOutgoingGain(self.context, restoreGain) then
 		restoreFailed = true
 	end
-	if cleanupFailed or restoreFailed then
-		return false, if restoreFailed then "Outgoing gain restoration failed." else "Incoming deck cleanup failed."
-	end
+	local cancelError = if restoreFailed then "Outgoing gain restoration failed."
+		else if cleanupFailed then "Incoming deck cleanup failed." else nil
+	notifySettled(self, "cancelled")
+	if cancelError then return false, cancelError end
 	return true, nil
 end
 
@@ -204,6 +212,7 @@ function Manager:Begin(asset: string, duration: number)
 		self.incoming = nil
 		self.outgoingBaseGain = nil
 		self.active = false
+		notifySettled(self, "committed")
 	end)
 	return true, nil
 end
