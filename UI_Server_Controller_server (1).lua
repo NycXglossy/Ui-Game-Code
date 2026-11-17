@@ -5991,7 +5991,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " rejected " .. tostring(readLane.rejected or 0)
 				.. " | storage circuit open " .. tostring(storageGuard.circuitOpen == true)
 				.. " failures " .. tostring(storageGuard.failuresInWindow or 0),
-			"Client telemetry: " .. tostring(clientTelemetry.state or "Unavailable")
+			"Client performance telemetry: " .. tostring(clientTelemetry.state or "Unavailable")
 				.. " | local-only, untrusted, not transmitted",
 			"Client integrity reports are untrusted dependency observations; absence is not proof of tampering.",
 			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s):",
