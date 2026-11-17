@@ -1351,12 +1351,23 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 	local context = {
 		CreateDeck = function()
 			local deck = BackendClass.new({ Name = "ClubMusicCrossfadeDeck", Parent = game:GetService("SoundService"), InitialGain = 0 })
-			local incomingTrackId = if typeof(pendingCrossfadeEntry) == "table"
-				then tostring(pendingCrossfadeEntry.trackId or "") else ""
-			local player = deck:GetPlayer()
-			if player then
+			local setupOk, setupError = pcall(function()
+				local incomingTrackId = if typeof(pendingCrossfadeEntry) == "table"
+					then tostring(pendingCrossfadeEntry.trackId or "") else ""
+				local player = deck:GetPlayer()
+				if not player then error("Incoming AudioPlayer instance is unavailable.") end
 				local trim = getTrackVolumeTrim(incomingTrackId)
 				if ControllerFunctions.isFiniteNumber(trim) then player.Volume = math.clamp(trim, 0.01, 10) end
+			end)
+			if not setupOk then
+				local cleanupOk, cleanupResult, cleanupError = pcall(function()
+					return deck:Cleanup()
+				end)
+				if not cleanupOk or cleanupResult == false then
+					warn("[ClubMusic][Crossfade] Partially configured incoming deck cleanup failed: "
+						.. tostring(cleanupError or cleanupResult))
+				end
+				error("Incoming deck setup failed: " .. tostring(setupError))
 			end
 			return deck
 		end,
