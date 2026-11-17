@@ -1380,6 +1380,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				or activeAudioSource ~= transitionOutgoing or audioSourceRevision ~= transitionRevision then return false end
 			return ControllerFunctions.setAudioGain(value, transitionOutgoing)
 		end,
+		OnFailure = function(message: string)
+			warn("[ClubMusic][Crossfade] Transition was cancelled safely: " .. tostring(message))
+		end,
 		OnCommit = function(incoming: any): boolean
 			local outgoing = transitionOutgoing
 			local entry = pendingCrossfadeEntry
