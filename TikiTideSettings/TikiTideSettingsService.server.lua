@@ -574,8 +574,24 @@ local function handleRequest(player: Player, action: any, payload: any)
 end
 
 request.OnServerInvoke = function(player: Player, action: any, payload: any)
+	if typeof(action) ~= "string" or #action < 1 or #action > 40 then
+		local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+		if replay and replay:IsA("BindableFunction") then
+			pcall(function()
+				replay:Invoke("Record", "settings_remote_invalid_action", player.UserId, 0,
+					"Warning", "TikiTideSettingsRemote", {actionType = typeof(action)})
+			end)
+		end
+	end
 	local ok, result = pcall(handleRequest, player, action, payload)
 	if not ok then
+		local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+		if replay and replay:IsA("BindableFunction") then
+			pcall(function()
+				replay:Invoke("Record", "settings_remote_handler_error", player.UserId, 0,
+					"Warning", "TikiTideSettingsRemote", {action = if typeof(action) == "string" then string.sub(action, 1, 40) else "invalid"})
+			end)
+		end
 		warn("[Tiki Tide] Request failed: " .. tostring(result))
 		return fail("The settings request could not be completed.")
 	end
