@@ -298,7 +298,7 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [ ] Test authorization, filters, overflow, cleanup, bounded memory, and event fidelity in Studio and published servers.
 - [ ] Measure overhead under load and verify it does not degrade essential validation or existing gameplay.
 
-**Important limitations:** this is a per-server in-memory event timeline, not durable or cross-server history. It does not capture every frame or full-session video, does not alter threat scores, and does not enforce moderation. Only the two listed event sources are currently wired.
+**Important limitations:** this is a per-server in-memory event timeline, not durable or cross-server history. It does not capture every frame or full-session video, does not alter threat scores, and does not enforce moderation. Current adapters cover CharacterPhysicsGuard, TeleportValidationService failure signals, AvatarAccessoryValidationService signals, authoritative ProcessReceipt lifecycle outcomes, and StaffSpectatorService lifecycle events.
 
 **Exit criteria:** bounded memory, server-only record access, permission-checked review, complete adapters for confirmed security event sources, and successful runtime/performance tests.
 
