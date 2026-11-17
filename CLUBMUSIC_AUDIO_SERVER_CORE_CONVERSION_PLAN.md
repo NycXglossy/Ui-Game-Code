@@ -59,6 +59,16 @@ The five core sources above are stored as ModuleScripts in `ClubMusic_Audio_Serv
 - `MusicValidationService.lua` is the controller's current expected validation module.
 - `MusicValidationService.luau` is a second implementation with a separate legacy dependency. Retire it only after all repository, bundle, installer, and live-place consumers are mapped. Do not duplicate SecurityCore rate limiting or authorization in either validator.
 
+#### Consumer audit — queue and validation (2026-11-16)
+
+- The runtime controller requires only the direct child `ServerStorage.MusicQueueManager`; it does not require `MusicQueueManagerService` directly. The `.lua` adapter requires the direct child `ServerStorage.MusicQueueManagerService` and injects the controller-owned queue and request-slot release callback.
+- Controller queue call sites use `Insert`, `PopNext`, `RemoveAt(index, true)`, `Clear(true)`, and `ClearAutomatic`. The service implements those operations over the injected table. `PopNext` releases the removed request slot; explicit `true` removals and clears release slots; `ClearAutomatic` preserves player requests and does not release player request slots.
+- `MusicQueueManager.luau` retains a second config-backed queue and per-player counters. It is not loaded by the controller. The inspected ServerStorage and Audio Server RBXMX bundles do not contain either queue-manager name, and the inspected audio and SecurityCore installers do not install either queue module. Keep the legacy `.luau` source as a rollback artifact until the actual live-place ServerStorage hierarchy is confirmed.
+- The controller requires only `ServerStorage.MusicValidationService`. Its live API contract is `GetAudioAssetInfo(assetId)` followed by `NormalizeAudioMetadata(assetId, info, duration)` after the controller independently preloads an `AudioPlayer` and confirms playability. The `.lua` service previously lacked `NormalizeAudioMetadata`; this audit added the bounded metadata-shaping method expected by the controller, without moving preload/playability checks into the cache service.
+- `MusicValidationService.luau` is not loaded by the controller and contains extra legacy music-ID, spam, cooldown, player-validation, and `RoleSystem` logic. Those responsibilities remain outside the canonical metadata cache; request limits and authorization stay with the controller and SecurityCore.
+- The inspected ServerStorage and Audio Server RBXMX bundles and the audio/SecurityCore installers contain no `MusicValidationService` source reference. Keep the `.luau` duplicate as a rollback artifact until live-place hierarchy reconciliation is complete.
+- No repository deletion was made: the controller-facing adapter and service pair are the canonical queue path; `MusicValidationService.lua` is the canonical metadata path. Both legacy `.luau` variants remain unreferenced rollback candidates, not approved live runtime dependencies.
+
 ### Client-only boundary
 
 `ClubMusicPlayerPreferences.luau`, bundled in `ClubMusic_Audio_Client_Modules.rbxmx`, remains client-side. It may own local output preferences only. No server authority, permissions, queue mutation, playlist persistence, DJ sessions, or recovery logic should move to the client.
