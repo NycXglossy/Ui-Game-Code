@@ -197,7 +197,7 @@ local purchaseDiagnosticRate: {[number]: {windowAt: number, count: number}} = {}
 local PURCHASE_DIAGNOSTIC_CAPACITY = 30
 local purchaseDiagnosticStats = {
 	totalEvents = 0, promptEvents = 0, receiptEvents = 0, receiptCallbacks = 0,
-	granted = 0, pending = 0, failures = 0, lastOutcome = nil, lastAt = nil,
+	granted = 0, pending = 0, failures = 0, duplicates = 0, lastOutcome = nil, lastAt = nil,
 	lastSuccessAt = nil, lastFailureAt = nil,
 }
 local moderationDiagnosticStats = {
@@ -243,6 +243,8 @@ local function recordPurchaseDiagnostic(source: string, userId: number, itemId: 
 	elseif outcome == "RejectedUnregisteredProduct" then
 		purchaseDiagnosticStats.failures += 1
 		purchaseDiagnosticStats.lastFailureAt = now
+	elseif outcome == "ReceiptDuplicate" then
+		purchaseDiagnosticStats.duplicates += 1
 	end
 	table.insert(purchaseDiagnosticEntries, {
 		at = os.time(),
@@ -5948,7 +5950,8 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Purchase: receipts " .. tostring(purchase.receiptCallbacks or 0)
 				.. " | granted " .. tostring(purchase.granted or 0)
 				.. " | pending " .. tostring(purchase.pending or 0)
-				.. " | failures " .. tostring(purchase.failures or 0),
+				.. " | failures " .. tostring(purchase.failures or 0)
+				.. " | duplicates " .. tostring(purchase.duplicates or 0),
 			"Moderation lookups: " .. tostring(moderation.totalLookups or 0)
 				.. " | success " .. tostring(moderation.successfulLookups or 0)
 				.. " | failed/pending " .. tostring(moderation.failedLookups or 0),
@@ -6392,8 +6395,10 @@ ControllerFunctions.onJoin = function(player: Player)
 	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
 	local moderationVerified = not globalModerationRequired or (moderationCallOk and moderationLookupOk == true)
-	recordModerationDiagnostic("Join", moderationCallOk and moderationLookupOk == true,
-		globallyBanned == true, globallyBlocked == true)
+	if globalModerationRequired then
+		recordModerationDiagnostic("Join", moderationCallOk and moderationLookupOk == true,
+			globallyBanned == true, globallyBlocked == true)
+	end
 	ControllerFunctions.recordDiagnosticPulse("Moderation",
 		if not globalModerationRequired then "studio-local-moderation-isolated"
 		elseif moderationVerified then "join-moderation-verified" else "join-moderation-lookup-failed",
