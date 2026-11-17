@@ -491,3 +491,5 @@ The repository installation path is now explicit for the active playback inspect
 - Static source checks only. Studio tests must verify no ClubMusicCrossfadeDeck roots or child instances accumulate after repeated transitions, injected setup failures, cancellation, and manager teardown. No Luau compilation or Roblox runtime verification is claimed.
 
 - **Teardown follow-ups:** `c91e6e437c6d349cc61b3c3f15da346cd70b1461` and `68bc1f78e87edcd57797c513bf228b6f77e0271a` make child fallback teardown work even when the root reference is unavailable and preserve sparse child references safely.
+
+- **Cleanup retry follow-up:** `93d5e8e8eeb314f993f368a3b669cf778dff9f1a` retains references to instances whose Destroy call fails and retries those instances on a subsequent Cleanup call, rather than dropping the only references after a failed teardown attempt.
