@@ -10,9 +10,9 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "7e969f58d86689096360a5f38021006830a62d40"
+local RELEASE_COMMIT = "ce3046ee0de3732e3551176302deda1f849a5bb8"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
-local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence", "HoneypotManager"}
+local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence", "HoneypotManager", "ClientIntegrityTelemetry"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 local BOOTSTRAP_NAME = "TikiTideCharacterPhysicsGuardBootstrap"
 local STAGE_NAME = FOLDER_NAME .. "_Staging"
@@ -22,6 +22,9 @@ local BOOTSTRAP_BACKUP_NAME = BOOTSTRAP_NAME .. "_Previous"
 local CAMERA_NAME = "TikiTideStaffSpectatorCamera"
 local CAMERA_BACKUP_NAME = CAMERA_NAME .. "_Previous"
 local CAMERA_STAGE_NAME = CAMERA_NAME .. "_Staging"
+local INTEGRITY_NAME = "TikiTideClientIntegrityTelemetry"
+local INTEGRITY_BACKUP_NAME = INTEGRITY_NAME .. "_Previous"
+local INTEGRITY_STAGE_NAME = INTEGRITY_NAME .. "_Staging"
 
 if RunService:IsRunning() then
  error("Installation blocked: stop Play/Run simulation before replacing server modules.")
@@ -42,11 +45,19 @@ local oldBootstrapStage = getTyped(ServerScriptService, BOOTSTRAP_STAGE_NAME, "S
 local activeCamera = getTyped(StarterPlayerScripts, CAMERA_NAME, "LocalScript")
 local cameraBackup = getTyped(StarterPlayerScripts, CAMERA_BACKUP_NAME, "LocalScript")
 local oldCameraStage = getTyped(StarterPlayerScripts, CAMERA_STAGE_NAME, "LocalScript")
+local activeIntegrity = getTyped(StarterPlayerScripts, INTEGRITY_NAME, "LocalScript")
+local integrityBackup = getTyped(StarterPlayerScripts, INTEGRITY_BACKUP_NAME, "LocalScript")
+local oldIntegrityStage = getTyped(StarterPlayerScripts, INTEGRITY_STAGE_NAME, "LocalScript")
 
 local cameraUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/StaffSpectatorCamera.client.lua"
 local cameraOk, cameraSource = pcall(function() return HttpService:GetAsync(cameraUrl, true) end)
 if not cameraOk or type(cameraSource) ~= "string" or #cameraSource < 100 then
  error("Could not stage StaffSpectatorCamera.client.lua; active installation was not changed.")
+end
+local integrityUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClientIntegrityTelemetry.client.lua"
+local integrityOk, integritySource = pcall(function() return HttpService:GetAsync(integrityUrl, true) end)
+if not integrityOk or type(integritySource) ~= "string" or #integritySource < 100 then
+ error("Could not stage ClientIntegrityTelemetry.client.lua; active installation was not changed.")
 end
 
 local stagedSources = {}
@@ -61,6 +72,7 @@ end
 if oldStage then oldStage:Destroy() end
 if oldBootstrapStage then oldBootstrapStage:Destroy() end
 if oldCameraStage then oldCameraStage:Destroy() end
+if oldIntegrityStage then oldIntegrityStage:Destroy() end
 local stage = Instance.new("Folder")
 stage.Name = STAGE_NAME
 stage.Parent = ServerStorage
@@ -90,6 +102,7 @@ local bootstrapSource = [=[
 --!strict
 -- Server-local, detection-only CharacterPhysicsGuard bootstrap.
 local ServerStorage = game:GetService("ServerStorage")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local core = ServerStorage:WaitForChild("ClubMusicSecurityCore")
 local movementModule = core:WaitForChild("MovementAuthority")
 local movementOk, movementExport = pcall(require, movementModule)
@@ -407,14 +420,21 @@ stagedCamera.Name = CAMERA_STAGE_NAME
 stagedCamera.Source = cameraSource
 stagedCamera.Disabled = true
 stagedCamera.Parent = StarterPlayerScripts
+local stagedIntegrity = Instance.new("LocalScript")
+stagedIntegrity.Name = INTEGRITY_STAGE_NAME
+stagedIntegrity.Source = integritySource
+stagedIntegrity.Disabled = true
+stagedIntegrity.Parent = StarterPlayerScripts
 
 -- Keep the last known-good generation as a rollback copy. Promote only after staging succeeds.
 if oldBackup then oldBackup:Destroy() end
 if bootstrapBackup then bootstrapBackup:Destroy() end
 if cameraBackup then cameraBackup:Destroy() end
+if integrityBackup then integrityBackup:Destroy() end
 local activeBootstrapWasDisabled = activeBootstrap and activeBootstrap.Disabled
 local activeCameraWasDisabled = activeCamera and activeCamera.Disabled
-local promotedFolder, promotedBootstrap, promotedCamera = false, false, false
+local activeIntegrityWasDisabled = activeIntegrity and activeIntegrity.Disabled
+local promotedFolder, promotedBootstrap, promotedCamera, promotedIntegrity = false, false, false, false
 local ok, installError = pcall(function()
  if active then active.Name = BACKUP_NAME end
  stage.Name = FOLDER_NAME
@@ -427,6 +447,10 @@ local ok, installError = pcall(function()
  stagedCamera.Name = CAMERA_NAME
  promotedCamera = true
  stagedCamera.Disabled = false
+ if activeIntegrity then activeIntegrity.Name = INTEGRITY_BACKUP_NAME; activeIntegrity.Disabled = true end
+ stagedIntegrity.Name = INTEGRITY_NAME
+ promotedIntegrity = true
+ stagedIntegrity.Disabled = false
 end)
 if not ok then
  pcall(function()
@@ -441,6 +465,11 @@ if not ok then
   if activeCamera and activeCamera.Parent then activeCamera.Name = CAMERA_NAME; activeCamera.Disabled = activeCameraWasDisabled end
   local failedCameraStage = StarterPlayerScripts:FindFirstChild(CAMERA_STAGE_NAME)
   if failedCameraStage then failedCameraStage:Destroy() end
+  local failedIntegrity = StarterPlayerScripts:FindFirstChild(INTEGRITY_NAME)
+  if failedIntegrity and failedIntegrity ~= activeIntegrity then failedIntegrity:Destroy() end
+  if activeIntegrity and activeIntegrity.Parent then activeIntegrity.Name = INTEGRITY_NAME; activeIntegrity.Disabled = activeIntegrityWasDisabled end
+  local failedIntegrityStage = StarterPlayerScripts:FindFirstChild(INTEGRITY_STAGE_NAME)
+  if failedIntegrityStage then failedIntegrityStage:Destroy() end
   local failedStage = ServerStorage:FindFirstChild(STAGE_NAME)
   if failedStage then failedStage:Destroy() end
   local failedBootstrapStage = ServerScriptService:FindFirstChild(BOOTSTRAP_STAGE_NAME)
@@ -464,4 +493,5 @@ print("[Tiki Tide Security] Installed " .. tostring(#MODULE_NAMES) .. " modules;
 print("[Tiki Tide Security] Manifest: ServerStorage/" .. FOLDER_NAME .. "/InstallManifest")
 print("[Tiki Tide Security] Previous release retained under ServerStorage/" .. BACKUP_NAME)
 print("[Tiki Tide Security] Staff spectator camera installed under StarterPlayer/StarterPlayerScripts/" .. CAMERA_NAME)
+print("[Tiki Tide Security] Untrusted client integrity observer installed under StarterPlayer/StarterPlayerScripts/" .. INTEGRITY_NAME)
 print("[Tiki Tide Security] CharacterPhysicsGuard remains detection-only.")
