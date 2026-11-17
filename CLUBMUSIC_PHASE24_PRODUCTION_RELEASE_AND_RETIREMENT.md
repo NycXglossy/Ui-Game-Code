@@ -7,7 +7,8 @@
 - Branch: security/phase1-foundation
 - SecurityCore is the central authorization source for audited controller, global-service, spectator, threat-review and incident paths.
 - Installer release pin must reference the exact source commit containing the approved SecurityCore modules and client adapters.
-- Current installer pin: f5f1c9cf5b198ff203c2dcb272bac1fb47fe971d. The installer update itself is committed separately so the pinned parent already contains all Phase 20–24 source files and staff command integrations.
+- Current installer pin: eba230a9606465fb2d19fd4e4a803df66e3a3c82. The installer update itself is committed separately so the pinned parent already contains all Phase 20–24 source files, staff command integrations and the Phase 23 adaptive threat-query budget.
+- Installer pin update commit: 9501945f385a0cc921bbaede63b458942e491fea.
 - Install only in a dedicated test place first. Record the exact branch commit installed.
 - Keep the existing single ClubMusic controller and single Global Service owner. Never install a second queue/playback controller or the standalone legacy Music System / MusicRemotes transport alongside the secured controller.
 
