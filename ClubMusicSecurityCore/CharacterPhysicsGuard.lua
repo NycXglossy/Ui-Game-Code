@@ -70,6 +70,14 @@ function Service.new(dependencies)
 		lastSignalAt = {},
 		gravityBaseline = Workspace.Gravity,
 		gravityChecks = 0,
+		-- Aggregate-only movement sampling. No positions or per-player histories are retained.
+		movementSamples = 0,
+		movementSampleGaps = 0,
+		movementSampleInvalid = 0,
+		movementDistanceBands = {zero = 0, under2 = 0, under6 = 0, under12 = 0, under24 = 0, over24 = 0},
+		movementContexts = {grounded = 0, airborne = 0, seated = 0, other = 0},
+		movementOwners = {server = 0, client = 0, unknown = 0},
+		movementLatencyBands = {under50ms = 0, under100ms = 0, under200ms = 0, over200ms = 0, unknown = 0},
 	}, Service)
 end
 
@@ -228,6 +236,64 @@ function Service:_watchCharacter(player: Player, character: Model)
 		if not self.started or player.Parent ~= Players or player.Character ~= character
 			or self.playerStates[player.UserId] ~= state then return end
 		if rootPart and rootPart:IsA("BasePart") then
+			-- Passive server-observed displacement sampling for later baseline measurement.
+			-- This is not an anomaly detector: no threshold, signal, correction, or enforcement
+			-- is attached. Only the immediately previous position is retained per character.
+			task.spawn(function()
+				local previousPosition: Vector3? = nil
+				local previousAt: number? = nil
+				while self.started and player.Parent == Players and player.Character == character
+					and self.playerStates[player.UserId] == state do
+					task.wait(0.5)
+					if not self.started or player.Parent ~= Players or player.Character ~= character
+						or self.playerStates[player.UserId] ~= state or not rootPart:IsDescendantOf(character) then
+						break
+					end
+					local now = os.clock()
+					local position = rootPart.Position
+					if not finite(position.X) or not finite(position.Y) or not finite(position.Z) then
+						self.movementSampleInvalid += 1
+						previousPosition, previousAt = nil, nil
+						continue
+					end
+					if previousPosition and previousAt then
+						local elapsed = now - previousAt
+						if elapsed < 0.2 or elapsed > 1.5 then
+							self.movementSampleGaps += 1
+						else
+							local distance = (position - previousPosition).Magnitude
+						self.movementSamples += 1
+						if distance < 0.05 then self.movementDistanceBands.zero += 1
+						elseif distance < 2 then self.movementDistanceBands.under2 += 1
+						elseif distance < 6 then self.movementDistanceBands.under6 += 1
+						elseif distance < 12 then self.movementDistanceBands.under12 += 1
+						elseif distance < 24 then self.movementDistanceBands.under24 += 1
+						else self.movementDistanceBands.over24 += 1 end
+
+							local context = "other"
+						if humanoid.SeatPart ~= nil then context = "seated"
+						elseif humanoid.FloorMaterial == Enum.Material.Air then context = "airborne"
+						elseif humanoid.FloorMaterial ~= Enum.Material.Air then context = "grounded" end
+						self.movementContexts[context] += 1
+
+							local ownerBucket = "unknown"
+						local ownerOk, owner = pcall(function() return rootPart:GetNetworkOwner() end)
+						if ownerOk then ownerBucket = if owner == nil then "server" elseif owner == player then "client" else "unknown" end
+						self.movementOwners[ownerBucket] += 1
+
+							local latencyBucket = "unknown"
+						local pingOk, ping = pcall(function() return player:GetNetworkPing() end)
+						if pingOk and finite(ping) and ping >= 0 then
+							local milliseconds = ping * 1000
+						latencyBucket = if milliseconds < 50 then "under50ms" elseif milliseconds < 100 then "under100ms" elseif milliseconds < 200 then "under200ms" else "over200ms"
+						end
+						self.movementLatencyBands[latencyBucket] += 1
+						end
+					end
+					previousPosition, previousAt = position, now
+				end
+			end)
+
 			local function checkVelocity(property: string, threshold: number, signal: string)
 				if state.pending[property] then return end
 				state.pending[property] = true
@@ -313,6 +379,19 @@ function Service:GetStatus()
 		totalSignals = self.totalSignals,
 		suppressedSignals = self.suppressedSignals,
 		gravityChecks = self.gravityChecks,
+		movementMeasurement = {
+			sampleIntervalSeconds = 0.5,
+			maximumAcceptedSampleGapSeconds = 1.5,
+			samples = self.movementSamples,
+			gaps = self.movementSampleGaps,
+			invalidSamples = self.movementSampleInvalid,
+			distanceBandsStudsPerSample = table.clone(self.movementDistanceBands),
+			contexts = table.clone(self.movementContexts),
+			networkOwners = table.clone(self.movementOwners),
+			latencyBands = table.clone(self.movementLatencyBands),
+			storesPositions = false,
+			anomalyThresholdsEnabled = false,
+		},
 		automaticEnforcement = false,
 		persistentStorage = false,
 		memoryStoreWrites = 0,
