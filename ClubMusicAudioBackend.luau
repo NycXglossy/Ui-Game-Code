@@ -390,11 +390,14 @@ function Backend:Cleanup(): (boolean, string?)
 	self.destroyed = true
 	local cleanupErrors = {}
 	local root = self.root
-	local owned = { self.player, self.equalizer, self.fader }
-	for _, wire in ipairs(self.wires or {}) do
-		table.insert(owned, wire)
+	local owned = {}
+	for _, instance in ipairs({ self.player, self.equalizer, self.fader }) do
+		if instance then table.insert(owned, instance) end
 	end
-	local rootOk = true
+	for _, wire in ipairs(self.wires or {}) do
+		if wire then table.insert(owned, wire) end
+	end
+	local rootOk = root ~= nil
 	if root then
 		rootOk = pcall(function() root:Destroy() end)
 		if not rootOk then
