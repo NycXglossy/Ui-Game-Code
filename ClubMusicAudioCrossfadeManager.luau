@@ -62,6 +62,14 @@ local function cancelAfterFailure(self: any, reason: string)
 	end
 end
 
+local function cancelGenerationAfterFailure(self: any, generation: number, incoming: any, reason: string)
+	-- A yielding deck/context call may resume after Cancel and a newer Begin.
+	-- Never let an obsolete worker cancel or report failure against that newer run.
+	if self.generation ~= generation or self.incoming ~= incoming
+		or not self.active or self.destroyed then return end
+	cancelAfterFailure(self, reason)
+end
+
 function Manager.new(context)
 	assert(typeof(context) == "table", "Crossfade manager requires controller context.")
 	assert(typeof(context.CreateDeck) == "function", "Crossfade manager requires CreateDeck.")
@@ -167,13 +175,19 @@ function Manager:Begin(asset: string, duration: number)
 	self.starting = false
 
 	local incomingGainOk, gainResult, gainError = safeMethod(incoming, "SetGain", 0)
+	if self.generation ~= generation or not self.active or self.incoming ~= incoming or self.destroyed then
+		return false, "Crossfade start was cancelled."
+	end
 	if not incomingGainOk or gainResult == false then
-		cancelAfterFailure(self, "Could not initialize incoming deck gain.")
+		cancelGenerationAfterFailure(self, generation, incoming, "Could not initialize incoming deck gain.")
 		return false, tostring(gainError or "Could not initialize incoming deck gain.")
 	end
 	local assetOk, assetResult, assetError = safeMethod(incoming, "SetAsset", asset)
+	if self.generation ~= generation or not self.active or self.incoming ~= incoming or self.destroyed then
+		return false, "Crossfade start was cancelled."
+	end
 	if not assetOk or assetResult == false then
-		cancelAfterFailure(self, "Could not assign the incoming asset.")
+		cancelGenerationAfterFailure(self, generation, incoming, "Could not assign the incoming asset.")
 		return false, tostring(assetError or "Could not assign the incoming asset.")
 	end
 
@@ -189,7 +203,7 @@ function Manager:Begin(asset: string, duration: number)
 			task.wait(0.1)
 		end
 		if self.generation ~= generation or not self.active or self.incoming ~= incoming or self.destroyed then return end
-		if not ready then cancelAfterFailure(self, "Incoming audio did not become ready within 8 seconds."); return end
+		if not ready then cancelGenerationAfterFailure(self, generation, incoming, "Incoming audio did not become ready within 8 seconds."); return end
 
 		-- Prepare early, but do not attenuate the current track until its
 		-- remaining-time window reaches the requested fade duration.
@@ -198,7 +212,7 @@ function Manager:Begin(asset: string, duration: number)
 				local remainingOk, remaining = pcall(self.context.GetRemainingTime)
 				if not remainingOk or typeof(remaining) ~= "number" or remaining ~= remaining
 					or remaining < 0 or remaining == math.huge then
-					cancelAfterFailure(self, "Could not read a valid remaining playback duration.")
+					cancelGenerationAfterFailure(self, generation, incoming, "Could not read a valid remaining playback duration.")
 					return
 				end
 				if remaining <= duration then break end
@@ -208,14 +222,14 @@ function Manager:Begin(asset: string, duration: number)
 		if self.generation ~= generation or not self.active or self.incoming ~= incoming or self.destroyed then return end
 
 		local playOk, playResult = safeMethod(incoming, "Play", nil, 0)
-		if not playOk or playResult == false then cancelAfterFailure(self, "Incoming AudioPlayer could not start."); return end
+		if not playOk or playResult == false then cancelGenerationAfterFailure(self, generation, incoming, "Incoming AudioPlayer could not start."); return end
 		local elapsed = 0
 		local step = 0.05
 		while elapsed < duration and self.generation == generation and not self.destroyed do
 			local alpha = math.clamp(elapsed / duration, 0, 1)
 			local incomingOk, incomingResult = safeMethod(incoming, "SetGain", outgoingBaseGain * alpha)
-			if not incomingOk or incomingResult == false then cancelAfterFailure(self, "Incoming deck gain update failed during crossfade."); return end
-			if not setOutgoingGain(self.context, outgoingBaseGain * (1 - alpha)) then cancelAfterFailure(self, "Outgoing deck gain update failed during crossfade."); return end
+			if not incomingOk or incomingResult == false then cancelGenerationAfterFailure(self, generation, incoming, "Incoming deck gain update failed during crossfade."); return end
+			if not setOutgoingGain(self.context, outgoingBaseGain * (1 - alpha)) then cancelGenerationAfterFailure(self, generation, incoming, "Outgoing deck gain update failed during crossfade."); return end
 			task.wait(step)
 			elapsed += step
 		end
@@ -223,14 +237,14 @@ function Manager:Begin(asset: string, duration: number)
 
 		local fullGainOk, fullGainResult = safeMethod(incoming, "SetGain", outgoingBaseGain)
 		if not fullGainOk or fullGainResult == false or not setOutgoingGain(self.context, 0) then
-			cancelAfterFailure(self, "Could not finalize crossfade gains.")
+			cancelGenerationAfterFailure(self, generation, incoming, "Could not finalize crossfade gains.")
 			return
 		end
 
 		-- OnCommit must atomically transfer controller ownership or return false.
 		local commitOk, commitResult = pcall(self.context.OnCommit, incoming)
 		if not commitOk or commitResult == false then
-			cancelAfterFailure(self, "Controller rejected the crossfade commit.")
+			cancelGenerationAfterFailure(self, generation, incoming, "Controller rejected the crossfade commit.")
 			return
 		end
 		if self.generation ~= generation or self.incoming ~= incoming then return end
@@ -240,7 +254,7 @@ function Manager:Begin(asset: string, duration: number)
 		notifySettled(self, "committed")
 	end)
 	if not spawnOk then
-		cancelAfterFailure(self, "Could not schedule the crossfade worker: " .. tostring(spawnError))
+		cancelGenerationAfterFailure(self, generation, incoming, "Could not schedule the crossfade worker: " .. tostring(spawnError))
 		return false, "Could not schedule the crossfade worker."
 	end
 	return true, nil
