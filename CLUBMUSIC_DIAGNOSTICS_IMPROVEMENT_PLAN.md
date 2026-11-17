@@ -95,6 +95,21 @@ The returned snapshot stays on the client. Do not forward it to server authoriza
 
 8. Audit and retire obsolete diagnostic code only after every consumer has migrated and Studio tests pass. Preserve existing public BindableFunction names and legacy structured metric counters during the transition.
 
+
+## Phase 14 integration update (2026-11-16)
+
+The existing diagnostics stack was already substantially implemented but was not yet consolidated with the newer Phase 12/13 security services. Phase 14 now:
+
+- Adds AdaptiveSecurityLoadManager status to the existing server-local diagnostics snapshot and operational status.
+- Adds SecurityReplay status counters through its dedicated read-only ServerStorage BindableFunction; replay event contents remain outside health snapshots.
+- Adds SafeCall call/failure/recovery counters without exposing detailed errors or tracebacks to clients.
+- Adds a bounded `observabilityHealth` summary across Diagnostics, ServiceRegistry, ServerHealth, Watchdog, AdaptiveLoad, SecurityReplay, SafeCall, and ErrorHistory.
+- Extends the existing authorized staff OperationalDiagnostics output with adaptive-load mode, replay retention/capacity, and SafeCall counters.
+
+No diagnostic services were replaced or retired. SafeCall and ErrorHistory remain separate pending a complete consumer/semantics audit. Existing Global API names and aggregate metrics are preserved.
+
+**Still unfinished:** the consumer sweep across dynamic calls and packaged/embedded assets; watchdog pulse acceptance tests; reconciliation of prior degraded watchdog/detail-registry/memory warnings against fresh runtime output; Studio and published-server verification; and performance profiling. Do not retire obsolete diagnostics code until those gates pass.
+
 ## Runtime verification still required
 
 Static repository checks do not prove Roblox runtime behavior. In Studio and a dedicated published test server, verify:
