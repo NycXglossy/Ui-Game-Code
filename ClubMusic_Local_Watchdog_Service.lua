@@ -6,6 +6,8 @@ local Watchdog = {}
 Watchdog.__index = Watchdog
 
 local MAX_DETAIL = 140
+local MAX_METADATA_FIELDS = 8
+local MAX_METADATA_NUMBER = 1000000000
 
 local DEFAULT_PROBES = {
 	Playback = {expected = true, staleAfter = 12},
