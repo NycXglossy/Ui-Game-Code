@@ -5618,7 +5618,6 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		ControllerFunctions.blockedTrackCache[trackId] = {blocked = mode == "on", checkedAt = os.clock()}
 		if mode == "on" then
 			for index = #queue, 1, -1 do
-			for index = #queue, 1, -1 do
 				if queue[index].trackId == trackId then queueManager:RemoveAt(index, true) end
 			end
 			if nowPlaying.trackId == trackId then
