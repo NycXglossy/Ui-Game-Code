@@ -4075,7 +4075,10 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		tostring(userId), tostring(productId), string.sub(receiptId, 1, 32), game.PlaceId, game.GameId))
 	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
 	recordReceiptReplayEvent("receipt_received", userId, productId, "Info", "RobloxReceiptCallback")
-	if processedReceipts[receiptId] then return Enum.ProductPurchaseDecision.PurchaseGranted end
+	if processedReceipts[receiptId] then
+		recordReceiptReplayEvent("receipt_duplicate", userId, productId, "Info", "AlreadyGrantedInSession")
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
 	local player = Players:GetPlayerByUserId(userId)
 	local profile = profiles[userId]
 	if not player or not profile then
@@ -4136,10 +4139,14 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	-- A receipt already in the durable ledger was granted by an earlier callback/server.
 	-- The loaded profile already contains its reward, so never apply it twice in memory.
 	if alreadyProcessed or processedReceipts[receiptId] then
+		recordReceiptReplayEvent("receipt_duplicate", userId, productId, "Info", "AlreadyCommittedInDurableLedger")
 		rememberProcessedReceipt(receiptId)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
-	if profiles[userId] ~= profile then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	if profiles[userId] ~= profile then
+		recordReceiptReplayEvent("receipt_profile_changed", userId, productId, "Warning", "RetryPending")
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
 	if USE_STUDIO_MEMORY_PROFILES then ControllerFunctions.applyReceiptToMemory(profile, productData) end
 	receiptMemoryApplied[receiptId] = nil
 	rememberProcessedReceipt(receiptId)
