@@ -425,3 +425,13 @@ The repository installation path is now explicit for the active playback inspect
 - Static source checks confirmed fallback rejection at the entry point and gain-capture boundary, backend-only commit validation, no Sound-specific branch in the crossfade factory, and both rollback paths restoring the previous AudioPlayer backend.
 - **Not yet verified:** Luau compilation, cancellation during decoder preparation/fade, queue-head changes during fade, bind failure/queue-pop failure rollback, gain restoration after interruption, fallback normal track advance, modern crossfade, and global playback-only sync in Studio/published servers. No Roblox runtime test was performed in this pass.
 - **Next gate:** owner-run Studio tests for the listed transition cases. Keep the guarded startup Sound and remaining client compatibility until the full public-server regression gate passes.
+
+
+### Transition cancellation metadata invalidation — 2026-11-17
+
+- **Controller commit:** `e0b73fb04157595b804485a565293d7c4a4deeb8`
+- Central cancellation now clears `pendingCrossfadeEntry` and resets `pendingCrossfadeToken` regardless of whether the optional crossfade manager exists or whether its cancellation/cleanup reports an error. This prevents stale prepared-queue metadata from surviving an absent manager or failed cleanup report.
+- Manager destruction also invalidates pending transition metadata before teardown, including the no-manager case.
+- The manager's own generation invalidation, incoming-deck stop/cleanup, and outgoing-gain restoration remain responsible for resource rollback. A reported cleanup failure is still surfaced and is not treated as a successful cancellation.
+- Static checks confirmed both cancellation and destruction clear pending metadata before returning, and the obsolete “future transition” comment was removed.
+- **Not yet verified:** Studio interruption/cancellation behavior, including cancellation before asset readiness, during the fade, and during server shutdown; no Roblox runtime test or Luau compilation was performed.
