@@ -1757,7 +1757,7 @@ local function rebuildModernAudioBackend(source: any, asset: string, position: n
 	local wasPaused = playbackPaused == true
 	local gainOk, outgoingGain = ControllerFunctions.getAudioGain(source)
 	if not gainOk then
-		outgoingGain = 1
+		return false, "The active AudioPlayer gain could not be read safely; keeping the current backend unchanged."
 	end
 	local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
 	if not backendModule or not backendModule:IsA("ModuleScript") then
