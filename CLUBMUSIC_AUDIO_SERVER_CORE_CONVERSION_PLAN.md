@@ -32,10 +32,10 @@ The server controller remains the authority for playback state, per-server queue
 |---|---|---|
 | `ServerMusicAudioHandler.luau` | Backend-neutral snapshot and audio access adapter; still exposes legacy `Sound` methods | Merge with playback inspection into one server-only runtime adapter, or replace with controller-local helpers. Retain no independent playback ownership. |
 | `MusicPlaybackManager.luau` | Playback snapshot, elapsed/remaining time, quality inspection, controller action delegation | Consolidate with `ServerMusicAudioHandler`. Preserve `InspectQuality()` semantics because watchdog/track-advance logic consumes quality state. |
-| `MusicPlaylistManager.luau` | Thin facade over `MusicPlaylistService` and controller-owned rotation callbacks | Fold into controller/service boundary after every method caller is mapped. Do not move rotation cursor or playback selection into persistent storage. |
+| `MusicPlaylistManager.luau` | Thin facade over `MusicPlaylistService` and controller-owned rotation callbacks | **Consolidated in controller commit `ff748b8`.** Controller now calls its rotation functions directly; CRUD and refresh continue through `MusicPlaylistService`. Source file retained pending installed-place reconciliation. |
 | `MusicSkipVoteManager.luau` | Thin facade over controller-owned vote state and callbacks | **Consolidated in controller commit `06e85c7`.** Controller now owns vote casting and player-departure cleanup directly; source file retained pending installer/live-place reconciliation. |
 
-`MusicPlaybackManager` and `MusicPlaylistManager` remain in the controller's `ChildManagerModules` list. `MusicSkipVoteManager` has been removed from that list and its controller call sites now call controller-owned vote functions directly. The facades do not independently own playback loops, queue state, playlist cursors, or vote timers.
+`MusicPlaybackManager` remains in the controller's `ChildManagerModules` list. `MusicPlaylistManager` and `MusicSkipVoteManager` have been removed from that list; rotation and vote call sites now call controller-owned functions directly. The facades do not independently own playback loops, queue state, playlist cursors, or vote timers.
 
 ### Core server audio modules
 
@@ -98,7 +98,7 @@ Spatial routing remains a separate optional server resource service. Client pref
 
 ### Step 2 — Consolidate thin server facades
 - Merge `ServerMusicAudioHandler` and `MusicPlaybackManager` into one runtime adapter (or controller-local helpers) while preserving public method behavior and watchdog quality inspection.
-- Fold the playlist facade into its controller/service boundary after exact consumer mapping. Skip-vote facade consolidation is complete in source (see implementation log).
+- Playlist and skip-vote facade consolidation is complete in source (see implementation log).
 - Keep queue, playback, playlist rotation, and vote state owned by the controller.
 
 **Exit gate:** no behavior change in pause/resume/restart/reload, watchdog advancement, playlist rotation, skip voting, or player-departure cleanup.
@@ -216,3 +216,15 @@ Spatial routing remains a separate optional server resource service. Client pref
 - Left `MusicSkipVoteManager.luau` in the repository as a rollback/reference artifact. Do not delete it until installer manifests, embedded bundles, and live-place references are reconciled.
 - Static source checks passed for removal of runtime manager references and preservation of vote/cleanup paths.
 - **Not yet verified:** Luau compilation, Studio/published-server skip voting, voter departure behavior, or concurrent vote/track-transition behavior. Owner runtime testing remains required.
+
+
+### Playlist facade consolidation — source change committed
+
+- **Controller commit:** `ff748b863dd357e9d8c5d3c381a1145219f70cf2`
+- Removed `MusicPlaylistManager` from the controller's required child-manager module list and removed its initialization.
+- `DJPlayPlaylist` and `DJStopPlaylist` now call the controller-owned `startPlaylistRotation` and `stopPlaylistRotation` functions directly.
+- Persistent playlist CRUD, refresh, and readiness remain owned by `MusicPlaylistService`; playlist rotation tracks, cursor, selection, and queue refill remain controller-owned.
+- Preserved the existing DJ booth authorization checks and playlist storage availability checks.
+- Repository inventory shows `MusicPlaylistManager.luau` as a standalone source file; it is not embedded in `ClubMusic_ServerStorage_Modules.rbxmx` or the audio server bundle, and it is not listed in the audio module installer. The standalone file is retained for rollback until the live place's ServerStorage hierarchy is confirmed.
+- Static source checks passed for removal of runtime manager references and preservation of persistent service, rotation state, and DJ authorization.
+- **Not yet verified:** Luau compilation, Studio/published-server playlist start/stop, playlist CRUD/refresh, rotation cursor behavior, and queue refill. Owner runtime testing remains required.
