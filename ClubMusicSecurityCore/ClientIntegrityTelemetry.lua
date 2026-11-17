@@ -102,11 +102,14 @@ function Service:Start(): boolean
 		warn("[Tiki Tide][ClientIntegrity] Telemetry remote name is occupied by a different class.")
 		return false
 	end
-	local remote = existing
-	if not remote then
-		remote = Instance.new("RemoteEvent")
-		remote.Name = REMOTE_NAME
-		remote.Parent = ReplicatedStorage
+	local remote: RemoteEvent
+	if existing then
+		remote = existing :: RemoteEvent
+	else
+		local created = Instance.new("RemoteEvent")
+		created.Name = REMOTE_NAME
+		created.Parent = ReplicatedStorage
+		remote = created
 		self.ownsRemote = true
 	end
 	self.remote = remote
