@@ -794,7 +794,7 @@ local random = Random.new()
 -- canonical SoundGroup locally for their own volume preference.
 local musicSoundGroup = ControllerFunctions.getOrCreate(SoundService, "SoundGroup", "MusicGroup") :: SoundGroup
 local musicSound = ControllerFunctions.getOrCreate(SoundService, "Sound", "ServerMusicSound") :: Sound
-local activeAudioSource: any = { kind = "Sound", instance = musicSound }
+local activeAudioSource: any = { kind = "Unavailable" }
 local audioSourceRevision = 0
 local modernAudioMigrationSucceeded = false
 local modernAudioMigrationInProgress = false
@@ -848,11 +848,14 @@ ControllerFunctions.bindActiveAudioPlayingSignal = function()
 		activeAudioPlayingConnection = nil
 	end
 	local source = activeAudioSource
-	-- Publish the authoritative source type so clients apply SoundGroup volume
-	-- only while the guarded legacy Sound fallback is actually active.
-	SoundService:SetAttribute("ClubMusicAudioSourceKind", if source.kind == "Backend" then "AudioPlayer" else "Sound")
+	-- Publish the active output type. Unavailable means modern startup/recovery
+	-- failed and no legacy Sound fallback is authoritative.
+	local sourceKind = if source.kind == "Backend" then "AudioPlayer"
+		elseif source.kind == "Sound" then "Sound" else "Unavailable"
+	SoundService:SetAttribute("ClubMusicAudioSourceKind", sourceKind)
 	local signalInstance = if source.kind == "Backend" and source.backend
-		then source.backend:GetPlayer() else source.instance
+		then source.backend:GetPlayer()
+		elseif source.kind == "Sound" then source.instance else nil
 	if typeof(signalInstance) == "Instance" then
 		local propertyName = if source.kind == "Backend" then "IsPlaying" else "Playing"
 		local ok, signal = pcall(function() return signalInstance:GetPropertyChangedSignal(propertyName) end)
@@ -954,6 +957,7 @@ ControllerFunctions.getAudioGain = function(sourceOverride: any?): (boolean, num
 			or value < 0 or value > 1 then return false, 0 end
 		return true, value
 	end
+	if source.kind ~= "Sound" then return false, 0 end
 	local sound = source.instance
 	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false, 0 end
 	-- Legacy Sound.Volume carries the per-track trim as well as the fader.
@@ -971,6 +975,7 @@ ControllerFunctions.setAudioGain = function(value: number, sourceOverride: any?)
 		local ok, result = pcall(function() return source.backend:SetGain(value) end)
 		return ok and result ~= false
 	end
+	if source.kind ~= "Sound" then return false end
 	local sound = source.instance
 	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
 	local trim = getTrackVolumeTrim(tostring(nowPlaying and nowPlaying.trackId or ""))
@@ -992,6 +997,7 @@ ControllerFunctions.setAudioPlaybackSpeed = function(value: number): boolean
 		local ok, result = pcall(function() return source.backend:SetPlaybackSpeed(value) end)
 		return ok and result ~= false
 	end
+	if source.kind ~= "Sound" then return false end
 	local sound = source.instance
 	if typeof(sound) ~= "Instance" or not sound:IsA("Sound") or sound.Parent == nil then return false end
 	local ok = pcall(function() sound.PlaybackSpeed = value end)
@@ -1022,6 +1028,7 @@ ControllerFunctions.setAudioAsset = function(asset: string)
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:SetAsset(asset) end
+	if source.kind ~= "Sound" then return false, "No active audio source is available." end
 	source.instance.SoundId = asset
 	return true, nil
 end
@@ -1032,6 +1039,7 @@ ControllerFunctions.seekAudio = function(position: number)
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Seek(position) end
+	if source.kind ~= "Sound" then return false, "No active audio source is available." end
 	source.instance.TimePosition = position
 	return true, nil
 end
@@ -1042,6 +1050,7 @@ ControllerFunctions.playAudio = function()
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Play() end
+	if source.kind ~= "Sound" then return false, "No active audio source is available." end
 	source.instance:Play()
 	return true, nil
 end
@@ -1052,6 +1061,7 @@ ControllerFunctions.stopAudio = function()
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Stop() end
+	if source.kind ~= "Sound" then return true, nil end
 	source.instance:Stop()
 	return true, nil
 end
@@ -1062,6 +1072,7 @@ ControllerFunctions.pauseAudio = function()
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Pause() end
+	if source.kind ~= "Sound" then return false, "No active audio source is available." end
 	source.instance:Pause()
 	local position = source.instance.TimePosition
 	return true, nil, if ControllerFunctions.isFiniteNumber(position) then math.max(0, position) else nil
@@ -1073,6 +1084,7 @@ ControllerFunctions.resumeAudio = function()
 	audioSourceRevision += 1
 	local source = activeAudioSource
 	if source.kind == "Backend" then return source.backend:Resume() end
+	if source.kind ~= "Sound" then return false, "No active audio source is available." end
 	source.instance:Resume()
 	return true, nil
 end
@@ -1652,19 +1664,20 @@ ControllerFunctions.stopServerMusic = function()
 	ControllerFunctions.refreshActiveMusicSoundCount()
 end
 
--- Start modern AudioPlayer first. The legacy Sound is started only if the
--- modern module, decoder, or playback verification fails. A monotonically
--- increasing token prevents a late decoder completion from replacing a newer track.
+-- Modern-only startup. If module loading, decoding, or playback verification
+-- fails, leave the source unavailable and report the failure; never start legacy
+-- Sound. A monotonically increasing token fences late decoder completions.
 ControllerFunctions.startServerMusic = function(soundId: any)
 	local retiredSource = activeAudioSource
 	ControllerFunctions.stopServerMusic()
-	-- New-track startup owns a fresh candidate. Park the controller on the
-	-- guarded Sound fallback while that candidate loads, and retire the stopped
-	-- previous backend so the active-source contract never points at a dead deck.
+	-- New-track startup owns a fresh candidate. Mark the source unavailable while
+	-- it loads, and retire the stopped previous backend so the controller never
+	-- reports a stopped or legacy Sound as the active output.
 	if retiredSource.kind == "Backend" and retiredSource.backend then
 		retireAudioBackend(retiredSource.backend, "new track startup")
 	end
-	activeAudioSource = { kind = "Sound", instance = musicSound }
+	activeAudioSource = { kind = "Unavailable" }
+	pcall(function() musicSound:Stop(); musicSound.TimePosition = 0 end)
 	ControllerFunctions.bindActiveAudioPlayingSignal()
 	modernAudioStartToken += 1
 	local startToken = modernAudioStartToken
@@ -1683,33 +1696,18 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	local function isCurrentStart(): boolean
 		return modernAudioStartToken == startToken
 			and audioSourceRevision == startRevision
-			and activeAudioSource.kind == "Sound"
+			and activeAudioSource.kind == "Unavailable"
 			and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
 	end
 
-	local function startLegacyFallback(reason: string?)
+	local function reportModernStartupFailure(reason: string?)
 		if not isCurrentStart() then return end
-		local fallbackOk, fallbackError = pcall(function()
-			musicSound.SoundId = soundId
-			musicSound.Volume = math.clamp(trim, 0.01, 10)
-			musicSound.PlaybackSpeed = playbackSpeed
-			musicSound.TimePosition = 0
-			musicSound:Play()
-			if wasPaused then musicSound:Pause() end
-		end)
-		if not fallbackOk then
-			warn("[ClubMusic] Both modern startup and legacy fallback failed: " .. tostring(fallbackError))
-			return
-		end
-		ControllerFunctions.bindActiveAudioPlayingSignal()
-		if reason then
-			warn("[ClubMusic][AudioBackend] Modern-first startup failed; guarded Sound fallback started: " .. reason)
-			task.defer(ControllerFunctions.tryModernAudioBackendMigration)
-		end
+		warn("[ClubMusic][AudioBackend] Modern-only startup failed; no legacy fallback was started: "
+			.. tostring(reason or "UseModernAudioBackend is disabled."))
 	end
 
 	if not CONFIG.UseModernAudioBackend then
-		startLegacyFallback(nil)
+		reportModernStartupFailure("UseModernAudioBackend is disabled.")
 		return
 	end
 
@@ -1802,7 +1800,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 			-- obsolete track. If only the same track's playhead/pause revision
 			-- changed, retry with the latest controller state.
 			if modernAudioStartToken == startToken
-				and activeAudioSource.kind == "Sound"
+				and activeAudioSource.kind == "Unavailable"
 				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
 				and audioSourceRevision ~= startRevision then
 				task.defer(ControllerFunctions.startServerMusic, soundId)
@@ -1812,12 +1810,12 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 			-- active Sound while the candidate is loading. Retry the same current
 			-- track with the latest playhead/pause state instead of falling silent.
 			if modernAudioStartToken == startToken
-				and activeAudioSource.kind == "Sound"
+				and activeAudioSource.kind == "Unavailable"
 				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
 				and audioSourceRevision ~= startRevision then
 				task.defer(ControllerFunctions.startServerMusic, soundId)
 			else
-				startLegacyFallback(tostring(failure))
+				reportModernStartupFailure(tostring(failure))
 			end
 		end
 	end)
@@ -1963,15 +1961,8 @@ local function performReloadServerMusic(): (boolean, string?)
 	end
 
 	local source = activeAudioSource
-	if source.kind ~= "Backend" then
-		-- Reload is a modern-backend recovery operation. If startup is still on
-		-- the guarded Sound fallback, first attempt the normal verified handoff;
-		-- never destructively reset the fallback decoder in place.
-		local migrated = ControllerFunctions.tryModernAudioBackendMigration()
-		if migrated ~= true or activeAudioSource.kind ~= "Backend" then
-			return false, "Modern AudioPlayer is not active; the guarded Sound fallback was left untouched."
-		end
-		source = activeAudioSource
+	if source.kind ~= "Backend" or not source.backend then
+		return false, "Modern AudioPlayer is not active; legacy fallback is disabled."
 	end
 	local snapshot = ControllerFunctions.getAudioSnapshot()
 	if typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
