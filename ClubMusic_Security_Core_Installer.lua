@@ -378,6 +378,51 @@ if honeypotService then
  honeypotStatus.OnInvoke = function() return honeypotService:GetStatus() end
 end
 
+-- Client observations are fixed-code, untrusted telemetry. They never affect auth or enforcement.
+local clientIntegrityService: any = nil
+local clientIntegrityModule = core:FindFirstChild("ClientIntegrityTelemetry")
+if clientIntegrityModule and clientIntegrityModule:IsA("ModuleScript") then
+ local telemetryOk, telemetryExport = pcall(require, clientIntegrityModule)
+ if telemetryOk and typeof(telemetryExport) == "table" and type(telemetryExport.new) == "function" then
+  local createOk, instance = pcall(telemetryExport.new, {
+   recordReplay = function(signal, userId)
+    if replayEndpoint and replayEndpoint:IsA("BindableFunction") then
+     return replayEndpoint:Invoke("Record", signal, userId, 0, "Info", "ClientIntegrityTelemetry", {})
+    end
+    return false
+   end,
+  })
+  if createOk and typeof(instance) == "table" and type(instance.Start) == "function"
+   and type(instance.GetStatus) == "function" and type(instance.Stop) == "function" then
+   clientIntegrityService = instance
+   local startedOk, startedResult = pcall(function() return clientIntegrityService:Start() end)
+   if not startedOk or startedResult ~= true then
+    warn("[Tiki Tide][ClientIntegrity] Startup failed: " .. tostring(startedResult))
+    clientIntegrityService = nil
+   end
+  else
+   warn("[Tiki Tide][ClientIntegrity] Module interface validation failed: " .. tostring(instance))
+  end
+ else
+  warn("[Tiki Tide][ClientIntegrity] Module failed to load: " .. tostring(telemetryExport))
+ end
+else
+ warn("[Tiki Tide][ClientIntegrity] Optional module is missing.")
+end
+local clientIntegrityStatus = ServerStorage:FindFirstChild("GetTikiTideClientIntegrityStatus")
+if clientIntegrityStatus and not clientIntegrityStatus:IsA("BindableFunction") then
+ clientIntegrityStatus:Destroy()
+ clientIntegrityStatus = nil
+end
+if clientIntegrityService then
+ if not clientIntegrityStatus then
+  clientIntegrityStatus = Instance.new("BindableFunction")
+  clientIntegrityStatus.Name = "GetTikiTideClientIntegrityStatus"
+  clientIntegrityStatus.Parent = ServerStorage
+ end
+ clientIntegrityStatus.OnInvoke = function() return clientIntegrityService:GetStatus() end
+end
+
 replayEndpoint.OnInvoke = function(action, ...)
  if action == "Record" then return replay:Record(...) end
  if action == "Query" then
@@ -401,12 +446,14 @@ script.Destroying:Connect(function()
  replay:Stop()
  if threatService then threatService:Stop() end
  if honeypotService then honeypotService:Stop() end
+ if clientIntegrityService then clientIntegrityService:Stop() end
  if loadManager then loadManager:Stop() end
 end)
 print("[Tiki Tide][SecurityReplay] Bounded server-local event history ready; persistent writes=0; frame capture=false.")
 if loadManager then print("[Tiki Tide][AdaptiveLoad] Adaptive optional-work budgets started; essential security paths remain unrestricted.") end
 if threatService then print("[Tiki Tide][ThreatIntelligence] Bounded local correlation ready; automatic enforcement=false.") end
 if honeypotService then print("[Tiki Tide][Honeypot] Isolated decoy remotes active; detection-only; automatic enforcement=false.") end
+if clientIntegrityService then print("[Tiki Tide][ClientIntegrity] Fixed-code client observations enabled; untrusted; no enforcement.") end
 ]=]
 
 local stagedBootstrap = Instance.new("Script")
