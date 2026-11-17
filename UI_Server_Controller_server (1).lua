@@ -1723,19 +1723,47 @@ local function performReloadServerMusic(): (boolean, string?)
 	end
 
 	local source = activeAudioSource
+	local duration = math.max(1, tonumber(nowPlaying.duration) or 1)
+	local expectedTrackId = tostring(nowPlaying.trackId or "")
+	local expectedTransitionToken = audioTransitionTrackToken
+	local expectedPaused = playbackPaused == true
+
 	if source.kind ~= "Backend" or not source.backend then
-		return false, "Modern AudioPlayer is not active; legacy fallback is disabled."
+		-- If startup previously failed, retry the current track through the same
+		-- verified modern-only startup path. startServerMusic restores the
+		-- controller's saved elapsed position and pause state; it never starts Sound.
+		ControllerFunctions.startServerMusic(asset)
+		local startupDeadline = os.clock() + 12
+		repeat
+			task.wait(0.1)
+			if tostring(nowPlaying.trackId or "") ~= expectedTrackId
+				or audioTransitionTrackToken ~= expectedTransitionToken
+				or playbackPaused ~= expectedPaused then
+				return false, "The current track changed during modern audio recovery."
+			end
+			local recoveredSource = activeAudioSource
+			if recoveredSource.kind == "Backend" and recoveredSource.backend then
+				local stateOk, recoveredSnapshot = pcall(ControllerFunctions.getAudioSnapshot)
+				local restoredState = if expectedPaused
+					then typeof(recoveredSnapshot) == "table" and recoveredSnapshot.paused == true
+					else typeof(recoveredSnapshot) == "table" and recoveredSnapshot.playing == true
+				if stateOk and restoredState and recoveredSnapshot.asset == asset then
+					return true, nil
+				end
+			elseif recoveredSource.kind ~= "Unavailable" then
+				return false, "The audio source changed unexpectedly during modern recovery."
+			end
+		until os.clock() >= startupDeadline
+		return false, "Modern AudioPlayer could not be restarted; no legacy fallback was started."
 	end
+
 	local snapshot = ControllerFunctions.getAudioSnapshot()
 	if typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
 		return false, "The active modern AudioPlayer is unavailable."
 	end
-	local duration = math.max(1, tonumber(nowPlaying.duration) or 1)
 	local position = if ControllerFunctions.isFiniteNumber(snapshot.position)
 		then snapshot.position else math.max(0, tonumber(nowPlaying.elapsed) or 0)
 	position = math.clamp(position, 0, math.max(0, duration - 0.5))
-	local expectedTrackId = tostring(nowPlaying.trackId or "")
-	local expectedTransitionToken = audioTransitionTrackToken
 
 	if source.kind == "Backend" and source.backend then
 		-- AudioPlayer reload must reselect the asset and wait for its decoder;
