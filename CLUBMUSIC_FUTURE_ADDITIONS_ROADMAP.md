@@ -398,3 +398,23 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [ ] Complete playback, queue, sync, purchase, moderation, Utility Bar, Settings and spectator regression tests.
 
 **Explicit exclusions:** HoneypotManager, client-integrity sensors and client error-log aggregation are not present in this branch. No diagnostic counts are fabricated for them. No automatic enforcement or cross-server diagnostics aggregation is added.
+
+
+## Phase 17 — Honeypot Manager
+
+**Status: Source implementation committed; runtime acceptance remains open.**
+
+- [x] Add a server-only HoneypotManager with a dedicated, isolated ReplicatedStorage decoy folder.
+- [x] Add decoy admin-privilege, purchase-receipt, VIP-entitlement, and moderation-action remotes; none aliases or replaces a real gameplay remote.
+- [x] Make decoy handlers inert; RemoteFunction decoys return a neutral unavailable response.
+- [x] Record fixed, sanitized hit signals into existing server-local ThreatIntelligence and SecurityReplay services.
+- [x] Add per-player cooldown, bounded subject tracking/counters, PlayerRemoving cleanup, and server-only status.
+- [x] Add installer staging/pinning and include honeypot status in existing unified diagnostics and staff output.
+- [x] Preserve detection-only behavior: no automatic kick, ban, restriction, movement correction, or IncidentResponse case creation.
+- [ ] Test all decoys, signal fidelity, cooldowns, caps, cleanup, and no-gameplay-effect behavior in Studio.
+- [ ] Test installer collision handling, promotion/rollback, shutdown cleanup, and optional-module failure behavior.
+- [ ] Profile burst overhead and run published-server regression tests for playback, queues, sync, purchases, moderation, Utility Bar, Settings, spectator, and diagnostics.
+
+**Important limitations:** decoys are visible under ReplicatedStorage and are not secrets. They detect probing/interaction; they cannot prevent exploiters from discovering real remotes or replace server-side authorization. A hit is not proof and is never a standalone punishment trigger. Honeypot signals are server-local and are not shared cross-server.
+
+**Implementation note:** see `CLUBMUSIC_PHASE17_HONEYPOT_MANAGER.md`.
