@@ -465,3 +465,14 @@ The repository installation path is now explicit for the active playback inspect
 - Deferred automatic queue top-up and state publication are independently protected and report failures without reversing the audio ownership transfer. Outgoing deck cleanup remains protected and warning-only after commit.
 - The queue manager's `PopNext` releases the consumed entry's reserved slot. Its `Insert` method does not re-reserve that slot, so rollback after PopNext is not a safe generic compensation. The commit path therefore keeps all ordinary rejection paths before queue consumption and treats post-consumption bookkeeping as non-fatal.
 - Static source review only. Studio acceptance must still exercise commit-time publication failure, deferred scheduling failure where reproducible, cancellation before commit, queue-slot accounting, repeated crossfades, and outgoing cleanup failure. No Roblox runtime verification is claimed.
+
+
+### Crossfade manager startup, cancellation, and teardown race audit (2026-11-17)
+
+- **Manager commits:** `2f3eb593d45a749844db8c64c8db544517a8d657`, `f801a29aef295d105fd89aad21884e0d10c1351f`, `2495ed6e3d21edcfdf3cb43ba35e18d807b0acf8`
+- `Begin` now reserves a generation and marks startup in progress before invoking injected deck creation or gain-reading callbacks. A second Begin is rejected while setup is pending.
+- If Cancel/Cleanup invalidates startup while an injected callback yields, the late continuation cleans up its unregistered deck and cannot install it into the manager. Rejected setup clears the reservation and notifies settlement so controller transition references are released.
+- Cleanup closes admission by marking the manager destroyed before cancellation touches deck resources. A yielding cleanup operation therefore cannot leave a window for a new Begin.
+- Sync initialization and async worker continuations are generation-fenced after potentially yielding calls. An obsolete worker cannot cancel or report failure against a newer transition after a Cancel/restart race.
+- Worker scheduling failure is handled through the same generation-scoped cancellation path. Existing queue ownership and controller commit boundary remain unchanged.
+- Static source review only. Studio acceptance still needs repeated Begin attempts during setup, Cancel during deck creation/gain read/initialization/fade, Cleanup during setup/fade, and immediate Begin attempts after cancellation/teardown. No Luau compilation or Roblox runtime verification is claimed.
