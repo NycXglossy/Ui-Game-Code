@@ -106,3 +106,10 @@ Run in a dedicated test universe/place, not against production data:
 - [ ] Installation package/revision is pinned to the verified commit and only then presented for installation.
 
 **Current status:** Source-level changes and scoped text-source audits are documented. Runtime verification and live-place reconciliation are still open. Do not label this release production-ready or install it until the sign-off checklist is complete.
+
+
+## Diagnostics source closure addendum (2026-11-16)
+
+A final source-level pass synchronized the embedded SafeCall ModuleScript in `ClubMusic_Global_Optional_Services.rbxmx` with the standalone implementation, including the 100-key/120-second warning deduplication bound. The local watchdog pulse metadata is now capped at eight validated primitive fields. Source review confirmed Playback pulses each second even during pause/reload, Queue and AutoDJ pulse every 30 seconds plus refill events, and Recovery/Moderation are optional event-driven probes. SafeCall and ErrorHistory remain separate because they record different failure lifecycles.
+
+These changes close the in-repository source integration tasks for Phase 14 only. They do not satisfy Studio/published-server tests, historical warning reconciliation, load profiling, binary/third-party package review, or live-place revision verification. No legacy diagnostic implementation is retired.
