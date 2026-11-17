@@ -1383,6 +1383,13 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 		OnFailure = function(message: string)
 			warn("[ClubMusic][Crossfade] Transition was cancelled safely: " .. tostring(message))
 		end,
+		OnSettled = function(_outcome: string)
+			-- Do not retain a reference to the previous outgoing backend after
+			-- commit, cancellation, or teardown; the active source owns it now.
+			transitionOutgoing = nil
+			transitionRevision = nil
+			ControllerFunctions.crossfadeOutgoingBaseGain = nil
+		end,
 		OnCommit = function(incoming: any): boolean
 			local outgoing = transitionOutgoing
 			local entry = pendingCrossfadeEntry
@@ -1450,7 +1457,13 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				publishState(nil)
 			end)
 			if outgoing.backend ~= incoming then
-				pcall(function() outgoing.backend:Cleanup() end)
+				local cleanupOk, cleanupResult, cleanupError = pcall(function()
+					return outgoing.backend:Cleanup()
+				end)
+				if not cleanupOk or cleanupResult == false then
+					warn("[ClubMusic][Crossfade] Previous AudioPlayer deck cleanup failed after commit: "
+						.. tostring(cleanupError or cleanupResult))
+				end
 			end
 			return true
 		end,
