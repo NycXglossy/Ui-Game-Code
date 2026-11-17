@@ -111,7 +111,7 @@ return function(_K: any)
 		OperationalErrors = true, OperationalMetrics = true, OperationalSecurityLog = true,
 		OperationalServers = true, OperationalRateLimit = true, OperationalConfig = true,
 		OperationalRecovery = true, OperationalReconcile = true,
-		PurchaseDiagnostics = true,
+		PurchaseDiagnostics = true, SecurityReplay = true,
 	}
 	game:GetService("Players").PlayerRemoving:Connect(function(player: Player)
 		lastInspectionAt[player.UserId] = nil
@@ -193,7 +193,7 @@ return function(_K: any)
 			OperationalSecurityLog = true, OperationalServers = true,
 			OperationalRateLimit = true, OperationalConfig = true,
 			OperationalRecovery = true, OperationalReconcile = true,
-			PurchaseDiagnostics = true,
+			PurchaseDiagnostics = true, SecurityReplay = true,
 			OperationalMaintenance = true,
 			RequestMute = true, ClearUserQueue = true, EmergencyLock = true,
 			TrackBlock = true, ForceStop = true,
@@ -261,6 +261,9 @@ return function(_K: any)
 
 	-- Security tools are registered in Kohl's Admin's Administration group.
 	-- The ClubMusic server bridge independently checks ClubMusic rank levels.
+	register("clubmusic-replay", "Review recent server-local security replay events; optionally filter by UserId and result limit.", "Administration", "SecurityReplay", {"cmreplay"}, {
+		{type = "string", name = "UserIdAndLimit", description = "Optional UserId and optional limit (1-30), for example 123456 20.", optional = true},
+	})
 	register("clubmusic-security", "Show ClubMusic global security service status.", "Administration", "SecurityStatus", {"cmsecurity"})
 	register("clubmusic-incidents", "List recent ClubMusic security incidents.", "Administration", "SecurityIncidents", {"cmincidents"})
 	register("clubmusic-incident", "Open a ClubMusic security incident.", "Administration", "SecurityIncidentOpen", {"cmincident"}, {
