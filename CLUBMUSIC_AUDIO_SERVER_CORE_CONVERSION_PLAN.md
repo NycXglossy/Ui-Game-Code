@@ -75,12 +75,15 @@ Spatial routing remains a separate optional server resource service. Client pref
 
 ## Permission boundary and acceptance rules
 
-- **All players:** submit normal catalog song requests; use Auto DJ as the fallback/refill system; view Now Playing and the queue subject to existing visibility; cast skip votes subject to existing vote rules.
-- **Authorized DJ/staff:** use privileged playback controls, reload/recovery controls, playlist management, catalog mutation, and DJ session/handoff actions according to the existing SecurityCore permission levels.
-- `SecurityCore.Authorization` is the only role/permission authority. `getLevel` and DJ checks are projections/delegations to that service, not local role tables.
-- Normal requests must never call `GlobalDJ` or require staff rank. Keep server validation, cooldowns, per-player request limits, queue caps, duplicate-track checks, and abuse budgets.
-- DJ Control Mode is a booth/control-state indicator only; it must not close ordinary player requests or disable Auto DJ.
-- The separate emergency request lock remains an explicit staff incident-response override; it must not stop server-owned Auto DJ playback/refill.
+- **All players:** submit normal catalog requests while DJ Control Mode is off; view Now Playing/queue subject to existing visibility; vote to skip; and use `ReloadSong` for self-service audio recovery.
+- **Current DJ controller:** the player who enables DJ Control Mode remains allowed to submit normal requests. Other players are blocked until the controller disables the mode or leaves. Only the current controller may disable it.
+- **Auto DJ:** server-owned playback/refill continues regardless of DJ Control Mode.
+- **ReloadSong:** available to every live player, with existing per-player cooldown and action ingress limits; no DJ permission is required.
+- **Other privileged actions:** pause, restart, DJ skip, playlist/catalog management, and DJ session/handoff operations retain their appropriate SecurityCore-backed DJ/staff authorization.
+- `SecurityCore.Authorization` remains the sole role/permission authority for privileged operations.
+- Normal requests retain server validation, cooldowns, per-player limits, queue caps, duplicate checks, and abuse budgets.
+- The separate emergency request lock remains a staff incident-response override and does not stop Auto DJ playback/refill.
+
 
 ## Implementation sequence
 
@@ -192,3 +195,13 @@ Spatial routing remains a separate optional server resource service. Client pref
 - Playlist and catalog mutation remain staff-gated; DJ booth queue/playback controls retain their existing SecurityCore-backed rank checks.
 - **Exception:** the existing explicit emergency request lock continues to reject ordinary player requests as a staff incident-response action. It does not stop Auto DJ playback/refill.
 - **Not yet verified:** Luau compilation, UI compatibility with the added `djControlMode` state field, normal request submission while DJ Control Mode is on, reload denial/allowance, emergency lock behavior, Auto DJ refill, or Roblox runtime playback. Owner testing remains required.
+
+
+### Permission correction — 2026-11-16
+
+- **Controller commit:** `0717dcbd7ccd31c5f4f356bcbdd388e7dac1e58d`
+- Restored `ReloadSong` as a player-facing self-service recovery action; no `GlobalDJ` permission is required. Existing per-player cooldown, action ingress budget, and server-owned recovery remain.
+- DJ Control Mode stores the enabling controller's UserId. That player may continue normal catalog requests; other players are blocked. Only the controller can disable the mode, and it clears automatically if the controller leaves.
+- The same restriction is applied in the shared request-block helper for validated audio request paths. EmergencyLock remains separate.
+- Auto DJ playback/refill remains independent of DJ Control Mode.
+- Roblox Studio/published-server tests remain required.
