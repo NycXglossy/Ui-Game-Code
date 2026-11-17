@@ -14,6 +14,8 @@ local SLOW_FRAME_SECONDS = 0.05
 local SEVERE_FRAME_SECONDS = 0.1
 local SLOW_FRAME_LIMIT = 8
 local DEFAULT_MEMORY_WARNING_MB = 0 -- 0 disables an arbitrary hard memory threshold
+local MAX_MEMORY_SAMPLES = 20
+local MEMORY_STALE_SECONDS = 90
 
 local function finite(value: any): boolean
 	return type(value) == "number" and value == value and value >= 0 and value < math.huge
@@ -33,6 +35,8 @@ function Service.new(options: {[string]: any}?)
 		memoryMb = nil,
 		memorySampleAt = nil,
 		memoryError = nil,
+		memorySamples = {},
+		lastMemoryAttemptAt = nil,
 		startedAt = 0,
 		lastWarningSignature = "",
 	}, Service)
@@ -61,6 +65,7 @@ function Service:_recordFrame(deltaTime: number)
 end
 
 function Service:_sampleMemory()
+	self.lastMemoryAttemptAt = os.time()
 	local ok, value = pcall(function()
 		return Stats:GetTotalMemoryUsageMb()
 	end)
@@ -68,6 +73,8 @@ function Service:_sampleMemory()
 		self.memoryMb = value
 		self.memorySampleAt = os.time()
 		self.memoryError = nil
+		table.insert(self.memorySamples, {at = self.memorySampleAt, usageMb = value})
+		while #self.memorySamples > MAX_MEMORY_SAMPLES do table.remove(self.memorySamples, 1) end
 	else
 		self.memoryError = string.sub(tostring(value or "Memory statistics unavailable."), 1, 180)
 	end
@@ -108,6 +115,18 @@ function Service:GetStatus(): {[string]: any}
 	local average = if frameCount > 0 then frameTotal / frameCount else nil
 	local memoryAge = if self.memorySampleAt then math.max(0, os.time() - self.memorySampleAt) else nil
 	local memoryWarning = self.memoryWarningMb > 0 and self.memoryMb ~= nil and self.memoryMb >= self.memoryWarningMb
+	local memoryTotal, memoryMin, memoryMax = 0, math.huge, 0
+	for _, sample in ipairs(self.memorySamples) do
+		memoryTotal += sample.usageMb
+		memoryMin = math.min(memoryMin, sample.usageMb)
+		memoryMax = math.max(memoryMax, sample.usageMb)
+	end
+	local memoryCount = #self.memorySamples
+	local firstMemory = self.memorySamples[1]
+	local lastMemory = self.memorySamples[memoryCount]
+	local memoryTrend = if memoryCount >= 2 and firstMemory and lastMemory
+		then lastMemory.usageMb - firstMemory.usageMb else nil
+	local memoryStale = memoryAge ~= nil and memoryAge > MEMORY_STALE_SECONDS
 	local frameDegraded = severe >= SLOW_FRAME_LIMIT
 	local state = if frameDegraded or memoryWarning then "Degraded"
 		elseif frameCount == 0 then "Starting" else "Healthy"
@@ -128,12 +147,21 @@ function Service:GetStatus(): {[string]: any}
 			windowSeconds = SAMPLE_WINDOW_SECONDS,
 		},
 		memory = {
-			state = if self.memoryError then "Unavailable" elseif self.memoryMb then "Measured" else "Starting",
-			usageMb = self.memoryMb,
-			sampledAt = self.memorySampleAt,
-			ageSeconds = memoryAge,
-			warningThresholdMb = if self.memoryWarningMb > 0 then self.memoryWarningMb else nil,
-			lastError = self.memoryError,
+			state = if self.memoryError then "Unavailable" elseif memoryStale then "Stale"
+				elseif self.memoryMb ~= nil then "Measured" else "Starting",
+				usageMb = self.memoryMb,
+				sampledAt = self.memorySampleAt,
+				lastAttemptAt = self.lastMemoryAttemptAt,
+				ageSeconds = memoryAge,
+				sampleCount = memoryCount,
+				maxSamples = MAX_MEMORY_SAMPLES,
+				averageMb = if memoryCount > 0 then memoryTotal / memoryCount else nil,
+				minimumMb = if memoryCount > 0 then memoryMin else nil,
+				maximumMb = if memoryCount > 0 then memoryMax else nil,
+				changeSinceOldestSampleMb = memoryTrend,
+				staleAfterSeconds = MEMORY_STALE_SECONDS,
+				warningThresholdMb = if self.memoryWarningMb > 0 then self.memoryWarningMb else nil,
+				lastError = self.memoryError,
 		},
 		uptimeSeconds = if self.startedAt > 0 then math.max(0, now - self.startedAt) else 0,
 		updatedAt = os.time(),
