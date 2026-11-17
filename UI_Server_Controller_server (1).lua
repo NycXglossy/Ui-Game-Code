@@ -5491,6 +5491,56 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		publishState(nil)
 		return true, "ClubMusic requests are now locked on this server. Use ;cmlock after the incident to reopen them."
 	end
+	if operation == "SecurityReplay" then
+		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
+			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
+			return false, "ClubMusic administrator permission is required."
+		end
+		local targetUserId: number? = nil
+		local queryLimit = 15
+		local rawArgument = if typeof(argument) == "string" then string.gsub(argument, "^%s*(.-)%s*$", "%1") else ""
+		if rawArgument ~= "" then
+			local userPart, limitPart = string.match(rawArgument, "^(%d+)%s*(%d*)$")
+			if not userPart then return false, "Use ;cmreplay [UserId] [Limit]." end
+			local parsedUserId = tonumber(userPart)
+			if not parsedUserId or parsedUserId < 1 or parsedUserId > 9007199254740991
+				or parsedUserId % 1 ~= 0 then return false, "Replay target UserId is invalid." end
+			targetUserId = parsedUserId
+			if limitPart ~= "" then
+				local parsedLimit = tonumber(limitPart)
+				if not parsedLimit or parsedLimit < 1 or parsedLimit > 30 or parsedLimit % 1 ~= 0 then
+					return false, "Replay limit must be an integer from 1 to 30."
+				end
+				queryLimit = parsedLimit
+			end
+		end
+		local endpoint = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+		if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= ServerStorage then
+			return false, "Security replay is unavailable on this server."
+		end
+		local queryOk, allowed, events, queryError = pcall(function()
+			return endpoint:Invoke("Query", caller, targetUserId, queryLimit, nil, nil)
+		end)
+		if not queryOk or allowed ~= true or typeof(events) ~= "table" then
+			return false, if typeof(queryError) == "string" then queryError else "Security replay query failed."
+		end
+		if #events == 0 then
+			return true, if targetUserId then "No retained replay events for UserId " .. tostring(targetUserId) .. "." else "No replay events are currently retained on this server."
+		end
+		local lines = {"Tiki Tide Security Replay (newest first):"}
+		for index, item in ipairs(events) do
+			if index > queryLimit then break end
+			if typeof(item) == "table" then
+				local at = if typeof(item.at) == "number" then os.date("!%H:%M:%S UTC", item.at) else "time?"
+				table.insert(lines, string.format("%s | %s | %s | UserId %d | %s",
+					at, string.sub(tostring(item.severity or "Info"), 1, 12),
+					string.sub(tostring(item.type or "unknown"), 1, 48),
+					typeof(item.userId) == "number" and item.userId or 0,
+					string.sub(tostring(item.source or "Server"), 1, 24)))
+			end
+		end
+		return true, string.sub(table.concat(lines, "\n"), 1, 1700)
+	end
 	if operation == "SecurityStatus" then
 		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
 			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
