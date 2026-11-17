@@ -10,7 +10,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "ce1d6ede1433e6aac506a030b133cbed39178d61"
+local RELEASE_COMMIT = "5ecb09b9edd07bb1c6e9e067c9037f184751a26b"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
 local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
@@ -204,7 +204,7 @@ end
 
 -- Adaptive budgets apply only to optional workload. Core security paths and replay
 -- event recording remain available in every mode.
-local loadManager = nil
+local loadManager: any = nil
 local loadModule = core:FindFirstChild("AdaptiveSecurityLoadManager")
 if loadModule and loadModule:IsA("ModuleScript") then
  local loadOk, loadExport = pcall(require, loadModule)
