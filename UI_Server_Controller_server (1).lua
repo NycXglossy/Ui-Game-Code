@@ -2443,9 +2443,7 @@ do
 					local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
 					if replay and replay:IsA("BindableFunction") then
 						pcall(function()
-							replay:Invoke("Record", signal, subject, 0, "Warning", "AvatarAccessoryValidation", {
-								detail = detail,
-							})
+							replay:Invoke("Record", signal, subject, 0, "Warning", "AvatarAccessoryValidation", {})
 						end)
 					end
 					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
