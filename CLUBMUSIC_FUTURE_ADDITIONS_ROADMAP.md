@@ -289,9 +289,11 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [x] Add staff-authorized query API using existing `GlobalModeration` permission.
 - [x] Keep record/query endpoints server-only under ServerStorage; add no client remote.
 - [x] Wire CharacterPhysicsGuard signals and StaffSpectatorService lifecycle events into the timeline.
+- [x] Add TeleportValidationService failure-signal and AvatarAccessoryValidationService detection adapters.
+- [x] Add authoritative ProcessReceipt lifecycle adapters for received, retry, failure, granted, and duplicate outcomes; never copy PurchaseId into replay metadata.
 - [x] Add status counters and installer staging/rollback integration.
 - [x] Avoid frame capture, persistence writes, new MemoryStore maps, and background polling workers.
-- [ ] Add adapters for additional confirmed sources (teleport outcomes, remote validation failures, avatar/audio/chat/social validation, receipt state transitions, and moderation decisions) only after inspecting their actual call paths.
+- [ ] Add adapters for general remote validation failures, successful teleport outcomes, audio/chat/social validation, and moderation decisions only after inspecting their actual call paths.
 - [ ] Add staff-facing review UI/command adapter; do not expose raw query access to clients.
 - [ ] Test authorization, filters, overflow, cleanup, bounded memory, and event fidelity in Studio and published servers.
 - [ ] Measure overhead under load and verify it does not degrade essential validation or existing gameplay.
