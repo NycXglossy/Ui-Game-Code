@@ -100,8 +100,8 @@ function Manager:Cancel(): (boolean, string?)
 	if incoming then
 		local stopOk, stopResult = safeMethod(incoming, "Stop")
 		if not stopOk or stopResult == false then cleanupFailed = true end
-		local cleanupOk = safeMethod(incoming, "Cleanup")
-		if not cleanupOk then cleanupFailed = true end
+		local cleanupOk, cleanupResult = safeMethod(incoming, "Cleanup")
+		if not cleanupOk or cleanupResult == false then cleanupFailed = true end
 	end
 
 	-- Restore the still-controller-owned outgoing deck after an interrupted fade.
@@ -139,8 +139,15 @@ function Manager:Begin(asset: string, duration: number)
 			and not self.destroyed and typeof(self.context) == "table"
 	end
 	local function rejectStart(message: string, deck: any?): (boolean, string)
-		if deck then safeMethod(deck, "Cleanup") end
+		local cleanupOk, cleanupResult, cleanupError = true, true, nil
+		if deck then cleanupOk, cleanupResult, cleanupError = safeMethod(deck, "Cleanup") end
 		local stillCurrent = startIsCurrent()
+		if not cleanupOk or cleanupResult == false then
+			local context = self.context
+			if typeof(context) == "table" and typeof(context.OnFailure) == "function" then
+				pcall(context.OnFailure, "Rejected incoming deck cleanup failed: " .. tostring(cleanupError or cleanupResult))
+			end
+		end
 		if stillCurrent then
 			self.starting = false
 			notifySettled(self, "rejected")
