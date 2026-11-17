@@ -573,7 +573,7 @@ local SECURITY_MODULE_EXPORTS: {[string]: string} = {
 }
 local cachedSecurityBundle: any = nil
 local securityBundleLoadAttempted = false
-local EXPECTED_SECURITY_CORE_RELEASE = "1559ccc20b13685fab28824bba532ecaecf66962"
+local EXPECTED_SECURITY_CORE_RELEASE = "eba230a9606465fb2d19fd4e4a803df66e3a3c82"
 local securityCoreInstallStatus: {[string]: any} = {
  state = "NotChecked",
  expectedRelease = EXPECTED_SECURITY_CORE_RELEASE,
