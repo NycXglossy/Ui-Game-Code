@@ -92,6 +92,19 @@ if not remote then
 end
 local execute = remote :: RemoteFunction
 
+local function reportUtilitySignal(player: Player, signal: string)
+	local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+	local report = api and api:IsA("Folder") and api:FindFirstChild("ReportSignal")
+	if report and report:IsA("BindableFunction") then
+		local ok, accepted = pcall(function() return report:Invoke(player.UserId, signal) end)
+		if ok and accepted == true then return end
+	end
+	local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+	if replay and replay:IsA("BindableFunction") then
+		pcall(function() replay:Invoke("Record", signal, player.UserId, 0, "Warning", "UtilityBarRemote", {}) end)
+	end
+end
+
 local function getCharacter(player: Player): (Model?, Humanoid?)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -376,12 +389,16 @@ execute.OnServerInvoke = function(player: Player, actionName: any, value: any): 
 	-- A bounded per-server token bucket protects the validation and action path.
 	if not consumeIngressBudget(now) then return false, "Utility service is busy. Please try again shortly." end
 	if typeof(actionName) ~= "string" or #actionName < 1 or #actionName > 32 or not validateUtilityValue(value) then
+		reportUtilitySignal(player, "utility_remote_invalid_envelope")
 		return false, "Invalid utility request."
 	end
 	local allowed = actionName == "Mount" or actionName == "Size"
 		or actionName == "Clone" or actionName == "Aura" or actionName == "ClearAura"
 		or actionName == "LightingControl"
-	if not allowed then return false, "This utility action is not available." end
+	if not allowed then
+		reportUtilitySignal(player, "utility_action_unsupported")
+		return false, "This utility action is not available."
+	end
 	if FEATURE_PASS_ATTRIBUTES[actionName] and not ownsFeaturePass(player, actionName) then
 		return false, "The matching Game Pass is required for this feature."
 	end
