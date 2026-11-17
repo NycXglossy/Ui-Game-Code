@@ -198,7 +198,7 @@ local PURCHASE_DIAGNOSTIC_CAPACITY = 30
 local purchaseDiagnosticStats = {
 	totalEvents = 0, promptEvents = 0, receiptEvents = 0, receiptCallbacks = 0,
 	granted = 0, pending = 0, failures = 0, duplicates = 0, lastOutcome = nil, lastAt = nil,
-	lastSuccessAt = nil, lastFailureAt = nil,
+	lastSuccessAt = nil, lastPendingAt = nil, lastFailureAt = nil,
 }
 local moderationDiagnosticStats = {
 	totalLookups = 0, joinLookups = 0, retryLookups = 0,
@@ -236,9 +236,13 @@ local function recordPurchaseDiagnostic(source: string, userId: number, itemId: 
 	if outcome == "ReceiptGranted" then
 		purchaseDiagnosticStats.granted += 1
 		purchaseDiagnosticStats.lastSuccessAt = now
-	elseif outcome == "AwaitingPlayerProfile" or outcome == "XPBoostActivationFailed"
-		or outcome == "ReceiptPersistenceFailed" then
+	elseif outcome == "AwaitingPlayerProfile" then
 		purchaseDiagnosticStats.pending += 1
+		purchaseDiagnosticStats.lastPendingAt = now
+	elseif outcome == "XPBoostActivationFailed" or outcome == "ReceiptPersistenceFailed" then
+		purchaseDiagnosticStats.pending += 1
+		purchaseDiagnosticStats.failures += 1
+		purchaseDiagnosticStats.lastPendingAt = now
 		purchaseDiagnosticStats.lastFailureAt = now
 	elseif outcome == "RejectedUnregisteredProduct" then
 		purchaseDiagnosticStats.failures += 1
