@@ -1438,7 +1438,7 @@ local function onXPBoost(message)
 	local data = if typeof(message) == "table" then message.Data else nil
 	if not validEnvelope(data, "XPBoost") or data.kind ~= "XPBoost" or not unseen(data.id)
 		or (data.multiplier ~= 1 and data.multiplier ~= 2 and data.multiplier ~= 4)
-		or not finiteNumber(data.expiresAt) or data.expiresAt < os.time() then return end
+		or not finiteNumber(data.expiresAt) or data.expiresAt < 0 then return end
 	local lowerExpiry = if finiteNumber(data.lowerExpiresAt) and data.lowerExpiresAt > os.time() then math.floor(data.lowerExpiresAt) else 0
 	globalEventBindable:Fire({kind = "XPBoost", multiplier = data.multiplier, expiresAt = math.floor(data.expiresAt), lowerExpiresAt = lowerExpiry})
 end
