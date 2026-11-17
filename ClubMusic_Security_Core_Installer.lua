@@ -10,9 +10,9 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "0c2a38c50b78717800353a0f0c7481e67a691e3a"
+local RELEASE_COMMIT = "93e1145d6b986df908e06c5f5f0d0b1c61cad06e"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
-local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence"}
+local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence", "HoneypotManager"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 local BOOTSTRAP_NAME = "TikiTideCharacterPhysicsGuardBootstrap"
 local STAGE_NAME = FOLDER_NAME .. "_Staging"
@@ -312,6 +312,59 @@ else
  end
 end
 
+-- Decoy remotes are isolated under a dedicated ReplicatedStorage folder.
+-- Hits feed existing local threat/replay services; no hit triggers enforcement.
+local honeypotService: any = nil
+local honeypotModule = core:FindFirstChild("HoneypotManager")
+if honeypotModule and honeypotModule:IsA("ModuleScript") then
+ local honeypotOk, honeypotExport = pcall(require, honeypotModule)
+ if honeypotOk and typeof(honeypotExport) == "table" and type(honeypotExport.new) == "function" then
+  local createOk, instance = pcall(honeypotExport.new, {
+   recordThreat = function(signal, userId, source, severity)
+    if threatEndpoint and threatEndpoint:IsA("BindableFunction") then
+     return threatEndpoint:Invoke("Record", signal, userId, source, severity)
+    end
+    return false
+   end,
+   recordReplay = function(signal, userId, kind)
+    if replayEndpoint and replayEndpoint:IsA("BindableFunction") then
+     return replayEndpoint:Invoke("Record", signal, userId, 0, "Warning", "HoneypotManager", {decoyType = kind})
+    end
+    return false
+   end,
+  })
+  if createOk and typeof(instance) == "table" and type(instance.Start) == "function"
+   and type(instance.GetStatus) == "function" and type(instance.Stop) == "function" then
+   honeypotService = instance
+   local startedOk, startedResult = pcall(function() return honeypotService:Start() end)
+   if not startedOk or startedResult ~= true then
+    warn("[Tiki Tide][Honeypot] Startup failed: " .. tostring(startedResult))
+    honeypotService = nil
+   end
+  else
+   warn("[Tiki Tide][Honeypot] Module interface validation failed: " .. tostring(instance))
+  end
+ else
+  warn("[Tiki Tide][Honeypot] Module failed to load: " .. tostring(honeypotExport))
+ end
+else
+ warn("[Tiki Tide][Honeypot] Optional module is missing.")
+end
+
+local honeypotStatus = ServerStorage:FindFirstChild("GetTikiTideHoneypotStatus")
+if honeypotStatus and not honeypotStatus:IsA("BindableFunction") then
+ honeypotStatus:Destroy()
+ honeypotStatus = nil
+end
+if honeypotService then
+ if not honeypotStatus then
+  honeypotStatus = Instance.new("BindableFunction")
+  honeypotStatus.Name = "GetTikiTideHoneypotStatus"
+  honeypotStatus.Parent = ServerStorage
+ end
+ honeypotStatus.OnInvoke = function() return honeypotService:GetStatus() end
+end
+
 replayEndpoint.OnInvoke = function(action, ...)
  if action == "Record" then return replay:Record(...) end
  if action == "Query" then
@@ -338,7 +391,7 @@ script.Destroying:Connect(function()
 end)
 print("[Tiki Tide][SecurityReplay] Bounded server-local event history ready; persistent writes=0; frame capture=false.")
 if loadManager then print("[Tiki Tide][AdaptiveLoad] Adaptive optional-work budgets started; essential security paths remain unrestricted.") end
-if threatService then print("[Tiki Tide][ThreatIntelligence] Bounded local correlation ready; automatic enforcement=false.") end
+if threatService then print("[Tiki Tide][ThreatIntelligence] Bounded local correlation ready; automatic enforcement=false.") end\nif honeypotService then print("[Tiki Tide][Honeypot] Isolated decoy remotes active; detection-only; automatic enforcement=false.") end
 ]=]
 
 local stagedBootstrap = Instance.new("Script")
