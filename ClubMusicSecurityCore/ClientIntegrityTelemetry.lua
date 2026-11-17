@@ -10,7 +10,7 @@ Service.__index = Service
 
 local REMOTE_NAME = "TikiTideClientIntegrityTelemetry_v1"
 local MAX_TRACKED_PLAYERS = 200
-local MAX_REPORTS_PER_PLAYER = 6
+local MAX_REPORTS_PER_PLAYER = 8
 local MIN_REPORT_INTERVAL = 1
 local MAX_COUNTER = 1000000000
 
@@ -22,6 +22,7 @@ local ALLOWED_SIGNALS: {[string]: boolean} = {
 	client_integrity_state_remote_missing = true,
 	client_integrity_notice_remote_missing = true,
 	client_integrity_state_function_missing = true,
+	client_integrity_probe_completed = true,
 }
 
 local function increment(value: number): number
