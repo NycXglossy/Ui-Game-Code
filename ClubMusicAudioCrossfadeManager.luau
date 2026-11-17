@@ -322,19 +322,62 @@ function Manager:Begin(asset: string, duration: number)
 	return true, nil
 end
 
+local function drainRetiredDecks(self: any): boolean
+	-- Let any bounded asynchronous retry already in flight finish before taking
+	-- over the pending registry. This is especially important during BindToClose.
+	local deadline = os.clock() + 6.5
+	while os.clock() < deadline do
+		local retrying = false
+		for _, status in pairs(self.retiredDecks or {}) do
+			if status == "retrying" then retrying = true; break end
+		end
+		if not retrying then break end
+		task.wait(0.1)
+	end
+
+	local allClean = true
+	for deck, status in pairs(self.retiredDecks or {}) do
+		if status == "pending" then
+			self.retiredDecks[deck] = "retrying"
+			local cleaned = false
+			for attempt = 1, 3 do
+				if attempt > 1 then task.wait(attempt) end
+				local ok, result, detail = safeMethod(deck, "Cleanup")
+				if ok and result ~= false then
+					self.retiredDecks[deck] = nil
+					cleaned = true
+					break
+				end
+				local context = self.context
+				if typeof(context) == "table" and typeof(context.OnFailure) == "function" then
+					pcall(context.OnFailure, "Final retired deck cleanup retry " .. tostring(attempt)
+						.. " failed: " .. tostring(detail or result))
+				end
+			end
+			if not cleaned then
+				self.retiredDecks[deck] = "pending"
+				allClean = false
+			end
+		elseif status == "retrying" then
+			allClean = false
+		end
+	end
+	return allClean
+end
+
 function Manager:Cleanup(): (boolean, string?)
-	if self.destroyed then
-		local pendingClean = retryPendingDecks(self)
+	if not self.destroyed then
+		-- Close admission before cancellation touches resources. If cleanup yields
+		-- inside a deck method, no new Begin may reserve this manager meanwhile.
+		self.destroyed = true
+		local cancelOk, cancelError = self:Cancel()
+		local pendingClean = drainRetiredDecks(self)
+		self.context = nil
+		if not cancelOk then return false, cancelError end
 		if not pendingClean then return false, "One or more retired crossfade decks remain pending cleanup." end
 		return true, nil
 	end
-	-- Close admission before cancellation touches resources. If cleanup yields
-	-- inside a deck method, no new Begin may reserve this manager meanwhile.
-	self.destroyed = true
-	local cancelOk, cancelError = self:Cancel()
-	local pendingClean = retryPendingDecks(self)
-	self.context = nil
-	if not cancelOk then return false, cancelError end
+	local pendingClean = drainRetiredDecks(self)
 	if not pendingClean then return false, "One or more retired crossfade decks remain pending cleanup." end
 	return true, nil
 end
