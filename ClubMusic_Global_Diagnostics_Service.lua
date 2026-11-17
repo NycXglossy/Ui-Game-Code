@@ -307,6 +307,7 @@ function Service:GetSnapshot(): {[string]: any}
 		adaptiveLoad = self:_readStatus("AdaptiveLoad", self.d.getAdaptiveLoadStatus),
 		securityReplay = self:_readStatus("SecurityReplay", self.d.getSecurityReplayStatus),
 		threatIntelligence = self:_readStatus("ThreatIntelligence", self.d.getThreatIntelligenceStatus),
+		honeypot = self:_readStatus("Honeypot", self.d.getHoneypotStatus),
 		controller = self:_readStatus("Controller", self.d.getControllerDiagnostics),
 		characterPhysics = self:_readStatus("CharacterPhysics", self.d.getCharacterPhysicsStatus),
 		safeCall = self:_readStatus("SafeCall", self.d.getSafeCallStatus),
@@ -315,7 +316,7 @@ function Service:GetSnapshot(): {[string]: any}
 	local securityObserved = 0
 	local securityUnavailable = 0
 	for _, key in ipairs({"authorization", "rateLimit", "securityPolicy", "securityMonitor",
-		"messageValidation", "idempotency", "audit", "eventLog", "incidentResponse", "threatIntelligence", "characterPhysics"}) do
+		"messageValidation", "idempotency", "audit", "eventLog", "incidentResponse", "threatIntelligence", "honeypot", "characterPhysics"}) do
 		local item = operationalServices[key]
 		local itemState = tostring(item.state or "Unknown")
 		if itemState == "Unavailable" or itemState == "NotInstalled" then
@@ -348,11 +349,12 @@ function Service:GetSnapshot(): {[string]: any}
 			eventLog = operationalServices.eventLog.state,
 			incidentResponse = operationalServices.incidentResponse.state,
 			threatIntelligence = operationalServices.threatIntelligence.state,
+			honeypot = operationalServices.honeypot.state,
 			characterPhysics = operationalServices.characterPhysics.state,
 		},
 	}
 	local observabilityKeys = {"diagnostics", "serviceRegistry", "serverHealth", "watchdog",
-		"adaptiveLoad", "securityReplay", "threatIntelligence", "controller", "safeCall", "errorHistory"}
+		"adaptiveLoad", "securityReplay", "threatIntelligence", "honeypot", "controller", "safeCall", "errorHistory"}
 	local observabilityCounts = {Healthy = 0, Degraded = 0, Unavailable = 0, NotInstalled = 0, Starting = 0, Other = 0}
 	local observabilityIssues = {}
 	for _, key in ipairs(observabilityKeys) do
