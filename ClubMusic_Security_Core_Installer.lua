@@ -309,7 +309,12 @@ else
  threatEndpoint.OnInvoke = function(action, ...)
   if not threatService then return false, {}, "Threat intelligence is unavailable." end
   if action == "Record" then return threatService:Record(...) end
-  if action == "Query" then return threatService:Query(...) end
+  if action == "Query" then
+   if loadManager and not loadManager:TryConsume("ThreatReviewQueries") then
+    return false, {}, "Threat review is temporarily rate-limited while the server is under load."
+   end
+   return threatService:Query(...)
+  end
   if action == "Status" then return threatService:GetStatus() end
   return false, "Unsupported threat-intelligence action."
  end
