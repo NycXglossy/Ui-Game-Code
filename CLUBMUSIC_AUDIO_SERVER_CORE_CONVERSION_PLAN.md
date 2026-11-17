@@ -312,3 +312,41 @@ Spatial routing remains a separate optional server resource service. Client pref
 - Repository inventory shows `MusicPlaylistManager.luau` as a standalone source file; it is not embedded in `ClubMusic_ServerStorage_Modules.rbxmx` or the audio server bundle, and it is not listed in the audio module installer. The standalone file is retained for rollback until the live place's ServerStorage hierarchy is confirmed.
 - Static source checks passed for removal of runtime manager references and preservation of persistent service, rotation state, and DJ authorization.
 - **Not yet verified:** Luau compilation, Studio/published-server playlist start/stop, playlist CRUD/refresh, rotation cursor behavior, and queue refill. Owner runtime testing remains required.
+
+
+## Rebuilt module audit — DJ sessions and backend configuration (2026-11-16)
+
+The rebuilt five-module audio bundle was compared against its five standalone `.luau` sources on `security/phase1-foundation`. All five embedded ModuleScript sources are byte-for-byte identical to their standalone counterparts:
+
+- `ClubMusicAudioBackend`
+- `ClubMusicAudioCrossfadeManager`
+- `ClubMusicAudioQualityProfiles`
+- `ClubMusicDJSessionManager`
+- `ClubMusicSpatialAudioGraph`
+
+No source drift was found between the inspected bundle and standalone files. This does not establish which copy is installed in the live place; the controller intentionally prefers `ServerStorage/ClubMusicAudioModules` over direct ServerStorage children.
+
+### DJ session manager
+
+- The controller loads `ClubMusicDJSessionManager` as an optional server-only child from either supported ServerStorage layout.
+- The manager owns only its bounded in-memory DJ session/current-history records. It does not own playback, queue, playlist rotation, or DJ Control Mode.
+- Its injected `Authorize` callback delegates to `ControllerFunctions.isStaff`, which delegates to `authorizationService:GetLevel(player)`. The authorization service is the shared `ClubMusicSecurityCore.Authorization` instance. The manager does not implement its own role/group lookup.
+- The `Authorize` callback currently treats Start, Handoff, and End identically (staff level required). Handoff additionally checks that the target is a connected staff member before the manager commits the new session owner.
+- The controller clears the departing DJ's session through `EndForDeparture`; explicit End and Handoff update the player attributes at the controller boundary.
+- Decision: keep this module separate for now. It is a small, coherent session-state boundary and is already injected with centralized authorization. Do not fold it into the controller merely to reduce the module count. If action-specific DJ-session permissions are introduced later, update the injected authorization policy and tests together.
+
+### Backend configuration and optional modules
+
+- `ClubMusicAudioBackend` exposes the configuration setters consumed by quality profiles: `SetGain`, `SetEqualizer`, and `SetPlaybackSpeed`. Its graph construction remains the modern server-owned AudioPlayer/EQ/fader graph under the injected parent.
+- `ClubMusicAudioQualityProfiles` is present in the server bundle and matches its standalone source, but the current controller has no reference to or initialization path for it. It is dormant, not part of the active runtime configuration path. Do not fold it into the backend or claim that profile controls are active until a real controller/UI consumer is wired and tested.
+- `ClubMusicSpatialAudioGraph` is likewise bundled and source-matched but has no controller reference in the inspected controller. It remains an optional spatial-routing utility, not an active default route. Keep it separate until a spatial-audio feature explicitly consumes it.
+- `ClubMusicAudioCrossfadeManager` is actively loaded by the controller through `createAudioCrossfadeManager`; it creates incoming decks through the backend and remains a separate transition lifecycle boundary.
+- `MusicPlaybackManager` is the only child playback facade loaded by the controller. `ServerMusicAudioHandler` is not referenced by the current controller and remains a duplicate/rollback candidate pending installer and live-place consumer reconciliation.
+
+### Audit decision and next safe work
+
+No runtime code was changed by this audit because the DJ-session authority boundary is already centralized and the two optional modules (quality profiles and spatial routing) have no active controller consumers. The five bundled module sources match their standalone counterparts exactly.
+
+Next source-conversion target: consolidate the remaining playback inspection facade only after comparing every `MusicPlaybackManager` consumer and its `InspectQuality()` contract with the unused `ServerMusicAudioHandler` snapshot API. Preserve watchdog quality classifications, legacy fallback inspection until the modern-only retirement gate, and controller-owned playback state. Do not remove either source or regenerate the bundle until installer manifests and live-place module placement are reconciled.
+
+**Runtime status:** static source inspection only; no Luau compilation, Roblox Studio, or published-server validation was performed for this audit.
