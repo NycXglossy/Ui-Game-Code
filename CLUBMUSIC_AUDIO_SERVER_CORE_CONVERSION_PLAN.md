@@ -478,3 +478,14 @@ The repository installation path is now explicit for the active playback inspect
 - Static source review only. Studio acceptance still needs repeated Begin attempts during setup, Cancel during deck creation/gain read/initialization/fade, Cleanup during setup/fade, and immediate Begin attempts after cancellation/teardown. No Luau compilation or Roblox runtime verification is claimed.
 
 - **Follow-up manager commit:** `3ff42a4dfba07cee9beda715795ca2e4216f0517` adds generation/ownership checks immediately after fade-step deck and gain operations. This prevents a worker that resumes after cancellation from continuing to attenuate the outgoing deck or attempting commit work.
+
+
+### AudioPlayer graph resource ownership audit (2026-11-17)
+
+- **Backend commits:** `b8c04961dcba7df190c74f4cd43ebb8225983373`, `018049ef31e890fc715499f6538d1237c6c5271c`
+- **Transition/controller commits:** `9f6fd8d11bbb8c9d2cf9b8e12ddaa32c0ed24681`, `f0df6647a1becc76df681b38b3fcf5af3445775e`
+- Backend graph construction now tracks each allocated Instance and rolls back in reverse allocation order if any property assignment, parenting, or Wire setup fails. A partially created Folder/AudioPlayer/AudioEqualizer/AudioFader/Wire graph is not intentionally left in SoundService.
+- Backend Cleanup reports root or child destruction failures and falls back to individually destroying owned graph children when root destruction fails. It clears Lua references and wire lists after teardown attempts.
+- Controller CreateDeck now wraps post-construction trim/player setup and invokes Backend Cleanup if setup fails before returning the deck to the transition manager.
+- Manager cancellation and rejected-start cleanup now recognize a deck Cleanup method that returns false (not only a thrown error), and report cleanup failure through the controller failure callback.
+- Static source checks only. Studio tests must verify no ClubMusicCrossfadeDeck roots or child instances accumulate after repeated transitions, injected setup failures, cancellation, and manager teardown. No Luau compilation or Roblox runtime verification is claimed.
