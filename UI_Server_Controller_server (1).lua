@@ -6043,12 +6043,28 @@ end
 
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
+	if typeof(action) ~= "string" or #action < 1 or #action > 32 then
+		local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+		if replay and replay:IsA("BindableFunction") then
+			pcall(function()
+				replay:Invoke("Record", "clubmusic_remote_invalid_action", player.UserId, 0,
+					"Warning", "ClubMusicRemote", {actionType = typeof(action)})
+			end)
+		end
+	end
 	local isPlaybackControl = action == "DJPause" or action == "DJRestart" or action == "DJSkip"
 	if isPlaybackControl then
 		print("[ClubMusic][PlaybackControl] Request received; action=" .. tostring(action) .. "; player=" .. player.Name)
 	end
 	local ok, accepted, result = pcall(ControllerFunctions.handleAction, player, action, payload)
 	if not ok then
+		local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+		if replay and replay:IsA("BindableFunction") then
+			pcall(function()
+				replay:Invoke("Record", "clubmusic_remote_handler_error", player.UserId, 0,
+					"Warning", "ClubMusicRemote", {action = if typeof(action) == "string" then string.sub(action, 1, 32) else "invalid"})
+			end)
+		end
 		warn("[ClubMusic] Action handler error: " .. tostring(accepted))
 	elseif isPlaybackControl then
 		print("[ClubMusic][PlaybackControl] Handler result; action=" .. tostring(action)
