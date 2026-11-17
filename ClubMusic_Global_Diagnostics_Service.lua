@@ -292,6 +292,9 @@ function Service:GetSnapshot(): {[string]: any}
 		eventLog = self:_readStatus("EventLog", self.d.getEventLogStatus),
 		incidentResponse = self:_readStatus("IncidentResponse", self.d.getIncidentResponseStatus),
 		errorHistory = self:_readStatus("ErrorHistory", self.d.getErrorHistoryStatus),
+		adaptiveLoad = self:_readStatus("AdaptiveLoad", self.d.getAdaptiveLoadStatus),
+		securityReplay = self:_readStatus("SecurityReplay", self.d.getSecurityReplayStatus),
+		safeCall = self:_readStatus("SafeCall", self.d.getSafeCallStatus),
 	}
 	local securityStates = {}
 	local securityObserved = 0
@@ -331,6 +334,42 @@ function Service:GetSnapshot(): {[string]: any}
 			incidentResponse = operationalServices.incidentResponse.state,
 		},
 	}
+	local observabilityKeys = {"diagnostics", "serviceRegistry", "serverHealth", "watchdog",
+		"adaptiveLoad", "securityReplay", "safeCall", "errorHistory"}
+	local observabilityCounts = {Healthy = 0, Degraded = 0, Unavailable = 0, NotInstalled = 0, Starting = 0, Other = 0}
+	local observabilityIssues = {}
+	for _, key in ipairs(observabilityKeys) do
+		local item = operationalServices[key]
+		local itemState = tostring(item.state or "Unknown")
+		if itemState == "Healthy" or itemState == "Ready" or itemState == "Observing" or itemState == "Available" then
+			observabilityCounts.Healthy += 1
+		elseif itemState == "Degraded" or itemState == "Failed" or itemState == "Stopped" then
+			observabilityCounts.Degraded += 1
+			table.insert(observabilityIssues, key .. ": " .. tostring(item.detail or itemState))
+		elseif itemState == "NotInstalled" then
+			observabilityCounts.NotInstalled += 1
+		elseif itemState == "Unavailable" then
+			observabilityCounts.Unavailable += 1
+		elseif itemState == "Starting" then
+			observabilityCounts.Starting += 1
+		else
+			observabilityCounts.Other += 1
+		end
+	end
+	local observabilityState = if observabilityCounts.Degraded > 0 then "Degraded"
+		elseif observabilityCounts.Starting > 0 then "Starting"
+		elseif observabilityCounts.Healthy == 0 then "Unavailable"
+		elseif observabilityCounts.Unavailable + observabilityCounts.NotInstalled > 0 then "Partial"
+		else "Healthy"
+	operationalServices.observabilityHealth = {
+		state = observabilityState,
+		scope = "ServerLocal",
+		observationalOnly = true,
+		components = observabilityCounts,
+		componentCount = #observabilityKeys,
+		issues = observabilityIssues,
+	}
+
 	return {
 		generatedAt = os.time(),
 		serviceEnabled = enabledOk and enabled == true,
