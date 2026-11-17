@@ -476,3 +476,5 @@ The repository installation path is now explicit for the active playback inspect
 - Sync initialization and async worker continuations are generation-fenced after potentially yielding calls. An obsolete worker cannot cancel or report failure against a newer transition after a Cancel/restart race.
 - Worker scheduling failure is handled through the same generation-scoped cancellation path. Existing queue ownership and controller commit boundary remain unchanged.
 - Static source review only. Studio acceptance still needs repeated Begin attempts during setup, Cancel during deck creation/gain read/initialization/fade, Cleanup during setup/fade, and immediate Begin attempts after cancellation/teardown. No Luau compilation or Roblox runtime verification is claimed.
+
+- **Follow-up manager commit:** `3ff42a4dfba07cee9beda715795ca2e4216f0517` adds generation/ownership checks immediately after fade-step deck and gain operations. This prevents a worker that resumes after cancellation from continuing to attenuate the outgoing deck or attempting commit work.
