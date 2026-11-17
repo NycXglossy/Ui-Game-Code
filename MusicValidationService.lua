@@ -107,6 +107,35 @@ function MusicValidationService:GetAudioAssetInfo(assetId: number): (boolean, As
 	return true, info, false
 end
 
+-- Produce the controller's stable display/playback metadata shape after its
+-- separate AudioPlayer preload confirms that the asset is playable in this experience.
+-- Marketplace metadata alone never proves experience permission or playability.
+function MusicValidationService:NormalizeAudioMetadata(assetId: number, info: any, duration: number): {[string]: any}?
+	if type(assetId) ~= "number" or assetId ~= assetId or assetId % 1 ~= 0
+		or assetId <= 0 or assetId > 9007199254740991 or typeof(info) ~= "table" then
+		return nil
+	end
+	if type(duration) ~= "number" or duration ~= duration or duration % 1 ~= 0
+		or duration < 1 or duration > 3600 then
+		return nil
+	end
+
+	local rawCreator = info.Creator
+	local creator = if typeof(rawCreator) == "table" then rawCreator.Name else nil
+	if type(creator) ~= "string" or creator == "" then creator = "Unknown" end
+	local title = if type(info.Name) == "string" then info.Name else "Untitled audio"
+
+	return {
+		assetId = assetId,
+		soundId = "rbxassetid://" .. tostring(assetId),
+		title = string.sub(title, 1, 60),
+		artist = string.sub(creator, 1, 40),
+		genre = "Creator Hub Audio",
+		duration = duration,
+		metadataSource = "MarketplaceService",
+	}
+end
+
 function MusicValidationService:ClearCache()
 	table.clear(self.cache)
 end
