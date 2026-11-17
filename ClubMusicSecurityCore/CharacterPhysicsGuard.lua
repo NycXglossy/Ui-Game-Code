@@ -74,7 +74,7 @@ function Service.new(dependencies)
 		movementSamples = 0,
 		movementSampleGaps = 0,
 		movementSampleInvalid = 0,
-		movementDistanceBands = {zero = 0, under2 = 0, under6 = 0, under12 = 0, under24 = 0, over24 = 0},
+		movementSpeedBands = {under1 = 0, under4 = 0, under8 = 0, under16 = 0, under32 = 0, over32 = 0},
 		movementContexts = {grounded = 0, airborne = 0, seated = 0, other = 0},
 		movementOwners = {server = 0, client = 0, unknown = 0},
 		movementLatencyBands = {under50ms = 0, under100ms = 0, under200ms = 0, over200ms = 0, unknown = 0},
@@ -262,13 +262,14 @@ function Service:_watchCharacter(player: Player, character: Model)
 							self.movementSampleGaps += 1
 						else
 							local distance = (position - previousPosition).Magnitude
+						local observedSpeed = distance / elapsed
 						self.movementSamples += 1
-						if distance < 0.05 then self.movementDistanceBands.zero += 1
-						elseif distance < 2 then self.movementDistanceBands.under2 += 1
-						elseif distance < 6 then self.movementDistanceBands.under6 += 1
-						elseif distance < 12 then self.movementDistanceBands.under12 += 1
-						elseif distance < 24 then self.movementDistanceBands.under24 += 1
-						else self.movementDistanceBands.over24 += 1 end
+						if observedSpeed < 1 then self.movementSpeedBands.under1 += 1
+						elseif observedSpeed < 4 then self.movementSpeedBands.under4 += 1
+						elseif observedSpeed < 8 then self.movementSpeedBands.under8 += 1
+						elseif observedSpeed < 16 then self.movementSpeedBands.under16 += 1
+						elseif observedSpeed < 32 then self.movementSpeedBands.under32 += 1
+						else self.movementSpeedBands.over32 += 1 end
 
 							local context = "other"
 						if humanoid.SeatPart ~= nil then context = "seated"
@@ -385,7 +386,7 @@ function Service:GetStatus()
 			samples = self.movementSamples,
 			gaps = self.movementSampleGaps,
 			invalidSamples = self.movementSampleInvalid,
-			distanceBandsStudsPerSample = table.clone(self.movementDistanceBands),
+			observedSpeedBandsStudsPerSecond = table.clone(self.movementSpeedBands),
 			contexts = table.clone(self.movementContexts),
 			networkOwners = table.clone(self.movementOwners),
 			latencyBands = table.clone(self.movementLatencyBands),
