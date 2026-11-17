@@ -960,6 +960,7 @@ if diagnosticsModule then
 			getSecurityReplayStatus = function() return readServerStorageStatus("GetTikiTideSecurityReplayStatus") end,
 			getThreatIntelligenceStatus = function() return readServerStorageStatus("GetTikiTideThreatIntelligenceStatus") end,
 			getHoneypotStatus = function() return readServerStorageStatus("GetTikiTideHoneypotStatus") end,
+			getClientIntegrityStatus = function() return readServerStorageStatus("GetTikiTideClientIntegrityStatus") end,
 			getControllerDiagnostics = function() return readServerStorageStatus("GetClubMusicLocalDiagnostics") end,
 			getCharacterPhysicsStatus = function() return readServerStorageStatus("GetTikiTideCharacterPhysicsGuardStatus") end,
 			getSafeCallStatus = function()
@@ -1294,6 +1295,7 @@ bindFunction("GetGlobalOperationalStatus", function()
 		SecurityReplay = readServerStorageStatus("GetTikiTideSecurityReplayStatus"),
 		ThreatIntelligence = readServerStorageStatus("GetTikiTideThreatIntelligenceStatus"),
 		Honeypot = readServerStorageStatus("GetTikiTideHoneypotStatus"),
+		ClientIntegrityTelemetry = readServerStorageStatus("GetTikiTideClientIntegrityStatus"),
 		Controller = readServerStorageStatus("GetClubMusicLocalDiagnostics"),
 		CharacterPhysics = readServerStorageStatus("GetTikiTideCharacterPhysicsGuardStatus"),
 		SafeCall = if globalSafeCall then globalSafeCall:GetStatus() else {state = "Unavailable"},
