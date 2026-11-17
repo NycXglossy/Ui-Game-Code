@@ -144,7 +144,7 @@ These changes close the in-repository source integration tasks for Phase 14 only
 - [ ] Reconcile historic watchdog/registry/memory warnings against fresh server output.
 - [ ] Profile diagnostics sampling/snapshot overhead and complete gameplay regression matrix.
 
-**Not included:** HoneypotManager and client-integrity sensor sources do not exist in this branch. Diagnostics explicitly reports them as not installed; no activity is fabricated. Client error-log aggregation is not implemented. Full per-action moderation outcome counters are not claimed; join lookup health and existing Audit/IncidentResponse summaries remain the available evidence.
+**Not included at Phase 16 completion:** HoneypotManager and client-integrity sensors were not yet implemented; Phase 17 and Phase 18 subsequently add those as separate security telemetry systems. Client error-log aggregation remains unimplemented. Phase 16 client FPS/memory/ping diagnostics remain local-only; Phase 18 fixed-code security reports are separate, bounded, and untrusted. Full per-action moderation outcome counters are not claimed; join lookup health and existing Audit/IncidentResponse summaries remain the available evidence.
 
 **Boundaries preserved:** diagnostics are server-local/client-local, no diagnostics DataStore/MemoryStore/MessagingService writes or client-to-server diagnostic remotes, no automatic recovery/enforcement/gameplay changes, and no legacy diagnostics code retired.
 
