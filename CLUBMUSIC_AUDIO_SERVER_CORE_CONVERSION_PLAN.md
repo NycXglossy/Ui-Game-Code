@@ -16,13 +16,13 @@ The server controller remains the authority for playback state, per-server queue
 1. Modern `AudioPlayer` is the only intended long-term playback source; the controller remains its lifecycle owner.
 2. Each server owns its own request queue. Optional global playback-only sync shares the playing track/state only; it must never become a shared request queue.
 3. `SecurityCore.Authorization` remains the sole permission authority. DJ/session modules may call injected authorization but must not implement a parallel role system.
-4. Normal player song requests and Auto DJ remain available to all players; neither may be wrapped in a DJ/staff authorization gate or disabled by DJ Control Mode. They remain subject to server-side catalog validation, request cooldowns/limits, queue capacity, idempotency, and abuse controls.
-5. Privileged playback controls (play/pause/restart/reload/skip), playlist management, catalog mutation, and DJ session/handoff actions require the appropriate SecurityCore-backed DJ/staff permission. Read-only Now Playing/queue access and skip voting retain their existing player-facing behavior.
-4. Queue, playlist rotation, skip-vote state, playback clocks, transition generations, and recovery ownership remain server-side.
-5. Crossfade remains a separate lifecycle manager until its transition cancellation/commit behavior is proven stable.
-6. Catalog and playlist persistence remain separate from in-memory playback/queue state.
-7. Client audio preferences and local output routing remain client-side; never move client-only preferences into server modules.
-8. Do not remove rollback assets, legacy adapters, or duplicate source files until all consumers, installer paths, embedded bundles, and live-place references are reconciled.
+4. Normal player song requests and Auto DJ remain available to all players; DJ Control Mode allows the current controller to request tracks while blocking other players. Requests remain subject to server-side catalog validation, request cooldowns/limits, queue capacity, idempotency, and abuse controls.
+5. Pause, restart, DJ skip, playlist/catalog management, and DJ session/handoff actions require the appropriate SecurityCore-backed DJ/staff permission. `ReloadSong` is explicitly excluded: it is a self-service recovery action available to every live player under its existing cooldown and ingress limits. Read-only Now Playing/queue access and skip voting retain their existing player-facing behavior.
+6. Queue, playlist rotation, skip-vote state, playback clocks, transition generations, and recovery ownership remain server-side.
+7. Crossfade remains a separate lifecycle manager until its transition cancellation/commit behavior is proven stable.
+8. Catalog and playlist persistence remain separate from in-memory playback/queue state.
+9. Client audio preferences and local output routing remain client-side; never move client-only preferences into server modules.
+10. Do not remove rollback assets, legacy adapters, or duplicate source files until all consumers, installer paths, embedded bundles, and live-place references are reconciled.
 
 ## Current server-side inventory
 
@@ -33,9 +33,9 @@ The server controller remains the authority for playback state, per-server queue
 | `ServerMusicAudioHandler.luau` | Backend-neutral snapshot and audio access adapter; still exposes legacy `Sound` methods | Merge with playback inspection into one server-only runtime adapter, or replace with controller-local helpers. Retain no independent playback ownership. |
 | `MusicPlaybackManager.luau` | Playback snapshot, elapsed/remaining time, quality inspection, controller action delegation | Consolidate with `ServerMusicAudioHandler`. Preserve `InspectQuality()` semantics because watchdog/track-advance logic consumes quality state. |
 | `MusicPlaylistManager.luau` | Thin facade over `MusicPlaylistService` and controller-owned rotation callbacks | Fold into controller/service boundary after every method caller is mapped. Do not move rotation cursor or playback selection into persistent storage. |
-| `MusicSkipVoteManager.luau` | Thin facade over controller-owned vote state and callbacks | Fold into controller vote functions after all consumers and player-departure cleanup paths are mapped. |
+| `MusicSkipVoteManager.luau` | Thin facade over controller-owned vote state and callbacks | **Consolidated in controller commit `06e85c7`.** Controller now owns vote casting and player-departure cleanup directly; source file retained pending installer/live-place reconciliation. |
 
-These four are currently loaded by the controller's `ChildManagerModules` list and instantiated with injected controller callbacks. They do not independently own playback loops, queue state, playlist cursors, or vote timers. Their consolidation should reduce module count without changing behavior.
+`MusicPlaybackManager` and `MusicPlaylistManager` remain in the controller's `ChildManagerModules` list. `MusicSkipVoteManager` has been removed from that list and its controller call sites now call controller-owned vote functions directly. The facades do not independently own playback loops, queue state, playlist cursors, or vote timers.
 
 ### Core server audio modules
 
@@ -98,7 +98,7 @@ Spatial routing remains a separate optional server resource service. Client pref
 
 ### Step 2 — Consolidate thin server facades
 - Merge `ServerMusicAudioHandler` and `MusicPlaybackManager` into one runtime adapter (or controller-local helpers) while preserving public method behavior and watchdog quality inspection.
-- Fold playlist and skip-vote facades into their existing controller/service boundaries only after exact consumer mapping.
+- Fold the playlist facade into its controller/service boundary after exact consumer mapping. Skip-vote facade consolidation is complete in source (see implementation log).
 - Keep queue, playback, playlist rotation, and vote state owned by the controller.
 
 **Exit gate:** no behavior change in pause/resume/restart/reload, watchdog advancement, playlist rotation, skip voting, or player-departure cleanup.
@@ -205,3 +205,14 @@ Spatial routing remains a separate optional server resource service. Client pref
 - The same restriction is applied in the shared request-block helper for validated audio request paths. EmergencyLock remains separate.
 - Auto DJ playback/refill remains independent of DJ Control Mode.
 - Roblox Studio/published-server tests remain required.
+
+
+### Skip-vote facade consolidation — source change committed
+
+- **Controller commit:** `06e85c79872435095f197d707a4b1a6fbdd67459`
+- Removed `MusicSkipVoteManager` from the controller's required child-manager module list and removed its initialization.
+- Replaced the `VoteSkip` action's adapter call with `ControllerFunctions.castSkipVote`, keeping vote storage, duplicate-vote rejection, threshold calculation, track advancement, notifications, and state publishing in the server controller.
+- Moved player-departure vote cleanup directly into the controller; the deferred threshold re-check remains so the departing player is no longer counted.
+- Left `MusicSkipVoteManager.luau` in the repository as a rollback/reference artifact. Do not delete it until installer manifests, embedded bundles, and live-place references are reconciled.
+- Static source checks passed for removal of runtime manager references and preservation of vote/cleanup paths.
+- **Not yet verified:** Luau compilation, Studio/published-server skip voting, voter departure behavior, or concurrent vote/track-transition behavior. Owner runtime testing remains required.
