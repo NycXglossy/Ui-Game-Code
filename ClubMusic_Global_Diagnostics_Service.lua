@@ -78,7 +78,8 @@ end
 
 function Service:Record(name: any, value: any, latencySeconds: any, outcome: any): boolean
 	if typeof(name) ~= "string" or #name == 0 or #name > 48
-		or not string.match(name, "^[%w_:%-%.]+$") then return false end
+		or not string.match(name, "^[%w_:%-%.]+$")
+		or (outcome ~= nil and outcome ~= "Success" and outcome ~= "Failure" and outcome ~= "Observed") then return false end
 	local amount = if type(value) == "number" and value == value and value >= 0 and value < math.huge then value else 1
 	local item = self.metrics[name]
 	if item == nil then
@@ -98,8 +99,6 @@ function Service:Record(name: any, value: any, latencySeconds: any, outcome: any
 		item.lastOutcome = "Failure"
 	elseif outcome == "Observed" or outcome == nil then
 		item.lastOutcome = "Observed"
-	else
-		return false
 	end
 	if type(latencySeconds) == "number" and latencySeconds == latencySeconds
 		and latencySeconds >= 0 and latencySeconds <= 120 then
