@@ -213,7 +213,7 @@ local function fallbackBucket(key: string, capacity: number, refill: number, cos
 	return true
 end
 
-local function consumeShared(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
+local function consumeLocalBudget(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
 	if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
 	-- This limiter is intentionally local to this server. The bounded token
 	-- buckets do not depend on MemoryStore availability or shared state.
@@ -235,7 +235,7 @@ local function getModeration(userId: number): {[string]: any}
 	if not key then return {} end
 	-- Bound durable reads with a per-server token bucket. Exhaustion fails closed;
 	-- no MemoryStore request or shared budget is involved.
-	local budgetAllowed = consumeShared("all:datastore", 90, 15, 1)
+	local budgetAllowed = consumeLocalBudget("all:datastore", 90, 15, 1)
 	if not budgetAllowed then
 		return {lookupFailed = true}
 	end
@@ -252,7 +252,7 @@ local publishTopic: (string, {[string]: any}) -> boolean
 local function updateModeration(userId: number, field: string, value: any, actorUserId: number, reason: string?): boolean
 	local key = userKey(userId)
 	if not key or (field ~= "globalBan" and field ~= "requestBlocked") then return false end
-	local budgetAllowed = consumeShared("all:datastore", 90, 15, 1)
+	local budgetAllowed = consumeLocalBudget("all:datastore", 90, 15, 1)
 	-- The bounded per-server token bucket remains mandatory; reject only when exhausted.
 	if not budgetAllowed then
 		warn("[ClubMusic Global] Moderation update rejected: local DataStore budget exhausted.")
@@ -327,14 +327,14 @@ bindFunction("ConsumeActionBudget", function(userId: any, action: any, cost: any
 	if globalRateLimitService then
 		globalOk, globalShared = globalRateLimitService:Consume("all:actions", CONFIG.GlobalActionCapacity, CONFIG.GlobalActionRefillPerSecond, if finiteNumber(cost) then cost else 1)
 	else
-		globalOk, globalShared = consumeShared("all:actions", CONFIG.GlobalActionCapacity, CONFIG.GlobalActionRefillPerSecond, if finiteNumber(cost) then cost else 1)
+		globalOk, globalShared = consumeLocalBudget("all:actions", CONFIG.GlobalActionCapacity, CONFIG.GlobalActionRefillPerSecond, if finiteNumber(cost) then cost else 1)
 	end
 	if not globalShared or not globalOk then return false end
 	local playerOk, playerShared
 	if globalRateLimitService then
 		playerOk, playerShared = globalRateLimitService:Consume("user:" .. key, CONFIG.GlobalPlayerCapacity, CONFIG.GlobalPlayerRefillPerSecond, if finiteNumber(cost) then cost else 1)
 	else
-		playerOk, playerShared = consumeShared("user:" .. key, CONFIG.GlobalPlayerCapacity, CONFIG.GlobalPlayerRefillPerSecond, if finiteNumber(cost) then cost else 1)
+		playerOk, playerShared = consumeLocalBudget("user:" .. key, CONFIG.GlobalPlayerCapacity, CONFIG.GlobalPlayerRefillPerSecond, if finiteNumber(cost) then cost else 1)
 	end
 	-- Global action enforcement must not silently degrade to independent server buckets.
 	return playerShared and playerOk
@@ -344,15 +344,15 @@ bindFunction("ConsumeStateBudget", function(userId: any)
 	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
 	if not key then return false end
-	local globalOk, globalShared = consumeShared("all:state", 300, 100, 1)
+	local globalOk, globalShared = consumeLocalBudget("all:state", 300, 100, 1)
 	if not globalShared or not globalOk then return false end
-	local playerOk, playerShared = consumeShared("state:" .. key, 12, 2, 1)
+	local playerOk, playerShared = consumeLocalBudget("state:" .. key, 12, 2, 1)
 	return playerShared and playerOk
 end)
 
 bindFunction("ConsumeDataStoreBudget", function()
 	if not SERVICE_ENABLED then return true end
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
+	local allowed, shared = consumeLocalBudget("all:datastore", 90, 15, 1)
 	-- Avoid a cross-server DataStore thundering herd when MemoryStore is unavailable.
 	return shared and allowed
 end)
@@ -361,9 +361,9 @@ bindFunction("ConsumeAudioBudget", function(userId: any)
 	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
 	if not key then return false end
-	local globalOk, globalShared = consumeShared("all:audio", CONFIG.GlobalAudioCapacity, CONFIG.GlobalAudioRefillPerSecond, 1)
+	local globalOk, globalShared = consumeLocalBudget("all:audio", CONFIG.GlobalAudioCapacity, CONFIG.GlobalAudioRefillPerSecond, 1)
 	if not globalShared or not globalOk then return false end
-	local playerOk, playerShared = consumeShared("audio:" .. key, 3, 0.2, 1)
+	local playerOk, playerShared = consumeLocalBudget("audio:" .. key, 3, 0.2, 1)
 	return playerShared and playerOk
 end)
 
@@ -433,7 +433,7 @@ end
 bindFunction("IsTrackBlocked", function(trackId: any)
 	local key = validTrackKey(trackId)
 	if not SERVICE_ENABLED or not key then return false, false end
-	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	local allowed = consumeLocalBudget("all:datastore", 90, 15, 1)
 	if not allowed then return false, false end
 	local ok, record = pcall(function() return globalControlStore:GetAsync(key) end)
 	if not ok then return false, false end
@@ -446,7 +446,7 @@ bindFunction("SetTrackBlocked", function(trackId: any, blocked: any, actorUserId
 		or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalModeration") then return false end
 	local cleanReason = if reason == nil then nil else cleanText(reason, CONFIG.MaxModerationReasonLength)
 	if reason ~= nil and not cleanReason then return false end
-	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	local allowed = consumeLocalBudget("all:datastore", 90, 15, 1)
 	if not allowed then return false end
 	local ok, record = pcall(function()
 		return globalControlStore:UpdateAsync(key, function(old)
@@ -488,7 +488,7 @@ end)
 local function allowGlobalDataStoreOperation(): boolean
 	-- Shared DataStore operations retain a conservative per-server budget
 	-- when the optional cross-server MemoryStore budget is unavailable.
-	local allowed = consumeShared("all:datastore", 90, 15, 1)
+	local allowed = consumeLocalBudget("all:datastore", 90, 15, 1)
 	return allowed == true
 end
 
@@ -972,7 +972,7 @@ if globalEventLogService then globalEventLogService:Start() end
 
 globalRateLimitService = createOperationalService("ClubMusic_Global_RateLimit_Service", {
 	isEnabled = function() return SERVICE_ENABLED end,
-	consumeShared = consumeShared,
+	consumeLocalBudget = consumeLocalBudget,
 }, {"Start", "GetStatus", "Consume"})
 if globalRateLimitService then globalRateLimitService:Start() end
 
@@ -1546,7 +1546,7 @@ local function publishXPState(record: any): (number, number)
 end
 
 local function allowXPDataStoreOperation(): boolean
-	local allowed, shared = consumeShared("all:datastore", 90, 15, 1)
+	local allowed, shared = consumeLocalBudget("all:datastore", 90, 15, 1)
 	return shared and allowed
 end
 
@@ -1623,7 +1623,7 @@ end
 
 bindFunction("GetGlobalXPBoost", function()
 	if not SERVICE_ENABLED then return nil, nil end
-	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
+	local budgetAllowed, budgetShared = consumeLocalBudget("all:datastore", 90, 15, 1)
 	if not budgetShared or not budgetAllowed then return nil, nil end
 	local ok, record = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
 	if not ok then
@@ -1643,7 +1643,7 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		warn("[ClubMusic Global] XP PurchaseId is invalid or too long; receipt remains pending.")
 		return false, 0, 1
 	end
-	local budgetAllowed, budgetShared = consumeShared("all:datastore", 90, 15, 1)
+	local budgetAllowed, budgetShared = consumeLocalBudget("all:datastore", 90, 15, 1)
 	if not budgetShared or not budgetAllowed then return false, 0, 1 end
 
 	local readOk, current = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
