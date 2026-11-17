@@ -2144,7 +2144,6 @@ ControllerFunctions.ChildManagerModules = {}
 for _, moduleName in ipairs({
 	"MusicPlaybackManager",
 	"MusicPlaylistManager",
-	"MusicSkipVoteManager",
 }) do
 	local moduleScript = ServerStorageForQueue:FindFirstChild(moduleName)
 	if not moduleScript then
@@ -4859,12 +4858,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "VoteSkip" then
-		local manager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.SkipVote
-		if not manager then
-			notify(player, "Skip voting is temporarily unavailable.", "warn")
-			return
-		end
-		local accepted, message = manager:CastVote(player)
+		local accepted, message = ControllerFunctions.castSkipVote(player)
 		if accepted ~= true then notify(player, tostring(message or "Skip vote was rejected."), "warn") end
 		return
 	end
@@ -6295,39 +6289,20 @@ local playlistManagerOk, playlistManager = pcall(childManagerModules.MusicPlayli
 if not playlistManagerOk then error("[ClubMusic] MusicPlaylistManager initialization failed: " .. tostring(playlistManager)) end
 ControllerFunctions.ChildManagers.Playlist = playlistManager
 
-local skipVoteManagerOk, skipVoteManager = pcall(childManagerModules.MusicSkipVoteManager.new, {
-	GetVoteState = function()
+ControllerFunctions.castSkipVote = function(player: Player): (boolean, string)
+	if player.Parent ~= Players then return false, "A connected player is required." end
+	if nowPlaying.trackId == "" then return false, "There is no active track to vote on." end
+	if skipVotes[player.UserId] then return false, "You already voted to skip this track." end
+	skipVotes[player.UserId] = true
+	if ControllerFunctions.checkSkipVotes() then
+		ControllerFunctions.broadcast("Track skipped by vote.", "ok")
+	else
 		local votes, needed = ControllerFunctions.skipStatus(nil)
-		return {
-			active = nowPlaying.trackId ~= "",
-			votes = votes,
-			needed = needed,
-			playerCount = #Players:GetPlayers(),
-		}
-	end,
-	CastVote = function(player: Player)
-		if skipVotes[player.UserId] then return false, "You already voted to skip this track." end
-		skipVotes[player.UserId] = true
-		if ControllerFunctions.checkSkipVotes() then
-			ControllerFunctions.broadcast("Track skipped by vote.", "ok")
-		else
-			local votes, needed = ControllerFunctions.skipStatus(nil)
-			notify(player, string.format("Skip vote counted (%d/%d).", votes, needed), "ok")
-		end
-		publishState(nil)
-		return true, "Skip vote counted."
-	end,
-	RemoveVoter = function(userId: number)
-		skipVotes[userId] = nil
-		-- Defer until Players:GetPlayers() no longer includes the departing player.
-		task.defer(function()
-			if ControllerFunctions.checkSkipVotes() then ControllerFunctions.broadcast("Track skipped by vote.", "ok") end
-			publishState(nil)
-		end)
-	end,
-})
-if not skipVoteManagerOk then error("[ClubMusic] MusicSkipVoteManager initialization failed: " .. tostring(skipVoteManager)) end
-ControllerFunctions.ChildManagers.SkipVote = skipVoteManager
+		notify(player, string.format("Skip vote counted (%d/%d).", votes, needed), "ok")
+	end
+	publishState(nil)
+	return true, "Skip vote counted."
+end
 
 -- Optional DJ session facade. It is loaded from either supported ServerStorage
 -- layout and never grants staff roles or changes queue/playback ownership.
@@ -6871,18 +6846,12 @@ Players.PlayerRemoving:Connect(function(player)
 	pendingAudio[userId] = nil
 	if entitlementAuthority then pcall(entitlementAuthority.Clear, entitlementAuthority, player) end
 	blockedUsers[userId] = nil
-	local voteManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.SkipVote
-	if voteManager then
-		voteManager:UpdateVoteOnPlayerLeave(userId)
-	else
-		skipVotes[userId] = nil
-		-- The leaving player may still be counted by GetPlayers(); re-check next frame.
-		task.defer(function()
-			if ControllerFunctions.checkSkipVotes() then ControllerFunctions.broadcast("Track skipped by vote.", "ok") end
-			publishState(nil)
-		end)
-	end
 	skipVotes[userId] = nil
+	-- The leaving player may still be counted by GetPlayers(); re-check next frame.
+	task.defer(function()
+		if ControllerFunctions.checkSkipVotes() then ControllerFunctions.broadcast("Track skipped by vote.", "ok") end
+		publishState(nil)
+	end)
 end)
 
 for _, player in ipairs(Players:GetPlayers()) do
