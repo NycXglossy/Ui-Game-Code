@@ -22,7 +22,7 @@ This register distinguishes source implementation, static review, and runtime ve
 
 ### Diagnostics and server-side security
 - Global diagnostics snapshots and SafeCall recent records are exposed through server-only BindableFunctions in ServerStorage, not client remotes in the inspected source.
-- Client diagnostics projection remains aggregate-only.
+- Client diagnostics measurements remain client-local and opt-in; no client telemetry is projected to the server or used for authorization.
 - RequestAction is a multiplexed gameplay boundary with action allowlisting, bounded payload validation, per-player/server budgets, and action-specific authorization.
 - Global API privileged mutations use SecurityCore actor authorization and fail closed when authorization is unavailable.
 - Cross-server messages require MessageValidation and bounded message-ID deduplication.
