@@ -90,4 +90,4 @@ print("[ClubMusic] Installed 5 audio support ModuleScripts in ServerStorage/" ..
 print("[ClubMusic] Installed MusicPlaybackManager directly under ServerStorage.")
 print("[ClubMusic] Installed 1 client ModuleScript in ReplicatedStorage/" .. folders.client)
 print("[ClubMusic] Install this package with the matching controller and UI_Renderer from the same branch snapshot.")
-print("[ClubMusic] ServerMusicSound and MusicGroup are retained as inert rollback objects; the controller now starts modern AudioPlayer only.")
+print("[ClubMusic] Modern AudioPlayer is the only controller playback source. Remove obsolete ServerMusicSound/MusicGroup instances from the place only after confirming no unrelated scripts use them.")
