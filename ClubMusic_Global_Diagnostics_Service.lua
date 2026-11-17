@@ -308,6 +308,7 @@ function Service:GetSnapshot(): {[string]: any}
 		securityReplay = self:_readStatus("SecurityReplay", self.d.getSecurityReplayStatus),
 		threatIntelligence = self:_readStatus("ThreatIntelligence", self.d.getThreatIntelligenceStatus),
 		honeypot = self:_readStatus("Honeypot", self.d.getHoneypotStatus),
+		clientIntegrityTelemetry = self:_readStatus("ClientIntegrityTelemetry", self.d.getClientIntegrityStatus),
 		controller = self:_readStatus("Controller", self.d.getControllerDiagnostics),
 		characterPhysics = self:_readStatus("CharacterPhysics", self.d.getCharacterPhysicsStatus),
 		safeCall = self:_readStatus("SafeCall", self.d.getSafeCallStatus),
@@ -354,7 +355,7 @@ function Service:GetSnapshot(): {[string]: any}
 		},
 	}
 	local observabilityKeys = {"diagnostics", "serviceRegistry", "serverHealth", "watchdog",
-		"adaptiveLoad", "securityReplay", "threatIntelligence", "honeypot", "controller", "safeCall", "errorHistory"}
+		"adaptiveLoad", "securityReplay", "threatIntelligence", "honeypot", "clientIntegrityTelemetry", "controller", "safeCall", "errorHistory"}
 	local observabilityCounts = {Healthy = 0, Degraded = 0, Unavailable = 0, NotInstalled = 0, Starting = 0, Other = 0}
 	local observabilityIssues = {}
 	for _, key in ipairs(observabilityKeys) do
