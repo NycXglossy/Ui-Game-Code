@@ -219,3 +219,17 @@ The project owner reports that the previously implemented Tiki Tide/ClubMusic sy
 
 - Phase 23 follow-up: AdaptiveSecurityLoadManager now has a separate ThreatReviewQueries token bucket (Normal 0.5/s burst 2; Reduced 0.1/s burst 1; Critical disabled). The SecurityCore installer gates only optional threat-review Query operations with this budget; Record, authorization, incident creation, and all essential security paths remain unthrottled.
 - Phase 24 installer pin: ClubMusic_Security_Core_Installer.lua now pins source commit eba230a9606465fb2d19fd4e4a803df66e3a3c82, which contains the Phase 20–24 code and staff command integrations. The installer pin update is commit 9501945f385a0cc921bbaede63b458942e491fea.
+
+
+## Owner-reported acceptance and Phases 25–39 roadmap (2026-11-16)
+
+The project owner has stated that the implemented systems and phases are working in their experience. Record this as owner-reported runtime acceptance; it is not an independent reproduction by this repository update. Phase-specific release evidence should still be retained where available.
+
+- [x] Record Phase 25–39 as the next ordered development program.
+- [x] Preserve the existing SecurityCore, RateLimit, Idempotency, MessageValidation, replay, threat-intelligence, honeypot, diagnostics, incident-response, and spectator boundaries.
+- [x] Define Phase 25 as an audit-first advanced exploit-prevention pass; no duplicate remote gateway or security authority is introduced before a concrete gap is confirmed.
+- [ ] Complete Phase 25 endpoint-by-endpoint authorization, payload, rate-limit, replay, concurrency, and state-owner inventory.
+- [ ] Complete Phases 26–39 in order with separate source commits and acceptance records.
+- [ ] Keep all Studio/published-server certification claims tied to reproducible evidence and the exact installed revision.
+
+The Phase 25–39 plan is recorded in `CLUBMUSIC_FUTURE_ADDITIONS_ROADMAP.md`; Phase 25 acceptance scope is in `CLUBMUSIC_PHASE25_ADVANCED_EXPLOIT_PREVENTION.md`. The future phase headings are plans, not completed implementations.
