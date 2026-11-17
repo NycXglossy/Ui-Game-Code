@@ -1,9 +1,10 @@
 -- ClubMusic audio ModuleScript installer
--- All six modules are pinned to the same audited branch snapshot (8edd537a30f002e39bd437a6d77f74e5ce66c2c6).
+-- The six package modules are pinned to the audited audio package snapshot. The controller playback adapter is pinned separately below.
 -- Playback and queues are server-local; this package does not install global queue/playback services.
 -- Run this entire script once in Roblox Studio's Command Bar (View > Command Bar).
 -- Requires Game Settings > Security > Allow HTTP Requests.
 -- This installs source modules only; it does NOT update the controller or renderer scripts.
+-- MusicPlaybackManager is installed as a direct ServerStorage child because the controller requires that exact path.
 -- Install all matching branch revisions together in a stopped test place before starting playback.
 
 local HttpService = game:GetService("HttpService")
@@ -39,11 +40,24 @@ for _, item in ipairs(modules) do
     staged[item.name] = source
 end
 
+local playbackManagerUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/44ad160be15ac14eca7907d7158fc81bae865c67/MusicPlaybackManager.luau"
+local playbackManagerOk, playbackManagerSource = pcall(function()
+    return HttpService:GetAsync(playbackManagerUrl, true)
+end)
+if not playbackManagerOk or type(playbackManagerSource) ~= "string" or #playbackManagerSource < 100 then
+    error("Could not retrieve MusicPlaybackManager. Check HTTP requests and internet access. No modules have been installed yet.")
+end
+
 for side, parent in pairs(destinations) do
     local folder = parent:FindFirstChild(folders[side])
     if folder and not folder:IsA("Folder") then
         error("A non-Folder already uses the name " .. folders[side] .. " under " .. parent.Name .. ". Rename it before retrying.")
     end
+end
+
+local existingPlaybackManager = ServerStorage:FindFirstChild("MusicPlaybackManager")
+if existingPlaybackManager and not existingPlaybackManager:IsA("ModuleScript") then
+    error("A non-ModuleScript already uses the name MusicPlaybackManager under ServerStorage. Rename it before retrying.")
 end
 
 for side, parent in pairs(destinations) do
@@ -67,7 +81,13 @@ for side, parent in pairs(destinations) do
     end
 end
 
-print("[ClubMusic] Installed 5 server ModuleScripts in ServerStorage/" .. folders.server)
+local playbackManager = existingPlaybackManager or Instance.new("ModuleScript")
+playbackManager.Name = "MusicPlaybackManager"
+playbackManager.Source = playbackManagerSource
+playbackManager.Parent = ServerStorage
+
+print("[ClubMusic] Installed 5 audio support ModuleScripts in ServerStorage/" .. folders.server)
+print("[ClubMusic] Installed MusicPlaybackManager directly under ServerStorage.")
 print("[ClubMusic] Installed 1 client ModuleScript in ReplicatedStorage/" .. folders.client)
 print("[ClubMusic] Install this package with the matching controller and UI_Renderer from the same branch snapshot.")
 print("[ClubMusic] Keep ServerMusicSound and MusicGroup only as temporary bootstrap/fallback compatibility objects until Studio validation passes.")
