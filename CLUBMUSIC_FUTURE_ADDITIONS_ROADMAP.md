@@ -293,8 +293,10 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [x] Add authoritative ProcessReceipt lifecycle adapters for received, retry, failure, granted, and duplicate outcomes; never copy PurchaseId into replay metadata.
 - [x] Add status counters and installer staging/rollback integration.
 - [x] Avoid frame capture, persistence writes, new MemoryStore maps, and background polling workers.
-- [ ] Add adapters for general remote validation failures, successful teleport outcomes, audio/chat/social validation, and moderation decisions only after inspecting their actual call paths.
-- [ ] Add staff-facing review UI/command adapter; do not expose raw query access to clients.
+- [x] Record sanitized server-submitted security signals through the existing ReportSignal gateway and committed global ban/request-block changes.
+- [x] Record successful TeleportValidationService destination verification as an informational replay event.
+- [ ] Audit every remote ingress and audio/chat/social validator to confirm which paths submit validated ReportSignal events; do not claim full domain coverage until each confirmed call path is wired.
+- [x] Add the staff-only ;cmreplay Kohl's Admin command with optional UserId/limit filtering; query remains server-only and requires GlobalModeration.
 - [ ] Test authorization, filters, overflow, cleanup, bounded memory, and event fidelity in Studio and published servers.
 - [ ] Measure overhead under load and verify it does not degrade essential validation or existing gameplay.
 
