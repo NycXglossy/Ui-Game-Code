@@ -135,11 +135,13 @@ function Service:_watchCharacter(player: Player, character: Model)
 	}
 	self.playerStates[player.UserId] = state
 
-	task.delay(0.5, function()
+	-- Custom rigs may finish assembling after CharacterAdded. Wait a bounded
+	-- interval for the Humanoid instead of silently skipping the whole observer.
+	task.spawn(function()
+		local humanoid = character:WaitForChild("Humanoid", 10)
+		if not humanoid or not humanoid:IsA("Humanoid") then return end
 		if not self.started or player.Parent ~= Players or player.Character ~= character
 			or self.playerStates[player.UserId] ~= state then return end
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if not humanoid then return end
 		state.humanoid = humanoid
 		state.baseline = {
 			WalkSpeed = humanoid.WalkSpeed,
@@ -220,7 +222,7 @@ function Service:_watchCharacter(player: Player, character: Model)
 
 		-- Observe only sustained extreme assembly motion. Ordinary running,
 		-- jumping, and seated movement are intentionally below these thresholds.
-		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		local rootPart = character:WaitForChild("HumanoidRootPart", 10)
 		if rootPart and rootPart:IsA("BasePart") then
 			local function checkVelocity(property: string, threshold: number, signal: string)
 				if state.pending[property] then return end
