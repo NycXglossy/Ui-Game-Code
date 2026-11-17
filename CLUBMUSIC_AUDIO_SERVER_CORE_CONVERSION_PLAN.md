@@ -145,3 +145,19 @@ Spatial routing remains a separate optional server resource service. Client pref
 - The controller expects `MusicValidationService`; a second `.luau` implementation exists and must be consumer-audited before retirement.
 - The modern AudioPlayer backend is already the intended primary source, but the controller still contains a guarded legacy Sound fallback. This plan does not remove it prematurely.
 - The global playback-only sync and local queue ownership model are preserved.
+
+
+## Implementation log
+
+### Server audio facade consolidation — source change committed
+
+- **Controller commit:** `c5af3a44c003f386adf333f5ae8c56ebdceffe5e`
+- Removed `ServerMusicAudioHandler` from the controller's required child-manager module list.
+- Removed the unused `ControllerFunctions.ChildManagers.Audio` instance; the controller had no consumers of that instance.
+- Injected `ControllerFunctions.getAudioSnapshot()` directly into `MusicPlaybackManager`, removing the redundant snapshot adapter layer.
+- Preserved `MusicPlaybackManager:InspectQuality()`, which is still consumed by watchdog/track-advance logic.
+- Preserved the guarded legacy Sound fallback and its adapter compatibility for this incremental step.
+- Left `ServerMusicAudioHandler.luau` in the repository as a rollback/reference artifact; it is no longer required by this controller revision. Do not delete it until installer and live-place references are reconciled.
+- Post-edit source inspection confirms there are no `ChildManagers.Audio` references, the direct controller snapshot is injected, and the watchdog quality probe remains present.
+
+**Not yet verified:** Luau compilation, Roblox Studio playback controls, watchdog behavior, published-server playback, or multi-server queue/sync behavior. Owner runtime testing remains required.
