@@ -958,12 +958,9 @@ if diagnosticsModule then
 			getSafeCallStatus = function()
 				if not globalSafeCall then return nil end
 				local result = globalSafeCall:GetStatus()
-				local failure = result.lastFailure
-				local success = result.lastSuccess
-				local failureIsLatest = typeof(failure) == "table"
-					and (typeof(success) ~= "table" or (tonumber(failure.at) or 0) > (tonumber(success.at) or 0))
-				result.state = if failureIsLatest then "Degraded" else "Healthy"
-				result.detail = if failureIsLatest then "The most recent protected operation ended in failure." else "Protected operation history has no unresolved latest failure."
+				result.state = if result.lastOutcome == "Failure" then "Degraded" else "Healthy"
+				result.detail = if result.lastOutcome == "Failure" then "The most recent protected operation ended in failure."
+					else "The latest protected operation succeeded or recovered."
 				return result
 			end,
 		})
