@@ -93,6 +93,7 @@ The Phase 26 target includes the following distinct detection and prevention cap
 - CharacterPhysicsGuard samples the server-observed HumanoidRootPart position every 0.5 seconds while the same player/character/root remain live.
 - Samples are accepted only when the elapsed interval is 0.2–1.5 seconds; invalid coordinates and timing gaps are counted separately.
 - The observer computes displacement divided by elapsed time and increments fixed aggregate speed bands. It also records fixed context buckets (grounded/airborne/seated/other), network-owner buckets (server/client/unknown), and server-observed latency buckets.
+- The observer now bins total displacement speed, horizontal X/Z speed, and absolute vertical Y speed separately. All are coarse aggregate counters; they are not thresholds, exploit verdicts, or clamp inputs.
 - Only the immediately previous position/time is retained per active character. No position history, path, per-player movement record, persistent storage, cross-server telemetry, or client-supplied physics value is retained.
 - These bands are measurement bins, not movement limits or exploit verdicts. They do not emit anomaly signals and cannot change gameplay. The existing coarse velocity observer remains detection-only and unchanged.
 - The installer release pin now points to the commit containing the updated CharacterPhysicsGuard source. The module remains server-only.
@@ -117,4 +118,4 @@ The Phase 26 target includes the following distinct detection and prevention cap
 
 Phase 26 is not complete until the live movement sources are inventoried, legitimate movement envelopes are measured, reliable server-observed path/displacement signals are demonstrated with acceptable false-positive rates, and Studio plus published-server tests prove safe recovery. Correction and enforcement remain disabled unless a later explicit design review authorizes them.
 
-**Current Phase 26 status:** source inventory committed; runtime measurement, live hierarchy/package inspection, and reliable displacement/path design remain open. Phase 25 remains separately recorded. Phases 27–39 and Phase 40 cleanup are not changed by this document.
+**Current Phase 26 status:** source inventory and separate aggregate horizontal/vertical displacement-speed measurement committed. Noclip/wall-clip geometry validation, sustained fly analysis, thresholds, correction/clamping, runtime measurement, and live hierarchy/package inspection remain open. Phase 25 remains separately recorded. Phases 27–39 and Phase 40 cleanup are not changed by this document.
