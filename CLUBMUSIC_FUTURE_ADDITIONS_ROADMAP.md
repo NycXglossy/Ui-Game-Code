@@ -586,7 +586,9 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - Establish one canonical source for standalone modules and embedded RBXMX bundles; reconcile installer manifests and live-place consumers before deleting duplicates.
 - Convert all watchdog, reload, recovery, pause/restart, crossfade, and diagnostics consumers before retiring the guarded legacy Sound fallback.
 - Validate server-owned catalog policy and permissions for DJ/staff actions. SecurityCore remains the sole permission authority.
+- **Permission acceptance rule:** all players retain normal catalog song requests, Auto DJ, read-only Now Playing/queue visibility, and skip voting under existing validation/rate/queue limits. DJ Control Mode must not block normal requests or Auto DJ. Privileged playback controls including reload, playlist/catalog mutation, and DJ session/handoff actions require the appropriate SecurityCore-backed DJ/staff authorization; never put a staff check around the entire request/Auto DJ path.
 - Do not install the standalone legacy Music System or create another playback controller.
+- Phase 30 permission regression test: while DJ Control Mode is enabled, a regular player can still request an allowed catalog track and Auto DJ continues to refill; an unauthorized player cannot reload, pause, restart, or otherwise invoke privileged playback controls.
 - Do not certify Phase 30 until Studio and published two-server tests pass for playback, queue isolation, playback-only sync/failover, DJ/playlist/voting, watchdog recovery, and PC/mobile/console compatibility.
 
 ## Phase 31 — Chat, Text & Social Safety Closure
