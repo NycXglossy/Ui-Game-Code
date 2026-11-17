@@ -295,13 +295,15 @@ function Service:GetSnapshot(): {[string]: any}
 		adaptiveLoad = self:_readStatus("AdaptiveLoad", self.d.getAdaptiveLoadStatus),
 		securityReplay = self:_readStatus("SecurityReplay", self.d.getSecurityReplayStatus),
 		threatIntelligence = self:_readStatus("ThreatIntelligence", self.d.getThreatIntelligenceStatus),
+		controller = self:_readStatus("Controller", self.d.getControllerDiagnostics),
+		characterPhysics = self:_readStatus("CharacterPhysics", self.d.getCharacterPhysicsStatus),
 		safeCall = self:_readStatus("SafeCall", self.d.getSafeCallStatus),
 	}
 	local securityStates = {}
 	local securityObserved = 0
 	local securityUnavailable = 0
 	for _, key in ipairs({"authorization", "rateLimit", "securityPolicy", "securityMonitor",
-		"messageValidation", "idempotency", "audit", "eventLog", "incidentResponse", "threatIntelligence"}) do
+		"messageValidation", "idempotency", "audit", "eventLog", "incidentResponse", "threatIntelligence", "characterPhysics"}) do
 		local item = operationalServices[key]
 		local itemState = tostring(item.state or "Unknown")
 		if itemState == "Unavailable" or itemState == "NotInstalled" then
@@ -334,10 +336,11 @@ function Service:GetSnapshot(): {[string]: any}
 			eventLog = operationalServices.eventLog.state,
 			incidentResponse = operationalServices.incidentResponse.state,
 			threatIntelligence = operationalServices.threatIntelligence.state,
+			characterPhysics = operationalServices.characterPhysics.state,
 		},
 	}
 	local observabilityKeys = {"diagnostics", "serviceRegistry", "serverHealth", "watchdog",
-		"adaptiveLoad", "securityReplay", "threatIntelligence", "safeCall", "errorHistory"}
+		"adaptiveLoad", "securityReplay", "threatIntelligence", "controller", "safeCall", "errorHistory"}
 	local observabilityCounts = {Healthy = 0, Degraded = 0, Unavailable = 0, NotInstalled = 0, Starting = 0, Other = 0}
 	local observabilityIssues = {}
 	for _, key in ipairs(observabilityKeys) do
@@ -385,6 +388,12 @@ function Service:GetSnapshot(): {[string]: any}
 		metrics = metrics,
 		metricsAvailable = metricsAvailable,
 		operationalServices = operationalServices,
+		clientTelemetry = {
+			state = "ClientLocalOptIn",
+			scope = "ClientLocalUntrusted",
+			transmitted = false,
+			availableModule = true,
+		},
 	}
 end
 
