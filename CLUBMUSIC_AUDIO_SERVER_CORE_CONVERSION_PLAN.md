@@ -350,3 +350,16 @@ No runtime code was changed by this audit because the DJ-session authority bound
 Next source-conversion target: consolidate the remaining playback inspection facade only after comparing every `MusicPlaybackManager` consumer and its `InspectQuality()` contract with the unused `ServerMusicAudioHandler` snapshot API. Preserve watchdog quality classifications, legacy fallback inspection until the modern-only retirement gate, and controller-owned playback state. Do not remove either source or regenerate the bundle until installer manifests and live-place module placement are reconciled.
 
 **Runtime status:** static source inspection only; no Luau compilation, Roblox Studio, or published-server validation was performed for this audit.
+
+
+## Playback inspection facade consolidation — source change committed (2026-11-16)
+
+- **Playback adapter commit:** `17f54753e4d18cfbb1f56caba93fb4ded3b5bc9b`
+- Extended the active `MusicPlaybackManager.luau` with the backend-neutral, read-only snapshot surface previously duplicated by the unreferenced `ServerMusicAudioHandler.luau`: `GetPlaybackSnapshot()`, `GetTimePosition()`, `GetTimeLength()`, and `GetCurrentSoundId()`.
+- `GetPlaybackSnapshot()` consumes the controller-injected `GetAudioSnapshot` contract first, normalizes the snapshot fields, and uses the guarded legacy Sound accessor only as a compatibility fallback.
+- Refactored `InspectQuality()` to consume that single normalized snapshot path. Preserved all watchdog-facing quality labels: `Idle`, `SilentCatalogTrack`, `Unavailable`, `Playing`, `Paused`, `StoppedAfterLoad`, and `BufferingOrStopped`.
+- No playback state, queue, clock, remote, event connection, recovery policy, or playback loop was moved into the adapter. It remains a passive facade; controller callbacks remain the only mutation boundary.
+- The controller still constructs the adapter with its canonical `GetAudioSnapshot` callback and remains the only current caller of `InspectQuality()` (the playback watchdog). No controller code change was needed.
+- `ServerMusicAudioHandler.luau` remains in the repository as an unreferenced rollback/reference artifact; it was not deleted. The inspected `ClubMusic_Audio_Server_Modules.rbxmx` bundle does not contain either playback facade, so the live-place direct-child `ServerStorage.MusicPlaybackManager` installation dependency still needs explicit installer/live-hierarchy reconciliation before deleting or renaming either source.
+- Static source checks confirmed the new snapshot methods, normalized snapshot path, preserved watchdog labels, and absence of active task/Heartbeat/event-loop ownership. No Luau compilation or Roblox Studio/published-server tests were performed.
+- **Remaining gate:** verify the installed `MusicPlaybackManager` ModuleScript source matches this updated standalone file, exercise watchdog quality classifications with modern AudioPlayer and legacy fallback, and confirm pause/restart/reload plus recovery before considering legacy Sound retirement.
