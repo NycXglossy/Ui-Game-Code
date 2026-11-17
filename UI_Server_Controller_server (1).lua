@@ -1522,13 +1522,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				warn("[ClubMusic][Crossfade] Deferred post-commit work could not be scheduled: " .. tostring(deferError))
 			end
 			if outgoing.backend ~= incoming then
-				local cleanupOk, cleanupResult, cleanupError = pcall(function()
-					return outgoing.backend:Cleanup()
-				end)
-				if not cleanupOk or cleanupResult == false then
-					warn("[ClubMusic][Crossfade] Previous AudioPlayer deck cleanup failed after commit: "
-						.. tostring(cleanupError or cleanupResult))
-				end
+				-- Ownership has transferred to the incoming deck; retire the previous
+				-- backend through the controller registry so failed cleanup stays reachable.
+				retireAudioBackend(outgoing.backend, "crossfade outgoing commit")
 			end
 			return true
 		end,
