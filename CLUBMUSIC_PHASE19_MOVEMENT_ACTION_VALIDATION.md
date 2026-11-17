@@ -20,6 +20,7 @@ The audit reviewed `CharacterPhysicsGuard`, `MovementAuthority`, `TeleportValida
 
 - `CharacterPhysicsGuard` observes Humanoid `WalkSpeed`, `JumpPower`, `JumpHeight`, R15 body scales, Workspace gravity, and very high root assembly linear/angular velocity.
 - It uses property-change signals and short delayed coalescing rather than a permanent per-player polling loop.
+- Phase 19 follow-up changes the one-shot 0.5-second Humanoid lookup to a bounded 10-second `WaitForChild`, and likewise waits up to 10 seconds for `HumanoidRootPart`. It rechecks player/character/service state after the yielding root lookup before attaching velocity observers, preventing late setup from binding to a departed or replaced character.
 - It suppresses repeated identical signals for ten seconds per subject.
 - It deliberately does not kick, ban, teleport, correct movement, anchor characters, or change character properties.
 - It is detection-only. It does not prove that a client cannot locally alter movement, and it does not currently perform path/displacement validation or enforce a server movement envelope.
@@ -37,7 +38,10 @@ The audit reviewed `CharacterPhysicsGuard`, `MovementAuthority`, `TeleportValida
 - Utility Bar Size is a server-applied R15 scale change with a bounded factor of 0.5×–5× and a matching MovementAuthority registration.
 - Utility Bar Mount equips an existing Tool; the actual physics behavior of any supplied mount Tool is outside this source snapshot and is not certified here.
 - Companion cloning positions the clone near the character; it is not a player teleport.
-- This audit did not establish complete MovementAuthority integrations for admin flight, arbitrary staff movement, vehicles, custom knockback, or all third-party Kohl's Admin commands. Do not assume those paths are covered by the current ledger or observer.
+- The supplied `RegularCommandsSecurityServer.lua` adapter maps Kohl's `gravity`, `starterspeed`, `speed`, `jumppower`, `jump`, `size`, `fly`, `unfly`, `freeze`, `thaw`, `bring`, `fling`, `tp`, and `to` aliases to SecurityCore permission checks and bounded argument/target validation before the command handler runs.
+- Its handler wrapper records MovementAuthority markers after the native command handler returns. Those markers are observer metadata; they do not independently authorize or block the Kohl's action. The pre-handler SecurityCore command filter is the authorization gate.
+- CharacterPhysicsGuard currently consumes markers for WalkSpeed, JumpPower, BodyScale, WorldGravity, and the special Fling presence check. It does not consume Flight, Frozen, Teleport, JumpImpulse, or StarterWalkSpeed markers. Flight/freeze/teleport command entries therefore must not be described as verified physics-observer coverage.
+- This audit does not inspect Kohl's Admin's internal implementation of each movement handler, so it cannot certify exact flight, freeze, fling, teleport, or target replication behavior. It also does not establish complete validation for vehicles, custom knockback, or all third-party movement commands.
 
 ## Source changes in Phase 19
 
@@ -55,7 +59,10 @@ The audit reviewed `CharacterPhysicsGuard`, `MovementAuthority`, `TeleportValida
 4. **Gravity:** authorized GlobalConfig changes at bounds, unauthorized requests, simultaneous changes, and server startup ordering.
 5. **Teleport:** consent on/off, staff exception, recipient departure, actor departure, respawn during action, cooldown races, expired/replayed tickets, destination mismatch, and service unavailable.
 6. **Physics/network:** latency, packet jitter, client network ownership, high-speed legitimate launch/knockback, angular impulses, collision impacts, and seated/vehicle states.
-7. **Special movement:** each actual mount/vehicle, admin flight, staff teleport, freeze/unfreeze, and knockback implementation must be inspected and tested individually. Add explicit registration origins only after the real server-side caller and its authorization checks are verified.
+7. **Special movement:** the supplied Kohl's adapter must be tested alias-by-alias for gravity, starter speed, speed, jump power, jump, size, fly/unfly, freeze/thaw, bring, fling, tp, and to. Confirm the SecurityCore filter denies before native handlers execute and that post-handler markers are emitted only for successful state changes. Inspect each actual mount/vehicle, staff teleport, freeze/unfreeze, and knockback implementation individually. Add explicit registration origins only after the real server-side caller and its authorization checks are verified.
+8. **Delayed character assembly:** test a custom rig where Humanoid and HumanoidRootPart appear after CharacterAdded; confirm both observers attach within the bounded wait, and confirm respawn/player departure/service shutdown during either wait leaves no stale connections.
+9. **Compatibility:** PC, mobile, and console; no UI changes are part of this phase.
+10. **Regression:** ClubMusic playback/crossfade, local queues, playback-only global sync, purchases/receipts, moderation, Settings, Utility Bar, mounts, spectator, diagnostics, and installer rollback.
 8. **Adversarial cases:** attempt client-side WalkSpeed/jump changes, remote payload tampering, forged teleport requests, replayed requests, and extreme physics. Confirm the server-side action checks remain authoritative and telemetry alone never changes gameplay.
 9. **Compatibility:** PC, mobile, and console; no UI changes are part of this phase.
 10. **Regression:** ClubMusic playback/crossfade, local queues, playback-only global sync, purchases/receipts, moderation, Settings, Utility Bar, mounts, spectator, diagnostics, and installer rollback.
