@@ -342,7 +342,7 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 - [x] Add adaptive-load mode, replay retention/capacity, and SafeCall counters to the existing authorized staff OperationalDiagnostics output.
 - [x] Preserve existing Global API names, metric counters, server-local scope, and observational-only boundaries.
 - [ ] Audit dynamic consumers, packaged models, and embedded third-party packages before retiring obsolete diagnostics code.
-- [ ] Decide whether SafeCall and ErrorHistory remain separate after consumer/semantics review; do not merge or delete either prematurely.
+- [x] Confirm SafeCall and ErrorHistory remain separate after consumer/semantics review; their distinct consumers and failure lifecycles do not justify merging them.
 - [ ] Verify watchdog pulse expectations during long tracks, paused playback, AutoDJ idle periods, and disabled recovery.
 - [ ] Reconcile previously reported degraded watchdog, detail-registry, and memory warnings against fresh runtime output.
 - [ ] Test missing optional diagnostics dependencies and confirm they are reported accurately without breaking ClubMusic startup.
@@ -355,3 +355,28 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 **Exit criteria:** one accurate, bounded, server-local health view; clear component state distinctions; authorized staff visibility without private traces; preserved compatibility; successful Studio/published-server tests; and a completed consumer audit before any legacy cleanup.
 
 **Implementation note:** see `CLUBMUSIC_PHASE14_UNIFIED_DIAGNOSTICS_HEALTH.md`.
+
+
+## Phase 15 — Unified Incident Correlation & Threat Intelligence
+
+**Current status: Source implementation committed; Studio/published-server verification remains open.** This phase adds bounded local evidence correlation without replacing SecurityMonitor, SecurityReplayService, or the existing IncidentResponse case workflow.
+
+- [x] Add `SecurityThreatIntelligence` as a server-only SecurityCore module with a 10-minute per-subject window, 256-subject cap, 12 signal-code cap per subject, 256 review-item cap, and 30-minute review-item expiry.
+- [x] Use fixed machine signal codes and categories; retain no raw user text, chat, client payloads, asset IDs, or tracebacks.
+- [x] Require at least two distinct signal categories and two distinct signal codes plus a minimum score before creating a Medium review item; repeated single-category signals alone cannot create one.
+- [x] Add High confidence triage only when at least three categories and three signal codes meet the higher score threshold.
+- [x] Integrate existing ReportSignal, RecordGlobalSecuritySignal, SecurityMonitor threshold, unhealthy watchdog pulse, and SafeCall failure adapters.
+- [x] Add the server-only endpoint and read-only status endpoint through the SecurityCore installer.
+- [x] Add an authorized `;cmthreat [UserId] [Limit]` staff review command; the server controller and service independently check GlobalModeration permission.
+- [x] Include threat-intelligence health counters in the existing diagnostics and operational status snapshots.
+- [x] Preserve IncidentResponse as a separate explicit staff case workflow; threat correlation does not create persistent cases or take enforcement action.
+- [ ] Verify installer staging/promotion/rollback and endpoint isolation in Studio.
+- [ ] Test one-signal, repeated-signal, multi-category confidence thresholds, caps, expiry, and subject eviction.
+- [ ] Verify every adapter emits the intended fixed signal codes and no raw details.
+- [ ] Test unauthorized queries, command parsing, and bounded staff output.
+- [ ] Profile signal-recording overhead under burst traffic and test missing optional endpoints.
+- [ ] Re-run ClubMusic playback, queue, sync, purchases, moderation, Utility Bar, Settings, and spectator regressions.
+
+**Important limitations:** the correlation service is per-server memory only, advisory, and not durable or cross-server. Its confidence labels are evidence-diversity triage levels, not probabilities. No kick, ban, shadow restriction, gameplay nerf, movement correction, or other automatic enforcement is performed. The existing MemoryStore-backed IncidentResponse service remains independent and is still opened/resolved only through its existing authorized workflow.
+
+**Implementation note:** see `CLUBMUSIC_PHASE15_THREAT_INTELLIGENCE.md`.
