@@ -225,3 +225,13 @@ Static review extended the diagnostics/security boundary across the Global Servi
 4. Confirm the exact branch commit installed in the test place before any production rollout.
 
 **Release status:** Static text-source work is updated; runtime and live-place verification are pending. Do not install or call the diagnostics/security update production-ready until the blockers above are closed.
+
+
+## Final source-level diagnostics closure pass (2026-11-16)
+
+- Synchronized the embedded SafeCall ModuleScript in `ClubMusic_Global_Optional_Services.rbxmx` with the standalone bounded implementation (50 records; 100 warning keys; 120-second warning-key expiry).
+- Bounded watchdog pulse metadata to 8 primitive fields; keys are short and validated, strings are capped at 140 characters, and numbers must be finite and within ±1,000,000,000.
+- Completed the source-level pulse cadence review: Playback every second (including paused/reload states); Queue and AutoDJ every 30 seconds and on refill; Recovery event-driven/optional while idle; Moderation optional/event-driven. Stale windows are 12 seconds for Playback and 900 seconds for Queue/AutoDJ.
+- Confirmed SafeCall and ErrorHistory have distinct consumers and semantics; keep both rather than merging them.
+
+Source integration and the scoped in-repository text audit are complete. Runtime acceptance, historical warning reconciliation, performance profiling, full binary/third-party package review, and live-place verification remain open. No legacy diagnostics code is retired.
