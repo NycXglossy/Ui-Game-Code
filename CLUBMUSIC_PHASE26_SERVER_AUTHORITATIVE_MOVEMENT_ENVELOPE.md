@@ -47,6 +47,28 @@ Do not add displacement/path thresholds until legitimate movement sources have b
 7. **Network conditions:** representative ping and jitter bands, ownership handoffs, seated states, packet delay, and server frame/heartbeat load.
 8. **Normal movement:** walking, sprinting if present, jumping, falling, slopes, stairs, swimming, collisions, ragdolls if present, and moving platforms.
 
+## Expanded movement-protection scope — required, not yet implemented
+
+The Phase 26 target includes the following distinct detection and prevention capabilities. Listing them here does not mean they are implemented or certified. The current CharacterPhysicsGuard remains a passive measurement/observation component; automatic correction and enforcement remain disabled.
+
+| Capability | Required server-observed approach | Preconditions and safety limits |
+|---|---|---|
+| Noclip detection | Detect sustained traversal through collidable geometry using bounded swept-character-volume or equivalent server-side spatial checks, with continuity across samples. | Must account for doors, moving/temporary geometry, collision groups, legitimate teleports, spawn transitions, seats, vehicles, and map-specific pass-through mechanics. A ray through one wall is not proof. |
+| Wall-clip detection | Detect unauthorized penetration/crossing of protected walls, barriers, and map boundaries; distinguish transient collision resolution from sustained traversal. | Requires an audited protected-geometry/map policy and live collision-group inventory. Do not assume every visible wall is intended to block every character or vehicle. |
+| Vertical anomaly detection | Track vertical displacement/velocity and sustained upward/downward movement over a time window, with grounded/airborne state and authorized impulse/gravity context. | Must model jumps, falls, swimming, slopes, launch pads, knockback, seats, mounts, vehicles, elevators, moving platforms, and teleport/respawn transitions. |
+| Fly detection | Identify sustained unsupported airborne movement or hovering patterns across multiple valid samples, rather than a single airborne or velocity sample. | Must distinguish normal jump arcs, falling, swimming, ragdolls, flight/freeze staff tools, vehicles, moving platforms, network ownership handoffs, and latency. |
+| Horizontal speed detection | Measure horizontal displacement separately from vertical displacement over bounded, continuous server-observed sample windows. | Thresholds require measured envelopes for default/Tiki Tide WalkSpeed, size scaling, mounts/vehicles, impulses, collisions, slopes, latency, and server load. |
+| Horizontal speed clamping | If later approved, constrain only validated unauthorized horizontal excess through a narrowly scoped server-owned correction path. | Disabled until detection has demonstrated acceptable false-positive rates and recovery has been tested. Never clamp from client-reported WalkSpeed/velocity or one sample; preserve vertical velocity and legitimate impulses where appropriate. |
+| Safe correction/recovery | After a separately reviewed approval, restore a player to a verified safe state or limit only the unauthorized component of motion. | No anchoring, freezing, teleport-back, or punishment based solely on one signal. Respect existing SecurityCore authority and do not create a second permission system. |
+
+### Measurement requirements for these capabilities
+
+- Extend the existing aggregate measurement design only after its CPU/memory cost and sampling accuracy are verified. Record separate coarse horizontal and vertical displacement/speed bands; do not retain raw position paths or unbounded per-player histories.
+- Any future collision/path observer must use bounded spatial queries and bounded per-sample work. It must verify character identity continuity and handle missing parts, large sample gaps, streaming/collision changes, and moving geometry as unknown rather than exploit evidence.
+- Build a server-owned inventory of protected geometry, collision groups, legitimate pass-through regions, and authorized movement sources before treating wall intersections as violations.
+- Evaluate fly behavior over multiple consecutive valid samples and movement context. Airborne state alone is never a fly verdict.
+- Treat detection, correction, clamping, and punishment as separate rollout gates. Phase 26's current implementation has not passed any of these new capability gates.
+
 ## Bounded observation design constraints
 
 - Prefer server-observed samples and server-owned action markers. Client telemetry may be contextual only and must never establish authorization or proof.
@@ -60,6 +82,7 @@ Do not add displacement/path thresholds until legitimate movement sources have b
 ## Implementation decisions from this source pass
 
 - No new displacement/path sampler was added: the tracked source inventory does not yet establish reliable legitimate movement envelopes for mounts, vehicles, knockback, launch pads, network ownership, or latency.
+- Noclip, wall-clip, vertical/fly, and horizontal-speed detectors/clamping were not added in this pass. The tracked inventory and runtime measurements are insufficient to set safe spatial or movement thresholds; the expanded scope above is a requirement, not an implementation claim.
 - No velocity threshold was tightened. Existing 300 linear / 120 angular thresholds remain coarse, detection-only indicators; seated characters are currently excluded from that check.
 - No new MovementAuthority property or generic “movement allowed” bypass was added.
 - Existing movement settings, Utility Bar Size, teleport ticket contract, Kohl's adapter, SecurityCore permissions, and installer architecture remain unchanged.
@@ -81,6 +104,11 @@ Do not add displacement/path thresholds until legitimate movement sources have b
 - [ ] Test every actual mount/vehicle and every knockback/launch/impulse source.
 - [ ] Test teleport ticket success, expiry, replay, destination mismatch, actor/target departure, respawn during action, and external teleport origins.
 - [ ] Test network ownership changes, seats, moving platforms, collisions, swimming, slopes, stairs, and large but legitimate impulses.
+- [ ] Validate vertical and horizontal displacement measurements independently across grounded, airborne, seated, swimming, falling, and moving-platform contexts.
+- [ ] Build disposable-map tests for noclip and wall-clip detection: intended solid walls, collision groups, doors, moving barriers, pass-through zones, respawns, and authorized teleports; measure false positives and missed detections.
+- [ ] Test fly-detection candidates over sustained multi-sample windows, including legitimate jumps/falls, launch/knockback, mounts/vehicles, staff flight/freeze tools, and latency/ownership handoffs.
+- [ ] Validate horizontal speed detection against every approved movement source and size factor; do not set a clamp threshold until representative baseline traces are accepted.
+- [ ] In a separate disposable test, exercise any proposed horizontal clamp under normal movement, impulses, collisions, latency, respawn, and mount/vehicle transitions; verify vertical velocity and legitimate movement are not unintentionally suppressed. Keep the clamp disabled unless separately approved.
 - [ ] Measure false-positive rates before defining any displacement/path anomaly threshold. Document sample counts, time windows, device/network conditions, and confidence limits.
 - [ ] Verify bounded memory/CPU cost and cleanup under player churn and burst events.
 - [ ] Confirm telemetry never changes gameplay and all SecurityCore/entitlement checks remain authoritative.
