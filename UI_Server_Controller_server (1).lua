@@ -5570,7 +5570,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 					string.sub(tostring(item.source or "Server"), 1, 24)))
 			end
 		end
-		return true, string.sub(table.concat(lines, "\n"), 1, 1700)
+		return true, string.sub(table.concat(lines, "\n"), 1, 1900)
 	end
 	if operation == "SecurityStatus" then
 		if not ControllerFunctions.adminBridgeAuthorize(caller, "GlobalModeration") then
@@ -5744,6 +5744,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local errorHistory = if typeof(services.errorHistory) == "table" then services.errorHistory else {}
 		local securityHealth = if typeof(services.securityHealth) == "table" then services.securityHealth else {}
 		local securityComponents = if typeof(securityHealth.components) == "table" then securityHealth.components else {}
+		local observabilityHealth = if typeof(services.observabilityHealth) == "table" then services.observabilityHealth else {}
+		local adaptiveLoad = if typeof(services.adaptiveLoad) == "table" then services.adaptiveLoad else {}
+		local securityReplay = if typeof(services.securityReplay) == "table" then services.securityReplay else {}
+		local safeCall = if typeof(services.safeCall) == "table" then services.safeCall else {}
 		local _, globalOperational = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
 		local messaging = if typeof(globalOperational) == "table" and typeof(globalOperational.Messaging) == "table" then globalOperational.Messaging else {}
 		local memoryStore = if typeof(services.memoryStore) == "table" then services.memoryStore else {}
@@ -5765,6 +5769,12 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | unavailable " .. tostring(registryCounts.Unavailable or 0),
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(watchdog.state or "Unavailable"),
+			"Observability: " .. tostring(observabilityHealth.state or "Unavailable")
+				.. " | Adaptive load " .. tostring(adaptiveLoad.mode or adaptiveLoad.state or "NotInstalled")
+				.. " | Replay " .. tostring(securityReplay.state or "NotInstalled")
+				.. " (" .. tostring(securityReplay.retained or 0) .. "/" .. tostring(securityReplay.capacity or 0) .. ")",
+			"SafeCall: " .. tostring(safeCall.calls or 0) .. " calls | failures "
+				.. tostring(safeCall.failures or 0) .. " | recovered " .. tostring(safeCall.recovered or 0),
 			"SecurityCore health: " .. tostring(securityHealth.state or "Unavailable")
 				.. " (" .. tostring(securityHealth.observedComponents or 0) .. "/" .. tostring(securityHealth.totalComponents or 0) .. " observed)"
 				.. " | Auth " .. tostring(securityComponents.authorization or "Unavailable")
