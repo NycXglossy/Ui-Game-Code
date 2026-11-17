@@ -1451,11 +1451,31 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return false
 			end
 			audioSourceRevision += 1
-			ControllerFunctions.setNowPlaying(entry, true)
-												task.defer(function()
-				ControllerFunctions.topUpAuto()
-				publishState(nil)
+			-- Ownership and queue consumption are now committed. Never surface a
+			-- later bookkeeping error as a failed commit: manager cancellation would
+			-- otherwise destroy the incoming deck that is already controller-active.
+			local nowPlayingOk, nowPlayingError = pcall(function()
+				ControllerFunctions.setNowPlaying(entry, true)
 			end)
+			if not nowPlayingOk then
+				warn("[ClubMusic][Crossfade] Track metadata publication failed after audio ownership transfer: "
+					.. tostring(nowPlayingError))
+			end
+			local deferOk, deferError = pcall(function()
+				task.defer(function()
+					local topUpOk, topUpError = pcall(ControllerFunctions.topUpAuto)
+					if not topUpOk then
+						warn("[ClubMusic][Crossfade] Automatic queue top-up failed: " .. tostring(topUpError))
+					end
+					local publishOk, publishError = pcall(publishState, nil)
+					if not publishOk then
+						warn("[ClubMusic][Crossfade] State publication failed: " .. tostring(publishError))
+					end
+				end)
+			end)
+			if not deferOk then
+				warn("[ClubMusic][Crossfade] Deferred post-commit work could not be scheduled: " .. tostring(deferError))
+			end
 			if outgoing.backend ~= incoming then
 				local cleanupOk, cleanupResult, cleanupError = pcall(function()
 					return outgoing.backend:Cleanup()
