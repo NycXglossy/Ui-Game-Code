@@ -1081,6 +1081,49 @@ local function retireAudioBackend(backend: any, reason: string): boolean
 	return false
 end
 
+-- Final teardown drain for controller-retired backends. Normal retirement uses
+-- bounded asynchronous retries; shutdown waits for those attempts, then makes a
+-- final bounded pass over entries explicitly marked pending.
+local function drainRetiredAudioBackends(reason: string): boolean
+	local deadline = os.clock() + 6.5
+	while os.clock() < deadline do
+		local retrying = false
+		for _, status in pairs(retiredAudioBackends) do
+			if status == "retrying" then retrying = true; break end
+		end
+		if not retrying then break end
+		task.wait(0.1)
+	end
+
+	local allClean = true
+	for backend, status in pairs(retiredAudioBackends) do
+		if status == "pending" then
+			retiredAudioBackends[backend] = "retrying"
+			local cleaned = false
+			for attempt = 1, 3 do
+				if attempt > 1 then task.wait(attempt) end
+				local ok, result, detail = pcall(function()
+					return backend:Cleanup()
+				end)
+				if ok and result ~= false then
+					retiredAudioBackends[backend] = nil
+					cleaned = true
+					break
+				end
+				warn("[ClubMusic][AudioBackend] Final cleanup retry " .. tostring(attempt)
+					.. " failed (" .. reason .. "): " .. tostring(detail or result))
+			end
+			if not cleaned then
+				retiredAudioBackends[backend] = "pending"
+				allClean = false
+			end
+		elseif status == "retrying" then
+			allClean = false
+		end
+	end
+	return allClean
+end
+
 -- Replace the canonical source only after a prepared backend is ready and can
 -- start silently. On any failure, restore the previous source and playhead.
 -- The controller invokes this after the first valid track starts; the legacy
@@ -7074,7 +7117,20 @@ task.spawn(function()
 end)
 
 game:BindToClose(function()
+	-- Cancel first so an interrupted fade restores the controller-owned outgoing
+	-- source before the active backend is stopped and retired.
 	ControllerFunctions.destroyAudioCrossfadeManager("server-shutdown")
+	local shutdownSource = activeAudioSource
+	if shutdownSource and shutdownSource.kind == "Backend" and shutdownSource.backend then
+		pcall(function() shutdownSource.backend:Stop() end)
+		retireAudioBackend(shutdownSource.backend, "server shutdown active source")
+	else
+		pcall(function() musicSound:Stop() end)
+	end
+	if not drainRetiredAudioBackends("server shutdown") then
+		warn("[ClubMusic][AudioBackend] One or more retired backends remain pending after final shutdown cleanup.")
+	end
+
 	-- Studio memory mode has no durable profile backend and never acquires a
 	-- DataStore session lease. PlayerRemoving may already have cleared the
 	-- in-memory profile while the player is still briefly returned by GetPlayers().
