@@ -378,6 +378,26 @@ if honeypotService then
  honeypotStatus.OnInvoke = function() return honeypotService:GetStatus() end
 end
 
+replayEndpoint.OnInvoke = function(action, ...)
+ if action == "Record" then return replay:Record(...) end
+ if action == "Query" then
+  if loadManager and not loadManager:TryConsume("ReplayQueries") then
+   return false, {}, "Replay review is temporarily rate-limited while the server is under load."
+  end
+  return replay:Query(...)
+ end
+ if action == "Status" then return replay:GetStatus() end
+ return false, "Unsupported replay action."
+end
+local replayStatus = ServerStorage:FindFirstChild("GetTikiTideSecurityReplayStatus")
+if replayStatus and not replayStatus:IsA("BindableFunction") then replayStatus:Destroy(); replayStatus = nil end
+if not replayStatus then
+ replayStatus = Instance.new("BindableFunction")
+ replayStatus.Name = "GetTikiTideSecurityReplayStatus"
+ replayStatus.Parent = ServerStorage
+end
+replayStatus.OnInvoke = function() return replay:GetStatus() end
+
 -- Client observations are fixed-code, untrusted telemetry. They never affect auth or enforcement.
 local clientIntegrityService: any = nil
 local clientIntegrityModule = core:FindFirstChild("ClientIntegrityTelemetry")
@@ -422,26 +442,6 @@ if clientIntegrityService then
  end
  clientIntegrityStatus.OnInvoke = function() return clientIntegrityService:GetStatus() end
 end
-
-replayEndpoint.OnInvoke = function(action, ...)
- if action == "Record" then return replay:Record(...) end
- if action == "Query" then
-  if loadManager and not loadManager:TryConsume("ReplayQueries") then
-   return false, {}, "Replay review is temporarily rate-limited while the server is under load."
-  end
-  return replay:Query(...)
- end
- if action == "Status" then return replay:GetStatus() end
- return false, "Unsupported replay action."
-end
-local replayStatus = ServerStorage:FindFirstChild("GetTikiTideSecurityReplayStatus")
-if replayStatus and not replayStatus:IsA("BindableFunction") then replayStatus:Destroy(); replayStatus = nil end
-if not replayStatus then
- replayStatus = Instance.new("BindableFunction")
- replayStatus.Name = "GetTikiTideSecurityReplayStatus"
- replayStatus.Parent = ServerStorage
-end
-replayStatus.OnInvoke = function() return replay:GetStatus() end
 script.Destroying:Connect(function()
  replay:Stop()
  if threatService then threatService:Stop() end
