@@ -536,3 +536,119 @@ Do not implement every item at once. Each phase should be reviewed, tested, and 
 
 **Implementation note:** see CLUBMUSIC_PHASE24_PRODUCTION_RELEASE_AND_RETIREMENT.md.
 
+
+
+---
+
+# Tiki Tide Unified Security & Intelligence Framework — Phases 25–39
+
+**Status:** Forward development roadmap. Phases 1–24 have owner-reported operational acceptance; the repository still distinguishes that report from independently reproduced runtime certification. Each new phase is implemented and reviewed independently. Do not mark a phase complete until its source, integration, and stated acceptance evidence are recorded.
+
+## Phase 25 — Advanced Exploit Prevention & Request Integrity
+- Audit every client remote and cross-server receiver.
+- Map authorization, entitlement, validation, rate limits, idempotency, concurrency, state ownership, and failure behavior.
+- Add only narrowly scoped protections for confirmed gaps.
+- Test duplicate, replayed, reordered, concurrent, malformed, and unauthorized requests.
+- Reuse SecurityCore, SanityValidation, RateLimit, Idempotency, MessageValidation, and existing receipt protections.
+- Reference: [Phase 25 scope](CLUBMUSIC_PHASE25_ADVANCED_EXPLOIT_PREVENTION.md).
+
+## Phase 26 — Server-Authoritative Movement Envelope
+- Extend movement validation only after measuring legitimate movement sources.
+- Model authorized speed/jump/gravity settings, Utility Bar size, mounts, vehicles, knockback, launch pads, teleport tickets, respawns, network ownership, and latency.
+- Add bounded displacement/path anomaly observation where it can be measured reliably.
+- Keep correction/enforcement disabled until false-positive rates and safe recovery behavior are demonstrated.
+- Never treat client-reported physics or one velocity spike as proof.
+
+## Phase 27 — World & Environment Integrity
+- Audit lighting, gravity, stage/club controls, terrain and protected environment state.
+- Identify each legitimate server-side writer and its SecurityCore permission.
+- Add detection-only drift checks for protected properties with bounded event-driven sampling.
+- Do not overwrite live environment state automatically; staff or an explicitly authorized owner action must resolve drift.
+
+## Phase 28 — Avatar, Tool, Mount & Vehicle Protection
+- Complete inspection of mount tools, vehicle scripts, accessory/tool grants, companion clones, and third-party packages.
+- Validate server ownership and approved grant/equip paths.
+- Detect unauthorized tool or accessory state changes without removing legitimate assets automatically.
+- Test respawn, avatar scaling, R6/R15, network ownership, and cleanup.
+
+## Phase 29 — Economy, Entitlement & Reward Abuse Protection
+- Audit every coin, boost, donation, title-slot, pass, developer-product, and reward mutation.
+- Preserve the durable receipt ledger and ProcessReceipt as the purchase authority.
+- Add transaction idempotency and concurrency protection only where a confirmed mutation path lacks it.
+- Verify owner/group VIP rules and all existing pass/product IDs; never grant from client purchase-prompt telemetry.
+
+## Phase 30 — Audio, Animation & Media Abuse Protection
+- Audit all audio, boombox, animation, image/artwork, and media mutation entry points.
+- Preserve modern AudioPlayer as the single playback authority and keep per-server queues independent under optional playback-only global sync.
+- Validate server-owned catalog policy and permissions for DJ/staff actions.
+- Do not install the standalone legacy Music System or create another playback controller.
+
+## Phase 31 — Chat, Text & Social Safety Closure
+- Audit every announcement, title, custom message, AFK text, bubble, teleport, and player-to-player action.
+- Ensure TextService filtering is applied server-side before display/replication.
+- Verify consent, target liveness, cooldowns, and permission checks for social actions.
+- Keep native Roblox chat moderation responsibilities distinct from experience-owned text systems.
+
+## Phase 32 — Account Risk & Ban-Evasion Signals
+- Define privacy-limited, server-derived signals for repeat abuse and moderation evasion.
+- Use platform-provided identifiers and authorized moderation records only; do not build device fingerprints or infer sensitive traits.
+- Treat account linkage as an investigation clue, not proof of shared identity or automatic punishment.
+- Keep evidence bounded, access-controlled, and subject to retention limits.
+
+## Phase 33 — Behavioral Analytics & Replay Expansion
+- Extend replay coverage only to validated server-side events and fixed signal codes.
+- Add bounded aggregate trends for repeated action patterns, movement anomalies, and abuse clusters.
+- Keep raw client payloads, chat content, secrets, and unnecessary personal data out of replay.
+- Preserve server-local replay/diagnostics boundaries; no cross-server diagnostics aggregation.
+
+## Phase 34 — Unified Incident Review Workflow
+- Connect correlated threat review items to staff-managed cases with explicit authorization.
+- Add evidence summaries, assignment/status, timestamps, and resolution reasons with strict size/retention bounds.
+- Preserve independent SecurityCore checks at each service boundary.
+- Require staff review for escalation; no automatic permanent bans.
+
+## Phase 35 — Shadow Moderation & Temporary Restrictions
+- Design reversible, scoped restrictions with expiry, reason codes, issuer, and audit trail.
+- Separate containment from punishment; do not silently alter core player progression or purchases.
+- Require confidence/evidence thresholds and staff authorization.
+- Provide safe rollback and appeal paths before enabling any live restriction.
+
+## Phase 36 — Cross-Server Moderation Consistency
+- Use durable storage as the source of truth and MessagingService only as a best-effort notification path.
+- Validate schema, issuer, sequence/revision, expiry, idempotency, and receiving-server authorization.
+- Test outage, duplicate, delayed, reordered, and recovery behavior.
+- Keep diagnostics local; this phase concerns moderation state distribution, not diagnostics sharing.
+
+## Phase 37 — Staff Security Console & Investigation Tools
+- Extend existing staff commands for incident review, threat evidence, replay, diagnostics, and spectator workflows.
+- Apply SecurityCore permission checks in both the command adapter and the underlying service.
+- Add bounded pagination and safe output formatting.
+- Keep privileged APIs in ServerStorage; do not expose them through client remotes.
+- Preserve staff spectator's documented visibility and world-action limitations unless separately redesigned and tested.
+
+## Phase 38 — Security Self-Audit, Resilience & Performance
+- Verify module manifests, installer pin, dependency availability, endpoint classes, and server-only placement.
+- Add bounded local readiness reports and release drift checks without automatic repair or restart.
+- Profile CPU/Heartbeat, memory, storage budgets, signal bursts, and shutdown cleanup.
+- Keep client FPS/memory/ping and any client error buffer local-only unless a separately reviewed, privacy-safe telemetry design is approved.
+- Do not retire legacy diagnostics, aliases, or rollback assets until consumer and live-place audits pass.
+
+## Phase 39 — Final Certification & Controlled Retirement
+- Reconcile repository sources, installer revision, binary assets, third-party packages, and the live Roblox hierarchy.
+- Run the complete Studio multiplayer and published two-server acceptance matrices.
+- Verify modern audio, crossfade, local queues, playback-only global sync, purchases, receipt recovery, VIP entitlements, Utility Bar, Settings, moderation, spectator, and PC/mobile/console compatibility.
+- Pin the exact tested installer revision, preserve rollback, and document exclusions.
+- Retire only proven-unused legacy components; never remove rollback assets or diagnostics consumers based on names alone.
+- Publish only after owner sign-off and recorded acceptance evidence.
+
+## Global requirements for Phases 25–39
+1. SecurityCore remains the sole permission authority.
+2. Server-side state and validation remain authoritative.
+3. Existing remotes, profile schema, receipt ledger, and playback state owners are preserved unless a migration is specifically justified.
+4. Diagnostics and replay remain local to each server; client diagnostics remain local to the client.
+5. Honeypots, client integrity telemetry, and behavioral signals are clues, not proof.
+6. No automatic permanent bans or gameplay punishment from one signal.
+7. All tables, logs, queues, caches, retries, and background work remain bounded.
+8. Essential security validation, purchase processing, and moderation enforcement are never disabled by optional-work budgets.
+9. No secrets or privileged modules are placed in clients.
+10. Every phase records source changes, static checks, runtime evidence, known exclusions, and rollback behavior.
