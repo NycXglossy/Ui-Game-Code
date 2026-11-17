@@ -1285,22 +1285,24 @@ ControllerFunctions.tryModernAudioBackendMigration = function()
 	return finish(true, nil)
 end
 
--- One controller-owned cancellation seam for a future dual-deck transition.
--- It is deliberately a no-op until a Crossfade manager is safely constructed.
+-- One controller-owned cancellation seam for every dual-deck transition.
+-- Pending queue metadata is invalidated even when the manager is absent or cleanup reports failure.
 ControllerFunctions.cancelAudioTransition = function(reason: string?)
 	local managers = ControllerFunctions.ChildManagers
 	local crossfade = managers and managers.Crossfade
-	if not crossfade then return true end
-	local ok, result = pcall(function()
-		return crossfade:Cancel(reason)
-	end)
+	local ok, result = true, true
+	if crossfade then
+		ok, result = pcall(function()
+			return crossfade:Cancel(reason)
+		end)
+	end
+	pendingCrossfadeEntry = nil
+	pendingCrossfadeToken = -1
 	if not ok or result == false then
 		warn("[ClubMusic] Audio transition cancellation reported a failure (" .. tostring(reason or "unspecified") .. "): " .. tostring(result))
 		return false
 	end
-	pendingCrossfadeEntry = nil
-	pendingCrossfadeToken = -1
-				return true
+	return true
 end
 
 -- Destroy the optional coordinator explicitly during teardown. Cleanup invalidates
@@ -1308,6 +1310,8 @@ end
 ControllerFunctions.destroyAudioCrossfadeManager = function(reason: string?): (boolean, string?)
 	local managers = ControllerFunctions.ChildManagers
 	local crossfade = managers and managers.Crossfade
+	pendingCrossfadeEntry = nil
+	pendingCrossfadeToken = -1
 	if not crossfade then return true, nil end
 	local ok, result, detail = pcall(function()
 		return crossfade:Cleanup()
