@@ -100,6 +100,7 @@ localPlayer.CharacterAdded:Connect(function()
 end)
 workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
 	camera = workspace.CurrentCamera
+	if active then disconnectTarget() end
 	task.defer(refresh)
 end)
 Players.PlayerAdded:Connect(function(player)
