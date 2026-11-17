@@ -892,6 +892,21 @@ do
 	end
 end
 
+local function readServerStorageStatus(endpointName: string, action: string?)
+	local endpoint = ServerStorage:FindFirstChild(endpointName)
+	if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= ServerStorage then
+		return {state = "NotInstalled", available = false}
+	end
+	local ok, result = pcall(function()
+		if action then return endpoint:Invoke(action) end
+		return endpoint:Invoke()
+	end)
+	if not ok or typeof(result) ~= "table" then
+		return {state = "Unavailable", available = false}
+	end
+	return result
+end
+
 local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
 if diagnosticsModule then
 	local createOk, instance = pcall(function()
@@ -920,6 +935,14 @@ if diagnosticsModule then
 			getAuditStatus = function() return if globalAuditService then globalAuditService:GetStatus() else nil end,
 			getEventLogStatus = function() return if globalEventLogService then globalEventLogService:GetStatus() else nil end,
 			getIncidentResponseStatus = function() return if globalIncidentResponseService then globalIncidentResponseService:GetStatus() else nil end,
+			getAdaptiveLoadStatus = function() return readServerStorageStatus("GetTikiTideSecurityLoadStatus") end,
+			getSecurityReplayStatus = function() return readServerStorageStatus("TikiTideSecurityReplay", "Status") end,
+			getSafeCallStatus = function()
+				if not globalSafeCall then return nil end
+				local result = globalSafeCall:GetStatus()
+				result.state = "Healthy"
+				return result
+			end,
 		})
 	end)
 	if createOk and instance and type(instance.Start) == "function"
@@ -1234,6 +1257,9 @@ bindFunction("GetGlobalOperationalStatus", function()
 		Diagnostics = if globalDiagnosticsService then globalDiagnosticsService:GetStatus() else {state = "Unavailable"},
 		ServerHealth = if globalServerHealthService then globalServerHealthService:GetStatus() else {state = "NotInstalled"},
 		Watchdog = if globalLocalWatchdog then globalLocalWatchdog:GetStatus() else {state = "NotInstalled"},
+		AdaptiveLoad = readServerStorageStatus("GetTikiTideSecurityLoadStatus"),
+		SecurityReplay = readServerStorageStatus("TikiTideSecurityReplay", "Status"),
+		SafeCall = if globalSafeCall then globalSafeCall:GetStatus() else {state = "Unavailable"},
 		ErrorHistory = if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function" then globalErrorHandler.GetStatus() else {state = "Unavailable"},
 		ServiceRegistry = if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "NotInstalled"},
 		Config = if globalConfigService then globalConfigService:GetStatus() else {state = "Unavailable"},
