@@ -5889,6 +5889,13 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local securityReplay = if typeof(services.securityReplay) == "table" then services.securityReplay else {}
 		local safeCall = if typeof(services.safeCall) == "table" then services.safeCall else {}
 		local threatIntelligence = if typeof(services.threatIntelligence) == "table" then services.threatIntelligence else {}
+		local controller = if typeof(services.controller) == "table" then services.controller else {}
+		local purchase = if typeof(controller.purchase) == "table" then controller.purchase else {}
+		local moderation = if typeof(controller.moderation) == "table" then controller.moderation else {}
+		local controllerPlayback = if typeof(controller.playback) == "table" then controller.playback else {}
+		local securityMonitor = if typeof(services.securityMonitor) == "table" then services.securityMonitor else {}
+		local characterPhysics = if typeof(services.characterPhysics) == "table" then services.characterPhysics else {}
+		local clientTelemetry = if typeof(snapshot.clientTelemetry) == "table" then snapshot.clientTelemetry else {}
 		local _, globalOperational = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
 		local messaging = if typeof(globalOperational) == "table" and typeof(globalOperational.Messaging) == "table" then globalOperational.Messaging else {}
 		local memoryStore = if typeof(services.memoryStore) == "table" then services.memoryStore else {}
@@ -5902,7 +5909,8 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | watchdog " .. tostring(health.watchdogState or "Unavailable"),
 			"Server runtime: " .. tostring(serverHealth.state or "NotInstalled")
 				.. " | Heartbeat max " .. tostring(math.floor((tonumber(heartbeat.maxDeltaSeconds) or 0) * 1000)) .. "ms"
-				.. " | Memory " .. tostring(memory.usageMb or "n/a") .. " MB",
+				.. " | Memory " .. tostring(memory.usageMb or "n/a") .. " MB (" .. tostring(memory.state or "n/a") .. ")"
+				.. " | trend " .. tostring(memory.changeSinceOldestSampleMb or "n/a") .. " MB",
 			"Service registry: " .. tostring(registry.state or "NotInstalled")
 				.. " | total " .. tostring(registry.serviceCount or 0)
 				.. " | healthy " .. tostring(registryCounts.Healthy or 0)
@@ -5926,7 +5934,8 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | RateLimit " .. tostring(securityComponents.rateLimit or "Unavailable")
 				.. " | Validation " .. tostring(securityComponents.messageValidation or "Unavailable")
 				.. " | Audit " .. tostring(securityComponents.audit or "Unavailable")
-				.. " | Incidents " .. tostring(securityComponents.incidentResponse or "Unavailable"),
+				.. " | Incidents " .. tostring(securityComponents.incidentResponse or "Unavailable")
+				.. " | Physics " .. tostring(securityComponents.characterPhysics or "Unavailable"),
 			"Watchdog detail: " .. string.sub(watchdogDetail, 1, 300),
 			"Error history: " .. tostring(errorHistory.count or 0) .. "/" .. tostring(errorHistory.maxRecords or 50)
 				.. " records | repeats " .. tostring(errorHistory.totalRepeats or 0),
@@ -5936,6 +5945,24 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | received " .. tostring(messaging.received or 0)
 				.. " | rejected " .. tostring(messaging.rejected or 0),
 			"MemoryStore limiter fallback: " .. tostring(memoryStore.capacityLimited == true),
+			"Purchase: receipts " .. tostring(purchase.receiptCallbacks or 0)
+				.. " | granted " .. tostring(purchase.granted or 0)
+				.. " | pending " .. tostring(purchase.pending or 0)
+				.. " | failures " .. tostring(purchase.failures or 0),
+			"Moderation lookups: " .. tostring(moderation.totalLookups or 0)
+				.. " | success " .. tostring(moderation.successfulLookups or 0)
+				.. " | failed/pending " .. tostring(moderation.failedLookups or 0),
+			"Playback: " .. tostring(controllerPlayback.backend or "Unavailable")
+				.. " | playing " .. tostring(controllerPlayback.playing == true)
+				.. " | paused " .. tostring(controllerPlayback.paused == true)
+				.. " | queue " .. tostring(controllerPlayback.queueDepth or 0)
+				.. " | migration failures " .. tostring(controllerPlayback.migrationFailureCount or 0),
+			"Security signals: " .. tostring(securityMonitor.totalSignals or 0)
+				.. " | alerts " .. tostring(securityMonitor.alerts or 0)
+				.. " | physics " .. tostring(characterPhysics.totalSignals or 0),
+			"Client telemetry: " .. tostring(clientTelemetry.state or "Unavailable")
+				.. " | local-only, untrusted, not transmitted",
+			"Honeypot/client-integrity sensors: not installed in this branch; no activity is inferred.",
 			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s):",
 		}
 		for index = math.max(1, #purchaseDiagnosticEntries - 3), #purchaseDiagnosticEntries do
