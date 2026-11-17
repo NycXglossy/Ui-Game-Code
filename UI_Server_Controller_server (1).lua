@@ -72,7 +72,7 @@ local CONFIG = {
 	-- you intentionally want Studio to use the live DataStore.
 	StudioUseDataStore = false,
 
-	-- Modern AudioPlayer is the primary source; retain the legacy Sound only as a guarded recovery fallback.
+	-- Modern AudioPlayer is the only main playback source; failures remain unavailable.
 	UseModernAudioBackend = true,
 	CrossfadeDurationSeconds = 4,
 	CrossfadePrepareLeadSeconds = 14,
@@ -822,7 +822,7 @@ ControllerFunctions.bindActiveAudioPlayingSignal = function()
 	end
 	local source = activeAudioSource
 	-- Publish the active output type. Unavailable means modern startup/recovery
-	-- failed and no legacy Sound fallback is authoritative.
+	-- failed; no legacy source is selected.
 	local sourceKind = if source.kind == "Backend" and source.backend then "AudioPlayer" else "Unavailable"
 	SoundService:SetAttribute("ClubMusicAudioSourceKind", sourceKind)
 	local signalInstance = if source.kind == "Backend" and source.backend then source.backend:GetPlayer() else nil
@@ -896,7 +896,7 @@ local function getTrackVolumeTrim(trackId: string?): number
 	if typeof(trackId) ~= "string" then return 1 end
 	local configured = TRACK_VOLUME_TRIM_OVERRIDES[trackId]
 	if not ControllerFunctions.isFiniteNumber(configured) or configured <= 0 then return 1 end
-	-- Sound.Volume and AudioPlayer.Volume both support values above 1, but
+	-- AudioPlayer.Volume supports values above 1, but
 	-- clamp the shared per-track trim to their documented 0..10 range.
 	return math.clamp(configured, 0.01, 10)
 end
@@ -1357,13 +1357,13 @@ end
 
 -- Modern-only startup. If module loading, decoding, or playback verification
 -- fails, leave the source unavailable and report the failure; never start legacy
--- Sound. A monotonically increasing token fences late decoder completions.
+-- AudioPlayer. A monotonically increasing token fences late decoder completions.
 ControllerFunctions.startServerMusic = function(soundId: any)
 	local retiredSource = activeAudioSource
 	ControllerFunctions.stopServerMusic()
 	-- New-track startup owns a fresh candidate. Mark the source unavailable while
 	-- it loads, and retire the stopped previous backend so the controller never
-	-- reports a stopped or legacy Sound as the active output.
+	-- reports a stopped output as the active source.
 	if retiredSource.kind == "Backend" and retiredSource.backend then
 		retireAudioBackend(retiredSource.backend, "new track startup")
 	end
@@ -1493,7 +1493,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 			end
 		elseif not ok then
 			-- A seek/pause or other controller action may legitimately revise the
-			-- active Sound while the candidate is loading. Retry the same current
+			-- active backend while the candidate is loading. Retry the same current
 			-- track with the latest playhead/pause state instead of falling silent.
 			if modernAudioStartToken == startToken
 				and activeAudioSource.kind == "Unavailable"
@@ -6703,7 +6703,7 @@ task.spawn(function()
 end)
 
 -- The server publishes authoritative elapsed time and current state. Clients interpolate between
--- resyncs. A single server-owned Sound replicates the active track to everyone; CONFIG.SoundIds
+-- resyncs. A single server-owned AudioPlayer graph replicates the active track to everyone; CONFIG.SoundIds
 -- supplies optional built-in track audio, while staff-requested Creator Hub audio is validated
 -- before it can enter the queue.
 task.spawn(function()
@@ -6731,7 +6731,7 @@ task.spawn(function()
 		local shouldAdvance = not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.elapsed >= nowPlaying.duration
 		-- Catalog tracks without a configured SoundId are intentionally silent
-		-- UI/visualizer entries. Do not treat their non-playing Sound as a failed
+		-- UI/visualizer entries. Do not treat their intentionally absent audio as a failed
 		-- asset: let their catalog duration drive the normal transition instead.
 		-- A transient IsPlaying=false must not be treated as end-of-track.
 		-- Require a short stable stop, then attempt one in-place resume from the
