@@ -404,7 +404,8 @@ function Service:GetSnapshot(): {[string]: any}
 			state = "ClientLocalOptIn",
 			scope = "ClientLocalUntrusted",
 			transmitted = false,
-			availableModule = true,
+			deployment = "OptionalReplicatedStorageModuleAndLocalScript",
+			bootstrapOptIn = true,
 		},
 	}
 end
