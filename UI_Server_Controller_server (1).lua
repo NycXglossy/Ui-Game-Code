@@ -5901,6 +5901,12 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local moderation = if typeof(controller.moderation) == "table" then controller.moderation else {}
 		local controllerPlayback = if typeof(controller.playback) == "table" then controller.playback else {}
 		local securityMonitor = if typeof(services.securityMonitor) == "table" then services.securityMonitor else {}
+		local resourceGuard = if typeof(securityMonitor.resourceGuard) == "table" then securityMonitor.resourceGuard else {}
+		local resourceLanes = if typeof(resourceGuard.lanes) == "table" then resourceGuard.lanes else {}
+		local writeLane = if typeof(resourceLanes.MemoryStoreWrite) == "table" then resourceLanes.MemoryStoreWrite else {}
+		local readLane = if typeof(resourceLanes.MemoryStoreRead) == "table" then resourceLanes.MemoryStoreRead else {}
+		local auditStatus = if typeof(services.audit) == "table" then services.audit else {}
+		local storageGuard = if typeof(auditStatus.storageGuard) == "table" then auditStatus.storageGuard else {}
 		local characterPhysics = if typeof(services.characterPhysics) == "table" then services.characterPhysics else {}
 		local clientTelemetry = if typeof(snapshot.clientTelemetry) == "table" then snapshot.clientTelemetry else {}
 		local _, globalOperational = ControllerFunctions.adminBridgeGlobalCall("GetGlobalOperationalStatus")
@@ -5968,6 +5974,12 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Security signals: " .. tostring(securityMonitor.totalSignals or 0)
 				.. " | alerts " .. tostring(securityMonitor.alerts or 0)
 				.. " | physics " .. tostring(characterPhysics.totalSignals or 0),
+			"Resource guards: write " .. tostring(writeLane.active or 0) .. "/" .. tostring(writeLane.limit or 0)
+				.. " rejected " .. tostring(writeLane.rejected or 0)
+				.. " | read " .. tostring(readLane.active or 0) .. "/" .. tostring(readLane.limit or 0)
+				.. " rejected " .. tostring(readLane.rejected or 0)
+				.. " | storage circuit open " .. tostring(storageGuard.circuitOpen == true)
+				.. " failures " .. tostring(storageGuard.failuresInWindow or 0),
 			"Client telemetry: " .. tostring(clientTelemetry.state or "Unavailable")
 				.. " | local-only, untrusted, not transmitted",
 			"Honeypot/client-integrity sensors: not installed in this branch; no activity is inferred.",
