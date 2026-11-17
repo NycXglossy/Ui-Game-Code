@@ -154,6 +154,16 @@ local function recordSecurityReplay(eventType: string, userId: number, targetUse
 	return ok and recorded == true
 end
 
+local function recordThreatIntelligence(signal: string, userId: number, source: string, severity: string): boolean
+	local storage = game:GetService("ServerStorage")
+	local endpoint = storage:FindFirstChild("TikiTideThreatIntelligence")
+	if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= storage then return false end
+	local ok, recorded = pcall(function()
+		return endpoint:Invoke("Record", signal, userId, source, severity)
+	end)
+	return ok and recorded == true
+end
+
 local function cleanText(value: any, maxLength: number): string?
 	if typeof(value) ~= "string" or #value == 0 or #value > maxLength then return nil end
 	local clean = value:gsub("[%c]", " "):gsub("^%s+", ""):gsub("%s+$", "")
@@ -766,7 +776,7 @@ local safeCallModule = loadOptionalGlobalModule("ClubMusic_Global_SafeCall_Servi
 local globalSafeCall: any = nil
 if safeCallModule then
 	local safeOk, safeInstance = pcall(function()
-		return safeCallModule.new({serviceName = "ClubMusicGlobal"})
+		return safeCallModule.new({serviceName = "ClubMusicGlobal", onFailure = function(serviceName, operation)\n\t\t\trecordThreatIntelligence("safe_call_failed", 0, "SafeCall", "Warning")\n\t\tend})
 	end)
 	if safeOk and typeof(safeInstance) == "table"
 		and type(safeInstance.Run) == "function"
@@ -1107,8 +1117,11 @@ globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Securi
 	guid = function() return HttpService:GenerateGUID(false) end,
 	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
 	getThreshold = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("suspiciousSignalThreshold") else 8 end,
-	onAlert = function(signal, count)
+	onAlert = function(signal, count, subject)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", 0, signal, "threshold-reached:" .. tostring(count)) end
+		local subjectUserId = tonumber(subject) or 0
+		if not finiteNumber(subjectUserId) or subjectUserId < 0 or subjectUserId % 1 ~= 0 then subjectUserId = 0 end
+		recordThreatIntelligence("security_monitor_threshold", subjectUserId, "SecurityMonitor", "Warning")
 	end,
 }, {"Start", "GetStatus", "Record", "ForgetSubject"})
 if globalSecurityMonitorService then globalSecurityMonitorService:Start() end
@@ -1119,6 +1132,9 @@ bindFunction("RecordGlobalSecuritySignal", function(signal: any, subject: any)
 	if not globalSecurityMonitorService or typeof(signal) ~= "string"
 		or #signal < 1 or #signal > 48 then return false end
 	local safeSubject = if typeof(subject) == "string" then string.sub(subject, 1, 48) else "server"
+	local subjectUserId = tonumber(safeSubject) or 0
+	if not finiteNumber(subjectUserId) or subjectUserId < 0 or subjectUserId % 1 ~= 0 then subjectUserId = 0 end
+	recordThreatIntelligence(signal, subjectUserId, "CharacterPhysicsGuard", "Warning")
 	local ok, recorded = pcall(globalSecurityMonitorService.Record,
 		globalSecurityMonitorService, signal, safeSubject)
 	return ok and recorded == true
@@ -1259,6 +1275,7 @@ bindFunction("GetGlobalOperationalStatus", function()
 		Watchdog = if globalLocalWatchdog then globalLocalWatchdog:GetStatus() else {state = "NotInstalled"},
 		AdaptiveLoad = readServerStorageStatus("GetTikiTideSecurityLoadStatus"),
 		SecurityReplay = readServerStorageStatus("GetTikiTideSecurityReplayStatus"),
+		ThreatIntelligence = readServerStorageStatus("GetTikiTideThreatIntelligenceStatus"),
 		SafeCall = if globalSafeCall then globalSafeCall:GetStatus() else {state = "Unavailable"},
 		ErrorHistory = if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function" then globalErrorHandler.GetStatus() else {state = "Unavailable"},
 		ServiceRegistry = if globalServiceRegistry then globalServiceRegistry:GetStatus() else {state = "NotInstalled"},
@@ -1303,7 +1320,11 @@ bindFunction("RecordLocalWatchdogPulse", function(name: any, detail: any, health
 		or (detail ~= nil and typeof(detail) ~= "string")
 		or (healthy ~= nil and typeof(healthy) ~= "boolean")
 		or (metadata ~= nil and typeof(metadata) ~= "table") then return false end
-	return globalLocalWatchdog:Pulse(name, detail, healthy, metadata)
+	local recorded = globalLocalWatchdog:Pulse(name, detail, healthy, metadata)
+	if recorded and healthy == false then
+		recordThreatIntelligence("watchdog_degraded", 0, "Watchdog", "Warning")
+	end
+	return recorded
 end)
 bindFunction("RecordGlobalMetric", function(name: any, value: any, latencySeconds: any)
 	if not globalDiagnosticsService or typeof(name) ~= "string" or #name > 48 then return false end
@@ -1355,6 +1376,7 @@ bindFunction("ReportSignal", function(userId: any, signal: any, detail: any)
 	if not key or not cleanSignal then return false end
 	-- Local replay remains available even when cross-server DataStore services are disabled.
 	recordSecurityReplay(cleanSignal, tonumber(key) or 0, 0, "Warning", "GlobalSecuritySignal", {})
+	recordThreatIntelligence(cleanSignal, tonumber(key) or 0, "GlobalSecuritySignal", "Warning")
 	if not SERVICE_ENABLED then return true end
 	local reportKey = key .. ":" .. cleanSignal
 	local previous = signalCounts[reportKey]
@@ -1383,6 +1405,7 @@ bindFunction("GetGlobalSecurityStatus", function()
 		MessageValidation = if globalMessageValidationService then globalMessageValidationService:GetStatus() else {state = "Unavailable"},
 		Idempotency = if globalIdempotencyService then globalIdempotencyService:GetStatus() else {state = "Unavailable"},
 		IncidentResponse = if globalIncidentResponseService then globalIncidentResponseService:GetStatus() else {state = "Unavailable"},
+		ThreatIntelligence = readServerStorageStatus("GetTikiTideThreatIntelligenceStatus"),
 		Policy = if globalSecurityPolicyService then globalSecurityPolicyService:GetAll() else nil,
 	}
 end)
