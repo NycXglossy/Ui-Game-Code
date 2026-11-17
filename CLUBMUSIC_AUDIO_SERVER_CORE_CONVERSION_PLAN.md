@@ -16,6 +16,8 @@ The server controller remains the authority for playback state, per-server queue
 1. Modern `AudioPlayer` is the only intended long-term playback source; the controller remains its lifecycle owner.
 2. Each server owns its own request queue. Optional global playback-only sync shares the playing track/state only; it must never become a shared request queue.
 3. `SecurityCore.Authorization` remains the sole permission authority. DJ/session modules may call injected authorization but must not implement a parallel role system.
+4. Normal player song requests and Auto DJ remain available to all players; neither may be wrapped in a DJ/staff authorization gate or disabled by DJ Control Mode. They remain subject to server-side catalog validation, request cooldowns/limits, queue capacity, idempotency, and abuse controls.
+5. Privileged playback controls (play/pause/restart/reload/skip), playlist management, catalog mutation, and DJ session/handoff actions require the appropriate SecurityCore-backed DJ/staff permission. Read-only Now Playing/queue access and skip voting retain their existing player-facing behavior.
 4. Queue, playlist rotation, skip-vote state, playback clocks, transition generations, and recovery ownership remain server-side.
 5. Crossfade remains a separate lifecycle manager until its transition cancellation/commit behavior is proven stable.
 6. Catalog and playlist persistence remain separate from in-memory playback/queue state.
@@ -70,6 +72,14 @@ The five core sources above are stored as ModuleScripts in `ClubMusic_Audio_Serv
 5. **Server Audio Support** — existing watchdog, error handler, recovery reporting, and bounded server-local diagnostics. Do not merge unrelated global security services into the audio runtime.
 
 Spatial routing remains a separate optional server resource service. Client preferences remain client-side.
+
+## Permission boundary and acceptance rules
+
+- **All players:** submit normal catalog song requests; use Auto DJ as the fallback/refill system; view Now Playing and the queue subject to existing visibility; cast skip votes subject to existing vote rules.
+- **Authorized DJ/staff:** use privileged playback controls, reload/recovery controls, playlist management, catalog mutation, and DJ session/handoff actions according to the existing SecurityCore permission levels.
+- `SecurityCore.Authorization` is the only role/permission authority. `getLevel` and DJ checks are projections/delegations to that service, not local role tables.
+- Normal requests must never call `GlobalDJ` or require staff rank. Keep server validation, cooldowns, per-player request limits, queue caps, duplicate-track checks, and abuse budgets.
+- DJ Control Mode is a booth/control-state indicator only; it must not close ordinary player requests or disable Auto DJ.
 
 ## Implementation sequence
 
@@ -161,3 +171,10 @@ Spatial routing remains a separate optional server resource service. Client pref
 - Post-edit source inspection confirms there are no `ChildManagers.Audio` references, the direct controller snapshot is injected, and the watchdog quality probe remains present.
 
 **Not yet verified:** Luau compilation, Roblox Studio playback controls, watchdog behavior, published-server playback, or multi-server queue/sync behavior. Owner runtime testing remains required.
+
+### Permission boundary source audit — 2026-11-16
+
+- Confirmed the controller loads `SecurityCore.Authorization`; `canUseDJBooth` delegates to `Authorization.Check(..., "GlobalDJ")` and rank projections come from the same service.
+- Confirmed normal `RequestTrack` is a separate public action with server validation, request cooldown/limits, queue-capacity and duplicate checks; it does not require DJ authorization.
+- Found two mismatches against the required acceptance rules: DJ Control Mode rejected normal requests, and `ReloadSong` had no DJ authorization check. The next controller patch removes the request lock and gates reload through SecurityCore-backed DJ authorization.
+- Auto DJ refill is server-owned and remains independent of DJ permissions.
