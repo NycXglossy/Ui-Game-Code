@@ -30,7 +30,7 @@ local HttpService = game:GetService("HttpService")
 
 local CONFIG = {
 	GroupId = 500470662, -- Roblox group used for rank/group features.
-	RankThresholds = { Owner = 255, CoOwner = 254, Admin = 200, GroupDJ = 100 },
+	RankThresholds = { Owner = 255, CoOwner = 254, Admin = 200, Moderator = 150, GroupDJ = 100 },
 
 	-- Extra staff without needing a group (treated as OWNER).
 	StaffUserIds = {} :: {number},
@@ -2511,6 +2511,7 @@ do
 				staffUserIds = CONFIG.StaffUserIds,
 				thresholds = {
 					GroupDJ = CONFIG.RankThresholds.GroupDJ,
+					Moderator = CONFIG.RankThresholds.Moderator,
 					Admin = CONFIG.RankThresholds.Admin,
 					CoOwner = CONFIG.RankThresholds.CoOwner,
 					Owner = CONFIG.RankThresholds.Owner,
