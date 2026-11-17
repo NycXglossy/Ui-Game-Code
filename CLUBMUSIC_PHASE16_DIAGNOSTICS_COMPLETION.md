@@ -23,7 +23,7 @@
 ### Security and operational summaries
 - Unified snapshot now includes controller diagnostics and CharacterPhysicsGuard status.
 - Security health includes CharacterPhysicsGuard as an observed component.
-- Staff `;cmdiagnostics` includes memory trend, purchase/receipt outcomes, moderation lookup health, playback backend/queue state, SecurityMonitor signal counts, CharacterPhysicsGuard signal counts, and client-telemetry boundaries.
+- Staff `;cmdiagnostics` includes memory trend, purchase/receipt outcomes, moderation lookup health, playback backend/queue state, SecurityMonitor and CharacterPhysicsGuard signal counts, ResourceGuard lane occupancy/rejections, StorageGuard circuit state, and client-telemetry boundaries.
 - Existing `;cmpurchases`, `;cmreplay`, `;cmthreat`, `;cmsecurity`, and `;cmerrors` remain separate detailed review commands.
 - `RecordGlobalMetric` accepts an optional `Success`, `Failure`, or `Observed` outcome and retains bounded aggregate counts, latency, and last outcome timestamps. Existing three-argument callers remain compatible.
 - SafeCall now exposes an explicit latest outcome (`Success`, `Failure`, or `Recovered`) so the diagnostics health state does not rely on second-resolution timestamp comparisons. Standalone and packaged SafeCall module sources are synchronized.
