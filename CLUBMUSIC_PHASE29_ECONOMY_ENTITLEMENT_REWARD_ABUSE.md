@@ -252,7 +252,7 @@ The supplied ReceiptProcessor.server.lua example was reviewed but was not instal
 
 ## Verification update for the script-example implementation
 
-- Dance Floor reward logic and profile marker were added to the tracked controller source in commit a2f8a8271b23be1b326051c4d136f743518f3cbd.
+- Dance Floor reward logic and profile marker were added to the tracked controller source in commit a2f8a8271b23be1b326051c4d136f743518f3cbd; follow-up commits e042cf625432e9a77e4455bd6c422134f6adc96d and d3ed2d3b599870f6acc5bd1e871b0f95fd230a35 preserve the AFK timer across respawns and clarify the persistence guarantee.
 - ReceiptAuthority and the existing durable receipt transaction handlers were source-reviewed and intentionally left intact; the example's duplicate callback and in-memory receipt cache were not copied.
 - Source changes are static repository work only. No Luau parser, Roblox Studio runtime, live DataStore, live Marketplace catalog, or published-server test was available.
 - The feature branch remains unmerged and unpublished. The live Roblox place and production player data are unchanged.
