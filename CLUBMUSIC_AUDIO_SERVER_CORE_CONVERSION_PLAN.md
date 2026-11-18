@@ -565,7 +565,7 @@ The repository installation path is now explicit for the active playback inspect
 
 ## MemoryStore security/operations consumer audit (2026-11-17)
 
-This is a source-level dependency map, not approval to remove every remaining map. The audit inspected `ClubMusic_Global_Service_server_1.lua`, `ClubMusic_Global_Security_Service.lua`, and the installed `UI_Server_Controller_server (1).lua` on `security/phase1-foundation`.
+This is a source-level dependency map, not approval to remove every remaining map. The audit inspected `ClubMusic_Global_Service_server_1.lua`, `ClubMusic_Global_Security_Service.lua`, and the current `UI_Server_Controller_server (1).lua` on `fix/security-core-release-and-queue-loop`.
 
 | Service / storage | Confirmed consumer or behavior | Current decision |
 |---|---|---|
@@ -582,5 +582,5 @@ This is a source-level dependency map, not approval to remove every remaining ma
 - The idempotency service's shared map is opt-in, not required for local reservations. Search every deployed server script, purchase receipt path, installer, and packaged bundle for `ReserveGlobalOperation` / `crossServer=true` before deciding whether to remove the shared map. Do not weaken purchase receipt idempotency.
 - Trace `ConsumeActionBudget`, `ConsumeStateBudget`, `ConsumeDataStoreBudget`, `ConsumeAudioBudget`, and `ConsumeGlobalRateLimit` across installed scripts and bundles. The controller source inspected here has no direct calls to these bindables; that is not proof that no external script calls them.
 - Verify the RateLimit facade dependency mismatch (`consumeShared` versus the supplied `consumeLocalBudget`) before relying on its reported health or deleting its endpoints.
-- Continue to keep playback, queueing, Auto DJ, transitions, recovery, and watchdog independent of MemoryStore, DataStore, and MessagingService. The SecurityCore movement-authority ledger remains server-local, bounded, and expiring.
+- Keep queueing, Auto DJ selection/refill, per-server request accounting, and playlist cursors local. The optional playback-only feature uses MemoryStore solely for its fenced leader lease, DataStore for the Now Playing/playhead snapshot, and MessagingService for revision invalidations. With the feature disabled, playback remains fully per-server. The SecurityCore movement-authority ledger remains server-local, bounded, and expiring.
 - No service was removed in this audit commit. The next implementation change should be limited to a consumer-proven retirement or a local-storage conversion with explicit staff/receipt acceptance tests. The remaining security architecture phases are intentionally still open and will be handled as a later, separate sequence.
