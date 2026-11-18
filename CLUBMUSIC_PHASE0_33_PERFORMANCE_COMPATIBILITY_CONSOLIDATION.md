@@ -422,3 +422,5 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Updated the controller-local bridge registry to watch ServerStorage child additions/removals and API-folder child additions/removals. It now attaches exactly one current `GlobalEvent` connection, disconnects a replaced/removed event, switches cleanly to a replacement API folder, and ignores callbacks from stale folder/event generations.
 - Added controller Script-destruction cleanup for the event, folder, and ServerStorage watcher connections. No polling loop, remote, persistence, cross-server state, or diagnostics telemetry was added. Existing BindableFunction invocation and fail-closed moderation behavior remain unchanged.
 - Static source review only; no Luau compilation, BindableEvent lifecycle simulation, Roblox Studio/runtime test, or deployment was performed.
+
+- Follow-up cleanup: removed the obsolete one-time `globalEventObject` capture; all event attachment now flows through the lifecycle-aware watcher. No additional top-level local was introduced.
