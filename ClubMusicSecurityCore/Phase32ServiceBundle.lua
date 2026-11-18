@@ -48,6 +48,14 @@ function Bundle:Unban(actor: Player, targetUserId: number, reason: string)
 	return self.Punishments:Unban(actor, targetUserId, reason)
 end
 
+function Bundle:RevokeRestrictions(actor: Player, targetUserId: number, reason: string)
+	return self.Punishments:RevokeRestrictions(actor, targetUserId, reason)
+end
+
+function Bundle:RecordVerifiedViolation(player: Player, category: string, evidenceReference: string)
+	return self.Chat:RecordVerifiedViolation(player, category, evidenceReference)
+end
+
 function Bundle:GetHistory(actor: Player, targetUserId: number, limit: number)
 	return self.Punishments:GetHistory(actor, targetUserId, limit)
 end
