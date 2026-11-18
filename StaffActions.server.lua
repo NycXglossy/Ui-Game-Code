@@ -217,14 +217,16 @@ local function confirmClosure(player: Player, mode: string): (boolean, string)
 		if not recordAudit("club_closure_requested", player.UserId, 0, "Warning", {scope = "current_server"}) then
 			return false, "Security audit unavailable; club remains open."
 		end
+		-- Pre-audit every intended removal before changing state or kicking anyone.
+		for _, guest in ipairs(guests) do
+			if guest.Parent == Players and not recordAudit("club_closure_guest_removed", player.UserId, guest.UserId, "Warning", {scope = "current_server"}) then
+				return false, "Security audit unavailable; club remains open and no guests were removed."
+			end
+		end
 		clubClosed.Value = true
 		local removed = 0
 		for _, guest in ipairs(guests) do
 			if guest.Parent == Players then
-				if not recordAudit("club_closure_guest_removed", player.UserId, guest.UserId, "Warning", {scope = "current_server"}) then
-					clubClosed.Value = false
-					return false, "Audit failed during evacuation; closure was rolled back. Some guests may already have left."
-				end
 				guest:Kick("Thank you for visiting Tiki Tide. The club is now closed for the evening.")
 				removed += 1
 			end
