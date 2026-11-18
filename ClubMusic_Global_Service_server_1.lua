@@ -1597,7 +1597,7 @@ local function recoverPendingXPReceipt(record: any): (boolean, any)
 		key = legacyKey
 	end
 	if typeof(journal) ~= "table" or journal.purchaseId ~= pendingId or (journal.status ~= "Prepared" and journal.status ~= "Completed") then
-		warn("[ClubMusic Global] Pending XP receipt has no recoverable journal: " .. pendingId)
+		warn("[ClubMusic Global] Pending XP receipt has no recoverable journal; transaction remains retryable.")
 		return false, record
 	end
 	if not allowXPDataStoreOperation() then return false, record end
