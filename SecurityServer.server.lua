@@ -176,6 +176,7 @@ reportEvent.OnServerEvent:Connect(function(reporter: Player, targetUserId: any, 
 	})
 end)
 
+local clubClosedState = ServerStorage:WaitForChild("TikiTideClubClosed", 30)
 local vipZone = Workspace:FindFirstChild("VIPRestrictedZone")
 local clubEntrance = Workspace:FindFirstChild("ClubEntrance")
 if vipZone and vipZone:IsA("BasePart") then
@@ -197,14 +198,24 @@ if vipZone and vipZone:IsA("BasePart") then
 				or math.abs(localPosition.Y) > halfSize.Y
 				or math.abs(localPosition.Z) > halfSize.Z then return end
 
-			-- IsVIP is published by the main controller from EntitlementAuthority.
-			-- Unknown entitlement state is not treated as a trespass.
+			-- VIP is resolved only by the main controller's EntitlementAuthority.
+			-- Wait briefly for the authoritative entitlement attribute; unresolved access is denied.
 			local hasVip = player:GetAttribute("IsVIP")
-			if typeof(hasVip) ~= "boolean" then return end
-			if hasVip then return end
+			local entitlementDeadline = os.clock() + 8
+			while typeof(hasVip) ~= "boolean" and os.clock() < entitlementDeadline
+				and player.Parent == Players do
+				task.wait(0.2)
+				hasVip = player:GetAttribute("IsVIP")
+			end
 
+			local closed = clubClosedState ~= nil and clubClosedState:IsA("BoolValue")
+				and (clubClosedState :: BoolValue).Value
 			local level = getStaffLevel(player)
-			if level == nil or level >= 1 then return end
+			local isStaff = level ~= nil and level >= 1
+			if closed and isStaff then return end
+			if not closed and hasVip == true then return end
+			-- Unknown entitlement and unavailable staff verification fail closed.
+			if isStaff then return end
 
 			local now = os.clock()
 			zoneCooldowns[player.UserId] = now
