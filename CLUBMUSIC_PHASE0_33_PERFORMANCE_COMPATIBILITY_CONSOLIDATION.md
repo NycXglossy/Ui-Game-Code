@@ -18,7 +18,7 @@ Keep state and work at the narrowest scope that can correctly own it.
 
 Cross-server playback synchronization is retired. Each server must own its own playback state and request queue. Cross-server diagnostics aggregation is prohibited. Do not add DataStore, MemoryStore, MessagingService, RemoteEvents, or RemoteFunctions for data that can remain local.
 
-Client-side performance measurements are untrusted and must not be sent to the server or used for authorization. Essential server validation, authorization, purchase processing, moderation enforcement, and security-event recording must never be throttled by adaptive load.
+Client-side performance measurements and diagnostics stay on the client and are never sent to the server or used for authorization. The existing ClientIntegrityTelemetry is a narrow, separate security exception: it sends only fixed allowlisted integrity/liveness signal codes at low frequency for server-side review; payload values, device metrics, frame rates, timestamps, and free-form text are not transmitted. These observations remain untrusted and never authorize or punish. Essential server validation, authorization, purchase processing, moderation enforcement, and security-event recording must never be throttled by adaptive load.
 
 ## 2. Source changes committed in this pass
 
