@@ -1785,6 +1785,11 @@ ownThread(task.spawn(function()
 					-- Background reconciliation must leave a small shared-bucket reserve
 					-- available for foreground moderation and purchase operations.
 					local data = getModeration(player.UserId, 3)
+					-- GetAsync yields. A departed Player must not receive pending-state
+					-- writes or produce a local reconciliation event after departure.
+					if player.Parent ~= Players then
+						continue
+					end
 					if data.lookupFailed then
 						-- Unknown is not the same as banned. Keep moderation-sensitive
 						-- actions closed while the authoritative record is unavailable,
