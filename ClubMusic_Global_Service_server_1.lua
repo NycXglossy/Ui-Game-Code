@@ -64,6 +64,8 @@ local CONFIG = {
 local IS_STUDIO = RunService:IsStudio()
 local SERVICE_ENABLED = CONFIG.Enabled and (not IS_STUDIO or CONFIG.EnableInStudio)
 local JOB_ID = game.JobId ~= "" and game.JobId or HttpService:GenerateGUID(false)
+local globalServiceShuttingDown = false
+local diagnosticsStartThread: thread? = nil
 local globalDiagnosticsService: any = nil
 local globalServiceRegistry: any = nil
 local globalServerHealthService: any = nil
@@ -971,8 +973,9 @@ if diagnosticsModule then
 		and type(instance.GetStatus) == "function" and type(instance.GetSnapshot) == "function" then
 		globalDiagnosticsService = instance
 		if globalServiceRegistry then pcall(globalServiceRegistry.Register, globalServiceRegistry, "Diagnostics", instance, {"Start", "Check", "GetStatus", "GetSnapshot", "GetMetrics"}, true) end
-		task.delay(4, function()
-			if globalDiagnosticsService == instance then
+		diagnosticsStartThread = task.delay(4, function()
+			diagnosticsStartThread = nil
+			if not globalServiceShuttingDown and globalDiagnosticsService == instance then
 				local startOk, startError = pcall(function() instance:Start() end)
 				if not startOk then warn("[ClubMusic Diagnostics] Delayed startup failed: " .. tostring(startError)) end
 			end
@@ -1233,10 +1236,17 @@ if lifecycleJanitor then
 			if service and type(service.Stop)=="function" then pcall(service.Stop,service) end
 		end
 	end,true)
-	ownConnection(script.Destroying:Connect(function()
-		lifecycleJanitor:Cleanup()
-	end))
 end
+
+-- Always observe shutdown, even if the optional janitor module is unavailable.
+-- The flag also lets cooperative background loops exit without task cancellation.
+script.Destroying:Connect(function()
+	globalServiceShuttingDown = true
+	local pendingStart = diagnosticsStartThread
+	diagnosticsStartThread = nil
+	if pendingStart then pcall(task.cancel, pendingStart) end
+	if lifecycleJanitor then lifecycleJanitor:Cleanup() end
+end)
 
 ownConnection(globalEventBindable.Event:Connect(function(event)
 	if typeof(event) ~= "table" then return end
@@ -1610,7 +1620,7 @@ end
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	ownThread(task.spawn(function()
-		while SERVICE_ENABLED do
+		while SERVICE_ENABLED and not globalServiceShuttingDown do
 			local ok, subscriptionOrError = pcall(function()
 				return MessagingService:SubscribeAsync(topic, function(message)
 					messagingReceived += 1
@@ -1655,10 +1665,11 @@ end
 -- Reconcile online users against durable moderation records so missed MessagingService
 -- deliveries do not leave a stale request-block/ban state indefinitely.
 ownThread(task.spawn(function()
-	while true do
+	while not globalServiceShuttingDown do
 		task.wait(CONFIG.ModerationReconcileSeconds)
 		if SERVICE_ENABLED then
 			for _, player in ipairs(Players:GetPlayers()) do
+				if globalServiceShuttingDown then break end
 				local data = getModeration(player.UserId)
 				if data.lookupFailed then
 					-- Unknown is not the same as banned. Keep moderation-sensitive
