@@ -88,6 +88,8 @@ function Service.new(dependencies: {[string]: any})
 		started = false,
 		buckets = {},
 		incidents = {},
+		incidentsById = {},
+		nextPruneAt = 0,
 		nextIncidentId = 0,
 		totalSignals = 0,
 		droppedSignals = 0,
@@ -102,11 +104,20 @@ function Service:Start(): boolean
 end
 
 function Service:_prune(now: number)
+	-- Expiry is bounded to a five-second sweep cadence instead of scanning
+	-- every retained subject and incident for every incoming signal.
+	if now < self.nextPruneAt then return end
+	self.nextPruneAt = now + 5
 	for key, bucket in pairs(self.buckets) do
-		if now - bucket.lastAt > WINDOW_SECONDS then self.buckets[key] = nil end
+		if now - bucket.lastAt > WINDOW_SECONDS then
+			if bucket.incidentId then self.incidentsById[bucket.incidentId] = nil end
+			self.buckets[key] = nil
+		end
 	end
 	for index = #self.incidents, 1, -1 do
-		if now - self.incidents[index].lastAt > INCIDENT_TTL_SECONDS then
+		local item = self.incidents[index]
+		if now - item.lastAt > INCIDENT_TTL_SECONDS then
+			self.incidentsById[item.id] = nil
 			table.remove(self.incidents, index)
 		end
 	end
@@ -115,14 +126,12 @@ end
 function Service:_rememberIncident(bucket, userId: number, now: number)
 	local confidence = confidenceFor(bucket)
 	if confidence == "Low" then return end
-	local item = nil
-	if bucket.incidentId then
-		for index = #self.incidents, 1, -1 do
-			if self.incidents[index].id == bucket.incidentId then item = self.incidents[index]; break end
-		end
-	end
+	local item = if bucket.incidentId then self.incidentsById[bucket.incidentId] else nil
 	if not item then
-		if #self.incidents >= MAX_INCIDENTS then table.remove(self.incidents, 1) end
+		if #self.incidents >= MAX_INCIDENTS then
+			local evicted = table.remove(self.incidents, 1)
+			if evicted then self.incidentsById[evicted.id] = nil end
+		end
 		self.nextIncidentId += 1
 		item = {
 			id = "TTI-" .. tostring(self.nextIncidentId),
@@ -139,6 +148,7 @@ function Service:_rememberIncident(bucket, userId: number, now: number)
 			automaticEnforcement = false,
 		}
 		table.insert(self.incidents, item)
+		self.incidentsById[item.id] = item
 		bucket.incidentId = item.id
 		self.openedForReview += 1
 	end
@@ -252,6 +262,8 @@ function Service:Stop()
 	self.started = false
 	table.clear(self.buckets)
 	table.clear(self.incidents)
+	table.clear(self.incidentsById)
+	self.nextPruneAt = 0
 end
 
 return Service
