@@ -76,8 +76,9 @@ function Service:_observeTrack(player: Player, state: PlayerState, track: Animat
 	state.trackStarts += 1
 	self.observedTracks = math.min(self.observedTracks + 1, MAX_COUNTER)
 
-	local animation = track.Animation
-	local assetId = parseAssetId(animation)
+	local animation: Animation? = nil
+	local animationOk = pcall(function() animation = track.Animation end)
+	local assetId = if animationOk then parseAssetId(animation) else nil
 	if not assetId then
 		self.unreadableIds = math.min(self.unreadableIds + 1, MAX_COUNTER)
 		return
@@ -86,7 +87,7 @@ function Service:_observeTrack(player: Player, state: PlayerState, track: Animat
 	if state.uniqueAssets >= MAX_ASSET_IDS_PER_CHARACTER then
 		if not state.capSignaled then
 			state.capSignaled = true
-			self.cappedCharacters += 1
+			self.cappedCharacters = math.min(self.cappedCharacters + 1, MAX_COUNTER)
 			self:_signal(player, "animation_asset_observation_cap", tostring(MAX_ASSET_IDS_PER_CHARACTER), {
 				cap = MAX_ASSET_IDS_PER_CHARACTER,
 			})
