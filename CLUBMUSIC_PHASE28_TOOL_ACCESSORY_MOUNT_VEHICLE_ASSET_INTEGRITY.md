@@ -181,10 +181,39 @@ Required corrections before implementation:
 - [ ] Verify bounded tables, event connections, observer counts, CPU cost, and deterministic cleanup.
 - [ ] Run Studio and published-server tests on PC, mobile, and console with representative latency and server load.
 
+## Map-independent implementation updates applied (2026-11-17)
+
+The user confirmed that the map is unfinished but map-independent updates may proceed. The following scoped code changes were applied on this feature branch:
+
+### Companion clone lifecycle
+
+- `UtilityBar/UtilityBarExtendedActions.server.lua` now keeps an explicit server-side `companionByPlayer` registry instead of finding a prior clone by a Workspace name.
+- Replacing a companion destroys the previously tracked clone; the follow loop verifies that its clone is still the active registry entry before moving it.
+- CharacterAdded and CharacterRemoving both clean up the owner's companion immediately.
+- PlayerRemoving destroys the tracked clone and disconnects that player's lifecycle connections.
+- Script Destroying disconnects PlayerAdded/PlayerRemoving and per-player lifecycle connections, then destroys all tracked companions.
+- Aura cleanup now shares the same tracked CharacterRemoving connection instead of creating an untracked per-player connection.
+- The 12-second companion lifetime, visual-only clone behavior, and pass gate are unchanged.
+
+### Inventory observer connection lifecycle
+
+- `ClubMusicSecurityCore/AvatarAccessoryValidationService.lua` now stores inventory-container connections per Backpack, StarterGear, and Character rather than appending all container connections to a player/character lifetime array.
+- When a container is detached or replaced, its listeners are disconnected and its container entry is removed.
+- Tools left in a detached container are reconciled through the existing deferred removal check. A Tool already transferred to the current Character or replacement Backpack is retained and does not create a false removal signal.
+- Character replacement detaches the previous Character inventory observer.
+- PlayerRemoving and service Stop disconnect all remaining container listeners and clear the maps.
+- Detection-only behavior is preserved; no Tool or Accessory is destroyed, stripped, disabled, or re-equipped.
+
+**Code commits:**
+- Companion lifecycle: `2c33e76651cf7afd9a64ebf751309a1f7166925c`, with connection teardown refinements in `a45b95d5be0ea195171ce40581fbaf3b2e9b3a23` and `e7493d988a17b64fc81a7264add600983bde62d2`.
+- Inventory observer replacement cleanup: `677f19bf198dad22aabe6ec32d221dd964b81624` and detached-container Tool reconciliation `1601754bae5629a25070c9ffea8894eb9e0ef7b4`.
+
+These are static source changes only. They still require Luau/Studio runtime tests for respawn, replacement, concurrent grants, player churn, and teardown.
+
 ## Verification boundary and current status
 
 This is a tracked-source investigation and design decision record, not a runtime certification. The repository contains no separately named first-party vehicle/mount controller in the inspected tree; no approved mount model or vehicle assembly was available in the reviewed source files. No complete collision-group policy was established. Third-party Kohl's/F3X internals and live-place descendants remain unaudited. No Luau parser or Roblox Studio runtime was available during this repository pass, so no runtime test is claimed as passed.
 
-**Completed:** existing Utility Bar mount behavior traced; server-side feature-pass source distinguished from membership EntitlementAuthority; current movement and avatar observers reviewed; supplied collision, Tool ownership, mount spawning, and vehicle anti-speed examples assessed; existing companion, Tool Shop, avatar refresh, Kohl's/F3X boundaries documented.
+**Completed:** companion clone lifecycle cleanup hardened; inventory observer connection cleanup across Backpack/Character replacement hardened; existing Utility Bar mount behavior traced; server-side feature-pass source distinguished from membership EntitlementAuthority; current movement and avatar observers reviewed; supplied collision, Tool ownership, mount spawning, and vehicle anti-speed examples assessed; existing companion, Tool Shop, avatar refresh, Kohl's/F3X boundaries documented.
 
-**Not implemented yet:** Spawn/Despawn service, approved mount catalog, seat/driver/passenger policy, mount/vehicle network ownership, vehicle movement monitor, collision matrix changes, Tool grant provenance registry, package/live-place audit, and runtime certification. These require the actual mount/vehicle model and live hierarchy to avoid inventing assets, scripts, or physics assumptions.
+**Not implemented yet:** Spawn/Despawn service (the actual approved mount model and hierarchy are not in the tracked source tree, so the old Tool action remains until a coordinated model-backed migration can be built), approved mount catalog, seat/driver/passenger policy, mount/vehicle network ownership, vehicle movement monitor, collision matrix changes, Tool grant provenance registry, package/live-place audit, and runtime certification. These require the actual mount/vehicle model and live hierarchy to avoid inventing assets, scripts, or physics assumptions.
