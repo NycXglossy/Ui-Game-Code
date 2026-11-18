@@ -1191,7 +1191,7 @@ end)
 
 -- Each server observes the opt-in config. Only one lease holder can commit
 -- snapshots; followers never upload or import their local request queues.
-ownThread(task.spawn(function()
+task.spawn(function()
 	local retryDelay = 8
 	while SERVICE_ENABLED do
 		local cycleOk, cycleError = pcall(function()
@@ -1235,7 +1235,7 @@ ownThread(task.spawn(function()
 			warn("[ClubMusic Global] Playback leadership release failed; lease will expire naturally.")
 		end
 	end
-end))
+end)
 
 globalSecurityPolicyService = createOperationalService("ClubMusic_Global_Security_Policy_Service", {
 	configService = globalConfigService,
