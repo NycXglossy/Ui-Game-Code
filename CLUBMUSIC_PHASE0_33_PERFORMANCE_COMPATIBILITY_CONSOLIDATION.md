@@ -166,3 +166,10 @@ Validation: source-level reference check only; no Luau compiler or Roblox runtim
 
 
 A follow-up static audit also found that the global service referenced six undefined action/player/audio budget settings. Added explicit values aligned with the controller's configured ingress budgets: global actions 180 tokens/refill 90 per second, per-player actions 18/refill 12 per second, and audio 3/refill 0.25 per second. This avoids passing nil budget arguments into the shared limiter path. The retired-playback header comment was corrected at the same time. These are source-level consistency fixes; no live service or runtime test was performed.
+
+
+## Local-only rate-limit alignment
+
+A further review found the global service's optional RateLimit facade was being initialized with `consumeLocalBudget` under a different dependency name than the facade requires. The action/state/DataStore/audio consumers also treated the facade's shared-bucket result as mandatory, so the local-only fallback path could reject requests even when its per-server token bucket allowed them. The facade is no longer instantiated by the global service. Existing action, state, DataStore, audio, and compatibility API checks now use bounded per-server token buckets directly and explicitly report `scope = ServerLocal` / `usesSharedBuckets = false`. The fallback retains its configured capacity cap and refill ceiling, and the refill is now additionally capped by each budget's requested refill (so a low-rate audio bucket cannot inherit a faster generic fallback refill). Invalid key/capacity/refill/cost inputs are rejected before bucket arithmetic. The existing bindable name `ConsumeGlobalRateLimit` remains for compatibility, but returns `allowed, false` to identify that the decision is local, not cross-server shared.
+
+Validation: static source inspection and reference checks only; no Luau compiler, Roblox Studio, multiplayer, or live-server test was run.
