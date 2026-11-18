@@ -75,6 +75,8 @@ function Service.new(dependencies)
 		movementSamples = 0,
 		movementSampleGaps = 0,
 		movementSampleInvalid = 0,
+		movementSampleDeferred = 0,
+		movementSampleIntervalCurrent = 0.5,
 		movementAuthorizedTeleports = 0,
 		movementSpeedBands = {under1 = 0, under4 = 0, under8 = 0, under16 = 0, under32 = 0, over32 = 0},
 		-- Separate aggregate axes support later horizontal-speed and vertical/fly analysis.
@@ -250,7 +252,13 @@ function Service:_watchCharacter(player: Player, character: Model)
 				local previousAt: number? = nil
 				while self.started and player.Parent == Players and player.Character == character
 					and self.playerStates[player.UserId] == state do
-					task.wait(0.5)
+					local sampleInterval = 0.5
+					if type(self.d.getMovementSampleInterval) == "function" then
+						local intervalOk, intervalValue = pcall(self.d.getMovementSampleInterval)
+						if intervalOk and finite(intervalValue) then sampleInterval = math.clamp(intervalValue, 0.5, 1.25) end
+					end
+					self.movementSampleIntervalCurrent = sampleInterval
+					task.wait(sampleInterval)
 					if not self.started or player.Parent ~= Players or player.Character ~= character
 						or self.playerStates[player.UserId] ~= state or not rootPart:IsDescendantOf(character) then
 						break
@@ -271,6 +279,18 @@ function Service:_watchCharacter(player: Player, character: Model)
 					)
 					if teleportCheckOk and recentlyTeleported == true then
 						self.movementAuthorizedTeleports += 1
+						previousPosition, previousAt = position, now
+						continue
+					end
+					local sampleAllowed = true
+					if type(self.d.allowMovementSample) == "function" then
+						local budgetOk, budgetResult = pcall(self.d.allowMovementSample)
+						if budgetOk then sampleAllowed = budgetResult == true end
+					end
+					if not sampleAllowed then
+						self.movementSampleDeferred = math.min(1000000000, self.movementSampleDeferred + 1)
+						-- Keep the baseline fresh while optional measurement is deferred so
+						-- the next accepted sample never treats the skipped interval as movement.
 						previousPosition, previousAt = position, now
 						continue
 					end
@@ -406,9 +426,10 @@ function Service:GetStatus()
 		suppressedSignals = self.suppressedSignals,
 		gravityChecks = self.gravityChecks,
 		movementMeasurement = {
-			sampleIntervalSeconds = 0.5,
+			sampleIntervalSeconds = self.movementSampleIntervalCurrent,
 			maximumAcceptedSampleGapSeconds = 1.5,
 			samples = self.movementSamples,
+			deferredSamples = self.movementSampleDeferred,
 			gaps = self.movementSampleGaps,
 			invalidSamples = self.movementSampleInvalid,
 			authorizedTeleportSamples = self.movementAuthorizedTeleports,
