@@ -526,7 +526,9 @@ local function startClientDiagnostics()
 		diagnosticsReadoutText.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics module is unavailable."
 		return
 	end
-	local createOk, instance = pcall(exported.new)
+	local createOk, instance = pcall(function()
+		return exported.new({auditWorkspaceEffects = false, sampleAudio = false})
+	end)
 	if not createOk or typeof(instance) ~= "table" or type(instance.Start) ~= "function"
 		or type(instance.GetStatus) ~= "function" or type(instance.Stop) ~= "function" then
 		diagnosticsReadoutText.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics interface is invalid."
