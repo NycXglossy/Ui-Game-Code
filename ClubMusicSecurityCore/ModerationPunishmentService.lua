@@ -381,6 +381,9 @@ function Service:Unban(actor: Player, targetUserId: number, reason: string): (bo
 			end
 		end
 	end
+	if actor.Parent ~= Players or not hasPermission(self.authorization, actor, "GlobalModeration") then
+		return false, "Authorization changed while loading the punishment record; unban denied."
+	end
 	if requiresSenior and not hasPermission(self.authorization, actor, "IncidentResponse") then
 		return false, "Senior IncidentResponse permission is required to reverse this propagated permanent ban."
 	end
