@@ -46,6 +46,7 @@ local CONFIG = {
 	-- Bounded per-server budgets; no shared MemoryStore limiter.
 	FallbackPlayerCapacity = 20,
 	FallbackPlayerRefillPerSecond = 5,
+	FallbackBucketIdleSeconds = 300,
 	ModerationReconcileSeconds = 180,
 	SubscriptionRetrySeconds = 10,
 	MaxAnnouncementLength = 240,
@@ -182,7 +183,7 @@ local fallbackBuckets: {[string]: {tokens: number, updated: number}} = {}
 local signalCounts: {[string]: number} = {}
 local MAX_FALLBACK_BUCKETS = 2048
 local MAX_SIGNAL_KEYS = 2048
-local FALLBACK_BUCKET_IDLE_SECONDS = CONFIG.BudgetKeyTtlSeconds
+local FALLBACK_BUCKET_IDLE_SECONDS = CONFIG.FallbackBucketIdleSeconds
 local lastFallbackPrune = 0
 
 local function pruneFallbackBuckets(now: number)
@@ -510,7 +511,7 @@ end)
 
 bindFunction("IsEnabled", function()
 	-- Reports availability of global moderation/configuration services only.
-	-- Optional playback-only sync has its own separately gated API and status.
+	-- Playback synchronization is retired and is not exposed as an optional API.
 	return SERVICE_ENABLED
 end)
 
