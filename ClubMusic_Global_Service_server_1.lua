@@ -298,7 +298,8 @@ local function getModeration(userId: number, minimumBudgetRemaining: number?): {
 	if data == nil then return {} end
 	if typeof(data) ~= "table"
 		or (data.globalBan ~= nil and typeof(data.globalBan) ~= "boolean")
-		or (data.requestBlocked ~= nil and typeof(data.requestBlocked) ~= "boolean") then
+		or (data.requestBlocked ~= nil and typeof(data.requestBlocked) ~= "boolean")
+		or (data.revision ~= nil and (not finiteNumber(data.revision) or data.revision < 0 or data.revision % 1 ~= 0)) then
 		warn("[ClubMusic Global] Moderation record has an invalid schema for " .. key .. "; failing closed.")
 		return {lookupFailed = true}
 	end
@@ -325,7 +326,8 @@ local function updateModeration(userId: number, field: string, value: any, actor
 			if old ~= nil and typeof(old) ~= "table" then return nil end
 			if typeof(old) == "table"
 				and ((old.globalBan ~= nil and typeof(old.globalBan) ~= "boolean")
-					or (old.requestBlocked ~= nil and typeof(old.requestBlocked) ~= "boolean")) then
+					or (old.requestBlocked ~= nil and typeof(old.requestBlocked) ~= "boolean")
+					or (old.revision ~= nil and (not finiteNumber(old.revision) or old.revision < 0 or old.revision % 1 ~= 0))) then
 				return nil
 			end
 
@@ -335,6 +337,7 @@ local function updateModeration(userId: number, field: string, value: any, actor
 			local data = {
 				globalBan = if typeof(old) == "table" then old.globalBan == true else false,
 				requestBlocked = if typeof(old) == "table" then old.requestBlocked == true else false,
+				revision = (if typeof(old) == "table" and finiteNumber(old.revision) then math.floor(old.revision) else 0) + 1,
 				updatedAt = now,
 				updatedBy = math.floor(actorUserId),
 				reason = reason,
@@ -379,13 +382,13 @@ local function updateModeration(userId: number, field: string, value: any, actor
 	local message = {
 		version = 1, senderJob = JOB_ID, id = HttpService:GenerateGUID(false),
 		kind = "Moderation", userId = userId, field = field, value = value,
-		actorUserId = actorUserId, reason = reason, at = os.time(),
+		revision = result.revision, actorUserId = actorUserId, reason = reason, at = os.time(),
 	}
 	local published = publishTopic(CONFIG.Topics.Moderation, message)
 	if not published then warn("[ClubMusic Global] Moderation publish failed; periodic reconciliation remains active.") end
 	-- The local event listener writes one audit record. Do not write here as well.
 	globalEventBindable:Fire({kind = "Moderation", userId = userId, field = field, value = value,
-		actorUserId = actorUserId, reason = reason, senderJob = JOB_ID})
+		revision = result.revision, actorUserId = actorUserId, reason = reason, senderJob = JOB_ID})
 	return true
 end
 
@@ -476,7 +479,8 @@ bindFunction("GetModerationState", function(userId: any)
 	if not SERVICE_ENABLED then return false, false end
 	local data = getModeration(userId)
 	if data.lookupFailed then return false, false end
-	return true, data.globalBan == true, data.requestBlocked == true, data.reason
+	return true, data.globalBan == true, data.requestBlocked == true, data.reason,
+		if finiteNumber(data.revision) then math.floor(data.revision) else 0
 end)
 
 bindFunction("SetGlobalBan", function(userId: any, banned: any, actorUserId: any, reason: any)
