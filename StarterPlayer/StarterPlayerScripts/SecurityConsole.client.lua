@@ -107,7 +107,7 @@ close.TextSize = 22
 close.Font = Enum.Font.GothamBold
 close.Parent = header
 Instance.new("UICorner", close).CornerRadius = UDim.new(0, 10)
-close.Activated:Connect(function() gui.Enabled = false end)
+close.Activated:Connect(function() gui.Enabled = false; stopClientDiagnostics() end)
 
 local categoryBar = Instance.new("ScrollingFrame")
 categoryBar.Name = "Categories"
@@ -244,6 +244,87 @@ statusFrame.CanvasSize = UDim2.new()
 statusFrame.Parent = main
 Instance.new("UICorner", statusFrame).CornerRadius = UDim.new(0, 9)
 
+-- Diagnostics overview is part of this authorized Staff Controls console.
+-- Server values arrive only through the existing allowlisted staff command.
+-- Client measurements are read locally and are never sent to the server.
+local diagnosticsPanel = Instance.new("Frame")
+diagnosticsPanel.Name = "DiagnosticsOverview"
+diagnosticsPanel.Position = UDim2.fromOffset(14, 106)
+diagnosticsPanel.Size = UDim2.new(1, -28, 0.65, -8)
+diagnosticsPanel.BackgroundColor3 = Color3.fromRGB(17, 25, 38)
+diagnosticsPanel.BorderSizePixel = 0
+diagnosticsPanel.Visible = false
+diagnosticsPanel.Parent = main
+Instance.new("UICorner", diagnosticsPanel).CornerRadius = UDim.new(0, 11)
+
+local diagnosticsTitle = Instance.new("TextLabel")
+diagnosticsTitle.BackgroundTransparency = 1
+diagnosticsTitle.Position = UDim2.fromOffset(12, 8)
+diagnosticsTitle.Size = UDim2.new(1, -24, 0, 22)
+diagnosticsTitle.Font = Enum.Font.GothamBold
+diagnosticsTitle.Text = "CURRENT SERVER DIAGNOSTICS"
+diagnosticsTitle.TextColor3 = Color3.fromRGB(245, 202, 112)
+diagnosticsTitle.TextSize = 12
+diagnosticsTitle.TextXAlignment = Enum.TextXAlignment.Left
+diagnosticsTitle.Parent = diagnosticsPanel
+
+local diagnosticsScope = Instance.new("TextLabel")
+diagnosticsScope.BackgroundTransparency = 1
+diagnosticsScope.Position = UDim2.fromOffset(12, 30)
+diagnosticsScope.Size = UDim2.new(1, -24, 0, 16)
+diagnosticsScope.Font = Enum.Font.Gotham
+diagnosticsScope.Text = "Server-local health • client measurements remain on this device"
+diagnosticsScope.TextColor3 = Color3.fromRGB(157, 174, 194)
+diagnosticsScope.TextSize = 9
+diagnosticsScope.TextXAlignment = Enum.TextXAlignment.Left
+diagnosticsScope.Parent = diagnosticsPanel
+
+local diagnosticsReadout = Instance.new("TextLabel")
+diagnosticsReadout.Name = "DiagnosticsReadout"
+diagnosticsReadout.Position = UDim2.fromOffset(12, 52)
+diagnosticsReadout.Size = UDim2.new(1, -24, 1, -104)
+diagnosticsReadout.BackgroundColor3 = Color3.fromRGB(11, 18, 29)
+diagnosticsReadout.BorderSizePixel = 0
+diagnosticsReadout.Font = Enum.Font.Code
+diagnosticsReadout.Text = "Select Refresh to request this server's current authorized diagnostic snapshot."
+diagnosticsReadout.TextColor3 = Color3.fromRGB(220, 230, 241)
+diagnosticsReadout.TextSize = 10
+diagnosticsReadout.TextWrapped = true
+diagnosticsReadout.TextXAlignment = Enum.TextXAlignment.Left
+diagnosticsReadout.TextYAlignment = Enum.TextYAlignment.Top
+diagnosticsReadout.Parent = diagnosticsPanel
+Instance.new("UICorner", diagnosticsReadout).CornerRadius = UDim.new(0, 8)
+local diagnosticsReadoutPadding = Instance.new("UIPadding")
+diagnosticsReadoutPadding.PaddingTop = UDim.new(0, 8)
+diagnosticsReadoutPadding.PaddingBottom = UDim.new(0, 8)
+diagnosticsReadoutPadding.PaddingLeft = UDim.new(0, 8)
+diagnosticsReadoutPadding.PaddingRight = UDim.new(0, 8)
+diagnosticsReadoutPadding.Parent = diagnosticsReadout
+
+local diagnosticsRefresh = Instance.new("TextButton")
+diagnosticsRefresh.Name = "RefreshDiagnostics"
+diagnosticsRefresh.Position = UDim2.new(0, 12, 1, -42)
+diagnosticsRefresh.Size = UDim2.fromOffset(132, 30)
+diagnosticsRefresh.BackgroundColor3 = Color3.fromRGB(29, 124, 105)
+diagnosticsRefresh.Text = "REFRESH"
+diagnosticsRefresh.TextColor3 = Color3.fromRGB(255, 255, 255)
+diagnosticsRefresh.TextSize = 9
+diagnosticsRefresh.Font = Enum.Font.GothamBold
+diagnosticsRefresh.Parent = diagnosticsPanel
+Instance.new("UICorner", diagnosticsRefresh).CornerRadius = UDim.new(0, 8)
+
+local diagnosticsCommands = Instance.new("TextButton")
+diagnosticsCommands.Name = "DetailedDiagnosticsCommands"
+diagnosticsCommands.Position = UDim2.new(1, -166, 1, -42)
+diagnosticsCommands.Size = UDim2.fromOffset(154, 30)
+diagnosticsCommands.BackgroundColor3 = Color3.fromRGB(49, 63, 84)
+diagnosticsCommands.Text = "DETAILED COMMANDS"
+diagnosticsCommands.TextColor3 = Color3.fromRGB(255, 255, 255)
+diagnosticsCommands.TextSize = 9
+diagnosticsCommands.Font = Enum.Font.GothamBold
+diagnosticsCommands.Parent = diagnosticsPanel
+Instance.new("UICorner", diagnosticsCommands).CornerRadius = UDim.new(0, 8)
+
 local status = Instance.new("TextLabel")
 status.Name = "StatusLabel"
 status.Position = UDim2.fromOffset(9, 7)
@@ -335,6 +416,11 @@ local groups: {[string]: {Command}} = {
 
 local selected: Command? = nil
 local activeGroup = "Playback"
+local diagnosticsDashboardMode = false
+local diagnosticsServerMessage = "No server snapshot loaded."
+local clientDiagnostics: any = nil
+local clientDiagnosticsModuleAttempted = false
+local diagnosticsRequestPending = false
 local pendingConfirmation = false
 local confirmationToken = 0
 local pendingRequest = false
@@ -411,7 +497,73 @@ local function makeActionButton(command: Command, order: number)
 	end)
 end
 
+local function stopClientDiagnostics()
+	if clientDiagnostics and type(clientDiagnostics.Stop) == "function" then
+		pcall(clientDiagnostics.Stop, clientDiagnostics)
+	end
+	clientDiagnostics = nil
+end
+
+local function startClientDiagnostics()
+	if clientDiagnostics or clientDiagnosticsModuleAttempted then return end
+	clientDiagnosticsModuleAttempted = true
+	local moduleScript = ReplicatedStorage:FindFirstChild("ClubMusic_Client_Diagnostics_Service")
+	if not moduleScript or not moduleScript:IsA("ModuleScript") then
+		diagnosticsReadout.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics module is not installed."
+		return
+	end
+	local requireOk, exported = pcall(require, moduleScript)
+	if not requireOk or typeof(exported) ~= "table" or type(exported.new) ~= "function" then
+		diagnosticsReadout.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics module is unavailable."
+		return
+	end
+	local createOk, instance = pcall(exported.new)
+	if not createOk or typeof(instance) ~= "table" or type(instance.Start) ~= "function"
+		or type(instance.GetStatus) ~= "function" or type(instance.Stop) ~= "function" then
+		diagnosticsReadout.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics interface is invalid."
+		return
+	end
+	local startOk, started = pcall(instance.Start, instance)
+	if not startOk or started ~= true then
+		pcall(instance.Stop, instance)
+		diagnosticsReadout.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nLocal sampling could not start."
+		return
+	end
+	clientDiagnostics = instance
+end
+
+local function renderDiagnosticsReadout()
+	local clientLines = {"CLIENT-LOCAL MEASUREMENTS (untrusted; not transmitted)"}
+	if clientDiagnostics then
+		local ok, snapshot = pcall(clientDiagnostics.GetStatus, clientDiagnostics)
+		if ok and typeof(snapshot) == "table" then
+			local fps = if typeof(snapshot.fps) == "number" then tostring(math.floor(snapshot.fps + 0.5)) else "n/a"
+			local ping = if typeof(snapshot.ping) == "table" and typeof(snapshot.ping.milliseconds) == "number"
+				then tostring(math.floor(snapshot.ping.milliseconds + 0.5)) .. " ms" else "n/a"
+			local memory = if typeof(snapshot.memory) == "table" and typeof(snapshot.memory.usageMb) == "number"
+				then tostring(math.floor(snapshot.memory.usageMb + 0.5)) .. " MB" else "n/a"
+			table.insert(clientLines, "Client FPS: " .. fps .. " | Ping: " .. ping .. " | Client memory: " .. memory)
+			table.insert(clientLines, "Client sample state: " .. tostring(snapshot.state or "Unknown"))
+		else
+			table.insert(clientLines, "Client-local measurements are temporarily unavailable.")
+		end
+	else
+		table.insert(clientLines, "Client-local sampling is not active.")
+	end
+	diagnosticsReadout.Text = string.sub(diagnosticsServerMessage .. "\n\n" .. table.concat(clientLines, "\n"), 1, 7000)
+end
+
 local function renderGroup()
+	local isDiagnostics = activeGroup == "Diagnostics"
+	diagnosticsPanel.Visible = isDiagnostics and diagnosticsDashboardMode
+	actionList.Visible = not (isDiagnostics and diagnosticsDashboardMode)
+	form.Visible = not (isDiagnostics and diagnosticsDashboardMode)
+	if isDiagnostics and diagnosticsDashboardMode then
+		startClientDiagnostics()
+		renderDiagnosticsReadout()
+	else
+		stopClientDiagnostics()
+	end
 	for _, child in ipairs(actionList:GetChildren()) do
 		if child:IsA("TextButton") then child:Destroy() end
 	end
@@ -439,6 +591,7 @@ local function makeCategory(name: string)
 	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 14)
 	button.Activated:Connect(function()
 		activeGroup = name
+		diagnosticsDashboardMode = name == "Diagnostics"
 		for _, item in ipairs(categoryBar:GetChildren()) do
 			if item:IsA("TextButton") then item.BackgroundColor3 = if item == button then Color3.fromRGB(89, 58, 111) else Color3.fromRGB(35, 47, 65) end
 		end
@@ -449,6 +602,29 @@ end
 
 for _, groupName in ipairs({"Playback","Requests","DJ Sessions","Moderation","Security","Club Closure","Diagnostics"}) do makeCategory(groupName) end
 renderGroup()
+
+diagnosticsRefresh.Activated:Connect(function()
+	if not gui:GetAttribute("StaffAuthorized") or diagnosticsRequestPending then return end
+	diagnosticsRequestPending = true
+	diagnosticsRefresh.Active = false
+	diagnosticsRefresh.Text = "REFRESHING…"
+	securityAction:FireServer("RunClubMusicCommand", "Diagnostics", "")
+	task.delay(8, function()
+		if diagnosticsRequestPending then
+			diagnosticsRequestPending = false
+			diagnosticsRefresh.Active = true
+			diagnosticsRefresh.Text = "REFRESH"
+			diagnosticsServerMessage = "Server snapshot request timed out. No diagnostic state was changed."
+			renderDiagnosticsReadout()
+		end
+	end)
+end)
+
+diagnosticsCommands.Activated:Connect(function()
+	diagnosticsDashboardMode = false
+	activeGroup = "Diagnostics"
+	renderGroup()
+end)
 
 local CONFIRM = {
 	QueueClear=true, EmergencyRequestLock=true, PlaybackForceStop=true, Maintenance=true,
@@ -585,6 +761,7 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 	end
 	if action == "GetStatus" then
 		gui:SetAttribute("StaffAuthorized", succeeded)
+		if not succeeded then stopClientDiagnostics() end
 		launcherGui.Enabled = succeeded
 		if not succeeded then
 			gui.Enabled = false
@@ -602,6 +779,13 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 	elseif action == "ClubClosureConfirm" or action == "ClubReopenConfirm" then
 		closurePreparedMode = nil
 		runButton.Text = "RUN ACTION"
+	end
+	if action == "RunClubMusicCommand" and activeGroup == "Diagnostics" and selected and selected.key == "Diagnostics" then
+		diagnosticsServerMessage = if succeeded then result else "Server diagnostics request failed: " .. result
+		diagnosticsRequestPending = false
+		diagnosticsRefresh.Active = true
+		diagnosticsRefresh.Text = "REFRESH"
+		renderDiagnosticsReadout()
 	end
 	if action == "RunClubMusicCommand" and succeeded then clearInputs() end
 	if action == "RunClubMusicCommand" or action == "ToggleLockdown"
