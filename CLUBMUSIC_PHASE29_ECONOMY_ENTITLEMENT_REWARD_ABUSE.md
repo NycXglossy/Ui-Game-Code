@@ -39,7 +39,7 @@ Installer update: `ClubMusic_Security_Core_Installer.lua` includes `ReceiptAutho
 ### Profile-backed products
 
 - DataStore: `ClubMusic_ProductReceipts_v1`.
-- Journal key: `r_` plus the first 160 bits of the SHA-256 digest produced by `ClubMusic_ReceiptHash.KeySuffix(userId .. ":" .. PurchaseId)`.
+- Journal key: `r_` plus the first 160 bits of the SHA-256 digest produced by `ClubMusicSecurityCore.ReceiptHash.KeySuffix(userId .. ":" .. PurchaseId)`.
 - The journal stores the full PurchaseId, UserId, ProductId, product type, and `Prepared` / `Completed` state. Full PurchaseId and identity comparisons remain the collision check.
 - The profile reward and `pendingReceipt` marker are written atomically in the profile `UpdateAsync`.
 - The receipt journal is completed before the profile pending marker is cleared and before Roblox is told `PurchaseGranted`.
