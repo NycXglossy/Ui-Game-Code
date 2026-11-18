@@ -404,3 +404,8 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 
 - Menu typography skips property rewrites when its indexed text targets and device/viewport-width inputs are unchanged. New descendants and responsive layout changes invalidate the guard.
 - Existing typography calculations are preserved. Static verification only; Studio/device testing remains outstanding.
+
+### Performance compatibility follow-up — hidden HUD visualizer
+
+- Compact HUD visualizer bar writes and loudness sampling are skipped while its UI is hidden, unless the expanded menu still requires animation work. The active-playback visualizer clock continues to advance.
+- Expanded-menu animation remains separate. Static verification only; Studio/device testing remains outstanding.
