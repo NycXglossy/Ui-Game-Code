@@ -431,4 +431,4 @@ script.Destroying:Connect(function()
 	end
 end)
 
-print("[Tiki Tide][StaffActions] Phase 22 local lockdown and protected player-removal actions ready.")
+print("[Tiki Tide][StaffActions] Phase 22 local lockdown and allowlisted ClubMusic staff command console ready.")
