@@ -10,7 +10,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "5b9d772d6320e8c0c3605bd49d1ff3e6da0c6dcf"
+local RELEASE_COMMIT = "e2e337762481d95bef507e28cb4eaead52cc4aac"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
 -- Phase 32 is pinned independently so the previously certified SecurityCore
 -- module snapshot is not silently changed by later commits.
@@ -328,6 +328,12 @@ else
     return false, {}, "Threat review is temporarily rate-limited while the server is under load."
    end
    return threatService:Query(...)
+  end
+  if action == "QueryRaids" then
+   if loadManager and not loadManager:TryConsume("ThreatReviewQueries") then
+    return false, {}, "Raid review is temporarily rate-limited while the server is under load."
+   end
+   return threatService:QueryRaids(...)
   end
   if action == "Status" then return threatService:GetStatus() end
   return false, "Unsupported threat-intelligence action."
