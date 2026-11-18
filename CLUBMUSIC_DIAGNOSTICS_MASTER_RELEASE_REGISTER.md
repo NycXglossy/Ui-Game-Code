@@ -583,3 +583,6 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 
 - Aligned both GetModerationState controller call sites with the existing return contract, explicitly skipping the reason value before capturing the durable revision. The BindableFunction API remains unchanged.
 - Static source review only; no runtime invocation or deployment.
+
+
+- **2026-11-18 — Global API event bridge recovery:** controller event subscriptions now detach and reattach across API folder / GlobalEvent removal and replacement, ignore stale callbacks, and clean up on controller destruction. Static source review only; no Luau or Studio runtime test. Source commit: `022bee1a1bdcf53d4db470383d8e39ac81974642` (controller source change: `28f76ceabde2862c729061eb7cd3f538e16fc6cd`).
