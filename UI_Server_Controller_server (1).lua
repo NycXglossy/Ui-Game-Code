@@ -6465,7 +6465,8 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " -> " .. tostring(latestHealthTransition.to or "n/a")
 				.. " | " .. tostring(latestHealthTransition.detail or "No transition recorded."),
 			"Server runtime: " .. tostring(serverHealth.state or "NotInstalled")
-				.. " | Heartbeat max " .. tostring(math.floor((tonumber(heartbeat.maxDeltaSeconds) or 0) * 1000)) .. "ms"
+				.. " | average FPS " .. tostring(if typeof(heartbeat.averageFps) == "number" then math.floor(heartbeat.averageFps + 0.5) else "n/a")
+				.. " | max frame " .. tostring(math.floor((tonumber(heartbeat.maxFrameMilliseconds) or 0) * 10) / 10) .. "ms"
 				.. " | Memory " .. tostring(memory.usageMb or "n/a") .. " MB (" .. tostring(memory.state or "n/a") .. ")"
 				.. " | trend " .. tostring(memory.changeSinceOldestSampleMb or "n/a") .. " MB",
 			"Service registry: " .. tostring(registry.state or "NotInstalled")
