@@ -102,7 +102,8 @@ function Service:_observeToolRemoved(player: Player, tool: Tool)
 		local backpack = player:FindFirstChildOfClass("Backpack")
 		if tool.Parent == player.Character or (backpack and tool.Parent == backpack) then return end
 		if state.presentTools[tool] then
-			state.presentTools[tool] = false
+			state.presentTools[tool] = nil
+			state.knownTools[tool] = nil
 			if state.appearanceReady then
 				self:_signal(player, "tool_removed_from_inventory", tool.Name)
 			end
@@ -213,8 +214,10 @@ function Service:_attachCharacter(player: Player, character: Model)
 	for _, connection in ipairs(state.characterConnections) do connection:Disconnect() end
 	table.clear(state.characterConnections)
 
+	if state.character then state.inventoryContainers[state.character] = nil end
 	state.character = character
 	state.appearanceReady = false
+	table.clear(state.knownAccessories)
 	table.clear(state.additions)
 	table.clear(state.lastSignalAt)
 
@@ -242,8 +245,6 @@ function Service:_attachCharacter(player: Player, character: Model)
 	table.insert(state.characterConnections, character.ChildAdded:Connect(function(child)
 		if child:IsA("Accessory") then
 			self:_inspectAccessory(player, child, state.appearanceReady)
-		elseif child:IsA("Tool") then
-			self:_observeToolAdded(player, child)
 		end
 	end))
 	table.insert(state.characterConnections, character.ChildRemoved:Connect(function(child)
@@ -256,8 +257,6 @@ function Service:_attachCharacter(player: Player, character: Model)
 					end
 				end
 			end)
-		elseif child:IsA("Tool") then
-			self:_observeToolRemoved(player, child)
 		end
 	end))
 
@@ -265,6 +264,8 @@ function Service:_attachCharacter(player: Player, character: Model)
 		if parent == nil and self.states[player.UserId] == state then
 			for _, connection in ipairs(state.characterConnections) do connection:Disconnect() end
 			table.clear(state.characterConnections)
+			state.inventoryContainers[character] = nil
+			table.clear(state.knownAccessories)
 			state.character = nil
 			state.appearanceReady = false
 		end
