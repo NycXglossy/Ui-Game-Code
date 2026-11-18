@@ -544,27 +544,24 @@ The repository installation path is now explicit for the active playback inspect
 
 **Static verification:** source paths and callsites were re-inspected on branch `security/phase1-foundation`. No Luau compilation, Roblox Studio test, or published-server test was performed in this audit.
 
-## Retired global playback sync and MemoryStore dependency boundary (2026-11-17)
+## Optional playback-only global sync — Phase 30 current architecture
 
-**Playback-sync decision:** global playback synchronization is retired, not optional. The controller's stale `DJToggleGlobalPlaybackSync` action returns a clear retired-feature response; the Global Service diagnostic reports `LocalOnly`; no leader election, shared playback snapshot, playback heartbeat, or cross-server queue/playback reconciliation is part of the target architecture. The historical architecture document is marked retired and must not be used as an implementation guide.
+**Current decision:** retain optional playback-only global sync, disabled by default. This supersedes the earlier local-only retirement note in this plan. The older full shared-queue architecture remains retired and must not be reinstalled.
 
-**Audio runtime storage rule:** local playback, per-server queues, Auto DJ, transitions, playback recovery, and watchdog decisions must not require DataStore, MemoryStore, or MessagingService. A server restart begins a new local playback lifecycle; it does not inherit another server's queue or playback clock.
+- `ClubMusic_Global_Config_Service.lua` defines the shared `playbackSyncEnabled=false` default.
+- `ClubMusic_Global_Service_server_1.lua` exposes the server-only status/snapshot/commit/toggle APIs and subscribes to the dedicated `Playback` MessagingService topic. The toggle requires SecurityCore `GlobalConfig` authorization (Co-Owner/Owner).
+- `MusicGlobalPlaybackAuthority.lua` is the sole playback-only authority. It uses a MemoryStore fenced leader lease and a DataStore snapshot containing only the current track metadata, pause state, position, anchor time, and revision. It has no queue, playlist, request counter, DJ Control Mode, or Auto DJ refill fields.
+- The same canonical module is embedded in `ClubMusic_Global_Optional_Services.rbxmx`; the embedded ModuleScript source is regenerated from and checked against the standalone source.
+- `ClubMusicSecurityCore/MessageValidation.lua` already permits the `Playback` topic and its `PlaybackChanged` / `PlaybackSyncModeChanged` message kinds. Messages contain bounded envelope metadata and revision invalidations; followers fetch the durable snapshot rather than trusting client or message-supplied asset IDs.
+- The controller validates every synchronized track against its own server catalog and canonical SoundId before applying it. A blocked track is stopped locally. No remote message can inject an arbitrary asset into the AudioPlayer.
+- The controller owns the leader/follower behavior. Only the elected leader advances its own queue and commits privileged playback controls while sync is enabled. Followers never pop, upload, or adopt another server's queue. Each server continues to refill its own Auto DJ queue.
+- The Owner/Co-Owner DJ Booth toggle is exposed through `UI_Renderer (2).lua` and `UI_Network.lua`. The server rechecks SecurityCore rank and the Global Service independently rechecks `GlobalConfig`.
+- When sync is disabled, all servers resume independent local playback and queue transitions. If the authority becomes unavailable while sync is enabled, the controller fails closed against local follower advancement rather than allowing split-brain playback; the status loop retries and reconciles after recovery.
+- The playback authority receives the existing bounded per-server DataStore operation-budget callback. MemoryStore is used only for the fenced playback lease, not shared rate limiting.
 
-**MemoryStore inventory from the current source audit:**
-- **Removed in commit `028c65c58e8e803b56a211407b710a3bc0b90664` (follow-up naming cleanup `9738300e4595b0abb4eb7230385e35021261b302`):** the disabled shared MemoryStore rate-limit map, its dead capacity/fallback branches, and shared-budget terminology. Global moderation reads/writes now use the existing bounded per-server token buckets (`consumeLocalBudget`); authorization and DataStore failure behavior remain unchanged. The Global MemoryStore status endpoint is retained as a compatibility diagnostic that explicitly reports `LocalOnly`.
-- `ClubMusic_Global_Security_Service.lua` still provisions MemoryStore-backed cross-server idempotency, audit batches, and incident snapshots. These are security/operations features, not audio synchronization. Their API consumers and staff-console requirements must be mapped before retirement; do not remove audit or incident visibility or weaken receipt/operation idempotency as a side effect.
-- The SecurityCore movement-authority ledger is explicitly server-local, bounded, expiring, and independent of DataStore/MemoryStore. Preserve that property.
-- DataStore and MessagingService uses for separately approved global moderation, configuration, announcements, catalog invalidation, XP boosts, or purchase receipt protection are not playback sync. Retain only where a live consumer and security requirement are demonstrated.
+**Required two-server acceptance:** enable/disable from Owner/Co-Owner; same Now Playing and playhead on both servers; independent request queues and Auto DJ refill; no queue content in the global snapshot; leader departure and lease expiry; failover to a new leader; follower catalog mismatch and blocked-track behavior; DataStore/MemoryStore/MessagingService outage and recovery; sync disable returning each server to its own queue; no split-brain advances; pause/restart/skip restrictions on followers; PC/mobile/console output routing.
 
-**Retirement order:**
-1. Remove stale playback-sync controls, status APIs, leader/snapshot/lease modules, topics, and installer/bundle references after a full consumer search. Preserve the local-only diagnostic response only if the UI/diagnostics contract still consumes it.
-2. Remove the disabled shared MemoryStore rate-limit scaffolding from the Global Service; retain its bounded local rate limits and fail-closed authorization.
-3. Map every MemoryStore-backed SecurityCore/global operations API to its actual caller and acceptance test. Convert unused or duplicate storage-backed services to bounded server-local state where the feature semantics permit; retain cross-server persistence only where explicitly required.
-4. Update installers, embedded RBXMX bundles, diagnostics and release tests to match the reduced dependency graph.
-5. Re-run two-server tests for genuinely retained global moderation/configuration/announcement/receipt features only. Playback tests must prove two servers remain independent and work with MemoryStore/MessagingService unavailable.
-
-**No blanket MemoryStore deletion:** a storage service is not removed merely because its name contains “global” or because playback sync is retired. Every removal must preserve SecurityCore authorization, local rate limits, audit/incident workflows that remain in use, purchase idempotency, and durable profile/moderation/configuration semantics.
-
+**Studio boundary:** global services remain isolated by default (`EnableInStudio=false`). Only enable them in a disposable, intentional multi-server Studio test copy. The published two-server acceptance matrix remains mandatory. This source restoration is not runtime certification.
 
 ## MemoryStore security/operations consumer audit (2026-11-17)
 
