@@ -338,7 +338,7 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 		return
 	end
 
-	if not consumeActionCooldown(player) then
+	if action ~= "ClubClosureConfirm" and action ~= "ClubReopenConfirm" and not consumeActionCooldown(player) then
 		sendResult(player, action, false, "Please wait before using another security action.")
 		return
 	end
