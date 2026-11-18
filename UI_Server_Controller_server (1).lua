@@ -6530,8 +6530,16 @@ ControllerFunctions.onJoin = function(player: Player)
 	-- A service-readiness failure is not a ban. Keep moderation-sensitive actions
 	-- closed and retry authoritative checks instead of kicking legitimate players.
 	-- Fetch ban and request-block status together to avoid serial durable reads.
-	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked =
+	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked, moderationRevision =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+	local knownModerationRevision = ControllerFunctions.moderationRevisions
+		and ControllerFunctions.moderationRevisions[player.UserId] or 0
+	if moderationCallOk and moderationLookupOk == true
+		and (not ControllerFunctions.isFiniteNumber(moderationRevision) or moderationRevision < knownModerationRevision) then
+		-- A cross-server invalidation arrived while this yielding lookup was in flight.
+		-- Its newer revision wins; keep the player restricted until a current read succeeds.
+		moderationLookupOk = false
+	end
 	local moderationVerified = not globalModerationRequired or (moderationCallOk and moderationLookupOk == true)
 	if globalModerationRequired then
 		recordModerationDiagnostic("Join", moderationCallOk and moderationLookupOk == true,
@@ -6576,10 +6584,18 @@ ControllerFunctions.onJoin = function(player: Player)
 					serviceResolved = callOk and enabled == true
 				end
 				if not moderationResolved then
-					local callOk, lookupOk, banned, blocked =
+					local callOk, lookupOk, banned, blocked, revision =
 						ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+					local latestRevision = ControllerFunctions.moderationRevisions
+						and ControllerFunctions.moderationRevisions[player.UserId] or 0
+					if callOk and lookupOk == true
+						and (not ControllerFunctions.isFiniteNumber(revision) or revision < latestRevision) then
+						lookupOk = false
+					end
 					recordModerationDiagnostic("Retry", callOk and lookupOk == true, banned == true, blocked == true)
 					if callOk and lookupOk == true then
+						ControllerFunctions.moderationRevisions = ControllerFunctions.moderationRevisions or {}
+						ControllerFunctions.moderationRevisions[player.UserId] = revision
 						ControllerFunctions.recordDiagnosticPulse("Moderation", "moderation-retry-verified", true,
 							{lookupSucceeded = true})
 						moderationResolved = true
@@ -6733,16 +6749,25 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		return
 	end
 	if message.kind == "Moderation" and ControllerFunctions.isFiniteNumber(message.userId)
-		and message.userId > 0 and message.userId % 1 == 0 and message.userId <= 9007199254740991 then
-		local target = Players:GetPlayerByUserId(message.userId)
-		if message.field == "globalBan" and message.value == true then
-			if target then target:Kick("You are globally banned from this experience.") end
-		elseif message.field == "requestBlocked" and typeof(message.value) == "boolean" then
-			if message.value then
-				blockedUsers[message.userId] = true
-				ControllerFunctions.purgeUserEntries(message.userId)
-			else
-				blockedUsers[message.userId] = nil
+		and message.userId > 0 and message.userId % 1 == 0 and message.userId <= 9007199254740991
+		and (message.field == "globalBan" or message.field == "requestBlocked")
+		and typeof(message.value) == "boolean" and ControllerFunctions.isFiniteNumber(message.revision)
+		and message.revision >= 1 and message.revision % 1 == 0 then
+		local revisions = ControllerFunctions.moderationRevisions
+			or (function() ControllerFunctions.moderationRevisions = {}; return ControllerFunctions.moderationRevisions end)()
+		local knownRevision = revisions[message.userId] or 0
+		if message.revision > knownRevision then
+			revisions[message.userId] = message.revision
+			local target = Players:GetPlayerByUserId(message.userId)
+			if message.field == "globalBan" and message.value == true then
+				if target then target:Kick("You are globally banned from this experience.") end
+			elseif message.field == "requestBlocked" then
+				if message.value then
+					blockedUsers[message.userId] = true
+					ControllerFunctions.purgeUserEntries(message.userId)
+				else
+					blockedUsers[message.userId] = nil
+				end
 			end
 			publishState(nil)
 		end
@@ -6868,6 +6893,7 @@ ControllerFunctions.startDanceFloorRewards()
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
 	onJoinStarted[player] = nil
+	if ControllerFunctions.moderationRevisions then ControllerFunctions.moderationRevisions[userId] = nil end
 	if djControlModeEnabled and djControlModeUserId == userId then
 		djControlModeEnabled = false
 		djControlModeUserId = nil
