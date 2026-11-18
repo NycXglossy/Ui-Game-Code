@@ -91,6 +91,8 @@ return function(_K: any)
 		message = {permission = "GlobalAnnouncement", property = "BroadcastMessage", auditKind = "AdminAction", budget = "Broadcast"},
 		fullmessage = {permission = "GlobalAnnouncement", property = "FullScreenBroadcast", auditKind = "AdminAction", budget = "Broadcast"},
 		privatehint = {permission = "GlobalModeration", property = "PrivateHint", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
+		notify = {permission = "GlobalModeration", property = "TargetedNotification", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
+		privatemessage = {permission = "GlobalModeration", property = "PrivateMessage", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
 
 		-- Respawn/refresh and destructive world actions are sensitive too.
 		respawn = {permission = "GlobalModeration", property = "Respawn", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
@@ -118,14 +120,37 @@ return function(_K: any)
 	}
 
 	local BLOCKED_COMMANDS: {[string]: string} = {
-		-- Disable client-crashing/repeated-kill commands and arbitrary cross-server command strings.
+		-- Disable client-crashing/repeated-kill commands and arbitrary script/global execution.
 		crash = "This command is disabled by Tiki Tide security.",
 		loopkill = "This command is disabled by Tiki Tide security.",
 		loopfling = "Repeated fling commands are disabled by Tiki Tide security.",
 		script = "Arbitrary server script execution is disabled by Tiki Tide security.",
-		loadstring = "Arbitrary server script execution is disabled by Tiki Tide security.",
+		localscript = "Arbitrary client script execution is disabled by Tiki Tide security.",
 		global = "Native global command strings are disabled; use dedicated Tiki Tide global controls.",
 	}
+
+	-- Kohl's passes the invoked alias through command.alias. Resolve aliases before
+	-- both blocking and policy lookup so alternate spellings cannot skip SecurityCore.
+	local COMMAND_ALIASES: {[string]: string} = {
+		s = "script",
+		loadstring = "script",
+		ls = "localscript",
+		h = "hint",
+		phint = "privatehint",
+		ph = "privatehint",
+		m = "message",
+		msg = "message",
+		fm = "fullmessage",
+		fmsg = "fullmessage",
+		n = "notify",
+		pm = "privatemessage",
+		pmsg = "privatemessage",
+	}
+
+	local function canonicalCommandName(value: any): string
+		local name = string.lower(tostring(value or ""))
+		return COMMAND_ALIASES[name] or name
+	end
 
 	local VALUE_LIMITS: {[string]: {min: number, max: number}} = {
 		WorldGravity = {min = 0, max = 500},
@@ -337,8 +362,8 @@ return function(_K: any)
 		definition.run = function(context: any, ...)
 			local args = table.pack(...)
 			local result = table.pack(original(context, table.unpack(args, 1, args.n)))
-			local aliasName = string.lower(tostring(context.alias or definition.name))
-			local activePolicy = POLICY[aliasName] or POLICY[string.lower(tostring(definition.name))]
+			local aliasName = canonicalCommandName(context.alias or definition.name)
+			local activePolicy = POLICY[aliasName] or POLICY[canonicalCommandName(definition.name)]
 			if not activePolicy then return table.unpack(result, 1, result.n) end
 
 			local targets: {Player} = {}
@@ -422,8 +447,8 @@ return function(_K: any)
 
 	local filter = function(command: any): (boolean, string?)
 		if typeof(command) ~= "table" or typeof(command.definition) ~= "table" then return true end
-		local commandName = string.lower(tostring(command.alias or command.definition.name or ""))
-		local definitionName = string.lower(tostring(command.definition.name or ""))
+		local commandName = canonicalCommandName(command.alias or command.definition.name or "")
+		local definitionName = canonicalCommandName(command.definition.name or "")
 		local blockedReason = BLOCKED_COMMANDS[commandName] or BLOCKED_COMMANDS[definitionName]
 		if blockedReason then
 			local actorId = actorUserId(command)
