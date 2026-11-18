@@ -3057,7 +3057,7 @@ ControllerFunctions.startDanceFloorRewards = function()
 				end
 
 				-- Balance and interval marker are included in the same existing profile
-				-- snapshot. The timestamp prevents rapid duplicate grants across service restarts.
+				-- snapshot. Once persisted, the timestamp prevents rapid duplicate grants across service restarts.
 				profile.coins += reward
 				profile.danceFloorLastRewardAt = nowUnix
 				player:SetAttribute("Coins", profile.coins)
