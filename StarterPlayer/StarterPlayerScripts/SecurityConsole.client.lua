@@ -121,12 +121,7 @@ kickButton.Activated:Connect(function()
 	lockdownButton.AutoButtonColor = false
 	setStatus("Sending player-removal request to the server...")
 	securityAction:FireServer("KickPlayer", targetName, reason)
-	task.delay(8, function()
-		if requestPending then
-			requestFinished()
-			setStatus("No server response was received. Check the server before retrying.")
-		end
-	end)
+	startRequestTimeout()
 end)
 
 actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message: any, serverLockdownState: any)
