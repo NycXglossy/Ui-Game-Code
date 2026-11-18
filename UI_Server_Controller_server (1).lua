@@ -3371,7 +3371,7 @@ end
 -- its own queue, playlist cursor, Auto DJ refill, request locks, and skip votes.
 ControllerFunctions.globalPlaybackSyncState = {
 	enabled = false, isLeader = false, revision = 0, trackRevision = 0,
-	lastAppliedRevision = 0, lastErrorAt = 0, leaderJobId = nil, authorityReady = false, statusError = nil,
+	lastAppliedRevision = -1, lastSyncAppliedAt = 0, lastErrorAt = 0, leaderJobId = nil, authorityReady = false, statusError = nil,
 }
 ControllerFunctions.commitGlobalPlaybackSync = function(reason: string?): boolean
 	local state = ControllerFunctions.globalPlaybackSyncState
@@ -3415,8 +3415,9 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 	local state = ControllerFunctions.globalPlaybackSyncState
 	if state.enabled ~= true or (state.isLeader == true and allowLeader ~= true)
 		or typeof(snapshot) ~= "table" or not ControllerFunctions.isFiniteNumber(snapshot.revision)
-		or snapshot.revision < 1 or snapshot.revision % 1 ~= 0 or snapshot.revision > 9007199254740991
-		or snapshot.revision <= (state.lastAppliedRevision or 0) then return false end
+		or snapshot.revision < 0 or snapshot.revision % 1 ~= 0 or snapshot.revision > 9007199254740991
+		or snapshot.revision < (state.lastAppliedRevision or -1)
+		or (snapshot.revision == state.lastAppliedRevision and os.clock() - (state.lastSyncAppliedAt or 0) < 12) then return false end
 	local current = snapshot.current
 	if typeof(current) == "table" and typeof(current.trackId) == "string"
 		and typeof(current.soundId) == "string" and ControllerFunctions.isFiniteNumber(current.duration)
@@ -3463,6 +3464,7 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 	state.revision = snapshot.revision
 	state.trackRevision = tonumber(snapshot.trackRevision) or state.trackRevision
 	state.lastAppliedRevision = snapshot.revision
+	state.lastSyncAppliedAt = os.clock()
 	ControllerFunctions.publishPlaybackState()
 	return true
 end
@@ -4988,7 +4990,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not payload.enabled then
 			syncState.isLeader = false
 			syncState.leaderJobId = nil
-			syncState.lastAppliedRevision = 0
+			syncState.lastAppliedRevision = -1
+			syncState.lastSyncAppliedAt = 0
 		end
 		syncState.authorityReady = true
 		syncState.statusError = nil
@@ -6873,6 +6876,9 @@ task.spawn(function()
 					if typeof(snapshot.current) == "table" then
 						if not wasLeader or nowPlaying.trackId ~= snapshot.current.trackId then
 							ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot, true)
+						elseif ControllerFunctions.isFiniteNumber(snapshot.anchorTime)
+							and workspace:GetServerTimeNow() - snapshot.anchorTime > 30 then
+							ControllerFunctions.commitGlobalPlaybackSync("leader-stale-snapshot-recovery")
 						end
 						syncState.revision = tonumber(snapshot.revision) or syncState.revision
 						syncState.trackRevision = tonumber(snapshot.trackRevision) or syncState.trackRevision
