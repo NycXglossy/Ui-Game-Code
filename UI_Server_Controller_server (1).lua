@@ -6304,7 +6304,7 @@ end
 do
 	local crossfadeOk, crossfadeError = ControllerFunctions.createAudioCrossfadeManager()
 	if not crossfadeOk then
-		warn("[ClubMusic][Crossfade] Coordinator unavailable; legacy playback remains active: " .. tostring(crossfadeError))
+		warn("[ClubMusic][Crossfade] Coordinator unavailable; modern AudioPlayer remains the only playback source: " .. tostring(crossfadeError))
 	else
 		print("[ClubMusic][Crossfade] Coordinator initialized (inactive until explicitly requested).")
 	end
