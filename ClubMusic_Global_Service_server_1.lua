@@ -785,6 +785,13 @@ end
 -- Local ServerHealth probe: heartbeat timing and process memory only.
 do
 	local module = ServerStorage:FindFirstChild("ClubMusic_Server_Health_Service")
+	if globalServiceRegistry then
+		if module and module:IsA("ModuleScript") then
+			pcall(globalServiceRegistry.RegisterDependency, globalServiceRegistry, "ServerHealthModule", module, "ModuleScript", ServerStorage, false)
+		else
+			updateRegistryStatus("ServerHealthModule", "NotInstalled", "ServerHealth ModuleScript is not installed directly under ServerStorage.")
+		end
+	end
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
 		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
@@ -819,6 +826,13 @@ end
 -- Local Watchdog records progress pulses only; it never controls the observed systems.
 do
 	local module = ServerStorage:FindFirstChild("ClubMusic_Local_Watchdog_Service")
+	if globalServiceRegistry then
+		if module and module:IsA("ModuleScript") then
+			pcall(globalServiceRegistry.RegisterDependency, globalServiceRegistry, "WatchdogModule", module, "ModuleScript", ServerStorage, false)
+		else
+			updateRegistryStatus("WatchdogModule", "NotInstalled", "Watchdog ModuleScript is not installed directly under ServerStorage.")
+		end
+	end
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
 		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
@@ -865,6 +879,13 @@ local function readServerStorageStatus(endpointName: string, action: string?)
 end
 
 local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
+if globalServiceRegistry then
+	if diagnosticsModule and diagnosticsModule:IsA("ModuleScript") then
+		pcall(globalServiceRegistry.RegisterDependency, globalServiceRegistry, "DiagnosticsModule", diagnosticsModule, "ModuleScript", ServerStorage, false)
+	else
+		updateRegistryStatus("DiagnosticsModule", "NotInstalled", "Diagnostics ModuleScript is not installed directly under ServerStorage.")
+	end
+end
 if diagnosticsModule then
 	local createOk, instance = pcall(function()
 		return diagnosticsModule.new({
