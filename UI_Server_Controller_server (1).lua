@@ -5871,9 +5871,11 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			for index, item in ipairs(history) do
 				if index > 10 then break end
 				local stamp = if typeof(item.at) == "number" then os.date("!%Y-%m-%d %H:%M UTC", item.at) else "Unknown time"
-				table.insert(lines, string.format("%s | %s | %s | case %s | actor %d",
+				local detail = if typeof(item.category) == "string" then " | category " .. string.sub(item.category, 1, 48) else ""
+				if typeof(item.evidenceReference) == "string" then detail ..= " | evidence " .. string.sub(item.evidenceReference, 1, 64) end
+				table.insert(lines, string.format("%s | %s | %s | case %s | actor %d%s",
 					stamp, tostring(item.kind or "Unknown"), tostring(item.status or "Unknown"),
-					string.sub(tostring(item.caseId or "?"), 1, 36), tonumber(item.actorUserId) or 0))
+					string.sub(tostring(item.caseId or "?"), 1, 36), tonumber(item.actorUserId) or 0, detail))
 			end
 			return true, string.sub(table.concat(lines, "\n"), 1, 1600)
 		elseif operation == "Phase32Risk" then
@@ -5881,7 +5883,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			if not ok or typeof(summary) ~= "table" then return false, "Account-risk review requires IncidentResponse and available verified history." end
 			local lines = {string.format("Advisory account-risk review | UserId %d | score %d/100", targetUserId, summary.score or 0)}
 			for _, signal in ipairs(summary.signals or {}) do
-				table.insert(lines, string.format("%s | %s", tostring(signal.type), tostring(signal.confidence)))
+				local detail = if typeof(signal.category) == "string" then " | " .. signal.category else ""
+				if typeof(signal.eventCount) == "number" then detail ..= " | events " .. tostring(signal.eventCount) end
+				if typeof(signal.accountAgeDays) == "number" then detail ..= " | account age " .. tostring(signal.accountAgeDays) .. "d" end
+				table.insert(lines, string.format("%s | %s%s", tostring(signal.type), tostring(signal.confidence), detail))
 			end
 			table.insert(lines, "Account linkage: " .. tostring(summary.accountLinkage))
 			table.insert(lines, "No automatic punishment is applied by this score.")
