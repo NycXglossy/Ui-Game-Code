@@ -881,7 +881,7 @@ end
 local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
 if globalServiceRegistry then
 	if diagnosticsModule and diagnosticsModule:IsA("ModuleScript") then
-		pcall(globalServiceRegistry.RegisterDependency, globalServiceRegistry, "DiagnosticsModule", diagnosticsModule, "ModuleScript", ServerStorage, false)
+		pcall(globalServiceRegistry.RegisterDependency, globalServiceRegistry, "DiagnosticsModule", diagnosticsModule, "ModuleScript", diagnosticsModule.Parent, false)
 	else
 		updateRegistryStatus("DiagnosticsModule", "NotInstalled", "Diagnostics ModuleScript is not installed directly under ServerStorage.")
 	end
