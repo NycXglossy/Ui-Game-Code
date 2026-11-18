@@ -180,37 +180,37 @@ Spatial routing remains a separate optional server resource service. Client pref
 
 **Audit outcome:** the DJ session boundary is appropriately separate and SecurityCore-backed; the quality-profile module is provisioned but not currently consumed by the controller; backend low-level controls remain in the backend; and standalone, embedded, and installer-pinned sources are aligned for the five server audio modules. No runtime code was changed. Roblox Studio and published-server verification remain outstanding.
 
-## Legacy Sound consumer closure audit (2026-11-16)
+## Modern-only Sound retirement audit — Phase 30
 
-**Current state:** `CONFIG.UseModernAudioBackend = true`; modern AudioPlayer is the intended primary source. The controller still creates and retains `SoundService.ServerMusicSound` and `SoundService.MusicGroup` as guarded bootstrap/fallback compatibility objects. The Sound fallback is still reachable, so legacy retirement is not approved.
+**Current tracked-source state:** the controller has no Roblox `Sound` playback path. Static search of the current controller found no `Instance.new("Sound")`, `IsA("Sound")`, `FindFirstChildWhichIsA("Sound")`, `ServerMusicSound`, `MusicGroup`, `musicSound`, `startLegacyFallback`, or `kind == "Sound"` branch. The controller creates, owns, reloads, recovers, pauses, restarts, crossfades, and diagnoses modern `AudioPlayer` instances only.
 
-### Remaining active controller consumers
+### Consumer conversion status
 
-1. **Bootstrap and compatibility objects:** creates/reuses `ServerMusicSound` and `MusicGroup`, configures SoundGroup routing, migrates descendants from the obsolete `ClubMusic` SoundGroup, and initializes `activeAudioSource` as a Sound until modern startup succeeds.
-2. **Backend-neutral source adapter:** `getAudioSnapshot`, `getAudioGain`, `setAudioGain`, playback-speed changes, asset assignment, seek, play, stop, pause, and resume all retain a `kind == "Sound"` branch.
-3. **Startup and migration:** modern startup temporarily parks the controller on the Sound source while a candidate AudioPlayer loads. If modern startup fails, `startLegacyFallback` plays the Sound and schedules a bounded modern migration retry. The explicit `UseModernAudioBackend == false` branch also starts Sound.
-4. **Crossfade commit/rollback:** crossfade completion still hard-mutes/stops/rewinds an outgoing Sound and can restore its playhead if commit/binding/queue-pop fails. This rollback path must be replaced with a modern-only recovery/rollback contract before removing Sound.
-5. **Restart and reload:** `restartServerMusic` can restart a Sound source; `performReloadServerMusic` retains a full legacy Sound decoder-reset/reload branch. The modern branch already has same-backend reload and replacement-AudioPlayer rebuild.
-6. **Watchdog and diagnostics:** source-kind/snapshot and active-playing signal binding support Sound. The watchdog reports the legacy `musicSound` instance to the error handler. Diagnostics expose modern-backend configuration/migration status.
-7. **Client volume compatibility:** `UI_Renderer (2).lua` adjusts the local `MusicGroup.Volume` only when `SoundService.ClubMusicAudioSourceKind == "Sound"`. For modern playback, `ClubMusicPlayerPreferences.luau` builds a per-client `AudioFader -> AudioDeviceOutput` route. The MusicGroup path must remain until the Sound fallback is retired and the renderer compatibility branch is removed together.
-8. **Inspection adapter:** `MusicPlaybackManager.luau` retains Sound-aware quality inspection. It is still controller-loaded for `InspectQuality()`; its remaining Sound branch must be removed or replaced with backend-only quality inspection before legacy retirement.
-9. **Rollback/reference-only source:** `ServerMusicAudioHandler.luau` still contains Sound/SoundGroup compatibility code but was removed from this controller's runtime module list. Retain it as a rollback artifact until installer/live-place reconciliation, then retire separately.
+1. **Backend and source lifecycle:** modern AudioPlayer is the only controller source. Startup fails closed if it cannot create/readiness-check the modern backend; restart and reload never start a legacy Sound fallback.
+2. **Crossfade:** the crossfade coordinator is modern AudioPlayer-only. Its commit, cancellation, and rollback paths do not adopt or restore a Sound source. If crossfade is unavailable, normal modern track advance remains the only fallback.
+3. **Watchdog and recovery:** watchdog quality inspection is now controller-local and reads `ControllerFunctions.getAudioSnapshot()`. It preserves the prior quality states (`Idle`, `SilentCatalogTrack`, `Unavailable`, `Playing`, `Paused`, `StoppedAfterLoad`, and `BufferingOrStopped`) without a Sound adapter.
+4. **Pause/restart/reload:** server controller methods operate on the modern backend. `ReloadSong` remains available to every live player under its cooldown/rate limits; it does not require DJ permission.
+5. **Client volume and output routing:** `UI_Renderer (2).lua` and `ClubMusicPlayerPreferences.luau` use per-client AudioFader/AudioDeviceOutput routing. Static search found no `MusicGroup` or `ServerMusicSound` references in the current renderer/preferences module.
+6. **Inspection facade:** the controller no longer requires `MusicPlaybackManager.luau`; the quality inspector was moved into controller-local code. The module source remains a rollback artifact, and the current installer no longer provisions it.
+7. **Historical modules and place objects:** `ServerMusicAudioHandler.luau` is absent from the current tracked tree. Existing live-place copies of that module, `MusicPlaybackManager`, `ServerMusicSound`, or `MusicGroup` must not be deleted until the actual place hierarchy and all external consumers are inspected.
 
-### Non-Sound references that must remain
+### Non-Sound media references that remain valid
 
-- `soundId` / `SoundIds` are historical data/API names for asset-ID strings and catalog fields; they are not by themselves a dependency on Roblox `Sound` instances.
-- The temporary `AudioPlayer` used for asset validation and the modern backend's AudioPlayer graph are not legacy Sound dependencies.
-- Per-client output routing and client-local volume preferences must remain; only the conditional SoundGroup fallback should be removed after its server fallback is gone.
+- `soundId` / `SoundIds` are historical field names for Roblox audio asset-ID strings, not `Sound` instances.
+- The temporary AudioPlayer used by the server validation service confirms an asset is playable; it is not a legacy Sound fallback.
+- The client UI's AudioPlayer preview is local to that player, uses a private AudioDeviceOutput, and cannot mutate server playback or another player's output.
+- Artwork is rendered from server-returned catalog metadata. The server accepts optional artwork only after `MarketplaceService:GetProductInfo` confirms `Enum.AssetType.Decal`; audio assets are separately validated as `Enum.AssetType.Audio`.
+- No active boombox remote, animation asset mutation endpoint, or server animation playback endpoint was found in the tracked Lua/Luau source scan. The only animation-related server observation found is `Humanoid:GetPlayingAnimationTracks()` for Dance Floor activity eligibility; it does not play or mutate animations.
+- The Studio Kohl's hardening patch contains `InsertService` text only in the patch/replacement validation logic; it asserts the installed loader no longer references external asset insertion. It is not an active audio/media loader.
 
-### Retirement blockers and safe order
+### Retirement decision and remaining gate
 
-- Do not delete `ServerMusicSound` or `MusicGroup`, disable the fallback, or remove client SoundGroup volume support in this pass.
-- First prove the startup path cannot select Sound and the controller never parks on a Sound source; replace the current candidate-load gap with a safe modern source lifecycle that preserves the last known-good AudioPlayer until the incoming backend is ready.
-- Then convert crossfade rollback/commit to modern-only AudioPlayer recovery, including failure after incoming deck starts but before queue commit.
-- Convert restart, reload, watchdog quality inspection, error reporting, and source-kind replication to AudioPlayer-only contracts. Keep the public `ReloadSong` permission and cooldown behavior unchanged.
-- Only after those changes pass the full owner-run Studio matrix may the SoundGroup client compatibility path and bootstrap objects be removed. Reconcile RBXMX/installers/live-place references before deleting the old adapter source.
+- **The guarded Sound fallback is retired from the tracked controller and controller-loaded playback adapter path.** The current controller no longer creates or adopts Sound instances, and the quality facade no longer provides a Sound fallback.
+- Do not delete existing live-place Sound objects or rollback modules solely from this source audit. First inspect the actual live-place hierarchy, all Script/LocalScript/ModuleScript consumers, plugins, third-party packages, and any client-side volume compatibility.
+- Run Studio tests for modern playback, reload, restart, pause/resume, crossfade, watchdog recovery, per-client volume, and PC/mobile/console before removing legacy place objects.
+- Reconcile embedded bundles and installers before deleting any duplicate source. The current installer does not provision `MusicPlaybackManager`; the standalone file is retained as rollback until live-place reconciliation.
 
-**Audit outcome:** all remaining legacy Sound runtime paths are classified above. No Sound path was removed because startup fallback and crossfade rollback still depend on it. Static inspection only; Luau compilation and Roblox runtime testing remain outstanding.
+**Audit outcome:** no active legacy Sound fallback remains in the current tracked controller path. This is static source evidence only; Luau compilation, Studio runtime, live-place consumer inspection, and published-server tests remain outstanding.
 
 ## Required runtime acceptance matrix
 
