@@ -132,6 +132,10 @@ if not globalEvent then
 end
 local globalEventBindable = globalEvent :: BindableEvent
 
+-- Track only endpoints owned by this Script so shutdown can invalidate stale
+-- callbacks without clearing a replacement service's newer bindings.
+local boundFunctionCallbacks: {[string]: any} = {}
+
 local function bindFunction(name: string, callback: (...any) -> any): BindableFunction
 	local object = apiFolder:FindFirstChild(name)
 	if object and not object:IsA("BindableFunction") then object:Destroy(); object = nil end
@@ -141,6 +145,7 @@ local function bindFunction(name: string, callback: (...any) -> any): BindableFu
 		object.Parent = apiFolder
 	end
 	(object :: BindableFunction).OnInvoke = callback
+	boundFunctionCallbacks[name] = {object = object :: BindableFunction, callback = callback}
 	return object :: BindableFunction
 end
 
@@ -1330,6 +1335,16 @@ script.Destroying:Connect(function()
 	for topic, connection in pairs(subscriptionConnections) do
 		subscriptionConnections[topic] = nil
 		pcall(function() connection:Disconnect() end)
+	end
+	-- A destroyed service must not leave BindableFunctions callable through
+	-- stale closures. Clear only callbacks that still belong to this Script;
+	-- a replacement service may already have rebound the same endpoint.
+	for name, binding in pairs(boundFunctionCallbacks) do
+		boundFunctionCallbacks[name] = nil
+		local object = binding.object
+		if object and object.Parent == apiFolder and object.OnInvoke == binding.callback then
+			object.OnInvoke = nil
+		end
 	end
 	if lifecycleJanitor then lifecycleJanitor:Cleanup() end
 end)
