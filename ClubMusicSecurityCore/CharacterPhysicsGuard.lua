@@ -8,8 +8,9 @@
 local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
+local TeleportValidationService = require(script.Parent:WaitForChild("TeleportValidationService"))
 
-local Service = {}
+local Service = {
 Service.__index = Service
 
 local CHECK_DELAY = 0.18
@@ -74,6 +75,7 @@ function Service.new(dependencies)
 		movementSamples = 0,
 		movementSampleGaps = 0,
 		movementSampleInvalid = 0,
+		movementAuthorizedTeleports = 0,
 		movementSpeedBands = {under1 = 0, under4 = 0, under8 = 0, under16 = 0, under32 = 0, over32 = 0},
 		-- Separate aggregate axes support later horizontal-speed and vertical/fly analysis.
 		-- These are measurement bins only; no thresholds or enforcement consume them.
@@ -260,6 +262,18 @@ function Service:_watchCharacter(player: Player, character: Model)
 						previousPosition, previousAt = nil, nil
 						continue
 					end
+					-- A ticketed teleport is verified by the existing server-only
+					-- TeleportValidationService. Consume its one-use marker and reset
+					-- the displacement baseline instead of counting the CFrame move
+					-- as ordinary movement. No exemption is created by the client.
+					local teleportCheckOk, recentlyTeleported = pcall(
+						TeleportValidationService.IsRecentlyTeleported, player, character
+					)
+					if teleportCheckOk and recentlyTeleported == true then
+						self.movementAuthorizedTeleports += 1
+						previousPosition, previousAt = position, now
+						continue
+					end
 					if previousPosition and previousAt then
 						local elapsed = now - previousAt
 						if elapsed < 0.2 or elapsed > 1.5 then
@@ -397,6 +411,7 @@ function Service:GetStatus()
 			samples = self.movementSamples,
 			gaps = self.movementSampleGaps,
 			invalidSamples = self.movementSampleInvalid,
+			authorizedTeleportSamples = self.movementAuthorizedTeleports,
 			observedSpeedBandsStudsPerSecond = table.clone(self.movementSpeedBands),
 			horizontalSpeedBandsStudsPerSecond = table.clone(self.movementHorizontalSpeedBands),
 			verticalSpeedBandsStudsPerSecond = table.clone(self.movementVerticalSpeedBands),
