@@ -47,6 +47,15 @@ No durable receipt history is pruned or replaced by this cache.
 - The durable receipt ledger remains intentionally persistent and is not pruned; its growth is part of the purchase audit/replay guarantee.
 - DataStore budget waits and transaction work remain the existing purchase-path costs. This phase does not claim a fixed CPU percentage or a hard Roblox memory quota.
 
+
+## Security Core receipt boundary integration — Phase 29
+
+The sole `MarketplaceService.ProcessReceipt` assignment remains in `UI_Server_Controller_server (1).lua`, but now delegates to `ClubMusicSecurityCore.ReceiptAuthority`. Security Core owns receipt metadata validation, registered-product resolution, same-server in-flight exclusion, a 64-handler concurrency cap, and the bounded 512-entry successful-receipt cache.
+
+The existing durable profile receipt journal (`ClubMusic_ProductReceipts_v1`), `ClubMusic_ReceiptHash` key derivation, Prepared/Completed recovery, profile pending marker, and separate global XP receipt journal remain unchanged as the transaction storage backends. This is an intentional staged migration: no second ProcessReceipt callback, replacement ledger, MemoryStore receipt reservation, or new purchase ID format is introduced.
+
+See [Phase 29 — Economy, Entitlement & Reward Abuse Protection](CLUBMUSIC_PHASE29_ECONOMY_ENTITLEMENT_REWARD_ABUSE.md) for the economy mutation inventory, configured IDs, entitlement rules, and runtime acceptance checklist. The Security Core installer must be updated with the matching ReceiptAuthority module release before the updated controller is deployed. If the module is unavailable, the callback returns `NotProcessedYet`; it does not fall back to an unprotected grant path.
+
 ## Required Studio and published-server tests
 
 1. Test every configured Developer Product: all donation tiers, 2x/4x XP boosts and title slots 2/3.
