@@ -3021,11 +3021,13 @@ ControllerFunctions.startDanceFloorRewards = function()
 
 				local state = playerStates[userId]
 				if not state or state.character ~= character then
+					-- A respawn resets the position sample, not the AFK timer; repeatedly
+					-- resetting characters must not keep an inactive player reward-eligible.
 					state = {
 						character = character,
 						lastPosition = root.Position,
-						lastActivityClock = nowClock,
-						lastSaveClock = nowClock,
+						lastActivityClock = if state then state.lastActivityClock else nowClock,
+						lastSaveClock = if state then state.lastSaveClock else nowClock,
 					}
 					playerStates[userId] = state
 				else
