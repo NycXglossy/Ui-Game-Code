@@ -1671,11 +1671,14 @@ end
 local function onModeration(message)
 	local data = message.Data
 	if not validEnvelope(data, "Moderation") or data.kind ~= "Moderation" or not unseen(data.id) then return end
-	if not finiteNumber(data.userId) or (data.field ~= "globalBan" and data.field ~= "requestBlocked")
-		or typeof(data.value) ~= "boolean" or not finiteNumber(data.actorUserId) or data.actorUserId < 1 then return end
+	if not finiteNumber(data.userId) or data.userId < 1 or data.userId % 1 ~= 0
+		or (data.field ~= "globalBan" and data.field ~= "requestBlocked")
+		or typeof(data.value) ~= "boolean" or not finiteNumber(data.revision)
+		or data.revision < 1 or data.revision % 1 ~= 0
+		or not finiteNumber(data.actorUserId) or data.actorUserId < 1 then return end
 	globalEventBindable:Fire({kind = "Moderation", userId = data.userId, field = data.field, value = data.value,
-		actorUserId = math.floor(data.actorUserId), reason = cleanText(data.reason, CONFIG.MaxModerationReasonLength),
-		senderJob = data.senderJob})
+		revision = math.floor(data.revision), actorUserId = math.floor(data.actorUserId),
+		reason = cleanText(data.reason, CONFIG.MaxModerationReasonLength), senderJob = data.senderJob})
 end
 
 local function onXPBoost(message)
@@ -1789,12 +1792,12 @@ ownThread(task.spawn(function()
 						player:SetAttribute("GlobalModerationPending", true)
 						pendingRetryFound = true
 					else
-						if data.globalBan == true then
-							player:Kick("You are globally banned from this experience.")
-						else
-							player:SetAttribute("GlobalModerationPending", false)
-						end
-						globalEventBindable:Fire({kind = "Moderation", userId = player.UserId, field = "requestBlocked", value = data.requestBlocked == true, source = "reconciliation"})
+						-- Do not clear pending or enforce a ban from this yielding read.
+						-- The controller compares this snapshot's durable revision with
+						-- any newer event observed while GetAsync was in flight.
+						globalEventBindable:Fire({kind = "ModerationReconcile", userId = player.UserId,
+							globalBan = data.globalBan == true, requestBlocked = data.requestBlocked == true,
+							revision = if finiteNumber(data.revision) then math.floor(data.revision) else 0})
 					end
 					task.wait(1.1)
 				end
