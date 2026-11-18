@@ -1765,31 +1765,40 @@ else
 end
 
 -- Reconcile online users against durable moderation records so missed MessagingService
--- deliveries do not leave a stale request-block/ban state indefinitely.
+-- deliveries do not leave a stale request-block/ban state indefinitely. Failed reads
+-- receive a faster pending-only follow-up sweep; verified users are not re-read in it.
 ownThread(task.spawn(function()
+	local retryPendingOnly = false
 	while not globalServiceShuttingDown do
-		task.wait(CONFIG.ModerationReconcileSeconds)
 		if SERVICE_ENABLED then
+			local pendingRetryFound = false
 			for _, player in ipairs(Players:GetPlayers()) do
 				if globalServiceShuttingDown then break end
-				-- Background reconciliation must leave a small shared-bucket reserve
-				-- available for foreground moderation and purchase operations.
-				local data = getModeration(player.UserId, 3)
-				if data.lookupFailed then
-					-- Unknown is not the same as banned. Keep moderation-sensitive
-					-- actions closed while the authoritative record is unavailable,
-					-- but never kick a player solely because a backend read failed.
-					player:SetAttribute("GlobalModerationPending", true)
-				else
-					if data.globalBan == true then
-						player:Kick("You are globally banned from this experience.")
+				if not retryPendingOnly or player:GetAttribute("GlobalModerationPending") == true then
+					-- Background reconciliation must leave a small shared-bucket reserve
+					-- available for foreground moderation and purchase operations.
+					local data = getModeration(player.UserId, 3)
+					if data.lookupFailed then
+						-- Unknown is not the same as banned. Keep moderation-sensitive
+						-- actions closed while the authoritative record is unavailable,
+						-- but never kick a player solely because a backend read failed.
+						player:SetAttribute("GlobalModerationPending", true)
+						pendingRetryFound = true
 					else
-						player:SetAttribute("GlobalModerationPending", false)
+						if data.globalBan == true then
+							player:Kick("You are globally banned from this experience.")
+						else
+							player:SetAttribute("GlobalModerationPending", false)
+						end
+						globalEventBindable:Fire({kind = "Moderation", userId = player.UserId, field = "requestBlocked", value = data.requestBlocked == true, source = "reconciliation"})
 					end
-					globalEventBindable:Fire({kind = "Moderation", userId = player.UserId, field = "requestBlocked", value = data.requestBlocked == true, source = "reconciliation"})
+					task.wait(1.1)
 				end
-				task.wait(1.1)
 			end
+			retryPendingOnly = pendingRetryFound
+			task.wait(if retryPendingOnly then 15 else CONFIG.ModerationReconcileSeconds)
+		else
+			task.wait(CONFIG.ModerationReconcileSeconds)
 		end
 	end
 end))
