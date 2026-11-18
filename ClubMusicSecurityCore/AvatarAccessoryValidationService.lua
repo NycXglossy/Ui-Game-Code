@@ -19,6 +19,7 @@ type PlayerState = {
 	playerConnections: {RBXScriptConnection},
 	characterConnections: {RBXScriptConnection},
 	inventoryContainers: {[Instance]: boolean},
+	inventoryContainerConnections: {[Instance]: {RBXScriptConnection}},
 	knownTools: {[Tool]: boolean},
 	presentTools: {[Tool]: boolean},
 	knownAccessories: {[Accessory]: boolean},
@@ -113,10 +114,21 @@ function Service:_observeToolRemoved(player: Player, tool: Tool)
 	end)
 end
 
-function Service:_attachToolContainer(player: Player, container: Instance, connections: {RBXScriptConnection})
+function Service:_detachToolContainer(state: PlayerState, container: Instance)
+	local connections = state.inventoryContainerConnections[container]
+	state.inventoryContainerConnections[container] = nil
+	state.inventoryContainers[container] = nil
+	if connections then
+		for _, connection in ipairs(connections) do connection:Disconnect() end
+	end
+end
+
+function Service:_attachToolContainer(player: Player, container: Instance)
 	local state = self.states[player.UserId]
 	if not state or state.inventoryContainers[container] then return end
 	state.inventoryContainers[container] = true
+	local connections: {RBXScriptConnection} = {}
+	state.inventoryContainerConnections[container] = connections
 	for _, child in ipairs(container:GetChildren()) do
 		if child:IsA("Tool") then self:_observeToolAdded(player, child) end
 	end
@@ -125,6 +137,11 @@ function Service:_attachToolContainer(player: Player, container: Instance, conne
 	end))
 	table.insert(connections, container.ChildRemoved:Connect(function(child)
 		if child:IsA("Tool") then self:_observeToolRemoved(player, child) end
+	end))
+	table.insert(connections, container.AncestryChanged:Connect(function(_, parent)
+		if parent == nil and self.states[player.UserId] == state then
+			self:_detachToolContainer(state, container)
+		end
 	end))
 end
 
@@ -238,7 +255,7 @@ function Service:_attachCharacter(player: Player, character: Model)
 	for _, connection in ipairs(state.characterConnections) do connection:Disconnect() end
 	table.clear(state.characterConnections)
 
-	if state.character then state.inventoryContainers[state.character] = nil end
+	if state.character then self:_detachToolContainer(state, state.character) end
 	state.character = character
 	state.appearanceReady = false
 	table.clear(state.knownAccessories)
@@ -266,7 +283,7 @@ function Service:_attachCharacter(player: Player, character: Model)
 		end
 	end
 
-	self:_attachToolContainer(player, character, state.characterConnections)
+	self:_attachToolContainer(player, character)
 	table.insert(state.characterConnections, character.ChildAdded:Connect(function(child)
 		if child:IsA("Accessory") then
 			self:_inspectAccessory(player, child, state.appearanceReady)
@@ -318,6 +335,7 @@ function Service:_attachPlayer(player: Player)
 		playerConnections = {},
 		characterConnections = {},
 		inventoryContainers = {},
+		inventoryContainerConnections = {},
 		knownTools = {},
 		presentTools = {},
 		knownAccessories = {},
@@ -332,7 +350,7 @@ function Service:_attachPlayer(player: Player)
 	self.states[player.UserId] = state
 	local function attachInventoryContainer(container: Instance)
 		if container:IsA("Backpack") or container.Name == "StarterGear" then
-			self:_attachToolContainer(player, container, state.playerConnections)
+			self:_attachToolContainer(player, container)
 		end
 	end
 	local backpack = player:FindFirstChildOfClass("Backpack")
@@ -357,6 +375,11 @@ function Service:Start(): boolean
 		if state then
 			for _, connection in ipairs(state.playerConnections) do connection:Disconnect() end
 			for _, connection in ipairs(state.characterConnections) do connection:Disconnect() end
+			for _, connections in pairs(state.inventoryContainerConnections) do
+				for _, connection in ipairs(connections) do connection:Disconnect() end
+			end
+			table.clear(state.inventoryContainerConnections)
+			table.clear(state.inventoryContainers)
 			self.states[player.UserId] = nil
 		end
 	end))
@@ -388,6 +411,11 @@ function Service:Stop()
 	for _, state in pairs(self.states) do
 		for _, connection in ipairs(state.playerConnections) do connection:Disconnect() end
 		for _, connection in ipairs(state.characterConnections) do connection:Disconnect() end
+		for _, connections in pairs(state.inventoryContainerConnections) do
+			for _, connection in ipairs(connections) do connection:Disconnect() end
+		end
+		table.clear(state.inventoryContainerConnections)
+		table.clear(state.inventoryContainers)
 	end
 	table.clear(self.states)
 	self.started = false
