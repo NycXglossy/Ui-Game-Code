@@ -315,3 +315,14 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Generic custom-catalog refresh behavior and its existing jittered 180–210 second reconciliation remain unchanged. This is the bounded fallback for missed catalog invalidations; it refreshes the existing single catalog key through the existing DataStore budget gate and preserves last-known-good data on failures.
 - No new MessagingService topics, DataStores, MemoryStore keys, remotes, diagnostics telemetry, global queue state, or cross-server diagnostics were introduced. Durable writes and authorization remain unchanged.
 - Static source inspection only. MessagingService delivery, DataStore behavior, moderation propagation latency, Luau compilation, Studio/runtime behavior, and deployment were not tested.
+
+
+## Durable global moderation reconciliation audit (2026-11-18)
+
+- Confirmed that moderation changes use per-user durable DataStore keys and `UpdateAsync`, preserving the other enforcement flag and bounded history. MessagingService is only the fast notification path; successful durable writes remain authoritative even if publishing fails.
+- Join checks read ban and request-block state together. Failed or unavailable reads remain unknown, not unbanned: the controller restricts moderation-sensitive actions, marks `GlobalModerationPending`, and retries with bounded exponential backoff. A verified global ban kicks; a failed read alone never kicks.
+- The server-local reconciliation loop checks every currently online player against the durable record every 180 seconds, with 1.1-second pacing between reads. A failed read keeps the player pending/restricted; a successful read applies the durable ban and request-block state. The loop does not enumerate DataStore keys or depend on MessagingService delivery.
+- Found and fixed a fail-open schema edge case: a successful read containing a non-table value or non-boolean `globalBan` / `requestBlocked` field was previously treated as an empty, unblocked record. Now only a missing key (`nil`) is a valid empty record; malformed records return `lookupFailed`, preserving the fail-closed pending behavior without kicking on data corruption.
+- Existing per-server DataStore token-bucket protection remains in place (20-token burst, 5-token/second refill, further shared with this server's other DataStore operations). Reconciliation is paced at 1.1 seconds per player; no new shared budget, MemoryStore, DataStore, MessagingService topic, remote, or diagnostics telemetry was added.
+- No changes to moderation authorization, write semantics, ban enforcement, request-block enforcement, player profile persistence, or client trust boundaries.
+- Static source inspection only. DataStore fault injection, MessagingService delivery, multi-server propagation, Luau compilation, Studio/runtime behavior, and deployment were not tested.
