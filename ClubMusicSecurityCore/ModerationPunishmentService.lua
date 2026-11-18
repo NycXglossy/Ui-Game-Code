@@ -280,7 +280,8 @@ end
 function Service:GetActive(targetUserId: number): (boolean, any)
 	if not validUserId(targetUserId) then return false, nil end
 	local readOk, result = self:_readRecord(targetUserId)
-	if not readOk or typeof(result) ~= "table" or typeof(result.active) ~= "table" then return false, nil end
+	if not readOk then return false, nil end
+	if typeof(result) ~= "table" or typeof(result.active) ~= "table" then return true, {} end
 	local now = os.time()
 	local active = {}
 	for caseId, item in pairs(result.active) do
@@ -393,7 +394,8 @@ function Service:GetHistory(actor: Player, targetUserId: number, limit: number):
 		return false, nil
 	end
 	local readOk, result = self:_readRecord(targetUserId)
-	if not readOk or typeof(result) ~= "table" or typeof(result.history) ~= "table" then return false, nil end
+	if not readOk then return false, nil end
+	if typeof(result) ~= "table" or typeof(result.history) ~= "table" then return true, {} end
 	local output = {}
 	for index = #result.history, math.max(1, #result.history - limit + 1), -1 do
 		local item = result.history[index]
@@ -436,7 +438,8 @@ function Service:GetRiskHistory(targetUserId: number, limit: number): (boolean, 
 	if not validUserId(targetUserId) or typeof(limit) ~= "number" or limit % 1 ~= 0
 		or limit < 1 or limit > MAX_HISTORY then return false, nil end
 	local readOk, result = self:_readRecord(targetUserId)
-	if not readOk or typeof(result) ~= "table" or typeof(result.history) ~= "table" then return false, nil end
+	if not readOk then return false, nil end
+	if typeof(result) ~= "table" or typeof(result.history) ~= "table" then return true, {} end
 	local output = {}
 	local seenCases: {[string]: boolean} = {}
 	for index = #result.history, 1, -1 do
