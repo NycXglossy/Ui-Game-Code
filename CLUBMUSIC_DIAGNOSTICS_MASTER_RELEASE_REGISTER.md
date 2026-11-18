@@ -362,3 +362,9 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - Removed the retired Cross-Server Playback panel and toggle from `UI_Renderer (2).lua`, and removed the action from `UI_Network.lua` allowlists/cooldowns. The controller rejects legacy action submissions without making a global API call.
 - Aligned `ClubMusic_Security_Core_Installer.lua` and `ClubMusic_Global_Service_server_1.lua` to the same SecurityCore release snapshot, `142562f0727f8c3fa748a9bd00dbd1871e5f4fe9`. The pinned snapshot was fetched and confirmed to contain the updated visual client and receipt/adaptive-load modules.
 - Current implementation details and acceptance requirements are recorded in `CLUBMUSIC_PHASE0_33_PERFORMANCE_COMPATIBILITY_CONSOLIDATION.md`.
+
+### Phase 0–33 follow-on performance pass
+
+- `ClubMusicSecurityCore/SecurityThreatIntelligence.lua`: added an O(1) per-server incident lookup index and five-second minimum expiry sweep cadence; bounded capacity and review semantics unchanged. Commit `50289e2525605bb308462465f9cd50253dec054d`.
+- Local-first boundary clarified: FPS/memory/audio/visual diagnostics remain client-local and untrusted. The pre-existing ClientIntegrityTelemetry is a separate, narrow security-review exception that sends only fixed allowlisted signal codes at low frequency; it sends no performance measurements or free-form client data and cannot authorize or punish.
+- Phase15 and Phase0–33 consolidation documentation updated. No runtime or device profiling has been performed.
