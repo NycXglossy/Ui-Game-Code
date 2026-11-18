@@ -594,3 +594,5 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 
 
 - **2026-11-18 — Global API endpoint contract inventory:** compared controller `globalInvoke` names with Global Service `bindFunction` registrations; all 10 distinct controller endpoints have matching registrations. Static source inventory only; no endpoint runtime invocation or deployment. Documentation commit: `c2bdd13c77b23396b942f4656fea76ea85c307f1`.
+
+- **2026-11-18 — Global authorization cache lifecycle hardening:** authorization now rejects checks while stopped, invalidates yielding rank lookups across stop/restart and configuration changes, and restarts the shared singleton when reacquired. Existing 120–300 second rank-cache TTL and permission thresholds are unchanged. Static source review only; no Luau or Roblox runtime test. Source commit: `0bc71271f4d9bc78973ec37e3dfb864240ed4f82` (authorization source commit: `17984605db9f76751eb05b5db1d74d7be2086264`).
