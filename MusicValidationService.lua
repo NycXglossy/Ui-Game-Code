@@ -12,9 +12,16 @@ export type AssetInfo = {
 export type MetadataProvider = (assetId: number) -> any
 
 type CacheEntry = {
-	info: AssetInfo,
+	valid: boolean,
+	info: AssetInfo?,
+	error: string?,
 	expiresAt: number,
-	lastUsed: number,
+	generation: number,
+}
+
+type CacheQueueItem = {
+	assetId: number,
+	generation: number,
 }
 
 local MusicValidationService = {}
@@ -25,16 +32,24 @@ function MusicValidationService.new(config: any, metadataProvider: MetadataProvi
 	assert(type(metadataProvider) == "function", "MusicValidationService requires an injected metadata provider")
 
 	local ttl = tonumber(config.CacheTTLSeconds) or 300
+	local failureTtl = tonumber(config.FailureCacheTTLSeconds) or 5
 	local maxEntries = tonumber(config.MaxCacheEntries) or 128
 	assert(ttl >= 1 and ttl <= 3600, "CacheTTLSeconds must be between 1 and 3600")
+	assert(failureTtl >= 1 and failureTtl <= 30, "FailureCacheTTLSeconds must be between 1 and 30")
 	assert(maxEntries >= 1 and maxEntries <= 512 and maxEntries % 1 == 0, "MaxCacheEntries must be an integer between 1 and 512")
 
 	local self = setmetatable({}, MusicValidationService)
 	self.cacheTTLSeconds = ttl
+	self.failureCacheTTLSeconds = failureTtl
 	self.maxCacheEntries = maxEntries
 	self.metadataProvider = metadataProvider
 	self.cache = {} :: {[number]: CacheEntry}
-	self.accessSequence = 0
+	self.cacheOrder = {
+		items = {} :: {[number]: CacheQueueItem},
+		head = 1,
+		count = 0,
+	}
+	self.cacheSequence = 0
 	return self
 end
 
@@ -57,6 +72,39 @@ local function normalizeAssetInfo(rawInfo: any): AssetInfo?
 	}
 end
 
+-- Circular FIFO insertion is O(1). A generation token prevents an old queue
+-- slot from evicting a newer entry for the same asset after expiry/reinsertion.
+local function setCache(self: any, assetId: number, entry: CacheEntry)
+	self.cacheSequence += 1
+	local existing = self.cache[assetId]
+	if existing then
+		entry.generation = existing.generation
+	else
+		local order = self.cacheOrder
+		local nextItem: CacheQueueItem = {
+			assetId = assetId,
+			generation = self.cacheSequence,
+		}
+		if order.count >= self.maxCacheEntries then
+			local oldest = order.items[order.head]
+			order.items[order.head] = nextItem
+			order.head = (order.head % self.maxCacheEntries) + 1
+			if oldest then
+				local oldEntry = self.cache[oldest.assetId]
+				if oldEntry and oldEntry.generation == oldest.generation then
+					self.cache[oldest.assetId] = nil
+				end
+			end
+		else
+			local tail = ((order.head + order.count - 1) % self.maxCacheEntries) + 1
+			order.items[tail] = nextItem
+			order.count += 1
+		end
+		entry.generation = self.cacheSequence
+	end
+	self.cache[assetId] = entry
+end
+
 function MusicValidationService:GetAudioAssetInfo(assetId: number): (boolean, AssetInfo | string, boolean)
 	if type(assetId) ~= "number" or assetId ~= assetId or assetId % 1 ~= 0
 		or assetId <= 0 or assetId > 9007199254740991 then
@@ -65,51 +113,48 @@ function MusicValidationService:GetAudioAssetInfo(assetId: number): (boolean, As
 
 	local now = os.clock()
 	local cached = self.cache[assetId]
-	if cached and cached.expiresAt > now then
-		self.accessSequence += 1
-		cached.lastUsed = self.accessSequence
-		return true, cached.info, true
+	if cached then
+		if cached.expiresAt > now then
+			return cached.valid, if cached.valid then cached.info :: AssetInfo else cached.error :: string, true
+		end
+		self.cache[assetId] = nil
 	end
-	if cached then self.cache[assetId] = nil end
 
 	local providerOk, rawInfo = pcall(self.metadataProvider, assetId)
 	if not providerOk then
-		return false, "Audio asset metadata is temporarily unavailable.", false
+		local message = "Audio asset metadata is temporarily unavailable."
+		setCache(self, assetId, {
+			valid = false,
+			error = message,
+			expiresAt = now + self.failureCacheTTLSeconds,
+			generation = 0,
+		})
+		return false, message, false
 	end
 
 	local info = normalizeAssetInfo(rawInfo)
 	if not info then
-		return false, "Audio asset metadata is invalid or unavailable.", false
+		local message = "Audio asset metadata is invalid or unavailable."
+		setCache(self, assetId, {
+			valid = false,
+			error = message,
+			expiresAt = now + self.failureCacheTTLSeconds,
+			generation = 0,
+		})
+		return false, message, false
 	end
 
-	self.accessSequence += 1
-	if self.cache[assetId] == nil then
-		local count = 0
-		local oldestId: number? = nil
-		local oldestUse = math.huge
-		for cachedId, entry in pairs(self.cache) do
-			count += 1
-			if entry.lastUsed < oldestUse then
-				oldestUse = entry.lastUsed
-				oldestId = cachedId
-			end
-		end
-		if count >= self.maxCacheEntries and oldestId ~= nil then
-			self.cache[oldestId] = nil
-		end
-	end
-
-	self.cache[assetId] = {
+	setCache(self, assetId, {
+		valid = true,
 		info = info,
 		expiresAt = now + self.cacheTTLSeconds,
-		lastUsed = self.accessSequence,
-	}
+		generation = 0,
+	})
 	return true, info, false
 end
 
--- Produce the controller's stable display/playback metadata shape after its
--- separate AudioPlayer preload confirms that the asset is playable in this experience.
 -- Marketplace metadata alone never proves experience permission or playability.
+-- The controller performs the separate AudioPlayer preload before accepting a track.
 function MusicValidationService:NormalizeAudioMetadata(assetId: number, info: any, duration: number): {[string]: any}?
 	if type(assetId) ~= "number" or assetId ~= assetId or assetId % 1 ~= 0
 		or assetId <= 0 or assetId > 9007199254740991 or typeof(info) ~= "table" then
@@ -138,19 +183,28 @@ end
 
 function MusicValidationService:ClearCache()
 	table.clear(self.cache)
+	self.cacheOrder = {
+		items = {} :: {[number]: CacheQueueItem},
+		head = 1,
+		count = 0,
+	}
+	self.cacheSequence = 0
 end
 
-function MusicValidationService:GetCacheStats(): { total: number, max: number }
+function MusicValidationService:GetCacheStats(): { total: number, max: number, valid: number, invalid: number }
 	local now = os.clock()
 	local total = 0
+	local valid = 0
+	local invalid = 0
 	for assetId, entry in pairs(self.cache) do
 		if entry.expiresAt <= now then
 			self.cache[assetId] = nil
 		else
 			total += 1
+			if entry.valid then valid += 1 else invalid += 1 end
 		end
 	end
-	return { total = total, max = self.maxCacheEntries }
+	return { total = total, max = self.maxCacheEntries, valid = valid, invalid = invalid }
 end
 
 return MusicValidationService
