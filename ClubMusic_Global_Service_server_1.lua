@@ -1429,8 +1429,10 @@ end)
 bindFunction("SetGlobalMaintenance", function(enabled: any, message: any, actorUserId: any)
 	if not SERVICE_ENABLED or not globalMaintenanceService or not finiteNumber(actorUserId)
 		or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false end
-	if message ~= nil then
-		local filtered = filterMaintenanceMessage(message, actorUserId)
+	local messageToFilter = if message ~= nil then message
+		elseif globalConfigService then globalConfigService:Get("maintenanceMessage") else nil
+	if messageToFilter ~= nil then
+		local filtered = filterMaintenanceMessage(messageToFilter, actorUserId)
 		if filtered == nil then return false, "Maintenance text could not be safely filtered." end
 		message = filtered
 	end
