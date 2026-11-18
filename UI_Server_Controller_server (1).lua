@@ -7145,7 +7145,9 @@ task.spawn(function()
 		end
 
 		local currentGeneration = playbackGeneration
-		local shouldAdvance = not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
+		local syncFollower = ControllerFunctions.globalPlaybackSyncState.enabled == true
+			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true
+		local shouldAdvance = not syncFollower and not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.elapsed >= nowPlaying.duration
 		-- Catalog tracks without a configured SoundId are intentionally silent
 		-- UI/visualizer entries. Do not treat their intentionally absent audio as a failed
@@ -7189,25 +7191,34 @@ task.spawn(function()
 			elseif (playheadAtEnd and stoppedFor >= 2)
 				or (ControllerFunctions.audioRecoveryAttemptedGeneration == currentGeneration and stoppedFor >= 7)
 				or (not loadedAndKnownLength and nowPlaying.elapsed >= 45) then
-				shouldAdvance = true
 				local quality = ControllerFunctions.inspectPlaybackQuality()
 				local reason = if typeof(quality) == "table" then tostring(quality.state or "Unknown") else "WatchdogStoppedTrack"
-				warn("[ClubMusic] Playback watchdog confirmed an ended or unrecoverable track (" .. reason .. "); advancing safely.")
-				if ControllerFunctions.ErrorHandler then
-					local errorContext: Instance? = nil
-					pcall(function()
-						local source = activeAudioSource
-						if source.kind == "Backend" and source.backend then
-							errorContext = source.backend:GetPlayer()
-					end)
-					ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, errorContext or SoundService)
+				if syncFollower then
+					-- A follower never advances its private queue. The elected leader's
+					-- next snapshot replaces this track; local recovery remains allowed.
+					ControllerFunctions.recordDiagnosticPulse("PlaybackSync", "follower-awaiting-leader-track", true, {
+						trackId = nowPlaying.trackId, reason = reason,
+					})
+				else
+					shouldAdvance = true
+					warn("[ClubMusic] Playback watchdog confirmed an ended or unrecoverable track (" .. reason .. "); advancing safely.")
+					if ControllerFunctions.ErrorHandler then
+						local errorContext: Instance? = nil
+						pcall(function()
+							local source = activeAudioSource
+							if source.kind == "Backend" and source.backend then
+								errorContext = source.backend:GetPlayer()
+							end
+						end)
+						ControllerFunctions.ErrorHandler.Report("PlaybackQuality", "StoppedTrack", reason, errorContext or SoundService)
+					end
 				end
 			end
 		end
 
 		-- This server prepares its own next local queue entry before the current
 		-- track ends; the crossfade commit advances only this server's queue.
-		if not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
+		if not syncFollower and not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
 			local remaining = nowPlaying.duration - nowPlaying.elapsed
 			local managers = ControllerFunctions.ChildManagers
