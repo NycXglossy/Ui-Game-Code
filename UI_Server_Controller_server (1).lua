@@ -75,7 +75,7 @@ local CONFIG = {
 	-- Modern AudioPlayer is the only main playback source; failures remain unavailable.
 	UseModernAudioBackend = true,
 	-- The feature is available but remains opt-in through the shared SecurityCore-gated setting.
-	EnableGlobalPlaybackSync = true,
+	EnableGlobalPlaybackSync = false, -- Retired; each server owns its own playback and queue.
 	CrossfadeDurationSeconds = 4,
 	CrossfadePrepareLeadSeconds = 14,
 
