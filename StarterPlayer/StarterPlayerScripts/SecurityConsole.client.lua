@@ -548,7 +548,13 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 		lockdownButton.Text = if lockdownActive then "DISABLE LOCAL LOCK" else "LOCAL LOCKDOWN"
 	end
 	local result = if typeof(message) == "string" then message else "The server returned an unknown result."
-	setStatus(result, succeeded)
+	if action ~= "GetStatus" then
+		setStatus(result, succeeded)
+	elseif not succeeded then
+		setStatus(result, false)
+	elseif not initialStatusHandled then
+		setStatus("Staff authorization verified.", true)
+	end
 	if action == "GetStatus" then
 		gui:SetAttribute("StaffAuthorized", succeeded)
 		launcherGui.Enabled = succeeded
