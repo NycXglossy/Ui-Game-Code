@@ -102,6 +102,8 @@ The server's `PromptGamePassPurchaseFinished` listener uses the `purchased` sign
 - Daily reward action `ClaimDailyReward` grants coins (days 1 and 5), Glowsticks (day 2), tickets (day 3), skip token (day 4), Neon Trail (day 6), or Island title tag (day 7). It checks the server profile's `claimedToday` and exact `loginStreak` before mutation, sets the claim marker in the same synchronous handler, then schedules the existing profile save.
 - `BuyTitleTag` spends tickets (Bass 150, Sunset 250, Tiki 400) and sets ownership in the same synchronous handler after checking ownership and balance. It uses the existing one-second action cooldown and schedules the existing profile save.
 - `ModSetPassTier` is owner-only (Security Core rank level 4), validates target and tier 0–3, and writes the existing `rewardedPassTier` field. It is not a client-purchase grant.
+- XP accrual is server-owned in `settlePlayerXP`: it uses elapsed server time, fractional carry, the server-cached global boost, and `PersonalXPMultiplier` populated from verified Game Pass ownership. The client does not submit XP amounts or multipliers. XP is capped and saved through the existing profile save path.
+- Club playtime increments by 60 server-observed seconds per minute. It drives the 10-hour Party Animal tag; the 7-day login streak grants Wave Rider; verified VIP status grants the VIP title tag. These are server-derived, idempotent ownership flags rather than client reward requests.
 - Staff title-slot elevation remains a server-derived staff benefit, not a Developer Product grant.
 - No general client coin-grant or client-provided reward amount path was found in the audited controller/Utility Bar paths.
 
