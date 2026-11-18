@@ -512,7 +512,7 @@ end)
 
 bindFunction("IsEnabled", function()
 	-- Reports availability of global moderation/configuration services only.
-	-- Queue/playback modes are permanently local and no longer gate this check.
+	-- Optional playback-only sync has its own separately gated API and status.
 	return SERVICE_ENABLED
 end)
 
@@ -724,13 +724,16 @@ if safeCallModule then
 end
 if globalSafeCall then
 	bindFunction("GetGlobalMemoryStoreStatus", function()
-		-- Compatibility diagnostic: the global shared limiter has been retired.
+		local playbackLeaseEnabled = globalConfigService ~= nil and globalConfigService:Get("playbackSyncEnabled") == true
 		return {
 			sharedRateLimitsEnabled = false,
 			capacityLimited = false,
 			lastCapacityError = nil,
-			mode = "LocalOnly",
-			detail = "Bounded per-server rate limits are active; no shared limiter is provisioned."
+			playbackLeaseEnabled = playbackLeaseEnabled,
+			mode = if playbackLeaseEnabled then "PlaybackOnlyLease" else "LocalOnly",
+			detail = if playbackLeaseEnabled
+				then "MemoryStore is used only for the optional fenced playback leader lease; request queues remain local."
+				else "Bounded per-server rate limits are active; optional playback leadership is disabled.",
 		}
 	end)
 
