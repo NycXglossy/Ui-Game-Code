@@ -5792,6 +5792,74 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		ControllerFunctions.adminBridgeReportSignal(caller, "admin_bridge_access_denied", operation)
 		return false, "ClubMusic staff permission is required."
 	end
+
+	-- Phase 32: server-authorized graduated punishment and investigation operations.
+	if string.sub(operation, 1, 7) == "Phase32" then
+		if not phase32Services then return false, "Phase 32 moderation services are unavailable; no action was applied." end
+		if typeof(argument) ~= "string" or #argument < 1 or #argument > 320 then
+			return false, "A bounded command argument is required."
+		end
+		local rawUserId, remainder = string.match(argument, "^(%d+)%s+(.+)$")
+		local targetUserId = tonumber(rawUserId)
+		if not targetUserId or targetUserId < 1 or targetUserId % 1 ~= 0 or targetUserId > 9007199254740991 then
+			return false, "Provide a valid numeric Roblox UserId."
+		end
+		if operation == "Phase32Warn" then
+			local ok, message = phase32Services:Issue(caller, targetUserId, {kind = "Warn", reason = remainder})
+			return ok, message or "Warning could not be recorded."
+		elseif operation == "Phase32Restrict" then
+			local featureText, reason = if remainder then string.match(remainder, "^([%w,]+)%s+(.+)$") else nil, nil
+			if remainder then featureText, reason = string.match(remainder, "^([%w,]+)%s+(.+)$") end
+			if not featureText or not reason then return false, "Use: ;cmrestrict UserId Feature[,Feature] reason" end
+			local restrictions = {}
+			for item in string.gmatch(featureText, "[^,]+") do table.insert(restrictions, item) end
+			local ok, message = phase32Services:Issue(caller, targetUserId, {kind = "Restrict", restrictions = restrictions, reason = reason})
+			return ok, message or "Restriction could not be recorded."
+		elseif operation == "Phase32TempBan" then
+			local secondsText, reason = if remainder then string.match(remainder, "^(%d+)%s+(.+)$") else nil, nil
+			if remainder then secondsText, reason = string.match(remainder, "^(%d+)%s+(.+)$") end
+			local seconds = tonumber(secondsText)
+			if not seconds or not reason then return false, "Use: ;cmtempban UserId Seconds reason" end
+			local ok, message = phase32Services:Issue(caller, targetUserId, {kind = "TempBan", durationSeconds = seconds, reason = reason})
+			return ok, message or "Temporary ban could not be applied."
+		elseif operation == "Phase32PermanentBan" or operation == "Phase32PermanentBanAlts" then
+			if not remainder then return false, "A permanent-ban reason is required." end
+			local propagate = operation == "Phase32PermanentBanAlts"
+			local ok, message = phase32Services:Issue(caller, targetUserId, {
+				kind = "PermanentBan", reason = remainder,
+				propagateAltAccounts = propagate, confirmAltPropagation = propagate,
+			})
+			return ok, message or "Permanent ban could not be applied."
+		elseif operation == "Phase32Unban" then
+			if not remainder then return false, "An unban reason is required." end
+			return phase32Services:Unban(caller, targetUserId, remainder)
+		elseif operation == "Phase32History" then
+			local ok, history = phase32Services:GetHistory(caller, targetUserId, 10)
+			if not ok or typeof(history) ~= "table" then return false, "Moderation history is unavailable or access was denied." end
+			if #history == 0 then return true, "No retained moderation history for UserId " .. tostring(targetUserId) .. "." end
+			local lines = {"Phase 32 moderation history for UserId " .. tostring(targetUserId) .. ":"}
+			for index, item in ipairs(history) do
+				if index > 10 then break end
+				local stamp = if typeof(item.at) == "number" then os.date("!%Y-%m-%d %H:%M UTC", item.at) else "Unknown time"
+				table.insert(lines, string.format("%s | %s | %s | case %s | actor %d",
+					stamp, tostring(item.kind or "Unknown"), tostring(item.status or "Unknown"),
+					string.sub(tostring(item.caseId or "?"), 1, 36), tonumber(item.actorUserId) or 0))
+			end
+			return true, string.sub(table.concat(lines, "\n"), 1, 1600)
+		elseif operation == "Phase32Risk" then
+			local ok, summary = phase32Services:GetRiskSignals(caller, targetUserId)
+			if not ok or typeof(summary) ~= "table" then return false, "Account-risk review requires IncidentResponse and available verified history." end
+			local lines = {string.format("Advisory account-risk review | UserId %d | score %d/100", targetUserId, summary.score or 0)}
+			for _, signal in ipairs(summary.signals or {}) do
+				table.insert(lines, string.format("%s | %s", tostring(signal.type), tostring(signal.confidence)))
+			end
+			table.insert(lines, "Account linkage: " .. tostring(summary.accountLinkage))
+			table.insert(lines, "No automatic punishment is applied by this score.")
+			return true, string.sub(table.concat(lines, "\n"), 1, 1500)
+		end
+		return false, "Unknown Phase 32 moderation operation."
+	end
+
 	-- Read-only status and queue inspection do not enter the action handler or
 	-- consume mutation cooldowns. Global inspection refreshes the authoritative mirror.
 	if operation == "Status" then
