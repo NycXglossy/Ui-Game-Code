@@ -556,3 +556,11 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - Added a monotonic per-user revision to durable moderation writes and propagated the committed revision through the existing GetModerationState BindableFunction and moderation notifications. Legacy records without a revision read as revision zero; malformed revision values fail closed.
 - Controller applies only strictly newer moderation notifications and rejects join/retry lookup results older than the latest notification observed while the lookup yielded. This prevents delayed block/unblock and ban/unban events or stale reads from rolling local moderation state backward. PlayerRemoving releases the per-user revision entry.
 - Static source review only; no Luau compiler, DataStore concurrency/fault injection, MessagingService ordering test, Roblox Studio/runtime test, or deployment.
+
+
+### Moderation reconciliation revision ordering and MessagingService forwarding (2026-11-18)
+
+- Corrected inbound MessagingService moderation handling to validate and forward the durable revision. Remote servers can now apply valid notifications through the controller's existing strictly-increasing revision gate.
+- Reconciliation now emits a local snapshot of both durable moderation flags plus revision. The controller accepts only snapshots at least as new as the latest observed event, then applies the ban/request-block state and clears pending only after that check. A stale read cannot kick or clear a newer restriction.
+- Failed reads continue to preserve pending restrictions and the existing 15-second pending-only retry behavior. No new cross-server services, topics, remotes, or diagnostics telemetry.
+- Static source inspection only; no Luau compilation, DataStore fault injection, MessagingService multi-server ordering test, Studio/runtime test, or deployment.
