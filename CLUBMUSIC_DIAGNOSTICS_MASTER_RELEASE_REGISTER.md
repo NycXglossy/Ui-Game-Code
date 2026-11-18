@@ -272,7 +272,7 @@ No live Roblox place was modified. No diagnostics sharing, persistence, client t
 - BackgroundMaintenance remains reserved because no safe optional maintenance worker was identified. Profile persistence, receipt handling, storage cleanup, and security retention are not deferred.
 - Added a client-local visual-quality LocalScript for explicitly tagged ClubEffect particle rates and StageClubLight shadows. It reads a server-local Workspace attribute; no RemoteEvent/RemoteFunction or client telemetry is introduced. Light Enabled/Color/Brightness remain owned by existing Stage & Club Lighting controls.
 - Existing OperationalDiagnostics output inside the authorized Staff Controls console now exposes adaptive workload counters, mode trend, and movement sampling counts.
-- The SecurityCore installer now stages, backs up, promotes, and rolls back the visual-quality LocalScript. Its module/client release pin is `d66e5033d948f516db78de50d668ee686bbd78d6`, containing the updated AdaptiveSecurityLoadManager, CharacterPhysicsGuard, and client script.
+- The SecurityCore installer now stages, backs up, promotes, and rolls back the visual-quality LocalScript. Its module/client release pin is `8a028a2e28cfc245263486eb607f52d52183d390`, containing the updated AdaptiveSecurityLoadManager, CharacterPhysicsGuard, and client script.
 - Passive movement measurement uses 0.5s / 1.5s / 3.0s intervals in Normal / Reduced / Critical, with a 3.5s maximum accepted sample gap. Event-driven movement checks remain active.
 
 ### Phase 13.1 release gates still open
