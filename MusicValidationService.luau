@@ -9,15 +9,41 @@ function MusicValidationService.new(config, assetInfoProvider)
 	self.config = config or {}
 	self.config.MUSIC_ID_CACHE_DURATION = self.config.MUSIC_ID_CACHE_DURATION or 3600
 	self.cacheTTLSeconds = math.clamp(tonumber(self.config.CacheTTLSeconds) or 300, 1, 3600)
+	self.failureCacheTTLSeconds = math.clamp(tonumber(self.config.FailureCacheTTLSeconds) or 5, 1, 30)
 	self.maxCacheEntries = math.clamp(math.floor(tonumber(self.config.MaxCacheEntries) or 128), 16, 1024)
 	self.assetInfoProvider = if typeof(assetInfoProvider) == "function" then assetInfoProvider else function(assetId)
 		return MarketplaceService:GetProductInfo(assetId, Enum.InfoType.Asset)
 	end
 	self.musicIdCache = {}
 	self.audioAssetInfoCache = {}
+	self.musicIdCacheOrder = {items = {}, head = 1, tail = 0, count = 0}
+	self.audioAssetInfoCacheOrder = {items = {}, head = 1, tail = 0, count = 0}
 	self.playerCooldowns = {}
 	self.playerLastAction = {}
 	return self
+end
+
+-- Bounded FIFO cache insertion is O(1); cache misses never scan the full cache
+-- to find an eviction candidate. Existing keys are refreshed in place.
+local function setBoundedCache(cache, order, key, value, maxEntries)
+	if cache[key] == nil then
+		if order.count >= maxEntries then
+			while order.head <= order.tail do
+				local oldestKey = order.items[order.head]
+				order.items[order.head] = nil
+				order.head += 1
+				if oldestKey ~= nil and cache[oldestKey] ~= nil then
+					cache[oldestKey] = nil
+					order.count = math.max(0, order.count - 1)
+					break
+				end
+			end
+		end
+		order.tail += 1
+		order.items[order.tail] = key
+		order.count += 1
+	end
+	cache[key] = value
 end
 
 -- Metadata cache only. The controller still performs its separate preload and
@@ -30,22 +56,23 @@ function MusicValidationService:GetAudioAssetInfo(assetId)
 	local key = tostring(numericId)
 	local now = os.clock()
 	local cached = self.audioAssetInfoCache[key]
-	if cached and now - cached.timestamp < self.cacheTTLSeconds then
-		return cached.valid, cached.data or cached.error
+	if cached then
+		local ttl = if cached.valid then self.cacheTTLSeconds else self.failureCacheTTLSeconds
+		if now - cached.timestamp < ttl then
+			return cached.valid, cached.data or cached.error
+		end
 	end
 	local ok, info = pcall(self.assetInfoProvider, numericId)
 	if not ok or typeof(info) ~= "table" then
-		return false, "Audio asset metadata is temporarily unavailable."
+		local message = "Audio asset metadata is temporarily unavailable."
+		setBoundedCache(self.audioAssetInfoCache, self.audioAssetInfoCacheOrder, key, {
+			valid = false, error = message, timestamp = now,
+		}, self.maxCacheEntries)
+		return false, message
 	end
-	self.audioAssetInfoCache[key] = { valid = true, data = info, timestamp = now }
-	local count, oldestKey, oldestTime = 0, nil, nil
-	for cacheKey, item in pairs(self.audioAssetInfoCache) do
-		count += 1
-		if not oldestTime or item.timestamp < oldestTime then
-			oldestKey, oldestTime = cacheKey, item.timestamp
-		end
-	end
-	if count > self.maxCacheEntries and oldestKey then self.audioAssetInfoCache[oldestKey] = nil end
+	setBoundedCache(self.audioAssetInfoCache, self.audioAssetInfoCacheOrder, key, {
+		valid = true, data = info, timestamp = now,
+	}, self.maxCacheEntries)
 	return true, info
 end
 
@@ -114,19 +141,19 @@ function MusicValidationService:ValidateMusicId(musicId)
 			Duration = 0
 		}
 
-		self.musicIdCache[musicId] = {
+		setBoundedCache(self.musicIdCache, self.musicIdCacheOrder, musicId, {
 			valid = true,
 			data = data,
 			timestamp = tick()
-		}
+		}, self.maxCacheEntries)
 
 		return true, data, "Valid"
 	else
-		self.musicIdCache[musicId] = {
+		setBoundedCache(self.musicIdCache, self.musicIdCacheOrder, musicId, {
 			valid = false,
 			data = nil,
 			timestamp = tick()
-		}
+		}, self.maxCacheEntries)
 
 		return false, nil, "Invalid asset or not an audio"
 	end
@@ -223,6 +250,8 @@ end
 function MusicValidationService:ClearCache()
 	self.musicIdCache = {}
 	self.audioAssetInfoCache = {}
+	self.musicIdCacheOrder = {items = {}, head = 1, tail = 0, count = 0}
+	self.audioAssetInfoCacheOrder = {items = {}, head = 1, tail = 0, count = 0}
 end
 
 function MusicValidationService:GetCacheStats()
