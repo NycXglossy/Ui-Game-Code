@@ -128,3 +128,25 @@ The Phase 26 target includes the following distinct detection and prevention cap
 Phase 26 is not complete until the live movement sources are inventoried, legitimate movement envelopes are measured, reliable server-observed path/displacement signals are demonstrated with acceptable false-positive rates, and Studio plus published-server tests prove safe recovery. Correction and enforcement remain disabled unless a later explicit design review authorizes them.
 
 **Current Phase 26 status:** source inventory, separate aggregate horizontal/vertical displacement-speed measurement, and one-use verified-teleport sampling integration committed. Noclip/wall-clip geometry validation, sustained fly analysis, thresholds, safe CFrame recovery, horizontal correction/clamping, runtime measurement, and live hierarchy/package inspection remain open. Phase 25 remains separately recorded. Phases 27–39 and Phase 40 cleanup are not changed by this document.
+
+## Follow-up review — scale and physics network ownership examples (2026-11-17)
+
+### Character scale policy
+
+- The supplied fixed 0.85×–1.15× clamp is not compatible with Tiki Tide's existing Utility Bar feature and is not adopted.
+- The tracked Utility Bar server action accepts finite numeric scale factors from 0.5× through 5×, applies them to the caller's own R15 scale values, and registers the resulting BodyScale factor with the existing MovementAuthority ledger. It does not support R6 scaling.
+- CharacterPhysicsGuard observes the four R15 scale values, compares their relative factor with the captured baseline, checks for inconsistent component scaling and broad sanity bounds (0.1×–10×), and consults MovementAuthority. It records bounded signals only; it does not clamp or rewrite scale values.
+- The observer's broad sanity bounds are not the Utility Bar entitlement/range policy. Preserve the 0.5×–5× Utility Bar contract. Do not add a second Changed-handler that races the legitimate scale service.
+- Remaining tests: exact 0.5×, 1×, intermediate, and 5× values; reset to captured baseline; respawn; character replacement; entitlement revoke; concurrent requests; R15 avatar scale defaults and unsupported R6/custom rigs.
+
+### Network ownership inventory
+
+- CharacterPhysicsGuard calls GetNetworkOwner on the observed HumanoidRootPart and aggregates server/client/unknown ownership buckets together with server-observed ping buckets. This is measurement only.
+- The reviewed first-party movement, Utility Bar, Tiki Tide Settings, and Kohl's adapter sources did not establish a server-owned InteractiveProps folder policy or a SetNetworkOwner(nil) enforcement service.
+- The supplied InteractiveProps example is therefore a design reference, not an existing Tiki Tide implementation. No blanket network-ownership override was added.
+- Before adding a policy, identify actual shared unanchored props and their scripts, constraints, touch/query behavior, ownership eligibility, and gameplay responsiveness requirements. Explicitly exclude player characters and evaluate mounts/vehicles separately. Apply server ownership only to designated shared objects when the server load and interaction latency are acceptable.
+- Runtime acceptance must cover ownership handoffs, player churn, newly inserted descendants, destroyed/reparented props, ineligible assemblies, and server physics cost. A failed SetNetworkOwner call must not silently become an assumed server-owned state.
+
+### Implementation decision
+
+No fixed scale clamp, standalone network-owner loop, or automatic movement correction was added. Existing Utility Bar scale authority, MovementAuthority, and passive CharacterPhysicsGuard observation remain the only tracked first-party paths.
