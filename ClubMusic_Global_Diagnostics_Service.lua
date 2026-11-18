@@ -10,6 +10,7 @@ Service.__index = Service
 local MAX_METRICS = 64
 local MAX_ERROR_RECORDS = 20
 local CHECK_INTERVAL_SECONDS = 60
+local MAX_HEALTH_TRANSITIONS = 20
 
 local function safeRead(callback: any, ...)
 	if type(callback) ~= "function" then return false, nil end
@@ -73,6 +74,13 @@ function Service.new(dependencies: {[string]: any})
 		lastSignature = "",
 		lastCheckAt = 0,
 		lastCheckError = nil,
+		healthHistory = {},
+		lastHealthState = nil,
+		healthStateSince = os.time(),
+		degradedSince = nil,
+		lastRecoveredAt = nil,
+		consecutiveDegradedChecks = 0,
+		healthTransitionCount = 0,
 	}, Service)
 end
 
@@ -119,6 +127,32 @@ function Service:_readStatus(name: string, callback: any): {[string]: any}
 	return statusFallback(name, if ok then nil else (name .. " status callback failed."))
 end
 
+function Service:_recordHealthState(state: string, detail: string)
+	local now = os.time()
+	local previous = self.lastHealthState
+	if previous ~= state then
+		table.insert(self.healthHistory, {
+			from = previous or "Unknown",
+			to = state,
+			at = now,
+			durationSeconds = math.max(0, now - (self.healthStateSince or now)),
+			detail = string.sub(tostring(detail or state), 1, 180),
+		})
+		while #self.healthHistory > MAX_HEALTH_TRANSITIONS do table.remove(self.healthHistory, 1) end
+		self.lastHealthState = state
+		self.healthStateSince = now
+		self.healthTransitionCount = math.min(1000000000, self.healthTransitionCount + 1)
+		if previous == "Degraded" and state ~= "Degraded" then self.lastRecoveredAt = now end
+	end
+	if state == "Degraded" then
+		self.degradedSince = self.degradedSince or now
+		self.consecutiveDegradedChecks = math.min(1000000000, self.consecutiveDegradedChecks + 1)
+	else
+		self.degradedSince = nil
+		self.consecutiveDegradedChecks = 0
+	end
+end
+
 function Service:Check(): boolean
 	local enabledOk, enabled = safeRead(self.d.isEnabled)
 	if not enabledOk then
@@ -134,6 +168,7 @@ function Service:Check(): boolean
 			syncDetail = "Diagnostics do not use cross-server synchronization.",
 			updatedAt = os.time(),
 		}
+		self:_recordHealthState("Degraded", self.status.detail)
 		return false
 	end
 	if enabled ~= true then
@@ -149,6 +184,7 @@ function Service:Check(): boolean
 			syncDetail = "Diagnostics are isolated to this server.",
 			updatedAt = os.time(),
 		}
+		self:_recordHealthState("Disabled", self.status.detail)
 		self.lastCheckAt = os.clock()
 		return true
 	end
@@ -231,6 +267,7 @@ function Service:Check(): boolean
 		watchdog = watchdog,
 		updatedAt = os.time(),
 	}
+	self:_recordHealthState(state, detail)
 	self.lastCheckAt = os.clock()
 	self.lastCheckError = nil
 	local signature = state .. "|" .. detail
@@ -247,6 +284,15 @@ function Service:GetStatus(): {[string]: any}
 		then math.max(0, os.clock() - self.lastCheckAt) else nil
 	status.lastCheckError = self.lastCheckError
 	status.checkIntervalSeconds = CHECK_INTERVAL_SECONDS
+	status.healthHistory = table.clone(self.healthHistory)
+	status.healthHistoryCapacity = MAX_HEALTH_TRANSITIONS
+	status.healthTransitionCount = self.healthTransitionCount
+	status.stateDurationSeconds = math.max(0, os.time() - (self.healthStateSince or os.time()))
+	status.degradedDurationSeconds = if self.degradedSince then math.max(0, os.time() - self.degradedSince) else 0
+	status.consecutiveDegradedChecks = self.consecutiveDegradedChecks
+	status.lastRecoveredAt = self.lastRecoveredAt
+	status.scope = "ServerLocal"
+	status.observationalOnly = true
 	return status
 end
 
