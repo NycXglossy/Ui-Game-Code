@@ -225,7 +225,9 @@ if vipZone and vipZone:IsA("BasePart") then
 			end
 
 			task.delay(ZONE_COOLDOWN_SECONDS, function()
-				zoneCooldowns[player.UserId] = nil
+				if zoneCooldowns[player.UserId] == now then
+					zoneCooldowns[player.UserId] = nil
+				end
 			end)
 		end)
 	end

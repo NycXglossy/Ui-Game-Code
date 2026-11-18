@@ -617,7 +617,7 @@ local function loadOptionalGlobalModule(moduleName: string): any?
 					warn("[ClubMusic Global] Security Core install manifest has the wrong class.")
 					return nil
 				end
-				local installedRelease = string.match(manifest.Value, "release=([%w]+)")
+				local installedRelease = string.match(manifest.Value, "[Rr]elease=([%w]+)")
 				securityCoreInstallStatus.manifestPresent = true
 				securityCoreInstallStatus.installedRelease = installedRelease
 				if installedRelease ~= EXPECTED_SECURITY_CORE_RELEASE then

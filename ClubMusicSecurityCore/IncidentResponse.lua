@@ -76,7 +76,6 @@ end
 -- Shared writer. Trusted intake is exposed only through server-side service APIs.
 local function openIncident(self,kind,summary,actorUserId,subjectUserId,trusted)
 	if not self.d.isEnabled() or not ALLOWED[kind] or type(summary)~="string" or #summary<1 or #summary>120 then return false,"Invalid incident." end
-	if not self.d.isEnabled() or not ALLOWED[kind] or type(summary)~="string" or #summary<1 or #summary>120 then return false,"Invalid incident." end
 	if not trusted and self.d.authorize(actorUserId,"IncidentResponse")~=true then return false,"Incident response permission denied." end
 	local userId=if validUserId(subjectUserId) then math.floor(subjectUserId) else math.floor(actorUserId)
 	local key="TT:INC:"..tostring(userId)
