@@ -320,6 +320,11 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 	if action == "ClubClosurePrepare" or action == "ClubClosureConfirm"
 		or action == "ClubReopenPrepare" or action == "ClubReopenConfirm"
 		or action == "ClubClosureStatus" then
+		if action ~= "ClubClosureConfirm" and action ~= "ClubReopenConfirm"
+			and not consumeActionCooldown(player) then
+			sendResult(player, action, false, "Please wait before using another security action.")
+			return
+		end
 		if action == "ClubClosureStatus" then
 			local allowed, denial = hasPermission(player, "SecurityPolicy")
 			if not allowed then sendResult(player, action, false, denial or "SecurityPolicy permission required."); return end
