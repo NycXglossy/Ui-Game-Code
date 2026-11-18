@@ -1800,7 +1800,6 @@ ControllerFunctions.globalInvoke = function(name: string, ...: any): any
 	end))
 	return table.unpack(results, 1, results.n)
 end
-local globalEventObject = if globalApi then globalApi:FindFirstChild("GlobalEvent") else nil
 
 local cachedGlobalXpMultiplier = 1
 local cachedGlobalXpExpiresAt = 0
