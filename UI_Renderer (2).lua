@@ -5205,6 +5205,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local playing = typeof(state.nowPlaying) == "table"
 		local paused = playbackIsPaused()
 		local t = visualizerTime
+		local showHudVisualizer = gui.Enabled and hud.Visible
+		local refs = vizRefs
+		local showPanelVisualizer = expanded and refs ~= nil and refs.container.Parent ~= nil
+		-- Keep the playback clock advancing while hidden, but avoid loudness
+		-- queries and per-bar work when neither visual surface can be seen.
+		if not showHudVisualizer and not showPanelVisualizer and not (expanded and #titleAnimators > 0) then
+			return
+		end
 		local energy = 0.1
 		-- A paused server track must not keep the visualizer reacting to stale
 		-- PlaybackLoudness values; retain only the quiet idle baseline.
@@ -5220,17 +5228,18 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		local level = if volume <= 0 then 0 else 0.25 + 0.75 * volume
 
-		for i, piece in ipairs(hudBars) do
-			local wave = 0.5 + 0.5 * math.sin(t * (3 + i * 1.3) + i * 1.7)
-			piece.Size = UDim2.new(0, 3, math.clamp(0.12 + 0.88 * energy * level * wave, 0.12, 1), 0)
+		if showHudVisualizer then
+			for i, piece in ipairs(hudBars) do
+				local wave = 0.5 + 0.5 * math.sin(t * (3 + i * 1.3) + i * 1.7)
+				piece.Size = UDim2.new(0, 3, math.clamp(0.12 + 0.88 * energy * level * wave, 0.12, 1), 0)
+			end
 		end
 
 		if expanded then
 			for _, update in ipairs(titleAnimators) do update(t) end
 		end
 
-		local refs = vizRefs
-		if expanded and refs and refs.container.Parent then
+		if showPanelVisualizer and refs then
 			for i, piece in ipairs(refs.bars) do
 				local wave = 0.5 + 0.5 * math.sin(t * (2 + (i % 5) * 0.7) + refs.phases[i])
 				local noise = math.noise(i * 0.43 + refs.seed, t * 1.3) * 0.5 + 0.5
