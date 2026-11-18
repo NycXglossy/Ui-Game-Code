@@ -14,6 +14,7 @@ local SAMPLE_WINDOW_SECONDS = 60
 local MEMORY_SAMPLE_SECONDS = 15
 local PING_SAMPLE_SECONDS = 5
 local AUDIO_SAMPLE_SECONDS = 10
+local MAP_AUDIT_YIELD_EVERY = 500
 local SLOW_FRAME_SECONDS = 0.05
 local SEVERE_FRAME_SECONDS = 0.1
 local MAX_BUCKETS = 64
@@ -41,6 +42,8 @@ function Service.new()
 		audioSnapshot = {state = "Starting", playing = false, timePositionSeconds = nil, sourceCount = 0},
 		audioSampleAt = nil,
 		audioError = nil,
+		mapAudit = {state = "NotStarted", totalLights = nil, shadowLights = nil, particleEmittersAndBeams = nil, scannedInstances = 0},
+		mapAuditThread = nil,
 		startedAt = 0,
 	}, Service)
 end
@@ -177,10 +180,64 @@ function Service:_sampleAudio()
 	end
 end
 
+-- One-shot, opt-in inventory of workspace lighting and visual effects.
+-- Counts are scene-complexity indicators, not direct GPU-cost measurements.
+-- Yield periodically so a large map scan does not monopolize a client frame.
+function Service:_auditWorkspaceEffects()
+	if self.mapAudit.state == "Scanning" or self.mapAudit.state == "Complete" then return end
+	self.mapAudit = {
+		state = "Scanning",
+		totalLights = 0,
+		shadowLights = 0,
+		particleEmittersAndBeams = 0,
+		scannedInstances = 0,
+	}
+	self.mapAuditThread = task.spawn(function()
+		local ok, descendants = pcall(function()
+			return workspace:GetDescendants()
+		end)
+		if not ok or typeof(descendants) ~= "table" then
+			self.mapAudit.state = "Unavailable"
+			self.mapAudit.lastError = string.sub(tostring(descendants or "Workspace descendants unavailable."), 1, 160)
+			return
+		end
+
+		for index, instance in ipairs(descendants) do
+			if not self.running then
+				self.mapAudit.state = "Cancelled"
+				self.mapAuditThread = nil
+				return
+			end
+			self.mapAudit.scannedInstances += 1
+			if instance:IsA("Light") then
+				self.mapAudit.totalLights += 1
+				local readOk, shadows = pcall(function() return instance.Shadows end)
+				if readOk and shadows == true then
+					self.mapAudit.shadowLights += 1
+				end
+			elseif instance:IsA("ParticleEmitter") or instance:IsA("Beam") then
+				self.mapAudit.particleEmittersAndBeams += 1
+			end
+			if index % MAP_AUDIT_YIELD_EVERY == 0 then
+				task.wait()
+			end
+		end
+
+		self.mapAudit.state = "Complete"
+		print("--- CLUB MAP BOTTLENECK AUDIT ---")
+		print("Total Light Objects:", self.mapAudit.totalLights)
+		print("Lights with Shadows Enabled:", self.mapAudit.shadowLights)
+		print("Total Beams & Particle Emitters:", self.mapAudit.particleEmittersAndBeams)
+		print("Workspace Descendants Scanned:", self.mapAudit.scannedInstances)
+		self.mapAuditThread = nil
+	end)
+end
+
 function Service:Start(): boolean
 	if self.running then return false end
 	self.running = true
 	self.startedAt = os.clock()
+	self:_auditWorkspaceEffects()
 	self.connection = RunService.RenderStepped:Connect(function(deltaTime)
 		self:_recordFrame(deltaTime)
 	end)
@@ -249,6 +306,14 @@ function Service:GetStatus(): {[string]: any}
 			staleAfterSeconds = MEMORY_STALE_SECONDS,
 			lastError = self.memoryError,
 		},
+		mapAudit = {
+			state = self.mapAudit.state,
+			totalLights = self.mapAudit.totalLights,
+			shadowLights = self.mapAudit.shadowLights,
+			particleEmittersAndBeams = self.mapAudit.particleEmittersAndBeams,
+			scannedInstances = self.mapAudit.scannedInstances,
+			lastError = self.mapAudit.lastError,
+		},
 		audio = {
 			state = if self.audioError then "Partial" else self.audioSnapshot.state,
 			playing = self.audioSnapshot.playing,
@@ -285,6 +350,11 @@ function Service:Stop()
 	if self.samplerThread then
 		pcall(task.cancel, self.samplerThread)
 		self.samplerThread = nil
+	end
+	if self.mapAuditThread then
+		pcall(task.cancel, self.mapAuditThread)
+		self.mapAuditThread = nil
+		if self.mapAudit.state == "Scanning" then self.mapAudit.state = "Cancelled" end
 	end
 end
 
