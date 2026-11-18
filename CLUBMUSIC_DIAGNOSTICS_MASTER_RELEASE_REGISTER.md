@@ -390,3 +390,7 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - Consolidation details and validation are recorded in `CLUBMUSIC_PHASE0_33_PERFORMANCE_COMPATIBILITY_CONSOLIDATION.md`.
 - Source-only verification completed; Roblox Studio/device regression testing remains outstanding.
 
+### Performance compatibility follow-up — navigation icon tint cache
+
+- Native navigation icon tint targets are collected once at construction and reused during tab changes; the repeated per-render descendant traversal was removed.
+- Static source verification only; Studio/device profiling and UI regression tests remain outstanding.
