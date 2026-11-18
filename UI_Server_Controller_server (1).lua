@@ -6474,6 +6474,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | healthy " .. tostring(registryCounts.Healthy or 0)
 				.. " | degraded " .. tostring(registryCounts.Degraded or 0)
 				.. " | unavailable " .. tostring(registryCounts.Unavailable or 0)
+				.. " | misconfigured " .. tostring(registryCounts.Misconfigured or 0)
 				.. " | verified dependencies " .. tostring(registry.dependencyCount or 0),
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(watchdog.state or "Unavailable"),
