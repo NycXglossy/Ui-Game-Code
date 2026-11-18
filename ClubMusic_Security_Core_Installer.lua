@@ -12,7 +12,12 @@ local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
 local RELEASE_COMMIT = "67bfde5823d81d2b4d55ca372127b026403e1f5a"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
+-- Phase 32 is pinned independently so the previously certified SecurityCore
+-- module snapshot is not silently changed by later commits.
+local PHASE32_COMMIT = "6ae4883c2c260df61bf760b8637dd339bda33d7b"
+local PHASE32_BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. PHASE32_COMMIT .. "/ClubMusicSecurityCore/"
 local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "AnimationIntegrityService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence", "HoneypotManager", "ClientIntegrityTelemetry", "ReceiptAuthority"}
+local PHASE32_MODULE_NAMES = {"ModerationPunishmentService", "AccountRiskSignalService", "ChatAbuseDetectionService", "Phase32ServiceBundle"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 local BOOTSTRAP_NAME = "TikiTideCharacterPhysicsGuardBootstrap"
 local STAGE_NAME = FOLDER_NAME .. "_Staging"
@@ -68,6 +73,15 @@ for _, name in ipairs(MODULE_NAMES) do
  end
  stagedSources[name] = source
 end
+for _, name in ipairs(PHASE32_MODULE_NAMES) do
+ local ok, source = pcall(function() return HttpService:GetAsync(PHASE32_BASE_URL .. name .. ".lua", true) end)
+ if not ok or type(source) ~= "string" or #source < 100 then
+  error("Could not stage Phase 32 module " .. name .. "; active installation was not changed.")
+ end
+ stagedSources[name] = source
+end
+local ALL_MODULE_NAMES = table.clone(MODULE_NAMES)
+for _, name in ipairs(PHASE32_MODULE_NAMES) do table.insert(ALL_MODULE_NAMES, name) end
 
 if oldStage then oldStage:Destroy() end
 if oldBootstrapStage then oldBootstrapStage:Destroy() end
@@ -77,7 +91,7 @@ local stage = Instance.new("Folder")
 stage.Name = STAGE_NAME
 stage.Parent = ServerStorage
 local expected = {}
-for _, name in ipairs(MODULE_NAMES) do expected[name] = true end
+for _, name in ipairs(ALL_MODULE_NAMES) do expected[name] = true end
 if active then
  for _, child in ipairs(active:GetChildren()) do
   if not expected[child.Name] and child.Archivable then
@@ -86,7 +100,7 @@ if active then
   end
  end
 end
-for _, name in ipairs(MODULE_NAMES) do
+for _, name in ipairs(ALL_MODULE_NAMES) do
  local module = Instance.new("ModuleScript")
  module.Name = name
  module.Source = stagedSources[name]
@@ -95,7 +109,7 @@ for _, name in ipairs(MODULE_NAMES) do
 end
 local manifest = Instance.new("StringValue")
 manifest.Name = "InstallManifest"
-manifest.Value = "release=" .. RELEASE_COMMIT .. ";modules=" .. table.concat(MODULE_NAMES, ",") .. ";installedAt=" .. DateTime.now():ToIsoDate()
+manifest.Value = "securityCoreRelease=" .. RELEASE_COMMIT .. ";phase32Release=" .. PHASE32_COMMIT .. ";modules=" .. table.concat(ALL_MODULE_NAMES, ",") .. ";installedAt=" .. DateTime.now():ToIsoDate()
 manifest.Parent = stage
 
 local bootstrapSource = [=[
@@ -541,7 +555,8 @@ if legacyAuthorization then
  end
 end
 
-print("[Tiki Tide Security] Installed " .. tostring(#MODULE_NAMES) .. " modules; release=" .. RELEASE_COMMIT)
+print("[Tiki Tide Security] Installed " .. tostring(#ALL_MODULE_NAMES) .. " modules; SecurityCore release=" .. RELEASE_COMMIT .. "; Phase32 release=" .. PHASE32_COMMIT)
+print("[Tiki Tide Security] Phase 32 modules installed; updated controller and Kohl's Admin addon sources are still required for commands and enforcement wiring.")
 print("[Tiki Tide Security] Manifest: ServerStorage/" .. FOLDER_NAME .. "/InstallManifest")
 print("[Tiki Tide Security] Previous release retained under ServerStorage/" .. BACKUP_NAME)
 print("[Tiki Tide Security] Staff spectator camera installed under StarterPlayer/StarterPlayerScripts/" .. CAMERA_NAME)
