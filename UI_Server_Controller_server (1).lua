@@ -239,12 +239,17 @@ local function recordPurchaseDiagnostic(source: string, userId: number, itemId: 
 	elseif outcome == "AwaitingPlayerProfile" then
 		purchaseDiagnosticStats.pending += 1
 		purchaseDiagnosticStats.lastPendingAt = now
-	elseif outcome == "XPBoostActivationFailed" or outcome == "ReceiptPersistenceFailed" then
+	elseif outcome == "AwaitingPlayerProfile" or outcome == "XPBoostActivationFailed"
+		or outcome == "ReceiptPersistenceFailed" or outcome == "ReceiptConcurrentRetry"
+		or outcome == "ReceiptConcurrencyCapacity" then
 		purchaseDiagnosticStats.pending += 1
-		purchaseDiagnosticStats.failures += 1
 		purchaseDiagnosticStats.lastPendingAt = now
-		purchaseDiagnosticStats.lastFailureAt = now
-	elseif outcome == "RejectedUnregisteredProduct" then
+		if outcome == "XPBoostActivationFailed" or outcome == "ReceiptPersistenceFailed" then
+			purchaseDiagnosticStats.failures += 1
+			purchaseDiagnosticStats.lastFailureAt = now
+		end
+	elseif outcome == "RejectedUnregisteredProduct" or outcome == "MalformedReceipt"
+		or outcome == "ReceiptHandlerFailed" or outcome == "ReceiptInvalidDecision" then
 		purchaseDiagnosticStats.failures += 1
 		purchaseDiagnosticStats.lastFailureAt = now
 	elseif outcome == "ReceiptDuplicate" then
@@ -4035,8 +4040,9 @@ else
 		receiptAuthorityStatus.Name = "GetTikiTideReceiptAuthorityStatus"
 		receiptAuthorityStatus.Parent = ServerStorage
 	end
-	if receiptAuthority then
-		receiptAuthorityStatus.OnInvoke = function() return receiptAuthority:GetStatus() end
+	receiptAuthorityStatus.OnInvoke = function()
+		return if receiptAuthority then receiptAuthority:GetStatus()
+			else {state = "Unavailable", scope = "ServerLocalIngress", durableAuthority = "ExistingClubMusicReceiptJournals"}
 	end
 end
 
