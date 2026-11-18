@@ -461,3 +461,15 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Found and fixed a lifecycle gap: the controller previously assigned an anonymous `OnInvoke` callback to the ServerStorage BindableFunction without clearing that exact callback on Script destruction. The controller now rejects calls once shutdown begins and clears the callback only if the BindableFunction still belongs to ServerStorage and its `OnInvoke` is the exact callback owned by the shutting-down controller. A replacement controller's callback is therefore not cleared.
 - No permission levels, rank thresholds, operation mappings, remote contracts, or moderation/purchase authority were changed. No client authorization or new remotes were added.
 - Static source inspection only; no Luau compilation, BindableFunction lifecycle simulation, adversarial server-script test, Roblox Studio/runtime test, or deployment was performed.
+
+
+
+### Yield-boundary administrative actor revalidation (2026-11-18)
+
+- Continued the administrative command audit, focusing on local actions that follow a server-only authorization request.
+- Found that `adminBridgeAuthorize` invoked the Global API's `AuthorizeGlobalAction` BindableFunction (a yielding boundary) and trusted a positive result without confirming the original Player was still connected when the call returned.
+- The helper now validates a live Player before invocation, captures the immutable UserId, and accepts the authorization result only if the same Player instance remains parented to Players with the same UserId after the yielding call. This closes the departure/replacement window before local-only operations such as emergency stop, emergency request lock, and local queue clearing proceed.
+- Global moderation/configuration mutation endpoints retain their own server-side authorization and durable-write checks. An already-authorized durable operation that has begun is not cancelled merely because its actor disconnects during the storage transaction; this preserves atomic persistence semantics. The change does not alter the existing 120–300 second rank-cache freshness window.
+- Reviewed the local owner membership-reward command and DJ session start/handoff/end paths: their authorization and state mutation segments contain no yield between the final role/player checks and the local mutation. Phase 32 mutation services continue to perform their own permission checks.
+- No role thresholds, permission mappings, purchase authority, moderation semantics, client remotes, or cross-server telemetry were changed.
+- Static source inspection only; no Luau compilation, yielding BindableFunction simulation, DataStore fault injection, Roblox Studio/runtime test, or deployment was performed.
