@@ -12,6 +12,7 @@ local VALID_STATES = {
 	Healthy = true,
 	Degraded = true,
 	Unavailable = true,
+	Misconfigured = true,
 	NotInstalled = true,
 	Disabled = true,
 }
@@ -102,13 +103,16 @@ function Registry:RegisterDependency(name: any, instance: any, expectedClass: an
 	if not current and self.registered >= MAX_SERVICES then return false end
 	local classOk, actualClass = pcall(function() return instance.ClassName end)
 	local parentOk, actualParent = pcall(function() return instance.Parent end)
-	local valid = classOk and parentOk and actualClass == expectedClass and actualParent ~= nil
+	local present = classOk and parentOk and actualParent ~= nil
+	local valid = present and actualClass == expectedClass
 		and (expectedParent == nil or actualParent == expectedParent)
+	local state = if valid then "Healthy" elseif not present then "Unavailable" else "Misconfigured"
 	self.services[name] = {
 		name = name,
-		state = if valid then "Healthy" else "Unavailable",
+		state = state,
 		detail = if valid then "Dependency class and hierarchy are valid."
-			else "Dependency is missing, reparented, or has an unexpected class.",
+			elseif not present then "Dependency instance is missing or no longer parented."
+			else "Dependency has an unexpected class or parent.",
 		required = required == true,
 		dependency = true,
 		instance = instance,
@@ -136,10 +140,13 @@ local function copyEntry(entry: any): any
 		local ok, className, parent = pcall(function()
 			return entry.instance.ClassName, entry.instance.Parent
 		end)
-		if not ok or parent == nil or className ~= entry.expectedClass
-			or (entry.expectedParent ~= nil and parent ~= entry.expectedParent) then
+		if not ok or parent == nil then
 			copy.state = "Unavailable"
-			copy.detail = "Dependency is missing, reparented, or has an unexpected class."
+			copy.detail = "Dependency instance is missing or no longer parented."
+		elseif className ~= entry.expectedClass
+			or (entry.expectedParent ~= nil and parent ~= entry.expectedParent) then
+			copy.state = "Misconfigured"
+			copy.detail = "Dependency has an unexpected class or parent."
 		else
 			copy.state = "Healthy"
 			copy.detail = "Dependency class and hierarchy are valid."
@@ -159,7 +166,7 @@ end
 
 function Registry:GetStatus(): {[string]: any}
 	local services = {}
-	local counts = {Healthy = 0, Degraded = 0, Unavailable = 0, NotInstalled = 0, Starting = 0, Disabled = 0}
+	local counts = {Healthy = 0, Degraded = 0, Unavailable = 0, Misconfigured = 0, NotInstalled = 0, Starting = 0, Disabled = 0}
 	local requiredIssues = {}
 	local dependencyCount = 0
 	for name, entry in pairs(self.services) do
