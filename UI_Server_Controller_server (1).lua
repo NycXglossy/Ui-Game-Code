@@ -6768,6 +6768,7 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 				target:Kick("You are globally banned from this experience.")
 			else
 				blockedUsers[message.userId] = if message.requestBlocked then true else nil
+				if message.requestBlocked then ControllerFunctions.purgeUserEntries(message.userId) end
 				target:SetAttribute("GlobalModerationPending", false)
 				publishState(nil)
 			end
