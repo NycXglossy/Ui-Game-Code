@@ -393,10 +393,29 @@ ControllerFunctions.reportStartupError = function(subsystem: string, operation: 
 	return errorId
 end
 
+-- Resolve canonical ServerStorage modules from either direct-child installation
+-- or the bundled ClubMusic_ServerStorage_Modules folder.
+ControllerFunctions.findServerStorageModule = function(moduleName: string): Instance?
+	if typeof(moduleName) ~= "string" or #moduleName < 1 or #moduleName > 100 then return nil end
+	local direct = serverStorage:FindFirstChild(moduleName)
+	if direct then return direct end
+	local packageFolder = serverStorage:FindFirstChild("ClubMusic_ServerStorage_Modules")
+	if packageFolder and packageFolder:IsA("Folder") then
+		local bundled = packageFolder:FindFirstChild(moduleName)
+		if bundled then return bundled end
+	end
+	local waited = serverStorage:WaitForChild(moduleName, 20)
+	if waited then return waited end
+	if packageFolder and packageFolder:IsA("Folder") then
+		return packageFolder:WaitForChild(moduleName, 2)
+	end
+	return nil
+end
+
 remotes:SetAttribute("StartupStage", "LoadingMusicCatalogService")
-local catalogModule = serverStorage:WaitForChild("MusicCatalogService", 20)
+local catalogModule = ControllerFunctions.findServerStorageModule("MusicCatalogService")
 remotes:SetAttribute("StartupStage", "LoadingMusicPlaylistService")
-local playlistModule = serverStorage:WaitForChild("MusicPlaylistService", 20)
+local playlistModule = ControllerFunctions.findServerStorageModule("MusicPlaylistService")
 if not catalogModule or not catalogModule:IsA("ModuleScript") then
 	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicCatalogService ModuleScript.")
 	error("[ClubMusic] Missing ServerStorage.MusicCatalogService ModuleScript.")
@@ -415,7 +434,7 @@ if not playlistRequireOk then
 	remotes:SetAttribute("StartupError", "MusicPlaylistService require failed: " .. string.sub(tostring(playlistRequireResult), 1, 180))
 	error("[ClubMusic] MusicPlaylistService failed to load: " .. tostring(playlistRequireResult))
 end
-local validationModule = serverStorage:WaitForChild("MusicValidationService", 20)
+local validationModule = ControllerFunctions.findServerStorageModule("MusicValidationService")
 if not validationModule or not validationModule:IsA("ModuleScript") then
 	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicValidationService ModuleScript.")
 	error("[ClubMusic] Missing ServerStorage.MusicValidationService ModuleScript.")
@@ -1752,7 +1771,7 @@ end
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
-local receiptHashModule = ServerStorage:WaitForChild("ClubMusic_ReceiptHash", 20)
+local receiptHashModule = ControllerFunctions.findServerStorageModule("ClubMusic_ReceiptHash")
 if not receiptHashModule or not receiptHashModule:IsA("ModuleScript") then
 	remotes:SetAttribute("StartupError", "Missing ServerStorage.ClubMusic_ReceiptHash ModuleScript.")
 	error("[ClubMusic] Missing ServerStorage.ClubMusic_ReceiptHash ModuleScript.")
@@ -1891,10 +1910,7 @@ remotes:SetAttribute("StartupStage", "LoadingMusicQueueManager")
 
 -- WaitForChild only searches direct children. Report both the direct-child inventory
 -- and any nested matches so incorrect placement is distinguishable from absence.
-local queueManagerModule = ServerStorageForQueue:FindFirstChild("MusicQueueManager")
-if not queueManagerModule then
-	queueManagerModule = ServerStorageForQueue:WaitForChild("MusicQueueManager", 20)
-end
+local queueManagerModule = ControllerFunctions.findServerStorageModule("MusicQueueManager")
 if not queueManagerModule or not queueManagerModule:IsA("ModuleScript") then
 	local directChildren = if ControllerFunctions.ErrorHandler
 		then ControllerFunctions.ErrorHandler.DescribeChildren(ServerStorageForQueue)
