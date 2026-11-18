@@ -109,7 +109,7 @@ return function(_K: any)
 		SecurityStatus = true, SecurityIncidents = true, SecurityPolicy = true,
 		OperationalHealth = true, OperationalDiagnostics = true, OperationalServices = true,
 		OperationalErrors = true, OperationalMetrics = true, OperationalSecurityLog = true,
-		OperationalServers = true, OperationalRateLimit = true, OperationalConfig = true,
+		OperationalRateLimit = true, OperationalConfig = true,
 		OperationalRecovery = true, OperationalReconcile = true,
 		PurchaseDiagnostics = true, SecurityReplay = true, SecurityThreatIntelligence = true,
 		StaffSpectatorState = true,
@@ -191,7 +191,7 @@ return function(_K: any)
 			OperationalCatalogRefresh = true, OperationalHealth = true,
 			OperationalDiagnostics = true, OperationalServices = true,
 			OperationalErrors = true, OperationalMetrics = true,
-			OperationalSecurityLog = true, OperationalServers = true,
+			OperationalSecurityLog = true,
 			OperationalRateLimit = true, OperationalConfig = true,
 			OperationalRecovery = true, OperationalReconcile = true,
 			PurchaseDiagnostics = true, SecurityReplay = true, SecurityThreatIntelligence = true,
@@ -302,7 +302,6 @@ return function(_K: any)
 	register("clubmusic-errors", "Show recent ClubMusic error IDs and subsystem metadata.", "Administration", "OperationalErrors", {"cmerrors"})
 	register("clubmusic-metrics", "Show ClubMusic queue, playback, and service metrics.", "Administration", "OperationalMetrics", {"cmmetrics"})
 	register("clubmusic-securitylog", "Show recent ClubMusic security audit events.", "Administration", "OperationalSecurityLog", {"cmsecuritylog", "cmaudit"})
-	register("clubmusic-servers", "List registered ClubMusic servers and heartbeat status.", "Administration", "OperationalServers", {"cmserverlist"})
 	register("clubmusic-ratelimit", "Show shared ClubMusic rate-limit counters.", "Administration", "OperationalRateLimit", {"cmratelimit"})
 	register("clubmusic-config", "Show validated ClubMusic global configuration.", "Administration", "OperationalConfig", {"cmconfig"})
 	register("clubmusic-recovery", "Show ClubMusic shared-queue recovery status.", "Administration", "OperationalRecovery", {"cmrecovery"})
