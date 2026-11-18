@@ -5,6 +5,7 @@
 
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
+local SoundService = game:GetService("SoundService")
 
 local Service = {}
 Service.__index = Service
@@ -12,6 +13,7 @@ Service.__index = Service
 local SAMPLE_WINDOW_SECONDS = 60
 local MEMORY_SAMPLE_SECONDS = 15
 local PING_SAMPLE_SECONDS = 5
+local AUDIO_SAMPLE_SECONDS = 10
 local SLOW_FRAME_SECONDS = 0.05
 local SEVERE_FRAME_SECONDS = 0.1
 local MAX_BUCKETS = 64
@@ -36,6 +38,9 @@ function Service.new()
 		pingMs = nil,
 		pingSampleAt = nil,
 		pingError = nil,
+		audioSnapshot = {state = "Starting", playing = false, timePositionSeconds = nil, sourceCount = 0},
+		audioSampleAt = nil,
+		audioError = nil,
 		startedAt = 0,
 	}, Service)
 end
@@ -105,6 +110,73 @@ function Service:_samplePing()
 	end
 end
 
+-- Observe only the replicated, controller-owned modern AudioPlayer graph.
+-- AudioPlayer has no Sound.PlaybackLoudness property; do not invent a loudness
+-- value or add an AudioAnalyzer graph solely for diagnostics.
+function Service:_sampleAudio()
+	local selectedPlayer = nil
+	local playingPlayer = nil
+	local sourceCount = 0
+	local readErrors = 0
+
+	local ok, result = pcall(function()
+		for _, root in ipairs(SoundService:GetChildren()) do
+			if root:GetAttribute("ManagedByClubMusicAudioBackend") == true then
+				local player = root:FindFirstChild("AudioPlayer")
+				if player and player:IsA("AudioPlayer") then
+					sourceCount += 1
+					local stateOk, isPlaying = pcall(function() return player.IsPlaying end)
+					if not stateOk then
+						readErrors += 1
+					elseif isPlaying == true then
+						playingPlayer = player
+					elseif not selectedPlayer then
+						selectedPlayer = player
+					end
+				end
+			end
+		end
+	end)
+
+	if not ok then
+		self.audioError = string.sub(tostring(result), 1, 160)
+		self.audioSnapshot = {state = "Unavailable", playing = false, timePositionSeconds = nil, sourceCount = 0}
+		self.audioSampleAt = os.time()
+		return
+	end
+
+	local activePlayer = playingPlayer or selectedPlayer
+	local position = nil
+	if activePlayer then
+		local positionOk, value = pcall(function() return activePlayer.TimePosition end)
+		if positionOk and finite(value) then
+			position = value
+		else
+			readErrors += 1
+		end
+	end
+
+	self.audioSnapshot = {
+		state = if sourceCount == 0 then "NotFound" elseif readErrors > 0 then "Partial" else "Measured",
+		playing = playingPlayer ~= nil,
+		timePositionSeconds = position,
+		sourceCount = sourceCount,
+		sourceType = if activePlayer then "ModernAudioPlayer" else nil,
+		loudness = nil,
+		loudnessState = "Unsupported: AudioPlayer does not expose Sound.PlaybackLoudness",
+	}
+	self.audioError = if readErrors > 0 then "One or more AudioPlayer properties could not be read." else nil
+	self.audioSampleAt = os.time()
+
+	if playingPlayer then
+		print(string.format(
+			"[ClubMusic][ClientAudioDiagnostics] Source: Modern AudioPlayer | Time: %s s | Client Ping: %s ms | Loudness: unsupported",
+			if position then string.format("%.2f", position) else "n/a",
+			if self.pingMs then tostring(math.floor(self.pingMs + 0.5)) else "n/a"
+		))
+	end
+end
+
 function Service:Start(): boolean
 	if self.running then return false end
 	self.running = true
@@ -115,6 +187,7 @@ function Service:Start(): boolean
 	self.samplerThread = task.spawn(function()
 		local nextMemory = 0
 		local nextPing = 0
+		local nextAudio = 0
 		while self.running do
 			local now = os.clock()
 			if now >= nextMemory then
@@ -124,6 +197,10 @@ function Service:Start(): boolean
 			if now >= nextPing then
 				self:_samplePing()
 				nextPing = now + PING_SAMPLE_SECONDS
+			end
+			if now >= nextAudio then
+				self:_sampleAudio()
+				nextAudio = now + AUDIO_SAMPLE_SECONDS
 			end
 			task.wait(1)
 		end
@@ -150,6 +227,7 @@ function Service:GetStatus(): {[string]: any}
 	local fps = if averageDelta and averageDelta > 0 then 1 / averageDelta else nil
 	local memoryAge = if self.memorySampleAt then math.max(0, os.time() - self.memorySampleAt) else nil
 	local pingAge = if self.pingSampleAt then math.max(0, os.time() - self.pingSampleAt) else nil
+	local audioAge = if self.audioSampleAt then math.max(0, os.time() - self.audioSampleAt) else nil
 	return {
 		state = if frames > 0 then "Available" else "Starting",
 		scope = "ClientLocalUntrusted",
@@ -170,6 +248,19 @@ function Service:GetStatus(): {[string]: any}
 			ageSeconds = memoryAge,
 			staleAfterSeconds = MEMORY_STALE_SECONDS,
 			lastError = self.memoryError,
+		},
+		audio = {
+			state = if self.audioError then "Partial" else self.audioSnapshot.state,
+			playing = self.audioSnapshot.playing,
+			timePositionSeconds = self.audioSnapshot.timePositionSeconds,
+			sourceCount = self.audioSnapshot.sourceCount,
+			sourceType = self.audioSnapshot.sourceType,
+			loudness = self.audioSnapshot.loudness,
+			loudnessState = self.audioSnapshot.loudnessState,
+			sampledAt = self.audioSampleAt,
+			ageSeconds = audioAge,
+			sampleIntervalSeconds = AUDIO_SAMPLE_SECONDS,
+			lastError = self.audioError,
 		},
 		ping = {
 			state = if self.pingError then "Unavailable" elseif pingAge and pingAge > PING_STALE_SECONDS then "Stale"
