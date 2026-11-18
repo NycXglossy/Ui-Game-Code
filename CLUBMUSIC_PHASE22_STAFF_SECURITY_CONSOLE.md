@@ -78,7 +78,8 @@ The console uses action buttons and context-labelled fields rather than requirin
 4. The server invokes the existing server-only `ServerStorage.ClubMusicAdminBridge`.
 5. The controller's existing staff check, per-operation rank/permission checks, validation, service calls, and action scopes remain authoritative. The UI does not grant permissions.
 6. The client refreshes console visibility from a server authorization response every 30 seconds; this is presentation only, and every command is still reauthorized by the controller.
-7. Existing global commands retain their original scopes. The separate door lockdown remains current-server-only and does not use MessagingService, MemoryStore, or DataStore.
+7. The existing Security Core rank cache retains its configured refresh window; the 30-second UI poll does not promise immediate rank-revocation propagation. Server-side permission checks remain mandatory for every action.
+8. Existing global commands retain their original scopes. The separate door lockdown remains current-server-only and does not use MessagingService, MemoryStore, or DataStore.
 
 ### Installation
 
