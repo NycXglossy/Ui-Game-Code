@@ -231,11 +231,13 @@ if vipZone and vipZone:IsA("BasePart") then
 				warn("[Tiki Tide][SecurityServer] ClubEntrance is missing or invalid; trespass was recorded without teleport.")
 			end
 
+			local incidentReason = if closed then "Entered VIP zone while the club was closed."
+				else "Entered VIP zone without verified VIP entitlement."
 			if systemEndpoint and systemEndpoint:IsA("BindableFunction") then
 				local callOk, accepted, incidentId = pcall(function()
 					return systemEndpoint:Invoke(
 						"SecurityAlert",
-						"Entered VIP zone without verified VIP entitlement.",
+						incidentReason,
 						player.UserId,
 						"VIPRestrictedZone"
 					)
@@ -245,7 +247,7 @@ if vipZone and vipZone:IsA("BasePart") then
 					notifyStaff({
 						Category = "Zone Trespass",
 						TargetName = player.Name,
-						Reason = "Entered VIP zone without verified VIP entitlement.",
+						Reason = incidentReason,
 						ReporterName = "Automated Security",
 						Id = alertId,
 						kind = "SecurityAlert",
