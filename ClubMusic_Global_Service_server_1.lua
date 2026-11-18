@@ -71,6 +71,7 @@ local globalServiceRegistry: any = nil
 local globalServerHealthService: any = nil
 local globalLocalWatchdog: any = nil
 local subscriptionStatus: {[string]: string} = {}
+local subscriptionConnections: {[string]: RBXScriptConnection} = {}
 local messagingPublishSuccess = 0
 local messagingPublishFailures = 0
 local messagingReceived = 0
@@ -1245,6 +1246,10 @@ script.Destroying:Connect(function()
 	local pendingStart = diagnosticsStartThread
 	diagnosticsStartThread = nil
 	if pendingStart then pcall(task.cancel, pendingStart) end
+	for topic, connection in pairs(subscriptionConnections) do
+		subscriptionConnections[topic] = nil
+		pcall(function() connection:Disconnect() end)
+	end
 	if lifecycleJanitor then lifecycleJanitor:Cleanup() end
 end)
 
@@ -1611,18 +1616,13 @@ local function onCatalog(message)
 	-- carry only a validated track key and boolean decision.
 	if typeof(data.trackId) == "string" and #data.trackId <= 64
 		and string.match(data.trackId, "^[%w%-_]+$") and typeof(data.blocked) == "boolean" then
-		globalEventBindable:Fire({kind = "TrackModeration", trackId = data.trackId, blocked = data.blocked, senderJob = data.senderJob})
-	else
-		globalEventBindable:Fire({kind = "Catalog", senderJob = data.senderJob, at = data.at})
-	end
-end
-
-local function subscribeWithRetry(topic: string, callback: (any) -> ())
+		globalEventBinlocal function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	ownThread(task.spawn(function()
 		while SERVICE_ENABLED and not globalServiceShuttingDown do
 			local ok, subscriptionOrError = pcall(function()
 				return MessagingService:SubscribeAsync(topic, function(message)
+					if globalServiceShuttingDown then return end
 					messagingReceived += 1
 					local callbackOk, callbackError = pcall(callback, message)
 					if not callbackOk then
@@ -1631,15 +1631,40 @@ local function subscribeWithRetry(topic: string, callback: (any) -> ())
 						warn("[ClubMusic Global] Message handler failed on topic " .. topic .. ": " .. tostring(callbackError))
 					end
 				end)
-				end)
-			if ok then
-				if typeof(subscriptionOrError)=="RBXScriptConnection" then ownConnection(subscriptionOrError) end
-				-- Subscription stays active after SubscribeAsync returns.
+			end)
+			if ok and typeof(subscriptionOrError) == "RBXScriptConnection" then
+				local connection = subscriptionOrError
+				if globalServiceShuttingDown then
+					pcall(function() connection:Disconnect() end)
+					break
+				end
+				-- Keep an explicit owner even when the optional janitor module is absent.
+				subscriptionConnections[topic] = connection
+				ownConnection(connection)
 				subscriptionStatus[topic] = "Active"
 				print("[ClubMusic Global] Messaging subscription active: " .. topic)
-				return
+
+				-- SubscribeAsync returns a live connection. If Roblox disconnects it,
+				-- retry the topic rather than leaving the status permanently Active.
+				while not globalServiceShuttingDown and connection.Connected do
+					task.wait(5)
+				end
+				if subscriptionConnections[topic] == connection then
+					subscriptionConnections[topic] = nil
+				end
+				pcall(function() connection:Disconnect() end)
+				if globalServiceShuttingDown then break end
+				subscriptionStatus[topic] = "Retrying"
+				warn("[ClubMusic Global] Messaging subscription disconnected for " .. topic .. "; retrying.")
+			else
+				subscriptionStatus[topic] = "Retrying"
+				warn("[ClubMusic Global] Subscription failed for " .. topic .. "; retrying: " .. tostring(subscriptionOrError))
 			end
-			subscriptionStatus[topic] = "Retrying"
+			if not globalServiceShuttingDown then task.wait(CONFIG.SubscriptionRetrySeconds) end
+		end
+		subscriptionStatus[topic] = "Disabled"
+	end))
+end"
 			warn("[ClubMusic Global] Subscription failed for " .. topic .. "; retrying: " .. tostring(subscriptionOrError))
 			task.wait(CONFIG.SubscriptionRetrySeconds)
 		end
