@@ -17,9 +17,11 @@ local function validUserId(value: any): boolean
 end
 
 function Service.new(options: {[string]: any})
-	assert(typeof(options) == "table" and type(options.getAuthorizedHistory) == "function",
-		"AccountRiskSignalService requires an authorized moderation-history provider")
+	assert(typeof(options) == "table" and type(options.getAuthorizedHistory) == "function"
+		and typeof(options.authorization) == "table",
+		"AccountRiskSignalService requires SecurityCore Authorization and an authorized history provider")
 	return setmetatable({
+		authorization = options.authorization,
 		getAuthorizedHistory = options.getAuthorizedHistory,
 		maxHistory = if typeof(options.maxHistory) == "number" then math.clamp(math.floor(options.maxHistory), 1, MAX_HISTORY_TO_SCORE) else MAX_HISTORY_TO_SCORE,
 		queries = 0,
@@ -27,8 +29,13 @@ function Service.new(options: {[string]: any})
 	}, Service)
 end
 
-function Service:GetSignals(userId: number): (boolean, any)
-	if not validUserId(userId) then return false, nil end
+function Service:GetSignals(actor: Player, userId: number): (boolean, any)
+	if typeof(actor) ~= "Instance" or not actor:IsA("Player") or actor.Parent ~= Players
+		or not validUserId(userId) then return false, nil end
+	local authOk, allowed = pcall(function()
+		return self.authorization:Check(actor.UserId, "IncidentResponse")
+	end)
+	if not authOk or allowed ~= true or actor.Parent ~= Players then return false, nil end
 	self.queries += 1
 	local historyOk, history = pcall(self.getAuthorizedHistory, userId, self.maxHistory)
 	if not historyOk or typeof(history) ~= "table" then
