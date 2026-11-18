@@ -5414,7 +5414,9 @@ local ADMIN_BRIDGE_ACTIONS: {[string]: string} = {
 	ToggleRequestLock = "DJToggleLock",
 	ClearQueue = "DJClearQueue",
 }
-adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (boolean, string)
+local adminBridgeShuttingDown = false
+local adminBridgeCallback = function(caller: any, operation: any, argument: any): (boolean, string)
+	if adminBridgeShuttingDown then return false, "ClubMusic admin bridge is shutting down." end
 	if typeof(caller) ~= "Instance" or not caller:IsA("Player") or caller.Parent ~= Players then
 		return false, "A live player caller is required."
 	end
@@ -6327,6 +6329,16 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	end
 	return true, if typeof(message) == "string" then message else "ClubMusic action accepted."
 end
+adminBridge.OnInvoke = adminBridgeCallback
+
+-- Do not leave a stale callback closure callable if this controller Script is
+-- removed or replaced. Clear only the exact callback owned by this instance.
+script.Destroying:Connect(function()
+	adminBridgeShuttingDown = true
+	if adminBridge.Parent == ServerStorage and adminBridge.OnInvoke == adminBridgeCallback then
+		adminBridge.OnInvoke = nil
+	end
+end)
 
 -- Construct the remaining optional child managers only after controller state exists.
 -- Playback quality is now inspected directly from the canonical modern AudioPlayer snapshot.
