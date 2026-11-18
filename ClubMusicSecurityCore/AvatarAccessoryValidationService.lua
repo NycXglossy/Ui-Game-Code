@@ -23,6 +23,7 @@ type PlayerState = {
 	presentTools: {[Tool]: boolean},
 	knownAccessories: {[Accessory]: boolean},
 	observedAccessoryHandles: {[Accessory]: BasePart},
+	accessoryObservationCapSignaled: boolean,
 	toolCapSignaled: boolean,
 	appearanceReady: boolean,
 	additions: {number},
@@ -101,7 +102,9 @@ function Service:_observeToolRemoved(player: Player, tool: Tool)
 	task.defer(function()
 		if self.states[player.UserId] ~= state then return end
 		local backpack = player:FindFirstChildOfClass("Backpack")
-		if tool.Parent == player.Character or (backpack and tool.Parent == backpack) then return end
+		local starterGear = player:FindFirstChild("StarterGear")
+		if tool.Parent == player.Character or (backpack and tool.Parent == backpack)
+			or (starterGear and tool.Parent == starterGear) then return end
 		if state.presentTools[tool] then
 			state.presentTools[tool] = nil
 			state.knownTools[tool] = nil
@@ -131,6 +134,18 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 	local state = self.states[player.UserId]
 	if not state or not accessory:IsA("Accessory") then return end
 	state.knownAccessories[accessory] = true
+	if state.observedAccessoryHandles[accessory] == nil then
+		local tracked = 0
+		for _ in pairs(state.observedAccessoryHandles) do tracked += 1 end
+		if tracked >= MAX_ACCESSORIES then
+			if not state.accessoryObservationCapSignaled then
+				state.accessoryObservationCapSignaled = true
+				self:_signal(player, "avatar_accessory_observation_cap", tostring(MAX_ACCESSORIES))
+			end
+		else
+			state.observedAccessoryHandles[accessory] = accessory:FindFirstChild("Handle") :: BasePart?
+		end
+	end
 	if runtimeAdded and state.appearanceReady then
 		self:_signal(player, "avatar_accessory_added_after_appearance", accessory.Name)
 	end
@@ -162,8 +177,7 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 	if handle.CanCollide then
 		self:_signal(player, "avatar_accessory_collidable_handle", accessory.Name)
 	end
-	if state.observedAccessoryHandles[accessory] ~= handle then
-		state.observedAccessoryHandles[accessory] = handle
+	if state.observedAccessoryHandles[accessory] == handle then
 		table.insert(state.characterConnections, handle:GetPropertyChangedSignal("Size"):Connect(function()
 			if self.states[player.UserId] == state and accessory.Parent == state.character then
 				self:_signal(player, "avatar_accessory_handle_size_changed", accessory.Name)
@@ -312,6 +326,7 @@ function Service:_attachPlayer(player: Player)
 		presentTools = {},
 		knownAccessories = {},
 		observedAccessoryHandles = {},
+		accessoryObservationCapSignaled = false,
 		toolCapSignaled = false,
 		appearanceReady = false,
 		additions = {},
