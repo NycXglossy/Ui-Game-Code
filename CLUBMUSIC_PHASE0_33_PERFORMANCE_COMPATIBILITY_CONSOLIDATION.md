@@ -382,3 +382,12 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Global-ban notifications now require the same valid revision ordering, including explicit globalBan=false events advancing the revision without enforcement. Request-block events still purge queued requests on block and clear the local block on unblock. Per-user revision state is released on PlayerRemoving.
 - No new remote, DataStore, MemoryStore, MessagingService topic, cross-server diagnostics, client telemetry, or enforcement authority was added. The revision is part of the existing durable moderation record and existing notification/API contracts only.
 - Static source inspection only. No Luau compilation, DataStore concurrency/fault-injection, MessagingService ordering test, Studio/runtime test, or deployment was performed.
+
+
+## Moderation reconciliation revision ordering and MessagingService forwarding (2026-11-18)
+
+- Follow-up audit found the first revision rollout had not carried the revision through the inbound MessagingService moderation handler. The handler now validates a positive integer revision and forwards it with the existing moderation event, allowing remote controllers to apply only strictly newer updates.
+- Found that the periodic durable reconciliation worker directly cleared GlobalModerationPending and kicked on the basis of a yielding GetAsync result, before checking whether a newer moderation notification had arrived. It also emitted an unversioned requestBlocked-only event that the revision-aware controller could not use.
+- Replaced that direct mutation with one local ModerationReconcile snapshot containing both durable enforcement flags and the record revision. The controller applies the snapshot only for the currently online player and only when its revision is equal to or newer than the latest observed revision. A current snapshot enforces a confirmed global ban, otherwise repairs request-block state and clears pending. An older snapshot has no effect.
+- Failed DataStore reads still mark pending and trigger the existing pending-only retry sweep; no kick occurs from a failed read. Existing 1.1-second pacing, three-token reserve, 180-second full sweep and 15-second pending retry remain unchanged.
+- No new remote, DataStore, MemoryStore, MessagingService topic, diagnostics aggregation, or client telemetry was added. Static source inspection only; no Luau compilation, backend fault injection, multi-server ordering test, Studio/runtime test, or deployment.
