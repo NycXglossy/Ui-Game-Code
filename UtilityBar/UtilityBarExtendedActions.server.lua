@@ -404,6 +404,14 @@ local function setStageClubLighting(player: Player, request: any): (boolean, str
 			}
 		end
 		local snapshot = originalLightState[light]
+		-- If another writer changed this fixture between our presets, treat
+		-- that new state as the restore baseline rather than reviving stale data.
+		if light.Enabled ~= snapshot.lastEnabled or light.Color ~= snapshot.lastColor
+			or math.abs(light.Brightness - snapshot.lastBrightness) > 0.001 then
+			snapshot.enabled = light.Enabled
+			snapshot.color = light.Color
+			snapshot.brightness = light.Brightness
+		end
 		local appliedBrightness = math.clamp(snapshot.brightness * preset.brightness, 0, 10)
 		light.Enabled = true
 		light.Color = preset.color
@@ -415,6 +423,8 @@ local function setStageClubLighting(player: Player, request: any): (boolean, str
 	for _, beam in ipairs(beams) do
 		if not originalBeamState[beam] then
 			originalBeamState[beam] = {original = beam.Color, lastApplied = beam.Color}
+		elseif beam.Color ~= originalBeamState[beam].lastApplied then
+			originalBeamState[beam].original = beam.Color
 		end
 		beam.Color = sequence
 		originalBeamState[beam].lastApplied = sequence
