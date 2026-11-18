@@ -20,6 +20,10 @@ local ALLOWED_ORIGINS: {[string]: boolean} = {
 	GameTeleport = true,
 }
 
+type VerifiedTeleport = {
+	character: Model,
+	expiresAt: number,
+}
 type Ticket = {
 	id: string,
 	actorUserId: number,
@@ -33,6 +37,10 @@ type Ticket = {
 	expiresAt: number,
 }
 local tickets: {[string]: Ticket} = {}
+-- One short-lived, one-use movement-observer exemption per player. This is
+-- written only after a ticketed teleport has been verified successfully.
+local recentlyVerified: {[number]: VerifiedTeleport} = {}
+local RECENT_VERIFIED_TTL = 2.5
 local ticketCount = 0
 local started = false
 local signalCallback: ((string, number, string) -> ())? = nil
@@ -87,6 +95,7 @@ function TeleportValidationService.Start(options: any?)
 	signalCallback = options and options.onSignal or nil
 	started = true
 	Players.PlayerRemoving:Connect(function(player)
+		recentlyVerified[player.UserId] = nil
 		for id, ticket in pairs(tickets) do
 			if ticket.actorUserId == player.UserId or ticket.targetUserId == player.UserId then
 				tickets[id] = nil
@@ -167,8 +176,25 @@ function TeleportValidationService.Complete(ticketId: any, actor: any, target: a
 		emit("TeleportDestinationMismatch", ticket.targetUserId, ticket.origin)
 		return false, "Observed position did not match the authorized destination."
 	end
+	recentlyVerified[ticket.targetUserId] = {
+		character = ticket.character,
+		expiresAt = os.clock() + RECENT_VERIFIED_TTL,
+	}
 	emit("TeleportVerified", ticket.targetUserId, ticket.origin)
 	return true, ticket.origin
+end
+
+-- Consumed once by CharacterPhysicsGuard so the verified CFrame teleport is
+-- not mistaken for a high-speed displacement sample. Character identity and
+-- expiry are checked; this does not authorize movement or change gameplay.
+function TeleportValidationService.IsRecentlyTeleported(player: any, character: any): boolean
+	if not livePlayer(player) or typeof(character) ~= "Instance" or not character:IsA("Model") then
+		return false
+	end
+	local record = recentlyVerified[player.UserId]
+	if not record then return false end
+	recentlyVerified[player.UserId] = nil
+	return record.expiresAt > os.clock() and record.character == character
 end
 
 function TeleportValidationService.Cancel(ticketId: any)
