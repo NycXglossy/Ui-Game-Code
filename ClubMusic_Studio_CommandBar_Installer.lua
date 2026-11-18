@@ -12,12 +12,12 @@ local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local modules = {
-    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicAudioBackend.luau"},
-    {name = "ClubMusicAudioCrossfadeManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicAudioCrossfadeManager.luau"},
-    {name = "ClubMusicAudioQualityProfiles", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicAudioQualityProfiles.luau"},
-    {name = "ClubMusicDJSessionManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicDJSessionManager.luau"},
-    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicPlayerPreferences.luau"},
-    {name = "ClubMusicSpatialAudioGraph", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/8edd537a30f002e39bd437a6d77f74e5ce66c2c6/ClubMusicSpatialAudioGraph.luau"},
+    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/f47410ac9a9674d3df0b24eb1714b31d1a4ef816/ClubMusicAudioBackend.luau"},
+    {name = "ClubMusicAudioCrossfadeManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/f47410ac9a9674d3df0b24eb1714b31d1a4ef816/ClubMusicAudioCrossfadeManager.luau"},
+    {name = "ClubMusicAudioQualityProfiles", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/f47410ac9a9674d3df0b24eb1714b31d1a4ef816/ClubMusicAudioQualityProfiles.luau"},
+    {name = "ClubMusicDJSessionManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/f47410ac9a9674d3df0b24eb1714b31d1a4ef816/ClubMusicDJSessionManager.luau"},
+    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/f47410ac9a9674d3df0b24eb1714b31d1a4ef816/ClubMusicPlayerPreferences.luau"},
+    {name = "ClubMusicSpatialAudioGraph", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/f47410ac9a9674d3df0b24eb1714b31d1a4ef816/ClubMusicSpatialAudioGraph.luau"},
 }
 
 local destinations = {
@@ -40,7 +40,7 @@ for _, item in ipairs(modules) do
     staged[item.name] = source
 end
 
-local playbackManagerUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/44ad160be15ac14eca7907d7158fc81bae865c67/MusicPlaybackManager.luau"
+local playbackManagerUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/f47410ac9a9674d3df0b24eb1714b31d1a4ef816/MusicPlaybackManager.luau"
 local playbackManagerOk, playbackManagerSource = pcall(function()
     return HttpService:GetAsync(playbackManagerUrl, true)
 end)
