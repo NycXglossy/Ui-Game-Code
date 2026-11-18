@@ -281,7 +281,11 @@ local function spawnMount(player: Player): (boolean, string)
 					if canSet then pcall(function() seat:SetNetworkOwner(nil) end) end
 					return
 				end
-				local rider = Players:GetPlayerFromCharacter(occupant.Parent)
+				local occupantCharacter = occupant.Parent
+				local rider: Player? = nil
+				if occupantCharacter and occupantCharacter:IsA("Model") then
+					rider = Players:GetPlayerFromCharacter(occupantCharacter)
+				end
 				if not rider or rider.UserId ~= player.UserId or activeMounts[player.UserId] ~= record then
 					pcall(function() occupant.Sit = false end)
 					if rider and rider.UserId ~= player.UserId then
