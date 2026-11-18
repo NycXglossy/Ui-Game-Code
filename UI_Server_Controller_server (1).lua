@@ -137,6 +137,13 @@ task.spawn(function()
 		{ label = "4x XP Developer Product", id = CONFIG.XPBoost4xProductId, infoType = Enum.InfoType.Product },
 		{ label = "Title Slot 2 Developer Product", id = CONFIG.TitleSlotProductIds[2], infoType = Enum.InfoType.Product },
 		{ label = "Title Slot 3 Developer Product", id = CONFIG.TitleSlotProductIds[3], infoType = Enum.InfoType.Product },
+		{ label = "Coconut Donation Developer Product", id = 3731488823, infoType = Enum.InfoType.Product },
+		{ label = "Pineapple Donation Developer Product", id = 3731489572, infoType = Enum.InfoType.Product },
+		{ label = "Tiki Torch Donation Developer Product", id = 3731490154, infoType = Enum.InfoType.Product },
+		{ label = "Volcano Donation Developer Product", id = 3731490513, infoType = Enum.InfoType.Product },
+		{ label = "Island Legend Donation Developer Product", id = 3731490937, infoType = Enum.InfoType.Product },
+		{ label = "Island Royalty Donation Developer Product", id = 3731491257, infoType = Enum.InfoType.Product },
+		{ label = "Sultan's Legacy Donation Developer Product", id = 3731491679, infoType = Enum.InfoType.Product },
 	}
 	for _, entry in ipairs(configured) do
 		if typeof(entry.id) ~= "number" or entry.id <= 0 then
