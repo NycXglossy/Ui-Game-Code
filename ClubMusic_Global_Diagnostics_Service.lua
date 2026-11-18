@@ -284,7 +284,7 @@ function Service:GetStatus(): {[string]: any}
 		then math.max(0, os.clock() - self.lastCheckAt) else nil
 	status.lastCheckError = self.lastCheckError
 	status.checkIntervalSeconds = CHECK_INTERVAL_SECONDS
-	status.healthHistory = table.clone(self.healthHistory)
+	status.healthHistory = cloneTable(self.healthHistory)
 	status.healthHistoryCapacity = MAX_HEALTH_TRANSITIONS
 	status.healthTransitionCount = self.healthTransitionCount
 	status.stateDurationSeconds = math.max(0, os.time() - (self.healthStateSince or os.time()))
