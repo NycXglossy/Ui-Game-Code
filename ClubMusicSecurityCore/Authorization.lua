@@ -62,6 +62,7 @@ function Service.new(dependencies: {[string]: any}?)
 		refreshFailures = 0,
 		lastError = nil,
 		started = false,
+		lifecycleGeneration = 0,
 		denials = {},
 		deniedActions = 0,
 	}, Service)
@@ -71,15 +72,40 @@ end
 
 function Service:Configure(dependencies: {[string]: any})
 	if typeof(dependencies) ~= "table" then return end
-	if validUserId(dependencies.groupId) then self.groupId = math.floor(dependencies.groupId) end
-	if typeof(dependencies.studioStaff) == "boolean" then self.studioStaff = dependencies.studioStaff end
-	if typeof(dependencies.thresholds) == "table" then self.thresholds = dependencies.thresholds end
+	local changed = false
+	if validUserId(dependencies.groupId) then
+		local groupId = math.floor(dependencies.groupId)
+		if self.groupId ~= groupId then self.groupId = groupId; changed = true end
+	end
+	if typeof(dependencies.studioStaff) == "boolean" and self.studioStaff ~= dependencies.studioStaff then
+		self.studioStaff = dependencies.studioStaff
+		changed = true
+	end
+	if typeof(dependencies.thresholds) == "table" and self.thresholds ~= dependencies.thresholds then
+		self.thresholds = dependencies.thresholds
+		changed = true
+	end
 	if typeof(dependencies.staffUserIds) == "table" then
 		local configured = {}
 		for _, userId in ipairs(dependencies.staffUserIds) do
 			if validUserId(userId) then configured[math.floor(userId)] = true end
 		end
+		for userId in pairs(self.staffUserIds) do
+			if configured[userId] ~= true then changed = true; break end
+		end
+		if not changed then
+			for userId in pairs(configured) do
+				if self.staffUserIds[userId] ~= true then changed = true; break end
+			end
+		end
 		self.staffUserIds = configured
+	end
+	if changed then
+		-- A changed authority configuration invalidates every prior rank decision
+		-- and makes any in-flight lookup result ineligible for cache publication.
+		table.clear(self.cache)
+		table.clear(self.refreshInFlight)
+		table.clear(self.retryAfter)
 	end
 end
 
@@ -92,6 +118,7 @@ function Service:_rankName(level: number): string
 end
 
 function Service:GetRank(player: Player): (string, number)
+	if not self.started then return "GUEST", 0 end
 	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
 		return "GUEST", 0
 	end
@@ -113,6 +140,7 @@ function Service:GetLevel(player: Player): number
 end
 
 function Service:IsGroupMember(player: Player): boolean
+	if not self.started then return false end
 	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then return false end
 	if (RunService:IsStudio() and self.studioStaff) or self.staffUserIds[player.UserId] == true then return true end
 	local cached = self.cache[player.UserId]
@@ -134,21 +162,31 @@ function Service:_levelForRank(rank: number): number
 end
 
 function Service:Refresh(player: Player): boolean
-	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
+	if not self.started or typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
 		return false
 	end
 	local userId = player.UserId
+	local generation = self.lifecycleGeneration
 	local existingCache = self.cache[userId]
 	if existingCache and existingCache.expiresAt > os.clock() then return true end
-	if self.refreshInFlight[userId] then
-		while self.refreshInFlight[userId] and player.Parent == Players do task.wait(0.05) end
+	local activeRefresh = self.refreshInFlight[userId]
+	if activeRefresh then
+		while self.refreshInFlight[userId] == activeRefresh
+			and player.Parent == Players and self.started
+			and self.lifecycleGeneration == generation do
+			task.wait(0.05)
+		end
 		local refreshed = self.cache[userId]
-		return player.Parent == Players and refreshed ~= nil and refreshed.expiresAt > os.clock()
+		return self.started and self.lifecycleGeneration == generation
+			and player.Parent == Players and refreshed ~= nil and refreshed.expiresAt > os.clock()
 	end
 	local retryAt = self.retryAfter[userId]
 	if retryAt and retryAt > os.clock() then return false end
 
-	self.refreshInFlight[userId] = true
+	-- A unique token prevents an old/yielding lookup from clearing or replacing
+	-- a newer refresh started after PlayerRemoving, Stop, or reconfiguration.
+	local refreshToken = {}
+	self.refreshInFlight[userId] = refreshToken
 	self.refreshes += 1
 	local level: number? = nil
 	local groupRank: number? = nil
@@ -170,7 +208,11 @@ function Service:Refresh(player: Player): boolean
 		end
 	end
 
-	self.refreshInFlight[userId] = nil
+	local stillOwnsRefresh = self.refreshInFlight[userId] == refreshToken
+	if stillOwnsRefresh then self.refreshInFlight[userId] = nil end
+	if not stillOwnsRefresh or not self.started or self.lifecycleGeneration ~= generation then
+		return false
+	end
 	if player.Parent ~= Players then
 		self.cache[userId] = nil
 		self.retryAfter[userId] = nil
@@ -198,6 +240,7 @@ function Service:Refresh(player: Player): boolean
 end
 
 function Service:_scheduleRefresh(player: Player)
+	if not self.started then return end
 	local userId = player.UserId
 	if self.refreshInFlight[userId] then return end
 	local retryAt = self.retryAfter[userId]
@@ -209,6 +252,7 @@ end
 
 function Service:Start(): boolean
 	if self.started then return true end
+	self.lifecycleGeneration += 1
 	self.started = true
 	table.insert(self.connections, Players.PlayerAdded:Connect(function(player)
 		self:_scheduleRefresh(player)
@@ -263,6 +307,10 @@ end
 
 function Service:Check(actorUserId: any, permission: any): (boolean, string?)
 	self.checks += 1
+	if not self.started then
+		self.denied += 1
+		return false, "Authorization service is stopped."
+	end
 	if not validUserId(actorUserId) or typeof(permission) ~= "string"
 		or not PERMISSION_LEVELS[permission] then
 		self.denied += 1
@@ -332,6 +380,10 @@ function Service:GetStatus(): {[string]: any}
 end
 
 function Service:Stop()
+	-- Invalidate yielded group-rank lookups before disconnecting listeners.
+	-- Their completion paths must not publish cache entries after shutdown.
+	self.started = false
+	self.lifecycleGeneration += 1
 	for _, connection in ipairs(self.connections) do
 		pcall(function() connection:Disconnect() end)
 	end
@@ -345,11 +397,13 @@ end
 function Service.GetShared(dependencies: {[string]: any}?): any
 	if not sharedInstance then
 		sharedInstance = Service.new(dependencies)
-		sharedInstance:Start()
 	elseif typeof(dependencies) == "table" then
 		sharedInstance:Configure(dependencies)
 		if type(dependencies.onDenied) == "function" then sharedInstance:SetOnDenied(dependencies.onDenied) end
 	end
+	-- A shared module may outlive the Script that first acquired it. Reacquiring
+	-- the singleton restores listeners only after Start has reset its lifecycle.
+	if not sharedInstance.started then sharedInstance:Start() end
 	return sharedInstance
 end
 
