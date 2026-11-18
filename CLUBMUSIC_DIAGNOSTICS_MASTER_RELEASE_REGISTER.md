@@ -300,3 +300,59 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - Updated installer module inventory and pinned source snapshot for `ReceiptHash` and `ReceiptTransactionService`; added Phase 33 migration documentation.
 
 **Validation boundary:** Source changes only. The disposable Studio purchase matrix, injected DataStore failures, interrupted-receipt recovery, profile-save race, and two-server XP boost regression tests are still mandatory. No production DataStore or live Roblox place was changed. Do not delete historical journal records, legacy profile receipt fields, or legacy XP compatibility reads.
+
+
+## Phase 0–33 Performance & Compatibility Consolidation (2026-11-18)
+
+**Working branch:** `phase0-33-performance-compatibility`  
+**Baseline:** `7292321a62dfe0cc16559240a3e1a5c3af0f8414` (Phase 13.1 branch head at consolidation start).  
+**Status:** Targeted source improvements committed; cross-phase static review and Roblox runtime/device profiling remain in progress. This is not a production release or runtime sign-off.
+
+### Local-first architecture contract
+
+- Client-local: graphics quality, visual effects, UI state, input, per-listener presentation, frame sampling, and optional client diagnostics. Client observations are untrusted and are not sent to the server for performance scoring or authorization.
+- Server-instance-local: Now Playing, playback clock, Auto DJ, playlists' active cursors, request queues, skip votes, transient caches, adaptive load state, watchdogs, health samples, and diagnostic histories.
+- Server-authoritative: purchases and receipt journals, profile/session writes, entitlements, permissions, moderation decisions, request validation, and all gameplay mutations.
+- Cross-server: only explicitly global features with a demonstrated product requirement and existing consumers, such as global moderation, announcements, catalog invalidation, and shared XP boost/receipt coordination. Cross-server playback synchronization and diagnostics aggregation are retired / prohibited.
+
+### Source changes in this consolidation
+
+1. `TikiTideAdaptiveVisualQuality.client.lua`
+   - Combines each client's mobile / saved graphics quality with the current server's adaptive-load mode.
+   - Applies only to explicitly tagged club effects and lights; supports existing `ClubEffect` / `StageClubLight` tags and the `ClubVFX` / `ClubLight` aliases.
+   - Preserves and restores original particle rates, Enabled states, Beam states, and light Shadows when the script or tags are removed.
+   - No remotes, client telemetry, DataStore, MemoryStore, or cross-server calls.
+   - Commit: `7292321a62dfe0cc16559240a3e1a5c3af0f8414`.
+
+2. `UI_Server_Controller_server (1).lua`
+   - Removed the retired playback-sync snapshot commit/apply functions, playback message handlers, eight-second status poller, follower gates, and playback-sync calls from track transitions and DJ pause/restart/skip paths.
+   - Retained the old action name only as a compatibility rejection with a clear retired message.
+   - State/diagnostics projection now explicitly reports playback sync as retired and queues as local.
+   - Removed obsolete sync configuration and action cooldown entries.
+   - Commits: `e2e54cba9ba6f362dda64c132616b4b9cb28d135`, `e6184c15b46df342956aaad5a9a6a58fa9c3be79`.
+
+3. `MusicValidationService.luau`
+   - Replaced full-cache scans on metadata cache misses with bounded FIFO eviction (constant-time insertion/eviction).
+   - Applied the same bounded cache discipline to the legacy music-ID metadata cache.
+   - Added a short configurable negative-cache TTL for transient Marketplace metadata failures to avoid repeated provider calls during bursts.
+   - Preserved the controller's independent AudioPlayer preload and experience-permission checks; cached metadata is not treated as proof that an asset is playable.
+   - Commit: `89ea911b64f9337eebed57da86921b4db3d2a722`.
+
+### Cross-phase preservation rules
+
+- Phases 0–12: keep controller state ownership and existing UI/network contracts; adapters must not create duplicate queue/playback/playlist authorities.
+- Phases 13–18: adaptive budgets may defer optional queries/aggregation only; diagnostics remain bounded and local; essential validation, authorization, moderation, receipt work, and security-event recording remain active.
+- Phases 19–24: movement and incident services remain server-authoritative and detection-only where specified; preserve fail-closed protected actions and Studio isolation; do not add high-frequency polling.
+- Phases 25–32: preserve existing endpoint validators, SecurityCore authorization, bounded evidence, movement/environment safety, economy/entitlement invariants, and chat filtering. Performance changes must not weaken security or alter third-party Kohl's adapter contracts.
+- Phase 33: preserve the single ProcessReceipt adapter, durable receipt journal, session locks, product mappings, and XP receipt compatibility.
+
+### Remaining audit and acceptance work
+
+- Review all tracked first-party scripts and installers for unnecessary cross-server dependencies, duplicate state owners, unbounded caches, repeated descendant scans, connection leaks, and redundant polling.
+- Reconcile the live Studio hierarchy and packaged/binary assets; text-source review cannot certify installed Roblox instances or third-party packages.
+- Run Luau parsing/static analysis; no parser was available during the initial source pass.
+- Run Studio multiplayer and published isolated test-place matrices for purchases/receipt recovery, local queue isolation, cross-server global features, remote bursts, diagnostics, adaptive transitions, movement/respawn, and repeated installer execution.
+- Profile Heartbeat delay, server memory, client frame time, and network traffic at normal/peak player counts on low-end mobile, desktop, and console.
+- Keep mobile UI and controls unchanged unless a mobile-specific compatibility issue is measured and explicitly addressed.
+
+**Release boundary:** No Roblox Studio place, published server, live DataStore, live MemoryStore, or production asset was changed by these GitHub commits. Source commits and static checks do not establish a measured FPS/memory improvement. Do not call this complete or production-ready until the profiling and regression matrix is recorded.
