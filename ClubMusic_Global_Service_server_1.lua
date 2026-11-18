@@ -756,9 +756,10 @@ do
 			if createOk and typeof(instance) == "table"
 				and type(instance.Register) == "function"
 				and type(instance.SetStatus) == "function"
-				and type(instance.GetStatus) == "function" then
+				and type(instance.GetStatus) == "function"
+				and type(instance.RegisterDependency) == "function" then
 				globalServiceRegistry = instance
-				pcall(instance.SetStatus, instance, "GlobalAPI", "Healthy", "ServerStorage.ClubMusicGlobalAPI is available.")
+				pcall(instance.RegisterDependency, instance, "GlobalAPI", apiFolder, "Folder", ServerStorage, true)
 			if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function" then
 				pcall(instance.Register, instance, "ErrorHistory", globalErrorHandler, {"Report", "GetRecentErrors", "GetStatus"}, true)
 			else
