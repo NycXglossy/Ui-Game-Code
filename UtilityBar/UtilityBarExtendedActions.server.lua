@@ -33,6 +33,11 @@ local sizeBaseline: {[number]: {humanoid: Humanoid, height: number, width: numbe
 local warnedMovementAuthorityMissing = false
 local warnedMovementAuthorityFailure = false
 local auraByPlayer: {[number]: {highlights: {Highlight}, connection: RBXScriptConnection?, character: Model}} = {}
+-- Companion clones are owned and cleaned up by this server script, not inferred
+-- from a replicated Workspace name lookup.
+local companionByPlayer: {[number]: Model} = {}
+local playerLifecycleConnections: {[number]: {RBXScriptConnection}} = {}
+local lifecycleConnections: {RBXScriptConnection} = {}
 local ingressTokens = 36
 local ingressUpdatedAt = os.clock()
 local INGRESS_CAPACITY = 36
@@ -189,13 +194,20 @@ local function toggleMount(player: Player): (boolean, string)
 	return true, "Mount tool equipped."
 end
 
+local function destroyCompanion(userId: number)
+	local clone = companionByPlayer[userId]
+	companionByPlayer[userId] = nil
+	if clone and clone.Parent then
+		clone:Destroy()
+	end
+end
+
 local function createClone(player: Player): (boolean, string)
 	local character = player.Character
 	if not character or not character.Parent then return false, "Your character is not ready." end
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if not root or not root:IsA("BasePart") then return false, "Character root is unavailable." end
-	local old = workspace:FindFirstChild("UtilityClone_" .. player.UserId)
-	if old then old:Destroy() end
+	destroyCompanion(player.UserId)
 	local ok, clone = pcall(function() return character:Clone() end)
 	if not ok or not clone then return false, "Roblox could not create the clone." end
 	clone.Name = "UtilityClone_" .. player.UserId
@@ -219,19 +231,23 @@ local function createClone(player: Player): (boolean, string)
 		cloneHumanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 		cloneHumanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
 	end
+	companionByPlayer[player.UserId] = clone
 	clone.Parent = workspace
 	-- Keep the visual clone beside its owner so it behaves like a temporary
 	-- companion rather than a stationary duplicate left at the spawn point.
 	task.spawn(function()
 		local expiresAt = os.clock() + CLONE_LIFETIME
-		while clone.Parent and player.Parent == Players and player.Character == character and os.clock() < expiresAt do
+		while companionByPlayer[player.UserId] == clone and clone.Parent and player.Parent == Players and player.Character == character and os.clock() < expiresAt do
 			local currentRoot = character:FindFirstChild("HumanoidRootPart")
 			if currentRoot and currentRoot:IsA("BasePart") then
 				clone:PivotTo(currentRoot.CFrame * CFrame.new(4, 0, 2))
 			end
 			task.wait(0.12)
 		end
-		if clone.Parent then clone:Destroy() end
+		if companionByPlayer[player.UserId] == clone then
+			companionByPlayer[player.UserId] = nil
+			if clone.Parent then clone:Destroy() end
+		end
 	end)
 	return true, "Your character companion will follow beside you for 12 seconds."
 end
@@ -474,15 +490,51 @@ local function clearPlayerAuraOnCharacterChange(player: Player)
 		clearAura(player.UserId)
 	end)
 end
-for _, player in ipairs(Players:GetPlayers()) do clearPlayerAuraOnCharacterChange(player) end
-Players.PlayerAdded:Connect(clearPlayerAuraOnCharacterChange)
+local function bindPlayerLifecycle(player: Player)
+	local existing = playerLifecycleConnections[player.UserId]
+	if existing then
+		for _, connection in ipairs(existing) do connection:Disconnect() end
+	end
+	local connections = {}
+	table.insert(connections, player.CharacterAdded:Connect(function()
+		destroyCompanion(player.UserId)
+	end))
+	table.insert(connections, player.CharacterRemoving:Connect(function()
+		destroyCompanion(player.UserId)
+	end))
+	playerLifecycleConnections[player.UserId] = connections
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	clearPlayerAuraOnCharacterChange(player)
+	bindPlayerLifecycle(player)
+end
+table.insert(lifecycleConnections, Players.PlayerAdded:Connect(function(player)
+	clearPlayerAuraOnCharacterChange(player)
+	bindPlayerLifecycle(player)
+end))
 
 Players.PlayerRemoving:Connect(function(player)
 	lastRequest[player.UserId] = nil
 	sizeStep[player.UserId] = nil
 	sizeBaseline[player.UserId] = nil
 	clearAura(player.UserId)
-	local clone = workspace:FindFirstChild("UtilityClone_" .. player.UserId)
-	if clone then clone:Destroy() end
+	destroyCompanion(player.UserId)
+	local connections = playerLifecycleConnections[player.UserId]
+	if connections then
+		for _, connection in ipairs(connections) do connection:Disconnect() end
+		playerLifecycleConnections[player.UserId] = nil
+	end
 end)
+
+script.Destroying:Connect(function()
+	for _, connection in ipairs(lifecycleConnections) do connection:Disconnect() end
+	table.clear(lifecycleConnections)
+	for userId, connections in pairs(playerLifecycleConnections) do
+		for _, connection in ipairs(connections) do connection:Disconnect() end
+		playerLifecycleConnections[userId] = nil
+	end
+	for userId in pairs(companionByPlayer) do destroyCompanion(userId) end
+end)
+
 print("[UtilityBar] Pass-gated Mount, Clone Companion, scoped Stage/Club Lighting, Size, and Aura actions ready.")
