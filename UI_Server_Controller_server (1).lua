@@ -5296,8 +5296,16 @@ ControllerFunctions.adminBridgeGlobalCall = function(name: string, ...: any): (b
 	return true, if value == nil then true else value, detail
 end
 ControllerFunctions.adminBridgeAuthorize = function(caller: Player, permission: string): boolean
-	local invoked, allowed = ControllerFunctions.globalInvoke("AuthorizeGlobalAction", caller.UserId, permission)
-	return invoked and allowed == true
+	-- Authorization crosses a yielding BindableFunction boundary. Capture the
+	-- actor identity before invoking it and reject a positive result if that
+	-- Player departed or was replaced while the authorization call was in flight.
+	if typeof(caller) ~= "Instance" or not caller:IsA("Player") or caller.Parent ~= Players then
+		return false
+	end
+	local actorUserId = caller.UserId
+	local invoked, allowed = ControllerFunctions.globalInvoke("AuthorizeGlobalAction", actorUserId, permission)
+	return caller.Parent == Players and caller.UserId == actorUserId
+		and invoked and allowed == true
 end
 ControllerFunctions.adminBridgeReportSignal = function(caller: Player, signal: string, detail: string)
 	pcall(ControllerFunctions.globalInvoke, "ReportSignal", caller.UserId, signal, detail)
