@@ -325,18 +325,22 @@ local function updateModeration(userId: number, field: string, value: any, actor
 				return nil
 			end
 
-			local data = if typeof(old) == "table" then table.clone(old) else {}
 			local now = os.time()
+			-- Persist only the documented moderation schema. This prevents
+			-- unrelated/corrupt legacy keys from inflating every future write.
+			local data = {
+				globalBan = if typeof(old) == "table" then old.globalBan == true else false,
+				requestBlocked = if typeof(old) == "table" then old.requestBlocked == true else false,
+				updatedAt = now,
+				updatedBy = math.floor(actorUserId),
+				reason = reason,
+			}
 			data[field] = value
-			data.updatedAt = now
-			data.updatedBy = actorUserId
-			data.reason = reason
 
-			-- Rebuild a compact, validated array instead of cloning arbitrary
-			-- history keys or trusting malformed entries from a damaged record.
+			-- Rebuild a compact, validated history array with a fixed entry cap.
 			local history = {}
-			if typeof(data.history) == "table" then
-				for _, item in ipairs(data.history) do
+			if typeof(old) == "table" and typeof(old.history) == "table" then
+				for _, item in ipairs(old.history) do
 					if #history >= 19 then break end
 					if typeof(item) == "table"
 						and (item.field == "globalBan" or item.field == "requestBlocked")
