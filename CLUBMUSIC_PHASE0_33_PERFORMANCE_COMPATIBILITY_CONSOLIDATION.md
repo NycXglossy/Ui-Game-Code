@@ -345,3 +345,12 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - The two enforcement flags are copied from the latest `UpdateAsync` value after schema validation, then only the requested flag is changed. The history remains capped at 20 compact, validated entries with reasons truncated to the configured 120-character limit. This gives the record a predictable small upper bound rather than allowing unbounded history or arbitrary nested metadata.
 - Failed local budget admission rejects before the DataStore call. A failed/cancelled `UpdateAsync` does not emit replay records, publish notifications, or fire the local moderation event. Durable state remains authoritative; MessagingService remains best-effort and periodic reconciliation remains the recovery path.
 - Static source checks only. No live DataStore request-budget measurements, repeated-write load test, concurrency/fault injection, Luau compilation, Studio/runtime test, or deployment was performed.
+
+
+## Moderation reconciliation budget isolation (2026-11-18)
+
+- Audited all consumers of the shared `all:datastore` server-local token bucket. Join-time moderation, moderation writes/history, track moderation, configuration/state and XP receipt operations continue to share one aggregate budget; no independent bucket or multiplied request allowance was introduced.
+- Found that background online-player reconciliation used the same unrestricted token admission as foreground operations. Although its 1.1-second per-player pacing is below the bucket's 5-request/second refill, a large initial burst could consume tokens needed by foreground work.
+- Added an optional minimum-remaining-token floor to the existing local bucket admission path. Reconciliation reads alone request a three-token floor; they are deferred when spending would cross that floor. Foreground callers retain the existing behavior and can use the reserve when necessary. The bucket capacity, refill ceiling, key, and total aggregate budget remain unchanged.
+- Reconciliation remains fail-closed on budget exhaustion: the player stays `GlobalModerationPending` and no kick occurs solely due to an unavailable read. The next scheduled reconciliation cycle retries. Join-time reads and moderation/purchase operations do not inherit the background reserve restriction.
+- Static source checks only. No measured DataStore budgets, large-player-count load test, Roblox runtime test, Luau compilation, or deployment was performed.
