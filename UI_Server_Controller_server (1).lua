@@ -6751,6 +6751,29 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		ControllerFunctions.broadcast("[GLOBAL] " .. message.text, "info")
 		return
 	end
+	if message.kind == "ModerationReconcile" and ControllerFunctions.isFiniteNumber(message.userId)
+		and message.userId > 0 and message.userId % 1 == 0 and message.userId <= 9007199254740991
+		and typeof(message.globalBan) == "boolean" and typeof(message.requestBlocked) == "boolean"
+		and ControllerFunctions.isFiniteNumber(message.revision) and message.revision >= 0
+		and message.revision % 1 == 0 then
+		local revisions = ControllerFunctions.moderationRevisions
+			or (function() ControllerFunctions.moderationRevisions = {}; return ControllerFunctions.moderationRevisions end)()
+		local target = Players:GetPlayerByUserId(message.userId)
+		local knownRevision = if target then (revisions[message.userId] or 0) else message.revision
+		-- Reconciliation snapshots may equal the last event revision: they contain
+		-- both durable flags and repair state after a missed notification.
+		if target and message.revision >= knownRevision then
+			revisions[message.userId] = message.revision
+			if message.globalBan then
+				target:Kick("You are globally banned from this experience.")
+			else
+				blockedUsers[message.userId] = if message.requestBlocked then true else nil
+				target:SetAttribute("GlobalModerationPending", false)
+				publishState(nil)
+			end
+		end
+		return
+	end
 	if message.kind == "Moderation" and ControllerFunctions.isFiniteNumber(message.userId)
 		and message.userId > 0 and message.userId % 1 == 0 and message.userId <= 9007199254740991
 		and (message.field == "globalBan" or message.field == "requestBlocked")
