@@ -3415,18 +3415,27 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 	local state = ControllerFunctions.globalPlaybackSyncState
 	if state.enabled ~= true or (state.isLeader == true and allowLeader ~= true)
 		or typeof(snapshot) ~= "table" or not ControllerFunctions.isFiniteNumber(snapshot.revision)
+		or snapshot.revision < 1 or snapshot.revision % 1 ~= 0 or snapshot.revision > 9007199254740991
 		or snapshot.revision <= (state.lastAppliedRevision or 0) then return false end
 	local current = snapshot.current
 	if typeof(current) == "table" and typeof(current.trackId) == "string"
 		and typeof(current.soundId) == "string" and ControllerFunctions.isFiniteNumber(current.duration)
 		and current.duration >= 1 and current.duration <= 86400 then
+		local catalogTrack = TRACK_BY_ID[current.trackId]
+		if not catalogTrack or not isPlayableTrack(catalogTrack)
+			or ControllerFunctions.isTrackBlocked(current.trackId) then
+			task.defer(ControllerFunctions.refreshCatalogWhenReady)
+			return false
+		end
+		local canonicalSoundId = catalogTrack.soundId or CONFIG.SoundIds[current.trackId] or ""
+		if canonicalSoundId == "" or canonicalSoundId ~= current.soundId then return false end
 		if nowPlaying.trackId ~= current.trackId then
 			local entry: QueueEntry = {
 				id = "global-playback-" .. tostring(snapshot.trackRevision or snapshot.revision),
-				trackId = current.trackId, title = tostring(current.title or current.trackId),
-				artist = tostring(current.artist or "Unknown artist"), duration = math.max(1, current.duration),
-				requestedBy = "Global Playback", userId = 0, genre = "Unknown",
-				source = "auto", vip = false, passTier = 0, soundId = current.soundId,
+				trackId = current.trackId, title = catalogTrack.title, artist = catalogTrack.artist,
+				duration = catalogTrack.duration, requestedBy = "Global Playback", userId = 0,
+				genre = catalogTrack.genre, source = "auto", vip = false, passTier = 0,
+				soundId = canonicalSoundId,
 			}
 			ControllerFunctions.setNowPlaying(entry, nil, true)
 		end
@@ -5032,6 +5041,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJSkip" then
 		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
+		if ControllerFunctions.globalPlaybackSyncState.enabled == true
+			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
+			return false, "Only the elected playback leader can skip while global playback sync is enabled."
+		end
 		if trustedAdminCommand == true and transitionInProgress then
 			return true, "A track transition is already being processed; no second skip was sent."
 		end
@@ -5047,6 +5060,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJPause" then
 		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
+		if ControllerFunctions.globalPlaybackSyncState.enabled == true
+			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
+			return false, "Only the elected playback leader can pause or resume while global playback sync is enabled."
+		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
 		playbackControlRequestId += 1
@@ -5078,6 +5095,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJRestart" then
 		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
+		if ControllerFunctions.globalPlaybackSyncState.enabled == true
+			and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
+			return false, "Only the elected playback leader can restart while global playback sync is enabled."
+		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		playbackControlRequestId += 1
 		local restartAsset = nowPlaying.soundId
