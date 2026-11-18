@@ -1,10 +1,11 @@
 -- ClubMusic audio ModuleScript installer
--- The six package modules are pinned to the audited audio package snapshot. The controller playback adapter is pinned separately below.
--- Playback and queues are server-local; this package does not install global queue/playback services.
+-- Five server audio modules and one client preferences module are pinned to one canonical package snapshot.
+-- Playback and request queues remain controller-owned; optional playback-only global sync is installed separately.
 -- Run this entire script once in Roblox Studio's Command Bar (View > Command Bar).
 -- Requires Game Settings > Security > Allow HTTP Requests.
 -- This installs source modules only; it does NOT update the controller or renderer scripts.
--- MusicPlaybackManager is installed as a direct ServerStorage child because the controller requires that exact path.
+-- The current controller performs playback quality inspection locally and no longer requires MusicPlaybackManager.
+-- Existing MusicPlaybackManager instances are left untouched for live-place rollback/consumer reconciliation.
 -- Install all matching branch revisions together in a stopped test place before starting playback.
 
 local HttpService = game:GetService("HttpService")
@@ -40,24 +41,11 @@ for _, item in ipairs(modules) do
     staged[item.name] = source
 end
 
-local playbackManagerUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/f47410ac9a9674d3df0b24eb1714b31d1a4ef816/MusicPlaybackManager.luau"
-local playbackManagerOk, playbackManagerSource = pcall(function()
-    return HttpService:GetAsync(playbackManagerUrl, true)
-end)
-if not playbackManagerOk or type(playbackManagerSource) ~= "string" or #playbackManagerSource < 100 then
-    error("Could not retrieve MusicPlaybackManager. Check HTTP requests and internet access. No modules have been installed yet.")
-end
-
 for side, parent in pairs(destinations) do
     local folder = parent:FindFirstChild(folders[side])
     if folder and not folder:IsA("Folder") then
         error("A non-Folder already uses the name " .. folders[side] .. " under " .. parent.Name .. ". Rename it before retrying.")
     end
-end
-
-local existingPlaybackManager = ServerStorage:FindFirstChild("MusicPlaybackManager")
-if existingPlaybackManager and not existingPlaybackManager:IsA("ModuleScript") then
-    error("A non-ModuleScript already uses the name MusicPlaybackManager under ServerStorage. Rename it before retrying.")
 end
 
 for side, parent in pairs(destinations) do
@@ -81,13 +69,7 @@ for side, parent in pairs(destinations) do
     end
 end
 
-local playbackManager = existingPlaybackManager or Instance.new("ModuleScript")
-playbackManager.Name = "MusicPlaybackManager"
-playbackManager.Source = playbackManagerSource
-playbackManager.Parent = ServerStorage
-
 print("[ClubMusic] Installed 5 audio support ModuleScripts in ServerStorage/" .. folders.server)
-print("[ClubMusic] Installed MusicPlaybackManager directly under ServerStorage.")
 print("[ClubMusic] Installed 1 client ModuleScript in ReplicatedStorage/" .. folders.client)
 print("[ClubMusic] Install this package with the matching controller and UI_Renderer from the same branch snapshot.")
 print("[ClubMusic] Modern AudioPlayer is the only controller playback source. Remove obsolete ServerMusicSound/MusicGroup instances from the place only after confirming no unrelated scripts use them.")
