@@ -113,6 +113,7 @@ return function(_K: any)
 		OperationalRecovery = true, OperationalReconcile = true,
 		PurchaseDiagnostics = true, SecurityReplay = true, SecurityThreatIntelligence = true,
 		StaffSpectatorState = true,
+		Phase32History = true, Phase32Risk = true,
 	}
 	game:GetService("Players").PlayerRemoving:Connect(function(player: Player)
 		lastInspectionAt[player.UserId] = nil
@@ -196,6 +197,7 @@ return function(_K: any)
 			OperationalRecovery = true, OperationalReconcile = true,
 			PurchaseDiagnostics = true, SecurityReplay = true, SecurityThreatIntelligence = true,
 			StaffSpectatorEnter = true, StaffSpectatorSwitch = true, StaffSpectatorExit = true, StaffSpectatorState = true,
+			Phase32History = true, Phase32Risk = true,
 			SecurityThreatCaseOpen = true,
 			OperationalMaintenance = true,
 			RequestMute = true, ClearUserQueue = true, EmergencyLock = true,
@@ -259,6 +261,34 @@ return function(_K: any)
 	})
 	register("clubmusic-forcestop", "Emergency-stop ClubMusic playback across all servers.", "Administration", "ForceStop", {"cmforcestop"})
 	register("clubmusic-moderationhistory", "Show the recent ClubMusic moderation history for a player UserId.", "Administration", "ModerationHistory", {"cmmoderationhistory"}, {
+		{type = "string", name = "UserId", description = "Numeric Roblox UserId.", optional = false},
+	})
+
+	-- Phase 32 graduated moderation. Every command is re-authorized by the
+	-- server's SecurityCore Authorization service; these client definitions
+	-- only provide Kohl's Admin autocomplete and argument presentation.
+	register("clubmusic-warn", "Issue a persistent formal warning to a player by UserId.", "Administration", "Phase32Warn", {"cmwarn"}, {
+		{type = "string", name = "UserIdAndReason", description = "Numeric UserId followed by the moderation reason.", optional = false},
+	})
+	register("clubmusic-restrict", "Apply feature-specific moderation restrictions to a player.", "Administration", "Phase32Restrict", {"cmrestrict"}, {
+		{type = "string", name = "UserIdFeaturesReason", description = "UserId, comma-separated feature keys, then reason. Keys: Chat,MusicRequests,CustomText,DJFeatures,Announcements,Trading.", optional = false},
+	})
+	register("clubmusic-tempban", "Apply a Roblox experience ban for 60 seconds through 365 days.", "Administration", "Phase32TempBan", {"cmtempban"}, {
+		{type = "string", name = "UserIdSecondsReason", description = "Numeric UserId, duration in seconds, then reason.", optional = false},
+	})
+	register("clubmusic-permban", "Permanently ban a player from the experience without suspected-alt propagation.", "Administration", "Phase32PermanentBan", {"cmpermban"}, {
+		{type = "string", name = "UserIdAndReason", description = "Numeric UserId followed by the moderation reason.", optional = false},
+	})
+	register("clubmusic-permban-alts", "Permanently ban with Roblox suspected-alt propagation; requires senior IncidentResponse authorization.", "Administration", "Phase32PermanentBanAlts", {"cmpermban-alts"}, {
+		{type = "string", name = "UserIdAndReason", description = "Numeric UserId followed by the moderation reason. Roblox decides suspected account propagation.", optional = false},
+	})
+	register("clubmusic-unban", "Reverse an active Roblox experience ban and retain the reversal history.", "Administration", "Phase32Unban", {"cmunban"}, {
+		{type = "string", name = "UserIdAndReason", description = "Numeric UserId followed by the reversal reason.", optional = false},
+	})
+	register("clubmusic-punishment-history", "Show retained Phase 32 punishment history for a UserId.", "Administration", "Phase32History", {"cmpunishmenthistory"}, {
+		{type = "string", name = "UserId", description = "Numeric Roblox UserId.", optional = false},
+	})
+	register("clubmusic-account-risk", "Review privacy-limited account-risk signals; IncidentResponse permission required.", "Administration", "Phase32Risk", {"cmrisk"}, {
 		{type = "string", name = "UserId", description = "Numeric Roblox UserId.", optional = false},
 	})
 
