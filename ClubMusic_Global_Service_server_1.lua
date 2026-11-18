@@ -923,6 +923,13 @@ if diagnosticsModule then
 			getAuditStatus = function() return if globalAuditService then globalAuditService:GetStatus() else nil end,
 			getEventLogStatus = function() return if globalEventLogService then globalEventLogService:GetStatus() else nil end,
 			getIncidentResponseStatus = function() return if globalIncidentResponseService then globalIncidentResponseService:GetStatus() else nil end,
+			allowAnalyticsAggregation = function()
+				local endpoint = ServerStorage:FindFirstChild("TikiTideSecurityLoadManager")
+				if not endpoint or not endpoint:IsA("BindableFunction") or type(endpoint.OnInvoke) ~= "function" then return true end
+				local ok, allowed = pcall(function() return endpoint:Invoke("TryConsume", "AnalyticsAggregation") end)
+				-- Analytics are optional; an unavailable governor must not break diagnostics reads.
+				return not ok or allowed == true
+			end,
 			getAdaptiveLoadStatus = function() return readServerStorageStatus("GetTikiTideSecurityLoadStatus") end,
 			getSecurityReplayStatus = function() return readServerStorageStatus("GetTikiTideSecurityReplayStatus") end,
 			getThreatIntelligenceStatus = function() return readServerStorageStatus("GetTikiTideThreatIntelligenceStatus") end,
