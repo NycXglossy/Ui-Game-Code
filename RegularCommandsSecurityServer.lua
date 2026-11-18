@@ -102,6 +102,8 @@ return function(_K: any)
 		incognito = {permission = "GlobalModeration", property = "Incognito", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		team = {permission = "GlobalModeration", property = "TeamChange", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		teamrespawn = {permission = "GlobalModeration", property = "TeamRespawn", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		substitute = {permission = "GlobalModeration", property = "TeamSubstitute", targetArg = 1, targetArg2 = 2, auditKind = "Moderation", budget = "Moderation"},
+		randomizeteams = {permission = "GlobalModeration", property = "TeamRandomize", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		change = {permission = "GlobalConfig", property = "LeaderstatChange", valueArg = 3, detailArg = 2, targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
 		clean = {permission = "GlobalConfig", property = "AdminCleanup", auditKind = "AdminAction", budget = "World"},
 		clearterrain = {permission = "GlobalConfig", property = "ClearTerrain", global = true, auditKind = "AdminAction", budget = "World"},
