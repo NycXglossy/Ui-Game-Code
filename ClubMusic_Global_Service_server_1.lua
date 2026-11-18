@@ -29,6 +29,7 @@ local CONFIG = {
 		Moderation = "ClubMusic_Global_Moderation_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
+		Playback = "ClubMusic_Global_Playback_v1",
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -1035,6 +1036,138 @@ authorizeGlobalActor = function(actorUserId: any, permission: string): boolean
 	return allowed == true
 end
 
+-- Optional playback-only authority. It stores only Now Playing and a fenced
+-- leader lease; no request queue, playlist rotation, or per-server queue data.
+local playbackAuthorityModule = loadOptionalGlobalModule("MusicGlobalPlaybackAuthority")
+local globalPlaybackAuthority: any = nil
+local playbackSyncEnabled = false
+local playbackAuthorityLastError: string? = nil
+if playbackAuthorityModule and SERVICE_ENABLED then
+	local createOk, instance = pcall(function()
+		return playbackAuthorityModule.new({
+			safeCall = globalSafeCall,
+			dataStoreService = DataStoreService,
+			memoryStoreService = MemoryStoreService,
+			jobId = JOB_ID,
+			guid = function() return HttpService:GenerateGUID(false) end,
+			publish = function(payload)
+				publishTopic(CONFIG.Topics.Playback, payload)
+			end,
+		})
+	end)
+	if createOk and instance and type(instance.Start) == "function" then
+		local startOk, started, startError = pcall(instance.Start, instance)
+		if startOk and started == true then
+			globalPlaybackAuthority = instance
+		else
+			warn("[ClubMusic Global] Playback-only authority unavailable: " .. tostring(startError or started))
+		end
+	else
+		warn("[ClubMusic Global] Could not construct playback-only authority: " .. tostring(instance))
+	end
+end
+
+bindFunction("GetGlobalPlaybackSyncStatus", function()
+	local status = if globalPlaybackAuthority then globalPlaybackAuthority:GetStatus()
+		else {enabled = false, error = "Playback authority module unavailable."}
+	status.syncEnabled = playbackSyncEnabled
+	status.lastServiceError = playbackAuthorityLastError
+	status.localQueueIsolated = true
+	return true, status
+end)
+
+bindFunction("GetGlobalPlaybackSnapshot", function()
+	if not playbackSyncEnabled or not globalPlaybackAuthority then
+		return false, nil, "Playback-only global sync is disabled or unavailable."
+	end
+	return globalPlaybackAuthority:GetSnapshot()
+end)
+
+bindFunction("AcquireGlobalPlaybackLeadership", function()
+	if not playbackSyncEnabled or not globalPlaybackAuthority then
+		return false, nil, "Playback-only global sync is disabled or unavailable."
+	end
+	return globalPlaybackAuthority:AcquireOrRenewLeadership()
+end)
+
+bindFunction("CommitGlobalPlaybackSnapshot", function(snapshot: any, expectedRevision: any)
+	if not playbackSyncEnabled or not globalPlaybackAuthority then
+		return false, nil, "Playback-only global sync is disabled or unavailable."
+	end
+	return globalPlaybackAuthority:CommitPlayback(snapshot, expectedRevision)
+end)
+
+bindFunction("SetGlobalPlaybackSyncEnabled", function(enabled: any, actorUserId: any)
+	if typeof(enabled) ~= "boolean" then return false, "Invalid playback sync setting." end
+	if not finiteNumber(actorUserId) or actorUserId < 1 or actorUserId % 1 ~= 0
+		or actorUserId > 9007199254740991 then return false, "Invalid authorization actor." end
+	if not authorizeGlobalActor(math.floor(actorUserId), "GlobalConfig") then
+		warn("[ClubMusic][PlaybackSync Auth] Permission denied; actor=" .. tostring(actorUserId) .. "; permission=GlobalConfig")
+		return false, "Global playback sync authorization failed."
+	end
+	if not SERVICE_ENABLED then
+		return false, if IS_STUDIO and not CONFIG.EnableInStudio
+			then "Cross-server playback sync is disabled in Studio isolation."
+			else "Cross-server playback sync is disabled by global service configuration."
+	end
+	if not globalConfigService then return false, "Shared config service is unavailable." end
+	if enabled and not globalPlaybackAuthority then return false, "Playback authority module is unavailable." end
+	local ok, result = globalConfigService:Set("playbackSyncEnabled", enabled, math.floor(actorUserId))
+	if not ok then return false, result end
+	playbackSyncEnabled = enabled
+	if not enabled and globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
+	publishTopic(CONFIG.Topics.Playback, {kind = "PlaybackSyncModeChanged", enabled = enabled})
+	return true, result
+end)
+
+-- Each server observes the opt-in config. Only one lease holder can commit
+-- snapshots; followers never upload or import their local request queues.
+ownThread(task.spawn(function()
+	local retryDelay = 8
+	while SERVICE_ENABLED do
+		local cycleOk, cycleError = pcall(function()
+			if not globalConfigService then
+				playbackAuthorityLastError = "Shared config service unavailable."
+				return
+			end
+			local enabled = globalConfigService:Get("playbackSyncEnabled") == true
+			if enabled ~= playbackSyncEnabled then
+				playbackSyncEnabled = enabled
+				if not enabled and globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
+			end
+			if playbackSyncEnabled then
+				if not globalPlaybackAuthority then
+					playbackAuthorityLastError = "Playback authority module unavailable."
+					return
+				end
+				local acquired, _, acquireError = globalPlaybackAuthority:AcquireOrRenewLeadership()
+				if not acquired then
+					local message = tostring(acquireError or "Leadership is not currently available.")
+					playbackAuthorityLastError = if string.find(message, "Another server currently owns global playback", 1, true)
+						then nil else message
+				else
+					playbackAuthorityLastError = nil
+				end
+			end
+		end)
+		if not cycleOk then
+			playbackAuthorityLastError = string.sub(tostring(cycleError), 1, 180)
+			warn("[ClubMusic Global] Playback authority reconciliation failed safely: " .. playbackAuthorityLastError)
+			task.wait(retryDelay)
+			retryDelay = math.min(30, retryDelay * 2)
+		else
+			retryDelay = 8
+			task.wait(8)
+		end
+	end
+	if globalPlaybackAuthority then
+		local releaseOk, releaseResult = pcall(globalPlaybackAuthority.ReleaseLeadership, globalPlaybackAuthority)
+		if not releaseOk or releaseResult ~= true then
+			warn("[ClubMusic Global] Playback leadership release failed; lease will expire naturally.")
+		end
+	end
+end))
+
 globalSecurityPolicyService = createOperationalService("ClubMusic_Global_Security_Policy_Service", {
 	configService = globalConfigService,
 	authorize = authorizeGlobalActor,
@@ -1456,6 +1589,28 @@ local function onCatalog(message)
 	end
 end
 
+local function onPlaybackChanged(message)
+	local data = if typeof(message) == "table" then message.Data else nil
+	if not validEnvelope(data, "Playback") or not unseen(data.id) then return end
+	if data.kind == "PlaybackSyncModeChanged" then
+		if typeof(data.enabled) ~= "boolean" then return end
+		playbackSyncEnabled = data.enabled
+		if globalConfigService then globalConfigService:SetLocal("playbackSyncEnabled", data.enabled) end
+		if not data.enabled and globalPlaybackAuthority then globalPlaybackAuthority:ReleaseLeadership() end
+		globalEventBindable:Fire({kind = "PlaybackSyncModeChanged", enabled = data.enabled, senderJob = data.senderJob})
+	elseif data.kind == "PlaybackChanged" then
+		if not finiteNumber(data.revision) or data.revision < 0 or data.revision % 1 ~= 0
+			or data.revision > 9007199254740991 then return end
+		globalEventBindable:Fire({
+			kind = "PlaybackChanged",
+			revision = math.floor(data.revision),
+			trackRevision = if finiteNumber(data.trackRevision) and data.trackRevision >= 0
+				then math.floor(data.trackRevision) else 0,
+			senderJob = data.senderJob,
+		})
+	end
+end
+
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	ownThread(task.spawn(function()
@@ -1491,6 +1646,7 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.Moderation, onModeration)
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
+	subscribeWithRetry(CONFIG.Topics.Playback, onPlaybackChanged)
 else
 	if not CONFIG.Enabled then
 		warn("[ClubMusic Global] Cross-server service is disabled by CONFIG.Enabled=false; local UI controller remains fully functional.")
