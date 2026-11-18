@@ -4651,6 +4651,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if (activeTab == "Moderation" and perm() < 4) or ((activeTab == "Audio ID" or activeTab == "Playlists") and perm() < 1) then activeTab = "Home" end
 	end
 
+	local typographyTargets: {TextLabel | TextButton | TextBox} = {}
+	local typographyTargetsInitialized = false
+	local function isTypographyTarget(item: Instance): boolean
+		return item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox")
+	end
 	local function applyMenuTypography()
 		-- Keep typography readable without fighting the panel's device UIScale.
 		local scaleByDevice = {Desktop=1.04, Tablet=0.98, Mobile=0.92, Console=1.02, VR=0.96}
@@ -4659,8 +4664,27 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- A narrow desktop window needs the same typography restraint as a tablet;
 		-- do not let the device label override the actual available width.
 		local textScale = (scaleByDevice[currentDevice] or 1) * (if viewportWidth < 560 then 0.9 elseif viewportWidth < 760 then 0.95 else 1)
-		for _, item in ipairs(panel:GetDescendants()) do
-			if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
+		if not typographyTargetsInitialized then
+			typographyTargetsInitialized = true
+			for _, descendant in ipairs(panel:GetDescendants()) do
+				if isTypographyTarget(descendant) then
+					table.insert(typographyTargets, descendant :: any)
+				end
+			end
+			table.insert(connections, panel.DescendantAdded:Connect(function(descendant)
+				if isTypographyTarget(descendant) then
+					table.insert(typographyTargets, descendant :: any)
+				end
+			end))
+			table.insert(connections, panel.DescendantRemoving:Connect(function(descendant)
+				if isTypographyTarget(descendant) then
+					local index = table.find(typographyTargets, descendant)
+					if index then table.remove(typographyTargets, index) end
+				end
+			end))
+		end
+		for _, item in ipairs(typographyTargets) do
+			if item.Parent ~= nil then
 				local baseSize = item:GetAttribute("ClubBaseTextSize")
 				if typeof(baseSize) ~= "number" then
 					baseSize = item.TextSize
