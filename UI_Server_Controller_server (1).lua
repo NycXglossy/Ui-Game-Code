@@ -5488,6 +5488,29 @@ if not localDiagnosticsEndpoint then
 	localDiagnosticsEndpoint.Parent = ServerStorage
 end
 local localDiagnosticsBindable = localDiagnosticsEndpoint :: BindableFunction
+ControllerFunctions.inspectPlaybackQuality = function()
+	if nowPlaying.trackId == "" then return {state = "Idle"} end
+	if nowPlaying.soundId == "" then return {state = "SilentCatalogTrack"} end
+	local snapshotOk, snapshot = pcall(ControllerFunctions.getAudioSnapshot)
+	if not snapshotOk or typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
+		return {state = "Unavailable", reason = "AudioInstanceMissing"}
+	end
+	local elapsed = if ControllerFunctions.isFiniteNumber(nowPlaying.elapsed) then math.max(0, nowPlaying.elapsed) else 0
+	local isReady = snapshot.ready == true
+	local isPlaying = snapshot.playing == true
+	local length = if isReady and ControllerFunctions.isFiniteNumber(snapshot.length) then math.max(0, snapshot.length) else 0
+	if isPlaying then
+		return {state = "Playing", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length}
+	end
+	if snapshot.paused == true then
+		return {state = "Paused", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length}
+	end
+	if isReady and length > 0 then
+		return {state = "StoppedAfterLoad", backend = snapshot.kind, elapsed = elapsed, loaded = true, length = length}
+	end
+	return {state = "BufferingOrStopped", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length}
+end
+
 localDiagnosticsBindable.OnInvoke = function()
 	local audioSnapshot = nil
 	if type(ControllerFunctions.getAudioSnapshot) == "function" then
@@ -6360,28 +6383,6 @@ end
 -- Playback quality is now inspected directly from the canonical modern AudioPlayer snapshot.
 ControllerFunctions.ChildManagers = {}
 ControllerFunctions.ChildManagerModules = {}
-ControllerFunctions.inspectPlaybackQuality = function()
-	if nowPlaying.trackId == "" then return {state = "Idle"} end
-	if nowPlaying.soundId == "" then return {state = "SilentCatalogTrack"} end
-	local snapshotOk, snapshot = pcall(ControllerFunctions.getAudioSnapshot)
-	if not snapshotOk or typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
-		return {state = "Unavailable", reason = "AudioInstanceMissing"}
-	end
-	local elapsed = if ControllerFunctions.isFiniteNumber(nowPlaying.elapsed) then math.max(0, nowPlaying.elapsed) else 0
-	local isReady = snapshot.ready == true
-	local isPlaying = snapshot.playing == true
-	local length = if isReady and ControllerFunctions.isFiniteNumber(snapshot.length) then math.max(0, snapshot.length) else 0
-	if isPlaying then
-		return {state = "Playing", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length}
-	end
-	if snapshot.paused == true then
-		return {state = "Paused", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length}
-	end
-	if isReady and length > 0 then
-		return {state = "StoppedAfterLoad", backend = snapshot.kind, elapsed = elapsed, loaded = true, length = length}
-	end
-	return {state = "BufferingOrStopped", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length}
-end
 
 
 ControllerFunctions.castSkipVote = function(player: Player): (boolean, string)
