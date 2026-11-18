@@ -94,6 +94,34 @@ function Registry:SetStatus(name: any, state: any, detail: any, metadata: any?):
 	return true
 end
 
+function Registry:RegisterDependency(name: any, instance: any, expectedClass: any, expectedParent: any, required: any?): boolean
+	if not validName(name) or typeof(instance) ~= "Instance"
+		or typeof(expectedClass) ~= "string" or #expectedClass == 0 or #expectedClass > 48
+		or (expectedParent ~= nil and typeof(expectedParent) ~= "Instance") then return false end
+	local current = self.services[name]
+	if not current and self.registered >= MAX_SERVICES then return false end
+	local classOk, actualClass = pcall(function() return instance.ClassName end)
+	local parentOk, actualParent = pcall(function() return instance.Parent end)
+	local valid = classOk and parentOk and actualClass == expectedClass and actualParent ~= nil
+		and (expectedParent == nil or actualParent == expectedParent)
+	self.services[name] = {
+		name = name,
+		state = if valid then "Healthy" else "Unavailable",
+		detail = if valid then "Dependency class and hierarchy are valid."
+			else "Dependency is missing, reparented, or has an unexpected class.",
+		required = required == true,
+		dependency = true,
+		instance = instance,
+		expectedClass = expectedClass,
+		expectedParent = expectedParent,
+		registeredAt = if current then current.registeredAt else os.time(),
+		updatedAt = os.time(),
+	}
+	if not current then self.registered += 1 end
+	self.updatedAt = os.time()
+	return valid
+end
+
 function Registry:Remove(name: any): boolean
 	if not validName(name) or self.services[name] == nil then return false end
 	self.services[name] = nil
@@ -102,23 +130,45 @@ function Registry:Remove(name: any): boolean
 	return true
 end
 
+local function copyEntry(entry: any): any
+	local copy = table.clone(entry)
+	if entry.dependency == true then
+		local ok, className, parent = pcall(function()
+			return entry.instance.ClassName, entry.instance.Parent
+		end)
+		if not ok or parent == nil or className ~= entry.expectedClass
+			or (entry.expectedParent ~= nil and parent ~= entry.expectedParent) then
+			copy.state = "Unavailable"
+			copy.detail = "Dependency is missing, reparented, or has an unexpected class."
+		else
+			copy.state = "Healthy"
+			copy.detail = "Dependency class and hierarchy are valid."
+		end
+		copy.instance = nil
+		copy.expectedParent = nil
+	end
+	if typeof(copy.metadata) == "table" then copy.metadata = table.clone(copy.metadata) end
+	return copy
+end
+
 function Registry:Get(name: any): any
 	if not validName(name) then return nil end
 	local entry = self.services[name]
-	return if entry then table.clone(entry) else nil
+	return if entry then copyEntry(entry) else nil
 end
 
 function Registry:GetStatus(): {[string]: any}
 	local services = {}
 	local counts = {Healthy = 0, Degraded = 0, Unavailable = 0, NotInstalled = 0, Starting = 0, Disabled = 0}
 	local requiredIssues = {}
+	local dependencyCount = 0
 	for name, entry in pairs(self.services) do
-		local copy = table.clone(entry)
-		if typeof(entry.metadata) == "table" then copy.metadata = table.clone(entry.metadata) end
+		local copy = copyEntry(entry)
 		services[name] = copy
-		counts[entry.state] = (counts[entry.state] or 0) + 1
-		if entry.required and entry.state ~= "Healthy" and entry.state ~= "Disabled" then
-			table.insert(requiredIssues, name .. ": " .. cleanText(entry.detail, 120))
+		counts[copy.state] = (counts[copy.state] or 0) + 1
+		if entry.dependency == true then dependencyCount += 1 end
+		if entry.required and copy.state ~= "Healthy" and copy.state ~= "Disabled" then
+			table.insert(requiredIssues, name .. ": " .. cleanText(copy.detail, 120))
 		end
 	end
 	table.sort(requiredIssues)
