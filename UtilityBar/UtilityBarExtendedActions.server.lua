@@ -485,11 +485,6 @@ execute.OnServerInvoke = function(player: Player, actionName: any, value: any): 
 end
 
 
-local function clearPlayerAuraOnCharacterChange(player: Player)
-	player.CharacterRemoving:Connect(function()
-		clearAura(player.UserId)
-	end)
-end
 local function bindPlayerLifecycle(player: Player)
 	local existing = playerLifecycleConnections[player.UserId]
 	if existing then
@@ -500,19 +495,16 @@ local function bindPlayerLifecycle(player: Player)
 		destroyCompanion(player.UserId)
 	end))
 	table.insert(connections, player.CharacterRemoving:Connect(function()
+		clearAura(player.UserId)
 		destroyCompanion(player.UserId)
 	end))
 	playerLifecycleConnections[player.UserId] = connections
 end
 
 for _, player in ipairs(Players:GetPlayers()) do
-	clearPlayerAuraOnCharacterChange(player)
 	bindPlayerLifecycle(player)
 end
-table.insert(lifecycleConnections, Players.PlayerAdded:Connect(function(player)
-	clearPlayerAuraOnCharacterChange(player)
-	bindPlayerLifecycle(player)
-end))
+table.insert(lifecycleConnections, Players.PlayerAdded:Connect(bindPlayerLifecycle))
 
 table.insert(lifecycleConnections, Players.PlayerRemoving:Connect(function(player)
 	lastRequest[player.UserId] = nil
