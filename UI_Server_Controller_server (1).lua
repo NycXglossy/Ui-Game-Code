@@ -74,8 +74,6 @@ local CONFIG = {
 
 	-- Modern AudioPlayer is the only main playback source; failures remain unavailable.
 	UseModernAudioBackend = true,
-	-- The feature is available but remains opt-in through the shared SecurityCore-gated setting.
-	EnableGlobalPlaybackSync = false, -- Retired; each server owns its own playback and queue.
 	CrossfadeDurationSeconds = 4,
 	CrossfadePrepareLeadSeconds = 14,
 
@@ -2122,7 +2120,6 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	PlaylistCreate = 2, PlaylistDelete = 1, PlaylistAddTrack = 0.5, PlaylistRemoveTrack = 0.5, PlaylistMoveTrack = 0.5,
 	DJPlayPlaylist = 2, DJStopPlaylist = 1,
 	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
-	DJToggleGlobalPlaybackSync = 1.5,
 	ModBlockUser = 0.5, ModSetPassTier = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, BuyTitleTag = 1, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
 	SaveTitleSlot = CONFIG.SaveTitleCooldownSeconds, SelectTitleSlot = 0.3,
