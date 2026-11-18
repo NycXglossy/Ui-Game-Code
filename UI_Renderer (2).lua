@@ -4645,39 +4645,22 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				local minSize = if currentDevice == "Mobile" or viewportWidth < 560 then 8 else 9
 				local maxSize = if currentDevice == "Mobile" then 25 elseif viewportWidth < 560 then 24 else 28
 				item.TextSize = math.clamp(math.floor(baseSize * textScale + 0.5), minSize, maxSize)
-				if item:IsA("TextButton") then
+				if item:IsA("TextLabel") then
+					-- Content is already inside panel, so apply its editorial
+					-- typography here instead of traversing the content tree again.
+					item.Font = if baseSize >= 13 then BOLD else FONT
+					item.TextScaled = false
+					local height = item.Size.Y.Offset
+					if height >= 26 and #item.Text > 34 then
+						item.TextWrapped = true
+					end
+				elseif item:IsA("TextButton") then
 					item.TextScaled = false
 					item.Font = BOLD
 				elseif item:IsA("TextBox") then
 					item.TextScaled = false
 					item.Font = FONT
 				end
-			end
-		end
-
-		-- Every tab shares the same editorial hierarchy: confident titles,
-		-- calm supporting copy, and compact but legible control labels.
-		for _, item in ipairs(content:GetDescendants()) do
-			if item:IsA("TextLabel") then
-				local baseSize = item:GetAttribute("ClubBaseTextSize")
-				if typeof(baseSize) ~= "number" then
-					baseSize = item.TextSize
-					item:SetAttribute("ClubBaseTextSize", baseSize)
-				end
-				item.Font = if baseSize >= 13 then BOLD else FONT
-				item.TextScaled = false
-				-- Longer descriptions can wrap in their existing card area rather
-				-- than being forced into an unreadably small font.
-				local height = item.Size.Y.Offset
-				if height >= 26 and #item.Text > 34 then
-					item.TextWrapped = true
-				end
-			elseif item:IsA("TextButton") then
-				item.Font = BOLD
-				item.TextScaled = false
-			elseif item:IsA("TextBox") then
-				item.Font = FONT
-				item.TextScaled = false
 			end
 		end
 	end
