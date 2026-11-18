@@ -257,6 +257,10 @@ local function handleClosedServerJoin(player: Player)
 		if player.Parent ~= Players or not clubClosed.Value then return end
 		local staffStatus = isVerifiedStaff(player)
 		if staffStatus ~= true then
+			local audited = recordAudit("club_closure_join_denied", 0, player.UserId, "Warning", {scope = "current_server"})
+			if not audited then
+				warn("[Tiki Tide][StaffActions] Closed-club join audit failed for UserId " .. tostring(player.UserId))
+			end
 			player:Kick("Tiki Tide is currently closed. Please return another time.")
 		end
 	end)
