@@ -183,3 +183,31 @@ The existing `RequestAudioAsset` action is the approved equivalent for direct Cr
 The allowlist remains an explicit configuration option (`RestrictAudioToAllowlist`); it is not enabled with an empty list. Enabling it safely requires populating a reviewed approved-ID catalog first. Do not enable an empty allowlist or treat the sample's two IDs as approved without an explicit content-policy decision.
 
 **Disposition:** no new RemoteEvent, Sound object, DJSpeaker controller, cooldown table, or playback handler was added. Reuse the existing server action and modern AudioPlayer path.
+
+## Follow-up review: standalone AnimationPlayed allowlist example
+
+The supplied `Animator.AnimationPlayed` script was reviewed against the active Tiki Tide controller and existing dance-floor reward logic. It is **not installed** and its stop/destroy policy is not safe to adopt as written.
+
+### Findings
+
+- The seven hardcoded IDs are not a complete animation policy for this experience. They cannot cover all default R6 and R15 Animate tracks, custom avatar rigs, game-owned dances, emotes, tool animations, layered/priority animations, and future content.
+- The script stops and destroys every track whose AnimationId is not in that small table. That would interrupt legitimate custom dances/emotes and potentially default movement/idle/jump/tool animations. A legitimate track is not unauthorized merely because its ID is not on this list.
+- `AnimationPlayed` identifies that a track began; it does not establish whether the player, Roblox Animate, a server script, a game emote system, a tool, or another legitimate system initiated it. An ID-only allowlist is not a grant/provenance authority.
+- Animation IDs may be represented in equivalent asset URI forms; string-key matching without canonicalization can reject equivalent valid IDs.
+- The example only connects `CharacterAdded` for future PlayerAdded events, so it can miss players already present when the script starts. It also does not explicitly disconnect character/player observers on teardown, bound warning volume, or aggregate repeated events.
+- Immediate `Stop(0)` plus `Destroy()` is enforcement, not passive evidence. A false positive can break movement, emotes, or gameplay; repeated client-triggered tracks could also produce log spam.
+
+### Existing game behavior that must be preserved
+
+The main controller's profile-backed Dance Floor reward service samples each player's current character every ten seconds. It treats observed root displacement, Humanoid MoveDirection, or a currently playing track with Movement-or-higher priority as activity. It checks presence inside the server-tagged `TikiTideDanceFloorZone`, applies a 180-second inactivity cutoff, resolves VIP through SecurityCore entitlement, and records the reward timestamp in the existing profile.
+
+This activity observer deliberately does not require a particular animation ID. Replacing it with the supplied allowlist, or stopping unknown tracks, would risk breaking legitimate dance-floor activity and rewards. It is not an animation authorization service.
+
+### Safe disposition
+
+- Do not add the sample's stop/destroy handler, a competing animation controller, or a second permission/entitlement system.
+- Preserve default Roblox animation behavior and all legitimate R6/R15/custom rig and emote paths.
+- If animation enforcement is later required, first inventory the actual live Animate scripts, HumanoidDescription animation/emote configuration, game dance/emote grant paths, tool animations, server-created Animator instances, third-party packages, and all animation asset IDs used in production. Establish server-owned provenance/authorization for each source before defining a policy.
+- Any initial monitor should be bounded, detection-only, and aggregate/record fixed event categories through the existing SecurityCore recording path. It must not stop tracks, destroy animations, kick players, or permanently punish from an unclassified ID. Only consider enforcement after legitimate-source coverage and Studio/published R6/R15/custom-avatar regression tests pass.
+
+**Disposition:** no animation IDs were added to an allowlist; no AnimationPlayed enforcement or observer was installed; no legitimate animation was stopped or destroyed.
