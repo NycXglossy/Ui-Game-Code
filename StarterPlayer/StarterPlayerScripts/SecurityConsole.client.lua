@@ -334,6 +334,7 @@ local pendingConfirmation = false
 local confirmationToken = 0
 local pendingRequest = false
 local requestToken = 0
+local initialStatusHandled = false
 local lockdownActive = false
 
 local function setStatus(message: string, success: boolean?)
@@ -551,7 +552,12 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 	if action == "GetStatus" then
 		gui:SetAttribute("StaffAuthorized", succeeded)
 		launcherGui.Enabled = succeeded
-		if succeeded then gui.Enabled = true end
+		if not succeeded then
+			gui.Enabled = false
+		elseif not initialStatusHandled then
+			gui.Enabled = true
+		end
+		initialStatusHandled = true
 	end
 	if action == "RunClubMusicCommand" and succeeded then clearInputs() end
 	if action == "RunClubMusicCommand" or action == "ToggleLockdown" then
@@ -563,5 +569,10 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 	end
 end)
 
-securityAction:FireServer("GetStatus")
+task.spawn(function()
+	while gui.Parent do
+		securityAction:FireServer("GetStatus")
+		task.wait(30)
+	end
+end)
 print("[Tiki Tide][SecurityConsole] Graphical command console connected; server bridge remains authoritative.")
