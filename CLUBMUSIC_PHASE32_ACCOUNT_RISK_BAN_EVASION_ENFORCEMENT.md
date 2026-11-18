@@ -1,7 +1,7 @@
 # Phase 32 — Account Risk, Ban-Evasion Signals & Moderation Enforcement
 
 **Branch:** `fix/security-core-release-and-queue-loop`  
-**Status:** Source modules added; runtime wiring, installation, and Roblox Studio acceptance remain required.  
+**Status:** Source modules, controller composition, staff-command bridge, request/custom-title restriction checks, and native-ban command guard are committed. Installation in Studio and runtime acceptance remain required.  
 **Security authority:** Existing `ClubMusicSecurityCore/Authorization.lua` remains the sole role and permission authority.
 
 ## Goals and non-negotiable privacy limits
@@ -21,6 +21,7 @@
 | `AccountRiskSignalService.lua` | Advisory score from low-confidence account age and verified recent moderation history; no identity inference or enforcement |
 | `ModerationPunishmentService.lua` | Persistent warnings, feature restrictions, temporary/permanent Roblox bans, reversals, bounded evidence history |
 | `ChatAbuseDetectionService.lua` | Server-side TextService filtering, bounded input, per-player rate limit, fail-closed output, trusted verified-violation callback |
+| `Phase32ServiceBundle.lua` | Composes the three services with the existing shared SecurityCore Authorization instance |
 
 All three are ModuleScripts intended for `ServerStorage.ClubMusicSecurityCore`. They are not client remotes and must not be required from a LocalScript.
 
@@ -35,7 +36,7 @@ All three are ModuleScripts intended for `ServerStorage.ClubMusicSecurityCore`. 
 ## Punishment policy
 
 Supported actions:
-- `Warn`: records a formal warning and gives an online player a notice via disconnect; warning is retained in history.
+- `Warn`: records a formal warning and sends an online player a notice; it does not kick the player.
 - `Restrict`: records a named feature restriction; the consuming feature must check `IsRestricted(userId, key)` before granting access.
 - `TempBan`: uses Roblox `Players:BanAsync()` for 60 seconds through 365 days.
 - `PermanentBan`: uses Roblox `Players:BanAsync()` with `Duration = -1`.
@@ -70,18 +71,38 @@ Every action requires a live staff Player, bounded reason, and SecurityCore `Glo
 - Audit events are emitted through an injected server-only callback. Do not include raw chat or unnecessary personal information in audit details.
 - DataStore errors fail closed for punishment writes, history reads, and reversals.
 
-## Integration requirements before release
+## Source integration completed
 
-1. Install the three ModuleScripts under `ServerStorage.ClubMusicSecurityCore`.
-2. Construct the existing Authorization service using `Authorization.GetShared()`; inject that same instance into `ModerationPunishmentService.new({ authorization = authorization, onAudit = ... })`.
-3. Provide a server-only authorized history adapter to `AccountRiskSignalService.new({ getAuthorizedHistory = ... })`. The adapter must return only verified moderation records and must enforce `IncidentResponse` for staff-facing queries.
-4. Route existing custom broadcast text entry points through `ChatAbuseDetectionService:FilterBroadcast`; only the returned filtered text may be displayed. Do not create a parallel chat system or duplicate default Roblox chat filtering.
-5. Before any restricted feature is used, call `IsRestricted` server-side. Fail closed when the restriction store is unavailable.
-6. Add staff-only, server-authorized commands or UI actions for warning, restriction, temp ban, permanent ban, history, and unban. Do not add a client-controlled risk score or direct ban remote.
-7. Publish the experience rules and an appeal route accessible to players. Roblox's BanAsync guidance expects creators to explain rules and provide a way to appeal.
-8. Configure `Players.BanningEnabled = true` in Studio's Players properties; this property is not scriptable.
-9. Reconcile existing Kohl's Admin native `ban/unban/kick` commands so they cannot bypass the intended evidence and permission policy. Do not silently remove existing commands without checking their consumers and role configuration.
-10. Add DataStore outage, cross-server ban, temporary expiry, unban, restriction enforcement, permission, and appeal tests.
+The feature branch now includes source-level wiring:
+
+- `UI_Server_Controller_server (1).lua` loads `Phase32ServiceBundle` only when the existing `ClubMusicSecurityCore.Authorization` service is available. It uses the already initialized shared authorization instance; no second role authority is created.
+- The controller exposes Phase 32 actions only through the existing server-only `ClubMusicAdminBridge`. No client ban remote or client-supplied risk score is created.
+- `KohlsAdmin_ClubMusic_Addon.lua` registers `;cmwarn`, `;cmrestrict`, `;cmtempban`, `;cmpermban`, `;cmpermban-alts`, `;cmunban`, `;cmunrestrict`, `;cmpunishmenthistory`, and `;cmrisk`.
+- The controller enforces `MusicRequests` and `CustomText` restrictions server-side. Restriction reads use a five-second per-account cache; a failed/expired cache lookup fails closed for those features.
+- Existing custom title filtering uses `ChatAbuseDetectionService:FilterBroadcast`; no raw text is displayed if filtering fails.
+- `RegularCommandsSecurityServer.lua` blocks Kohl's native `ban` and `unban` commands so they cannot bypass Phase 32 evidence and reversal handling. The existing `kick` action remains separately permissioned/audited and is not a persistent ban.
+
+## Remaining installation and release requirements
+
+1. Install all four Phase 32 ModuleScripts under `ServerStorage.ClubMusicSecurityCore`: `ModerationPunishmentService`, `AccountRiskSignalService`, `ChatAbuseDetectionService`, and `Phase32ServiceBundle`.
+2. Ensure the updated controller and Kohl's Admin addon/security adapter sources are the versions installed in Studio. Do not install a stale copy of any of these files.
+3. Route any other custom broadcast-text inputs (for example future custom chat/announcement inputs) through `FilterBroadcast`; this phase does not replace Roblox's default chat filtering.
+4. Before each additional restricted feature is used, wire a server-side `IsRestricted` check. `MusicRequests` and `CustomText` are already wired; `Chat`, `DJFeatures`, `Announcements`, and `Trading` require checks in their respective feature owners before those restrictions are advertised as active.
+5. Publish the experience rules and an appeal route accessible to players. Roblox's BanAsync guidance expects creators to explain rules and provide a way to appeal.
+6. Configure `Players.BanningEnabled = true` in Studio's Players properties; this property is not scriptable.
+7. Add DataStore outage, cross-server ban, temporary expiry, unban, restriction enforcement, permission, and appeal tests in Studio and a published test universe.
+
+## Staff command reference
+
+- `;cmwarn <UserId> <reason>` — persistent formal warning and player notice.
+- `;cmrestrict <UserId> <Feature[,Feature]> <reason>` — supported keys: `Chat`, `MusicRequests`, `CustomText`, `DJFeatures`, `Announcements`, `Trading`.
+- `;cmtempban <UserId> <Seconds> <reason>` — 60 seconds through 365 days.
+- `;cmpermban <UserId> <reason>` — permanent universe ban; no alt propagation.
+- `;cmpermban-alts <UserId> <reason>` — permanent ban with Roblox suspected-alt propagation; requires `IncidentResponse` in addition to `GlobalModeration`.
+- `;cmunban <UserId> <reason>` — reverse an active native ban.
+- `;cmunrestrict <UserId> <reason>` — reverse all active feature restrictions.
+- `;cmpunishmenthistory <UserId>` — bounded history; requires `GlobalModeration`.
+- `;cmrisk <UserId>` — advisory risk review; requires `IncidentResponse`.
 
 ## Acceptance matrix
 
@@ -112,4 +133,4 @@ Every action requires a live staff Player, bounded reason, and SecurityCore `Glo
 
 ## Certification boundary
 
-The repository source modules and this phase document are committed to the feature branch. This does not certify that they are installed, wired into the live controller, tested in Studio, or active in the published experience. Do not describe Phase 32 as runtime-certified until the acceptance matrix passes.
+The source modules and source-level controller/Kohl's integration are committed to the feature branch. This does not certify that the modules are installed in the live place, that Roblox BanAsync/DataStore behavior works in Studio, or that the updated sources are active in the published experience. No Studio runtime or published two-server test was performed. Do not describe Phase 32 as runtime-certified until the acceptance matrix passes.
