@@ -12,7 +12,6 @@ Service.__index = Service
 
 local SAMPLE_WINDOW_SECONDS = 60
 local MEMORY_SAMPLE_SECONDS = 15
-local PING_SAMPLE_SECONDS = 5
 local AUDIO_SAMPLE_SECONDS = 10
 local MAP_AUDIT_YIELD_EVERY = 500
 local SLOW_FRAME_SECONDS = 0.05
@@ -99,21 +98,13 @@ function Service:_sampleMemory()
 	end
 end
 
+-- StatsItem:GetValue() is Plugin-capability restricted in client scripts.
+-- Do not call it from a LocalScript; report ping as unsupported rather than
+-- generating a capability error. Client-safe FPS/memory/audio sampling remains.
 function Service:_samplePing()
-	local ok, value = pcall(function()
-		local network = Stats:FindFirstChild("Network")
-		local serverStats = network and network:FindFirstChild("ServerStatsItem")
-		local dataPing = serverStats and serverStats:FindFirstChild("Data Ping")
-		if not dataPing then error("Data Ping statistic is unavailable.") end
-		return dataPing:GetValue()
-	end)
-	if ok and finite(value) then
-		self.pingMs = value
-		self.pingSampleAt = os.time()
-		self.pingError = nil
-	else
-		self.pingError = string.sub(tostring(value or "Client ping statistics unavailable."), 1, 160)
-	end
+	self.pingMs = nil
+	self.pingSampleAt = nil
+	self.pingError = nil
 end
 
 -- Observe only the replicated, controller-owned modern AudioPlayer graph.
@@ -246,17 +237,12 @@ function Service:Start(): boolean
 	end)
 	self.samplerThread = task.spawn(function()
 		local nextMemory = 0
-		local nextPing = 0
 		local nextAudio = 0
 		while self.running do
 			local now = os.clock()
 			if now >= nextMemory then
 				self:_sampleMemory()
 				nextMemory = now + MEMORY_SAMPLE_SECONDS
-			end
-			if now >= nextPing then
-				self:_samplePing()
-				nextPing = now + PING_SAMPLE_SECONDS
 			end
 			if self.sampleAudio and now >= nextAudio then
 				self:_sampleAudio()
@@ -331,8 +317,7 @@ function Service:GetStatus(): {[string]: any}
 			lastError = self.audioError,
 		},
 		ping = {
-			state = if self.pingError then "Unavailable" elseif pingAge and pingAge > PING_STALE_SECONDS then "Stale"
-				elseif self.pingMs ~= nil then "Measured" else "Starting",
+			state = "Unsupported",
 			milliseconds = self.pingMs,
 			sampledAt = self.pingSampleAt,
 			ageSeconds = pingAge,
