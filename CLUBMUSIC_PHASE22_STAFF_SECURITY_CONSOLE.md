@@ -112,3 +112,62 @@ The UI requires a second click to confirm lockdown. Set `StarterGui.StaffConsole
 - [ ] Existing Phase 21 report/staff-alert remotes and the Phase 22 spectator commands continue to work.
 
 **Release boundary:** Source-only feature branch. No Studio runtime tests, published multiplayer tests, merge, or live deployment have been performed.
+
+
+---
+
+## Revised graphical ClubMusic command console
+
+**This section supersedes the earlier placeholder Lockdown + Kick-only UI description above.**
+
+Phase 22 now presents existing ClubMusic admin commands as a graphical console. It does not replace the command handlers or create a second moderation/security service.
+
+### Main ClubMusic UI changes
+
+- The **Clear Queue** control is removed from the main DJ Booth and is available from the Staff Console.
+- The main **Moderation** tab is now visible only to the Owner tier. It retains owner pass-tier award/reset controls, but no longer exposes player request blocking or queue purging.
+- Player request moderation, punishment actions, security investigation, incident handling, operational diagnostics, and administrative queue actions belong in the Staff Console.
+- Normal music browsing, requests, queue viewing, and DJ playback controls remain in the main ClubMusic UI.
+
+### Graphical console categories
+
+- **Playback:** skip, pause/resume, restart, request lock, status, queue view/removal/clear, emergency request lock, emergency stop.
+- **Requests:** request mute/unmute, clear a player's requests, track block/allow, request moderation history.
+- **DJ Sessions:** status, start, handoff, end.
+- **Moderation:** warn, restrict, temporary/permanent ban, suspected-alt propagation, unban, unrestrict, punishment history, account-risk review.
+- **Security:** status, incidents, replay, threat intelligence, staff observation, threat-case escalation, incident open/resolve, security policy.
+- **Diagnostics:** health, diagnostic snapshot, purchase diagnostics, services, errors, metrics, audit log, rate limits, config, recovery, reconciliation, catalog refresh, maintenance status.
+
+The console uses action buttons and context-labelled fields rather than requiring staff to type Kohl's Admin command syntax. Destructive/high-impact actions require a second confirmation click. Existing Kohl's Admin commands remain available as a fallback.
+
+### Security and execution path
+
+1. The client sends a fixed UI action key and a bounded argument string.
+2. `StaffActions.server.lua` maps that key to a fixed allowlisted `ClubMusicAdminBridge` operation. Arbitrary operation names from the client are rejected.
+3. The server records request and completion/rejection events through the existing `TikiTideSecurityReplay` endpoint. If the audit endpoint is unavailable, the GUI command is not executed.
+4. The server invokes the existing server-only `ServerStorage.ClubMusicAdminBridge`.
+5. The controller's existing staff check, per-operation rank/permission checks, validation, service calls, and action scopes remain authoritative. The UI does not grant permissions.
+6. Existing global commands retain their original scopes. The separate door lockdown remains current-server-only and does not use MessagingService, MemoryStore, or DataStore.
+
+### Installation
+
+- Install the updated `StaffActions.server.lua` under `ServerScriptService`.
+- Install the updated `SecurityConsole.client.lua` under `StarterPlayer/StarterPlayerScripts`.
+- The LocalScript creates `StaffConsoleGui` at runtime; no manually authored ScreenGui hierarchy is required.
+- Keep the updated `UI_Renderer (2).lua` as the main ClubMusic UI renderer.
+- Ensure the Phase 21/24 Security Core, controller, `ClubMusicAdminBridge`, and `TikiTideSecurityReplay` are installed.
+
+### Acceptance checklist
+
+- [ ] Authorized staff ranks can open the console; non-staff cannot execute commands even if they manually fire the RemoteEvent.
+- [ ] Every GUI action maps to one fixed server allowlist entry; unknown keys and malformed arguments are rejected.
+- [ ] Controller permission checks still reject actions beyond the caller's rank.
+- [ ] Request, completion, and rejection audit events appear in the existing replay timeline.
+- [ ] Missing bridge or audit endpoint fails closed.
+- [ ] Existing Kohl's Admin command aliases still work.
+- [ ] Main UI no longer exposes Clear Queue or player block/purge controls.
+- [ ] Owner pass-tier award/reset functionality remains available.
+- [ ] Local lockdown affects only the current server and restores original door settings.
+- [ ] Test playback, requests, queue, DJ sessions, moderation, security, diagnostics, and PC/mobile UI in Studio before release.
+
+**Release boundary:** Source-only feature branch. No Studio/runtime test, published multiplayer test, merge, or live deployment has been performed.
