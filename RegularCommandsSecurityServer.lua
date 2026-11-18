@@ -69,6 +69,35 @@ return function(_K: any)
 		blind = {permission = "GlobalModeration", property = "Blind", targetArg = 1, auditKind = "Moderation"},
 		unblind = {permission = "GlobalModeration", property = "Unblind", targetArg = 1, auditKind = "Moderation"},
 
+		-- Additional destructive/player-state moderation commands from the supplied export.
+		toolban = {permission = "GlobalModeration", property = "ToolBan", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		untoolban = {permission = "GlobalModeration", property = "ToolUnban", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		removetools = {permission = "GlobalModeration", property = "ToolRemove", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		heal = {permission = "GlobalModeration", property = "Heal", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		immortal = {permission = "GlobalModeration", property = "Immortal", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		invisible = {permission = "GlobalModeration", property = "Invisible", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		visible = {permission = "GlobalModeration", property = "Visible", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		resetstats = {permission = "GlobalModeration", property = "ResetStats", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		collide = {permission = "GlobalModeration", property = "CharacterCollision", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		join = {permission = "GlobalModeration", property = "JoinPlayerServer", auditKind = "AdminAction", budget = "Moderation"},
+		sword = {permission = "GlobalConfig", property = "AssetSwordGrant", targetArg = 1, auditKind = "AdminAction", budget = "Asset"},
+		
+		-- Fun commands that directly alter target characters or client experience.
+		creeper = {permission = "GlobalModeration", property = "CreeperTransform", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		dog = {permission = "GlobalModeration", property = "DogTransform", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		char = {permission = "GlobalModeration", property = "CharacterAppearance", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		clone = {permission = "GlobalModeration", property = "CharacterClone", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		jumpscare = {permission = "GlobalModeration", property = "ClientJumpscare", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		glitch = {permission = "GlobalModeration", property = "ClientGlitch", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		seizure = {permission = "GlobalModeration", property = "CharacterSeizure", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		spin = {permission = "GlobalModeration", property = "CharacterSpin", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		skydive = {permission = "GlobalModeration", property = "CharacterSkydive", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		trip = {permission = "GlobalModeration", property = "CharacterTrip", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		rocket = {permission = "GlobalModeration", property = "CharacterRocket", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		slim = {permission = "GlobalModeration", property = "CharacterSlim", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		noobify = {permission = "GlobalModeration", property = "CharacterNoobify", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		slippery = {permission = "GlobalModeration", property = "CharacterSlippery", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+
 		-- Persistent roles/permissions are owner/co-owner operations.
 		role = {permission = "GlobalConfig", property = "RoleAssign", targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
 		temprole = {permission = "GlobalConfig", property = "TemporaryRoleAssign", targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
@@ -94,6 +123,11 @@ return function(_K: any)
 		notify = {permission = "GlobalModeration", property = "TargetedNotification", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
 		privatemessage = {permission = "GlobalModeration", property = "PrivateMessage", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
 
+		-- Player-targeted polling and server-wide countdown overlays.
+		vote = {permission = "GlobalAnnouncement", property = "PlayerVote", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
+		poll = {permission = "GlobalAnnouncement", property = "PlayerPoll", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
+		countdown = {permission = "GlobalAnnouncement", property = "Countdown", auditKind = "AdminAction", budget = "Broadcast"},
+
 		-- Respawn/refresh and destructive world actions are sensitive too.
 		respawn = {permission = "GlobalModeration", property = "Respawn", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		refresh = {permission = "GlobalModeration", property = "Refresh", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
@@ -114,6 +148,7 @@ return function(_K: any)
 		diffusescale = {permission = "GlobalConfig", property = "LightingDiffuseScale", auditKind = "AdminAction", budget = "World"},
 		exposure = {permission = "GlobalConfig", property = "LightingExposure", auditKind = "AdminAction", budget = "World"},
 		disco = {permission = "GlobalConfig", property = "DiscoLighting", auditKind = "AdminAction", budget = "World"},
+		specularscale = {permission = "GlobalConfig", property = "LightingSpecularScale", valueArg = 1, auditKind = "AdminAction", budget = "World"},
 
 		-- Additional player-control commands verified against the supplied command handlers.
 		setgravity = {permission = "GlobalModeration", property = "PlayerGravity", valueArg = 2, targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
@@ -181,6 +216,7 @@ return function(_K: any)
 		script = "Arbitrary server script execution is disabled by Tiki Tide security.",
 		localscript = "Arbitrary client script execution is disabled by Tiki Tide security.",
 		global = "Native global command strings are disabled; use dedicated Tiki Tide global controls.",
+		control = "Character takeover is disabled by Tiki Tide security because it transfers another player character and network ownership.",
 
 		-- Kohl's legacy Sound commands conflict with the game's AudioPlayer-only backend.
 		play = "Kohl's legacy Sound playback is disabled; use the Tiki Tide music controls.",
@@ -224,6 +260,7 @@ return function(_K: any)
 		FlightSpeed = {min = 0, max = 256},
 		FlingStrength = {min = 0.1, max = 5},
 		LightingBrightness = {min = 0, max = 10},
+		LightingSpecularScale = {min = 0, max = 1},
 	}
 
 	local function finiteNumber(value: any): boolean
