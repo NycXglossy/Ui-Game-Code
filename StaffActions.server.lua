@@ -1,6 +1,6 @@
 --!strict
 -- ServerScriptService/StaffActions.server.lua
--- Phase 22: server-local lockdown and staff player removal.
+-- Phase 22: server-local lockdown and allowlisted graphical ClubMusic command routing.
 -- Security Core is the only authorization authority. All actions are server-side.
 -- Lockdown is intentionally local to this Roblox server; no cross-server APIs are used.
 
