@@ -6494,9 +6494,13 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"SafeCall: " .. tostring(safeCall.calls or 0) .. " calls | failures "
 				.. tostring(safeCall.failures or 0) .. " | recovered " .. tostring(safeCall.recovered or 0),
 			"Threat intelligence: " .. tostring(threatIntelligence.state or "NotInstalled")
-				.. " | review items " .. tostring(threatIntelligence.openReviewItems or 0)
+				.. " | player reviews " .. tostring(threatIntelligence.openReviewItems or 0)
 				.. "/" .. tostring(threatIntelligence.maxReviewItems or 0)
-				.. " | tracked subjects " .. tostring(threatIntelligence.trackedSubjects or 0),
+				.. " | tracked " .. tostring(threatIntelligence.trackedSubjects or 0)
+				.. " | raid reviews " .. tostring(threatIntelligence.raidReviewItems or 0)
+				.. " | join window " .. tostring(threatIntelligence.cohortWindowJoins or 0)
+				.. " | signaled players " .. tostring(threatIntelligence.cohortSignaledPlayers or 0)
+				.. " | unknown codes " .. tostring(threatIntelligence.unknownSignals or 0),
 			"Honeypot: " .. tostring(honeypot.state or "NotInstalled")
 				.. " | hits " .. tostring(honeypot.totalHits or 0)
 				.. " | suppressed " .. tostring(honeypot.suppressedHits or 0)
