@@ -333,7 +333,13 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 		end
 		local mode = if string.find(action, "Reopen", 1, true) then "Reopen" else "Close"
 		local preparing = string.find(action, "Prepare", 1, true) ~= nil
-		local accepted, message = if preparing then prepareClosure(player, mode) else confirmClosure(player, mode)
+		local accepted: boolean
+		local message: string
+		if preparing then
+			accepted, message = prepareClosure(player, mode)
+		else
+			accepted, message = confirmClosure(player, mode)
+		end
 		sendResult(player, action, accepted, message)
 		return
 	end
