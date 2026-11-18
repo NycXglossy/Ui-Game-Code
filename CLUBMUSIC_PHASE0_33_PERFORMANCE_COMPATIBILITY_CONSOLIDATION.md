@@ -473,3 +473,16 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Reviewed the local owner membership-reward command and DJ session start/handoff/end paths: their authorization and state mutation segments contain no yield between the final role/player checks and the local mutation. Phase 32 mutation services continue to perform their own permission checks.
 - No role thresholds, permission mappings, purchase authority, moderation semantics, client remotes, or cross-server telemetry were changed.
 - Static source inspection only; no Luau compilation, yielding BindableFunction simulation, DataStore fault injection, Roblox Studio/runtime test, or deployment was performed.
+
+
+
+### Profile-load and entitlement departure-race hardening (2026-11-18)
+
+- Continued the profile-backed owner reward and entitlement audit.
+- Found that profile loading could complete its yielding DataStore session-lock acquisition and TextService title-filter work after `PlayerRemoving` had already run. The old path could then publish a late in-memory profile for a departed Player, after departure cleanup had already discarded that user's state.
+- `loadProfile` now captures the joining UserId, checks the same Player remains connected after DataStore budget waits, UpdateAsync completion, retry waits, and title filtering, and refuses to publish profile state if the join departed. If the server acquired the durable session lease before departure, the abandonment path calls the existing token-checked `releaseProfileSession`; it cannot clear a lease owned by another server. It also clears any partially initialized filtered-title cache.
+- `refreshPersonalPasses` now checks player liveness between each yielding Marketplace ownership lookup and before writing entitlement attributes. The successful Game Pass purchase callback rechecks connection after its asynchronous entitlement refreshes before applying attributes, syncing unlocks, or notifying the player.
+- The owner-awarded `rewardedPassTier` mutation itself was reviewed: authorization, target/profile validation, profile mutation, attribute update, and save scheduling have no yield between the final checks and the mutation. Existing save/session-lock and receipt-authority protections remain unchanged.
+- The entitlement authority independently checks the original Player remains connected after all three yielding membership-pass lookups before publishing cache state.
+- No purchase receipt path, product grants, entitlement hierarchy, role threshold, profile schema, or persistence format changed.
+- Static source inspection only; no Luau compilation, DataStore concurrency/fault-injection test, Marketplace simulation, Roblox Studio/runtime test, or deployment was performed.
