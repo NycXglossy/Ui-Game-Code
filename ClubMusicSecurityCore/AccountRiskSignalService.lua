@@ -39,9 +39,12 @@ function Service:GetSignals(userId: number): (boolean, any)
 	local now = os.time()
 	local verifiedRecent = 0
 	local repeatCategories: {[string]: number} = {}
+	local seenCases: {[string]: boolean} = {}
 	for index = 1, math.min(#history, self.maxHistory) do
 		local item = history[index]
-		if typeof(item) == "table" and item.verified == true
+		local unique = typeof(item) == "table" and (typeof(item.caseId) ~= "string" or not seenCases[item.caseId])
+		if typeof(item) == "table" and typeof(item.caseId) == "string" then seenCases[item.caseId] = true end
+		if unique and typeof(item) == "table" and item.verified == true
 			and typeof(item.at) == "number" and now - item.at >= 0
 			and now - item.at <= REPEAT_WINDOW_SECONDS then
 			verifiedRecent += 1
