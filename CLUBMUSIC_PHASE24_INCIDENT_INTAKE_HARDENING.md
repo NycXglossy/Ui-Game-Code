@@ -67,3 +67,8 @@ The Global Service intentionally defaults to `EnableInStudio = false`. In an ord
 - [ ] No kick, ban, restriction, or gameplay nerf occurs.
 
 **Not included:** Discord webhook delivery, automated punishment, appeal UI, offline-target public reports, or a second incident history store.
+
+
+## Client notification companion
+
+Install `SecurityClient.client.lua` as a LocalScript under `StarterPlayer/StarterPlayerScripts`. It listens to the server-authorized `StaffAlert` event and displays dispatch notifications. Its report helper is intended to be called by the report UI; client-side checks are convenience only, and server validation remains authoritative.

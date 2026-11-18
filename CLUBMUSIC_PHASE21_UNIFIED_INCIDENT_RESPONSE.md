@@ -44,3 +44,25 @@
 - [ ] Verify no automatic enforcement occurs from either service.
 
 **Not included:** automated ban waves, automated shadow moderation, appeal UI, or automatic gameplay restrictions. Those require a separately approved policy and reversible enforcement design.
+
+
+## Client staff alerts and player-report UI companion
+
+Phase 21 includes the optional client presentation script at `StarterPlayer/StarterPlayerScripts/SecurityClient.client.lua`.
+
+- Listens to `ReplicatedStorage.SecuritySystem.StaffAlert` and displays a Roblox notification with incident ID, category, target, filtered reason, and reporter/source.
+- The server fires this RemoteEvent only to players currently authorized by the shared SecurityCore Authorization service.
+- Supports the compatibility fields `Category`, `TargetName`, `Reason`, `ReporterName`, and `Id`, while also accepting the structured incident fields.
+- Provides a `submitPlayerReport(targetPlayer, reasonText)` helper to connect to a report button. It sends the target UserId and reason through `ReportIncident`; all meaningful validation and TextService filtering remain server-side.
+- The client script does not determine staff status and cannot authorize or create incidents directly.
+
+The matching server payload contains only filtered report text. Automated VIP-zone alerts use the same notification shape with `Automated Security` as the reporter/source.
+
+### Client acceptance tests
+
+- [ ] Ordinary players can submit a report through the UI helper, but never receive staff dispatch alerts.
+- [ ] Authorized staff receive player-report and VIP-zone alerts.
+- [ ] Non-staff clients cannot receive staff alert payloads by invoking client code.
+- [ ] Notifications handle missing/legacy fields without client errors.
+- [ ] SetCore startup delay does not permanently drop the alert.
+- [ ] Report text displayed to staff is the server-filtered text, not the raw client string.

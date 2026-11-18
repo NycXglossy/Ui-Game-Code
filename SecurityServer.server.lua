@@ -159,9 +159,18 @@ reportEvent.OnServerEvent:Connect(function(reporter: Player, targetUserId: any, 
 		return
 	end
 
+	local alertId = tostring(incidentId or "")
+	local alertReason = truncateUtf8(filteredReason, 100)
 	notifyStaff({
+		-- Compatibility names used by the Phase 21 SecurityClient.
+		Category = "Player Report",
+		TargetName = target.Name,
+		Reason = alertReason,
+		ReporterName = reporter.Name,
+		Id = alertId,
+		-- Structured fields retained for future dispatch UI integrations.
 		kind = "AbuseReport",
-		incidentId = tostring(incidentId or ""),
+		incidentId = alertId,
 		reporterUserId = reporter.UserId,
 		subjectUserId = target.UserId,
 	})
@@ -216,7 +225,17 @@ if vipZone and vipZone:IsA("BasePart") then
 					)
 				end)
 				if callOk and accepted == true then
-					notifyStaff({kind = "SecurityAlert", incidentId = tostring(incidentId or ""), subjectUserId = player.UserId})
+					local alertId = tostring(incidentId or "")
+					notifyStaff({
+						Category = "Zone Trespass",
+						TargetName = player.Name,
+						Reason = "Entered VIP zone without verified VIP entitlement.",
+						ReporterName = "Automated Security",
+						Id = alertId,
+						kind = "SecurityAlert",
+						incidentId = alertId,
+						subjectUserId = player.UserId,
+					})
 				else
 					warn("[Tiki Tide][SecurityServer] VIP-zone incident could not be stored.")
 				end
