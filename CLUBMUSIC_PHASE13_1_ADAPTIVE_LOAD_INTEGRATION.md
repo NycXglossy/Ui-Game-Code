@@ -62,7 +62,7 @@ Added `TikiTideAdaptiveVisualQuality.client.lua`, installed by the existing Secu
 
 Updated `ClubMusic_Security_Core_Installer.lua`:
 
-- Pins the SecurityCore module release to commit `d66e5033d948f516db78de50d668ee686bbd78d6`, which contains the updated AdaptiveSecurityLoadManager, CharacterPhysicsGuard, and visual-quality LocalScript.
+- Pins the SecurityCore module release to commit `8a028a2e28cfc245263486eb607f52d52183d390`, which contains the updated AdaptiveSecurityLoadManager, CharacterPhysicsGuard, and visual-quality LocalScript.
 - Stages the visual LocalScript with the existing camera/integrity clients.
 - Preserves an existing visual client backup and restores it on failed promotion.
 - Adds the visual client name to the install manifest.
