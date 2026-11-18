@@ -549,3 +549,10 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - Confirmed the existing departure cleanup removes `blockedUsers` and other per-user request state. The retry worker still exits after its next wake if the Player has left; no new persistent worker registry or cross-server state was added.
 - Security semantics unchanged: unresolved moderation remains request-restricted, only a successful authoritative lookup can clear pending state, and only a confirmed global ban can kick.
 - Static source checks only. No concurrency simulation, high-player-count test, DataStore outage injection, Luau compilation, Studio runtime test, or deployment.
+
+
+### Moderation transition ordering and stale-event protection (2026-11-18)
+
+- Added a monotonic per-user revision to durable moderation writes and propagated the committed revision through the existing GetModerationState BindableFunction and moderation notifications. Legacy records without a revision read as revision zero; malformed revision values fail closed.
+- Controller applies only strictly newer moderation notifications and rejects join/retry lookup results older than the latest notification observed while the lookup yielded. This prevents delayed block/unblock and ban/unban events or stale reads from rolling local moderation state backward. PlayerRemoving releases the per-user revision entry.
+- Static source review only; no Luau compiler, DataStore concurrency/fault injection, MessagingService ordering test, Roblox Studio/runtime test, or deployment.
