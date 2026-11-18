@@ -99,3 +99,16 @@ When those systems are added or their scripts are identified, each must:
 - Boombox and animation validation: pending identification/integration of the actual systems.
 
 No live player profiles, receipt records, or persistent catalog records were read or modified by this phase.
+
+## Phase 30 source audit update
+
+This Phase 8 document remains the historical ingress/permission audit. Phase 30 is the current source of truth for the modern AudioPlayer lifecycle, media mutation entry points, playback-only global sync, canonical module bundles, installer manifests, and Sound fallback retirement.
+
+- Current controller source is modern AudioPlayer-only. No active `Sound` instance fallback remains in startup, reload/recovery, pause/restart, crossfade, watchdog, or diagnostics.
+- `MusicPlaybackManager` quality inspection was consolidated into controller-local diagnostics; the current controller no longer loads that facade and the current installer no longer provisions it.
+- Normal catalog requests remain open to all players when DJ Control Mode is off. When enabled, only its current controller may submit normal requests (including the staff Creator Hub request path); Auto DJ refill remains active.
+- All players retain Now Playing/local queue visibility, skip voting, and cooldown-limited self-service `ReloadSong`. DJ/staff controls, playlist/catalog mutation, and DJ session actions continue to use SecurityCore-backed authorization.
+- Optional global playback sync is available but disabled by default. It shares Now Playing/playhead only; request queues, playlist cursors, Auto DJ refill, and request accounting remain per-server.
+- The tracked source scan found no boombox remote, animation asset mutation endpoint, or server animation playback endpoint. The only animation-related server observation is `GetPlayingAnimationTracks()` for Dance Floor activity eligibility. The Creator Hub preview AudioPlayer is client-local and does not mutate server playback.
+- See `CLUBMUSIC_PHASE30_AUDIO_ANIMATION_MEDIA_ABUSE.md` for the full source audit, module/bundle mapping, and runtime acceptance matrix. Phase 30 is not certified until Studio and published two-server tests pass.
+
