@@ -3334,7 +3334,7 @@ ControllerFunctions.stoppedAudioGeneration = -1
 ControllerFunctions.stoppedAudioSince = 0
 ControllerFunctions.audioRecoveryAttemptedGeneration = -1
 
-ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: boolean?)
+ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: boolean?, suppressGlobalCommit: boolean?)
 	if preserveAudio ~= true then ControllerFunctions.cancelAudioTransition("track-change") end
 	playbackGeneration += 1
 	audioTransitionTrackToken += 1
@@ -3362,7 +3362,7 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	end
 	table.clear(skipVotes)
 	if ControllerFunctions.publishPlaybackState then ControllerFunctions.publishPlaybackState() end
-	if ControllerFunctions.commitGlobalPlaybackSync and preserveAudio ~= "global-sync" then
+	if ControllerFunctions.commitGlobalPlaybackSync and suppressGlobalCommit ~= true then
 		task.defer(function() ControllerFunctions.commitGlobalPlaybackSync("track-change") end)
 	end
 end
@@ -3371,7 +3371,7 @@ end
 -- its own queue, playlist cursor, Auto DJ refill, request locks, and skip votes.
 ControllerFunctions.globalPlaybackSyncState = {
 	enabled = false, isLeader = false, revision = 0, trackRevision = 0,
-	lastAppliedRevision = 0, leaderJobId = nil, authorityReady = false, statusError = nil,
+	lastAppliedRevision = 0, lastErrorAt = 0, leaderJobId = nil, authorityReady = false, statusError = nil,
 }
 ControllerFunctions.commitGlobalPlaybackSync = function(reason: string?): boolean
 	local state = ControllerFunctions.globalPlaybackSyncState
@@ -6839,16 +6839,18 @@ task.spawn(function()
 			syncState.enabled = true
 			local previous = table.concat({tostring(syncState.isLeader), tostring(syncState.leaderJobId), tostring(syncState.authorityReady)}, "|")
 			syncState.leaderJobId = if typeof(status.leaderJobId) == "string" then status.leaderJobId else nil
+			syncState.wasLeader = syncState.isLeader == true
 			syncState.isLeader = status.isLeader == true
 			syncState.authorityReady = status.enabled == true and status.error == nil
 			syncState.statusError = if typeof(status.error) == "string" then string.sub(status.error, 1, 120) else nil
 			local current = table.concat({tostring(syncState.isLeader), tostring(syncState.leaderJobId), tostring(syncState.authorityReady)}, "|")
 			if previous ~= current then publishState(nil) end
 			if syncState.isLeader then
+				local wasLeader = syncState.wasLeader == true
 				local snapshotOk, snapshotRead, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
 				if snapshotOk and snapshotRead == true and typeof(snapshot) == "table" then
 					if typeof(snapshot.current) == "table" then
-						if nowPlaying.trackId ~= snapshot.current.trackId then
+						if not wasLeader or nowPlaying.trackId ~= snapshot.current.trackId then
 							ControllerFunctions.applyGlobalPlaybackSyncSnapshot(snapshot, true)
 						end
 						syncState.revision = tonumber(snapshot.revision) or syncState.revision
