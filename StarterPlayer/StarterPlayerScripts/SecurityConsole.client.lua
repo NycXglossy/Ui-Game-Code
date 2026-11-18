@@ -283,7 +283,7 @@ local groups: {[string]: {Command}} = {
 		{key="Recovery",label="Recovery status",help="Review recovery service status."},
 		{key="Reconcile",label="Reconciliation status",help="Review reconciliation state."},
 		{key="CatalogRefresh",label="Refresh music catalog",help="Refresh the server's catalog view."},
-		{key="Maintenance",label="Maintenance status",help="Review maintenance mode status."},
+		{key="Maintenance",label="Maintenance mode",help="Enter status, on, or off. Turning maintenance on/off requires confirmation.",kind="maintenance"},
 	},
 }
 
@@ -292,6 +292,7 @@ local activeGroup = "Playback"
 local pendingConfirmation = false
 local confirmationToken = 0
 local pendingRequest = false
+local requestToken = 0
 local lockdownActive = false
 
 local function setStatus(message: string, success: boolean?)
@@ -323,6 +324,7 @@ local function updateForm()
 	elseif kind == "replay" then inputA.PlaceholderText = "UserId (optional)"; inputB.Visible = false; inputC.PlaceholderText = "Result limit (1-30, optional)"
 	elseif kind == "incident" then inputA.PlaceholderText = "Incident type (SecurityAlert, ServiceDegraded, AbuseReport, ManualReview)"; inputB.PlaceholderText = "Target UserId or server"; inputC.PlaceholderText = "Incident summary"
 	elseif kind == "policy" then inputA.PlaceholderText = "Policy setting key"; inputB.PlaceholderText = "New value"; inputC.Visible = false
+	elseif kind == "maintenance" then inputA.PlaceholderText = "status / on / off"; inputB.PlaceholderText = "Maintenance notice (optional)"; inputC.Visible = false
 	elseif kind == "detail" then inputA.Visible = false; inputB.PlaceholderText = "ID"; inputC.Visible = false
 	else
 		inputA.PlaceholderText = "Target / ID"
@@ -395,7 +397,7 @@ for _, groupName in ipairs({"Playback","Requests","DJ Sessions","Moderation","Se
 renderGroup()
 
 local CONFIRM = {
-	QueueClear=true, EmergencyRequestLock=true, PlaybackForceStop=true,
+	QueueClear=true, EmergencyRequestLock=true, PlaybackForceStop=true, Maintenance=true,
 	PermanentBan=true, PermanentBanAlts=true, IncidentOpen=true, IncidentResolve=true,
 	ThreatCaseOpen=true, SecurityPolicySet=true,
 }
@@ -411,9 +413,10 @@ local function buildArgument(command: Command): string
 	elseif kind == "targetReason" then return a .. " " .. b
 	elseif kind == "targetOptionReason" then return a .. " " .. c .. (if b ~= "" then " " .. b else "")
 	elseif kind == "targetReasonOption" then return a .. " " .. c .. " " .. b
-	elseif kind == "replay" then return a .. " " .. c
+	elseif kind == "replay" then return if a == "" and c == "" then "" else a .. " " .. c
 	elseif kind == "incident" then return a .. " " .. b .. " " .. c
-	elseif kind == "policy" then return a .. " " .. b end
+	elseif kind == "policy" then return a .. " " .. b
+	elseif kind == "maintenance" then return a .. " " .. b end
 	return ""
 end
 
@@ -443,10 +446,20 @@ runButton.Activated:Connect(function()
 	pendingConfirmation = false
 	confirmationToken += 1
 	pendingRequest = true
+	requestToken += 1
+	local thisRequest = requestToken
 	runButton.Active = false
 	runButton.Text = "SENDING…"
 	setStatus("Submitting " .. selected.label .. " to the server…")
 	securityAction:FireServer("RunClubMusicCommand", selected.key, argument)
+	task.delay(8, function()
+		if pendingRequest and requestToken == thisRequest then
+			pendingRequest = false
+			runButton.Active = true
+			runButton.Text = "RUN ACTION"
+			setStatus("No server response was received. Check server health before retrying.", false)
+		end
+	end)
 end)
 
 local lockdownConfirm = false
@@ -476,6 +489,7 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 	setStatus(result, succeeded)
 	if action == "RunClubMusicCommand" or action == "ToggleLockdown" then
 		pendingRequest = false
+		requestToken += 1
 		runButton.Active = true
 		runButton.Text = "RUN ACTION"
 		lockdownButton.Active = true
