@@ -69,6 +69,17 @@ File: `ClubMusicSecurityCore/SecurityThreatIntelligence.lua`
 - Does not add a task loop, remote, persistence, cross-server traffic, or change signal scoring, review thresholds, or enforcement (there is none).
 - Commit: `50289e2525605bb308462465f9cd50253dec054d`; documentation: `c37a624484dec7624e098d49233e843b6d199f22`.
 
+
+### H. Reduce optional movement network-query frequency
+
+File: `ClubMusicSecurityCore/CharacterPhysicsGuard.lua`
+
+- Kept the existing adaptive movement displacement sample cadence and event-driven movement property checks unchanged.
+- Network ownership and ping context are now queried at most once per five seconds per character, rather than on every accepted movement sample (which can run every 0.5–3 seconds).
+- Exposed a separate network-observation sample count and interval so aggregate movement sample counts remain interpretable.
+- This is optional server-local measurement only; it adds no remote, persistence, cross-server state, or enforcement.
+- Source commit: `373f1cb1448cc58ec22093248132c117fa77349`; Phase26 documentation: `ed22d4b67ce8cb818c2affd5d11bcecdcd20ab85`.
+
 ## 3. Phase 0–33 compatibility map
 
 | Phase range | Preserve while optimizing |
