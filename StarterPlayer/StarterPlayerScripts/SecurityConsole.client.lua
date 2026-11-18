@@ -45,6 +45,10 @@ Instance.new("UICorner", launcherButton).CornerRadius = UDim.new(0, 10)
 launcherButton.Activated:Connect(function()
 	if gui:GetAttribute("StaffAuthorized") == true then
 		gui.Enabled = true
+		if activeGroup == "Diagnostics" and diagnosticsDashboardMode then
+			startClientDiagnostics()
+			renderDiagnosticsReadout()
+		end
 	else
 		warn("[Tiki Tide][SecurityConsole] Staff authorization is unavailable.")
 	end
@@ -107,6 +111,7 @@ close.TextSize = 22
 close.Font = Enum.Font.GothamBold
 close.Parent = header
 Instance.new("UICorner", close).CornerRadius = UDim.new(0, 10)
+local stopClientDiagnostics: () -> ()
 close.Activated:Connect(function() gui.Enabled = false; stopClientDiagnostics() end)
 
 local categoryBar = Instance.new("ScrollingFrame")
@@ -497,7 +502,7 @@ local function makeActionButton(command: Command, order: number)
 	end)
 end
 
-local function stopClientDiagnostics()
+stopClientDiagnostics = function()
 	if clientDiagnostics and type(clientDiagnostics.Stop) == "function" then
 		pcall(clientDiagnostics.Stop, clientDiagnostics)
 	end
@@ -780,7 +785,7 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 		closurePreparedMode = nil
 		runButton.Text = "RUN ACTION"
 	end
-	if action == "RunClubMusicCommand" and activeGroup == "Diagnostics" and selected and selected.key == "Diagnostics" then
+	if action == "RunClubMusicCommand" and diagnosticsRequestPending then
 		diagnosticsServerMessage = if succeeded then result else "Server diagnostics request failed: " .. result
 		diagnosticsRequestPending = false
 		diagnosticsRefresh.Active = true
@@ -798,6 +803,15 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 		runButton.Text = if action == "ClubClosurePrepare" then "CONFIRM CLOSE"
 			elseif action == "ClubReopenPrepare" then "CONFIRM REOPEN" else "RUN ACTION"
 		lockdownButton.Active = true
+	end
+end)
+
+task.spawn(function()
+	while gui.Parent do
+		if gui.Enabled and activeGroup == "Diagnostics" and diagnosticsDashboardMode then
+			renderDiagnosticsReadout()
+		end
+		task.wait(1)
 	end
 end)
 
