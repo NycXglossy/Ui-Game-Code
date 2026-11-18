@@ -1,4 +1,4 @@
-> **SUPERSEDED — do not use as a current installation checklist.** This historical phase document describes an earlier multi-service architecture, including modules and queue reconciliation that have since been retired or consolidated. In particular, do not reinstall `ClubMusic_Global_State_Reconciliation_Service`, a global queue service, or any retired global playback authority. Preserve the current server-side authorization, security, global moderation, catalog invalidation, announcements, and boost functionality. See the current branch sources and `CLUBMUSIC_AUDIO_STUDIO_INSTALLATION.md` for the active local-playback boundary.
+> **SUPERSEDED — do not use as a current installation checklist.** This historical phase document describes an earlier multi-service architecture and legacy shared-queue reconciliation. Do not reinstall `ClubMusic_Global_State_Reconciliation_Service`, a global queue service, or the old full shared-queue playback architecture. Phase 30 introduces one narrow exception: the new `MusicGlobalPlaybackAuthority.lua` module in `ClubMusic_Global_Optional_Services.rbxmx` supports opt-in playback-only synchronization (Now Playing/playhead only; per-server queues remain independent). It is disabled by default and is not a shared-queue authority. See the current branch sources and `CLUBMUSIC_AUDIO_STUDIO_INSTALLATION.md`.
 
 # ClubMusic Global Operational Services — Phase 1
 
@@ -178,3 +178,15 @@ New aliases:
 - `;cmmaintenance status`, `;cmmaintenance on [message]`, `;cmmaintenance off`
 
 These additions do not change the existing playback commands or the six security commands.
+
+## Phase 30 — optional playback-only sync package (current exception)
+
+- The current `ClubMusic_Global_Service_server_1.lua` adds the `Playback` MessagingService topic and SecurityCore-backed BindableFunction API for playback-only synchronization.
+- `ClubMusic_Global_Config_Service.lua` defines `playbackSyncEnabled=false` by default. Enabling it requires the existing SecurityCore `GlobalConfig` permission (Co-Owner/Owner).
+- `MusicGlobalPlaybackAuthority.lua` is the sole optional authority module. It uses a MemoryStore fenced leader lease and a durable DataStore snapshot for current track metadata, pause state, and anchored playhead. The snapshot schema has no queue or playlist fields.
+- The current module is embedded in `ClubMusic_Global_Optional_Services.rbxmx` and also exists as the canonical standalone `MusicGlobalPlaybackAuthority.lua`. The embedded source must remain byte-identical to the standalone source.
+- The controller and UI expose the Owner/Co-Owner toggle. Only the elected leader advances its own local queue or commits playback controls while sync is enabled. Followers retain their local request queues and Auto DJ refill; they never import or upload another server's queue.
+- `ClubMusic_Global_Service_server_1.lua` and `MusicGlobalPlaybackAuthority.lua` apply bounded per-server DataStore operation budgets. MemoryStore is used for the playback lease, not shared rate limiting.
+- Studio remains isolated by default through `EnableInStudio=false`. Enable cross-server services only in a disposable, intentional multi-server Studio test copy.
+- This is a source-level restoration and integration, not a certification. Studio and published two-server tests for leader failover, outage recovery, queue isolation, and cross-device behavior remain mandatory.
+
