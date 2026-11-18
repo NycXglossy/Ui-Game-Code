@@ -122,6 +122,7 @@ if not clubClosed then
 	clubClosed.Parent = ServerStorage
 end
 local pendingClosure: {[number]: {mode: string, expiresAt: number}} = {}
+local closureInProgress = false
 local doorAddedConnection: RBXScriptConnection? = nil
 
 local function applyLockdownToPart(part: BasePart)
@@ -207,23 +208,29 @@ local function confirmClosure(player: Player, mode: string): (boolean, string)
 
 	if mode == "Close" then
 		if clubClosed.Value then return true, "The club is already closed in this server." end
+		closureInProgress = true
+		local function abortClosure(message: string): (boolean, string)
+			closureInProgress = false
+			return false, message
+		end
 		-- Verify all current staff before changing state or removing anyone.
 		local guests: {Player} = {}
 		for _, target in ipairs(Players:GetPlayers()) do
 			local staffStatus, detail = isVerifiedStaff(target)
-			if staffStatus == nil then return false, "Closure aborted: " .. tostring(detail) end
+			if staffStatus == nil then return abortClosure("Closure aborted: " .. tostring(detail)) end
 			if not staffStatus then table.insert(guests, target) end
 		end
 		if not recordAudit("club_closure_requested", player.UserId, 0, "Warning", {scope = "current_server"}) then
-			return false, "Security audit unavailable; club remains open."
+			return abortClosure("Security audit unavailable; club remains open.")
 		end
 		-- Pre-audit every intended removal before changing state or kicking anyone.
 		for _, guest in ipairs(guests) do
 			if guest.Parent == Players and not recordAudit("club_closure_guest_removed", player.UserId, guest.UserId, "Warning", {scope = "current_server"}) then
-				return false, "Security audit unavailable; club remains open and no guests were removed."
+				return abortClosure("Security audit unavailable; club remains open and no guests were removed.")
 			end
 		end
 		clubClosed.Value = true
+		closureInProgress = false
 		local removed = 0
 		for _, guest in ipairs(guests) do
 			if guest.Parent == Players then
@@ -245,7 +252,7 @@ local function confirmClosure(player: Player, mode: string): (boolean, string)
 end
 
 local function handleClosedServerJoin(player: Player)
-	if not clubClosed.Value then return end
+	if not clubClosed.Value and not closureInProgress then return end
 	task.delay(3, function()
 		if player.Parent ~= Players or not clubClosed.Value then return end
 		local staffStatus = isVerifiedStaff(player)
