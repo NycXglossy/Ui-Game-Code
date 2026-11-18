@@ -18,7 +18,9 @@
 - Preserve current PC, mobile and console interfaces.
 - Do not change mobile layout while addressing desktop or server-side security.
 - Keep UtilityBar independent from ClubMusic.
-- Keep modern AudioPlayer as the controller-owned source, preserve crossfade and local queue independence, and preserve optional playback-only global synchronization.
+- Keep modern AudioPlayer as the controller-owned source, preserve crossfade, and keep each server's playback clock, Auto DJ selection, playlist cursor, skip votes, request accounting, and queue local. Cross-server playback synchronization is retired and must not be reintroduced.
+- Keep client presentation, graphics quality, visual effects, input, and diagnostics local to each client. The adaptive visual-quality client combines local device quality with the current server's local adaptive-load mode; it does not send telemetry or create remotes.
+- Use cross-server services only for explicitly global features with real consumers (for example moderation, announcements, catalog invalidation, or shared XP boost/receipt coordination). Do not use them for local playback, queues, or diagnostics.
 - Preserve durable receipt idempotency, profile session leases, entitlement rules, DJ role separation and Kohl's adapter behavior.
 - Do not assume client FPS/memory/ping values are trustworthy or transmit them to the server.
 - Do not add permanent high-frequency polling loops to movement, diagnostics or security services.
