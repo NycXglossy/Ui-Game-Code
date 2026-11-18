@@ -209,3 +209,8 @@ The full-menu renderer previously called `PlayerGui:GetDescendants()` on menu/pa
 
 Validation: re-fetched the renderer and confirmed there is one initial PlayerGui discovery scan, incremental add/remove tracking, and no PlayerGui descendant scans inside visibility-sync callbacks. No Luau compiler or Studio runtime UI test was run.
 
+### Navigation icon tint-target cache
+
+- The full-menu renderer now indexes each native navigation icon's tintable Frames and UIStrokes once when the tab button is created.
+- Tab changes update the cached parts directly instead of calling `GetDescendants()` on every icon during every render. The icon geometry is static after construction; badge and button styling remain independently updated.
+- Static source verification confirms there is no icon descendant scan in `renderTab()` and one construction-time scan per icon. No Roblox Studio/runtime or device performance test is claimed.
