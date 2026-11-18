@@ -1793,10 +1793,12 @@ ControllerFunctions.globalInvoke = function(name: string, ...: any): any
 	local fn = globalApi:FindFirstChild(name)
 	if not fn or not fn:IsA("BindableFunction") then return false end
 	local args = table.pack(...)
-	local ok, a, b, c = pcall(function()
+	-- Preserve every BindableFunction return value. Some contracts (notably
+	-- GetModerationState) return more than three values, including revision data.
+	local results = table.pack(pcall(function()
 		return (fn :: BindableFunction):Invoke(table.unpack(args, 1, args.n))
-	end)
-	return ok, a, b, c
+	end))
+	return table.unpack(results, 1, results.n)
 end
 local globalEventObject = if globalApi then globalApi:FindFirstChild("GlobalEvent") else nil
 
