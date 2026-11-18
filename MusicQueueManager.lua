@@ -6,9 +6,19 @@
 local ServerStorage = game:GetService("ServerStorage")
 local MusicQueueManager = {}
 
-local serviceModule = ServerStorage:WaitForChild("MusicQueueManagerService", 20)
+-- Support both direct ServerStorage installation and the canonical
+-- ClubMusic_ServerStorage_Modules RBXMX folder layout.
+local serviceModule = script.Parent:FindFirstChild("MusicQueueManagerService")
+if not serviceModule then serviceModule = ServerStorage:FindFirstChild("MusicQueueManagerService") end
+if not serviceModule then
+	local packageFolder = ServerStorage:FindFirstChild("ClubMusic_ServerStorage_Modules")
+	if packageFolder and packageFolder:IsA("Folder") then
+		serviceModule = packageFolder:FindFirstChild("MusicQueueManagerService")
+	end
+end
+if not serviceModule then serviceModule = ServerStorage:WaitForChild("MusicQueueManagerService", 20) end
 if not serviceModule or not serviceModule:IsA("ModuleScript") then
-	error("[ClubMusic] Missing ServerStorage.MusicQueueManagerService ModuleScript.")
+	error("[ClubMusic] Missing MusicQueueManagerService ModuleScript in the controller's ServerStorage package.")
 end
 
 local serviceRequireOk, serviceRequireResult = pcall(require, serviceModule)
