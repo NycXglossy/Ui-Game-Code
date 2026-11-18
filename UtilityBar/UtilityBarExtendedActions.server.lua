@@ -165,33 +165,167 @@ local function setSize(player: Player, requestedFactor: any): (boolean, string)
 	return true, string.format("Character size set to %.2f×.", factor)
 end
 
-local function toggleMount(player: Player): (boolean, string)
+-- Mount templates are deliberately server-only. Add the reviewed Model to
+-- ServerStorage.TikiTideMounts; when multiple models exist, exactly one must
+-- have DefaultMount=true. No client-supplied name or asset ID is accepted.
+local MOUNT_FOLDER_NAME = "TikiTideMounts"
+local MAX_MOUNT_DESCENDANTS = 500
+local activeMounts: {[number]: {model: Model, connections: {RBXScriptConnection}}} = {}
+local mountBusy: {[number]: boolean} = {}
+local mountFolder = ServerStorage:FindFirstChild(MOUNT_FOLDER_NAME)
+if mountFolder and not mountFolder:IsA("Folder") then
+	warn("[UtilityBar] ServerStorage.TikiTideMounts exists but is not a Folder; mount spawning is disabled.")
+	mountFolder = nil
+elseif not mountFolder then
+	local created = Instance.new("Folder")
+	created.Name = MOUNT_FOLDER_NAME
+	created.Parent = ServerStorage
+	mountFolder = created
+end
+
+local function disconnectMountRecord(record: {model: Model, connections: {RBXScriptConnection}})
+	for _, connection in ipairs(record.connections) do connection:Disconnect() end
+	table.clear(record.connections)
+end
+
+local function despawnMount(userId: number, destroyModel: boolean): boolean
+	local record = activeMounts[userId]
+	if not record then return false end
+	activeMounts[userId] = nil
+	disconnectMountRecord(record)
+	if destroyModel and record.model.Parent then
+		pcall(function() record.model:Destroy() end)
+	end
+	local owner = Players:GetPlayerByUserId(userId)
+	if owner then owner:SetAttribute("HasActiveIslandMount", false) end
+	return true
+end
+
+local function resolveMountTemplate(): (Model?, string?)
+	if not mountFolder or not mountFolder.Parent then
+		return nil, "The server mount catalog is unavailable."
+	end
+	local models = {}
+	for _, child in ipairs(mountFolder:GetChildren()) do
+		if child:IsA("Model") then table.insert(models, child) end
+	end
+	if #models == 0 then
+		return nil, "Island Mount is not configured yet. The approved mount model must be placed in ServerStorage.TikiTideMounts."
+	end
+	if #models == 1 then return models[1], nil end
+	local defaultModel: Model? = nil
+	for _, model in ipairs(models) do
+		if model:GetAttribute("DefaultMount") == true then
+			if defaultModel then return nil, "The mount catalog has more than one DefaultMount." end
+			defaultModel = model
+		end
+	end
+	if not defaultModel then return nil, "Choose exactly one approved DefaultMount in the server mount catalog." end
+	return defaultModel, nil
+end
+
+local function spawnMount(player: Player): (boolean, string)
+	if activeMounts[player.UserId] and activeMounts[player.UserId].model.Parent then
+		player:SetAttribute("HasActiveIslandMount", true)
+		return true, "Your Island Mount is already spawned."
+	end
+	despawnMount(player.UserId, true)
 	local character, humanoid = getCharacter(player)
 	if not character or not humanoid then return false, "Your character is not ready." end
-	local backpack = player:FindFirstChildOfClass("Backpack")
-	local mountTool: Tool? = nil
-	for _, container in ipairs({character, backpack}) do
-		if container then
-			for _, item in ipairs(container:GetChildren()) do
-				if item:IsA("Tool") and (item:GetAttribute("UtilityMount") == true
-					or item.Name == "Mount" or item.Name == "MountTool") then
-					mountTool = item
-					break
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") then return false, "Your character root is unavailable." end
+	local template, templateError = resolveMountTemplate()
+	if not template then return false, templateError or "No approved mount is configured." end
+	local descendants = template:GetDescendants()
+	if #descendants > MAX_MOUNT_DESCENDANTS then
+		return false, "The configured mount exceeds the allowed model complexity."
+	end
+	local hasPart, hasSeat = false, false
+	for _, descendant in ipairs(descendants) do
+		if descendant:IsA("BasePart") then hasPart = true end
+		if descendant:IsA("Seat") or descendant:IsA("VehicleSeat") then hasSeat = true end
+	end
+	if not hasPart or not hasSeat then
+		return false, "The approved mount must contain BaseParts and at least one Seat or VehicleSeat."
+	end
+	local cloneOk, cloned = pcall(function() return template:Clone() end)
+	if not cloneOk or not cloned or not cloned:IsA("Model") then
+		return false, "The server could not create the approved mount."
+	end
+	local mount = cloned :: Model
+	mount.Name = "TikiTideMount_" .. tostring(player.UserId)
+	mount:SetAttribute("OwnerId", player.UserId) -- metadata only; activeMounts is authoritative.
+	local spawnCharacter = character
+	local spawnRoot = root
+	local targetCFrame = spawnRoot.CFrame * CFrame.new(0, 0, -8)
+	local pivotOk = pcall(function() mount:PivotTo(targetCFrame) end)
+	if not pivotOk or player.Parent ~= Players or player.Character ~= spawnCharacter
+		or not spawnCharacter.Parent or spawnRoot.Parent ~= spawnCharacter
+		or humanoid.Health <= 0 then
+		mount:Destroy()
+		return false, "Your character changed before the mount could spawn."
+	end
+	local record = {model = mount, connections = {}}
+	for _, descendant in ipairs(mount:GetDescendants()) do
+		if descendant:IsA("Seat") or descendant:IsA("VehicleSeat") then
+			local seat = descendant :: Seat
+			-- Default policy is owner-only driving/riding until a passenger policy
+			-- is deliberately configured and tested for the actual mount model.
+			table.insert(record.connections, seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+				local occupant = seat.Occupant
+				if not occupant then
+					local canSet = false
+					pcall(function() canSet = seat:CanSetNetworkOwnership() end)
+					if canSet then pcall(function() seat:SetNetworkOwner(nil) end) end
+					return
 				end
-			end
+				local rider = Players:GetPlayerFromCharacter(occupant.Parent)
+				if not rider or rider.UserId ~= player.UserId or activeMounts[player.UserId] ~= record then
+					pcall(function() occupant.Sit = false end)
+					if rider and rider.UserId ~= player.UserId then
+						reportUtilitySignal(rider, "mount_seat_unauthorized_occupant")
+					end
+					return
+				end
+				local canSet = false
+				pcall(function() canSet = seat:CanSetNetworkOwnership() end)
+				if canSet then
+					local ownershipOk = pcall(function() seat:SetNetworkOwner(rider) end)
+					if not ownershipOk then reportUtilitySignal(rider, "mount_network_owner_assignment_failed") end
+				end
+			end))
 		end
-		if mountTool then break end
 	end
-	if not mountTool then
-		return false, "Mount is ready for a mount Tool. Add a Tool named Mount or set UtilityMount=true."
+	activeMounts[player.UserId] = record
+	table.insert(record.connections, mount.AncestryChanged:Connect(function(_, parent)
+		if parent == nil and activeMounts[player.UserId] == record then
+			despawnMount(player.UserId, false)
+		end
+	end))
+	mount.Parent = workspace
+	player:SetAttribute("HasActiveIslandMount", true)
+	return true, "Your Island Mount has spawned. Use the Mount button again to despawn it."
+end
+
+local function handleMountRequest(player: Player, operation: any): (boolean, string)
+	if operation ~= "Spawn" and operation ~= "Despawn" then
+		return false, "Choose Spawn or Despawn."
 	end
-	if mountTool.Parent == character then
-		if not backpack then return false, "Your Backpack is not ready yet." end
-		mountTool.Parent = backpack
-		return true, "Mount tool unequipped."
+	if mountBusy[player.UserId] then return false, "Your mount is already changing state." end
+	mountBusy[player.UserId] = true
+	local ok, success, message = pcall(function()
+		if operation == "Despawn" then
+			local removed = despawnMount(player.UserId, true)
+			return true, if removed then "Your Island Mount has been despawned." else "You do not have an active mount."
+		end
+		return spawnMount(player)
+	end)
+	mountBusy[player.UserId] = nil
+	if not ok then
+		warn("[UtilityBar] Mount lifecycle failed for userId " .. tostring(player.UserId) .. ": " .. tostring(success))
+		return false, "The mount service could not complete that request."
 	end
-	humanoid:EquipTool(mountTool)
-	return true, "Mount tool equipped."
+	return success == true, if typeof(message) == "string" then message else "Mount request completed."
 end
 
 local function destroyCompanion(userId: number)
@@ -473,7 +607,7 @@ execute.OnServerInvoke = function(player: Player, actionName: any, value: any): 
 		return false, "Please wait before using another utility."
 	end
 	lastRequest[player.UserId] = now
-	if actionName == "Mount" then return toggleMount(player) end
+	if actionName == "Mount" then return handleMountRequest(player, value) end
 	if actionName == "Size" then return setSize(player, value) end
 	if actionName == "Clone" then return createClone(player) end
 	if actionName == "LightingControl" then return setStageClubLighting(player, value) end
@@ -493,10 +627,12 @@ local function bindPlayerLifecycle(player: Player)
 	local connections = {}
 	table.insert(connections, player.CharacterAdded:Connect(function()
 		destroyCompanion(player.UserId)
+		despawnMount(player.UserId, true)
 	end))
 	table.insert(connections, player.CharacterRemoving:Connect(function()
 		clearAura(player.UserId)
 		destroyCompanion(player.UserId)
+		despawnMount(player.UserId, true)
 	end))
 	playerLifecycleConnections[player.UserId] = connections
 end
@@ -512,6 +648,9 @@ table.insert(lifecycleConnections, Players.PlayerRemoving:Connect(function(playe
 	sizeBaseline[player.UserId] = nil
 	clearAura(player.UserId)
 	destroyCompanion(player.UserId)
+	despawnMount(player.UserId, true)
+	mountBusy[player.UserId] = nil
+	player:SetAttribute("HasActiveIslandMount", false)
 	local connections = playerLifecycleConnections[player.UserId]
 	if connections then
 		for _, connection in ipairs(connections) do connection:Disconnect() end
@@ -527,7 +666,8 @@ script.Destroying:Connect(function()
 		playerLifecycleConnections[userId] = nil
 	end
 	for userId in pairs(companionByPlayer) do destroyCompanion(userId) end
+	for userId in pairs(activeMounts) do despawnMount(userId, true) end
 	for userId in pairs(auraByPlayer) do clearAura(userId) end
 end)
 
-print("[UtilityBar] Pass-gated Mount, Clone Companion, scoped Stage/Club Lighting, Size, and Aura actions ready.")
+print("[UtilityBar] Pass-gated Spawn/Despawn Mount, Clone Companion, scoped Stage/Club Lighting, Size, and Aura actions ready.")
