@@ -6405,7 +6405,6 @@ end
 -- Construct the remaining optional child managers only after controller state exists.
 -- Playback quality is now inspected directly from the canonical modern AudioPlayer snapshot.
 ControllerFunctions.ChildManagers = {}
-ControllerFunctions.ChildManagerModules = {}
 
 
 ControllerFunctions.castSkipVote = function(player: Player): (boolean, string)
