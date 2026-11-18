@@ -69,18 +69,16 @@ stagedBootstrap.Parent = StarterPlayerScripts
 if oldModuleBackup then oldModuleBackup:Destroy() end
 if oldBootstrapBackup then oldBootstrapBackup:Destroy() end
 
-local modulePromoted, bootstrapPromoted = false, false
+local activeBootstrapWasDisabled = activeBootstrap and activeBootstrap.Disabled
 local ok, installError = pcall(function()
 	if activeModule then activeModule.Name = MODULE_BACKUP_NAME end
 	stagedModule.Name = MODULE_NAME
-	modulePromoted = true
 
 	if activeBootstrap then
 		activeBootstrap.Name = BOOTSTRAP_BACKUP_NAME
 		activeBootstrap.Disabled = true
 	end
 	stagedBootstrap.Name = BOOTSTRAP_NAME
-	bootstrapPromoted = true
 	stagedBootstrap.Disabled = false
 end)
 
@@ -93,7 +91,7 @@ if not ok then
 		if activeModule and activeModule.Parent then activeModule.Name = MODULE_NAME end
 		if activeBootstrap and activeBootstrap.Parent then
 			activeBootstrap.Name = BOOTSTRAP_NAME
-			activeBootstrap.Disabled = false
+			activeBootstrap.Disabled = activeBootstrapWasDisabled == true
 		end
 		local moduleStage = ReplicatedStorage:FindFirstChild(MODULE_STAGE_NAME)
 		if moduleStage then moduleStage:Destroy() end
