@@ -423,7 +423,12 @@ function Service:RecordVerifiedViolation(targetUserId: number, category: string,
 	end
 	local caseId = HttpService:GenerateGUID(false)
 	local at = os.time()
-	local ok = self:_update(targetUserId, function(record)
+	local ok, updated = self:_update(targetUserId, function(record)
+		for _, existing in ipairs(record.history) do
+			if typeof(existing) == "table" and existing.evidenceReference == evidenceReference then
+				return record
+			end
+		end
 		self:_appendHistory(record, {
 			caseId = caseId, kind = "VerifiedViolation", status = "Active",
 			actorUserId = 0, targetUserId = targetUserId, at = at,
@@ -431,8 +436,14 @@ function Service:RecordVerifiedViolation(targetUserId: number, category: string,
 		})
 		return record
 	end)
-	if ok then self:_audit("VerifiedViolationRecorded", 0, targetUserId, caseId, category) end
-	return ok
+	if not ok or typeof(updated) ~= "table" then return false end
+	for _, existing in ipairs(updated.history or {}) do
+		if typeof(existing) == "table" and existing.evidenceReference == evidenceReference then
+			self:_audit("VerifiedViolationRecorded", 0, targetUserId, tostring(existing.caseId or caseId), category)
+			return true
+		end
+	end
+	return false
 end
 
 function Service:GetRiskHistory(targetUserId: number, limit: number): (boolean, {any}?)
