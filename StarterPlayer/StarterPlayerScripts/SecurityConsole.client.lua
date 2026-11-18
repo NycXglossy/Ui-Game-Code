@@ -128,7 +128,7 @@ categoryLayout.Parent = categoryBar
 local actionList = Instance.new("ScrollingFrame")
 actionList.Name = "ActionList"
 actionList.Position = UDim2.fromOffset(14, 106)
-actionList.Size = UDim2.new(1, -28, 0.30, -8)
+actionList.Size = UDim2.new(1, -28, 0.26, -8)
 actionList.BackgroundColor3 = Color3.fromRGB(17, 25, 38)
 actionList.BorderSizePixel = 0
 actionList.ScrollBarThickness = 4
@@ -150,8 +150,8 @@ actionLayout.Parent = actionList
 
 local form = Instance.new("Frame")
 form.Name = "CommandForm"
-form.Position = UDim2.new(0, 14, 0.30, 108)
-form.Size = UDim2.new(1, -28, 0.43, -10)
+form.Position = UDim2.new(0, 14, 0.26, 108)
+form.Size = UDim2.new(1, -28, 0.39, -10)
 form.BackgroundColor3 = Color3.fromRGB(17, 25, 38)
 form.BorderSizePixel = 0
 form.Parent = main
@@ -204,9 +204,9 @@ local function makeInput(name: string, y: number, placeholder: string)
 	return box
 end
 
-local inputA = makeInput("InputA", 58, "Target UserId / queue ID / track ID")
-local inputB = makeInput("InputB", 94, "Reason / details")
-local inputC = makeInput("InputC", 130, "Mode / features / duration / limit")
+local inputA = makeInput("InputA", 52, "Target UserId / queue ID / track ID")
+local inputB = makeInput("InputB", 84, "Reason / details")
+local inputC = makeInput("InputC", 116, "Mode / features / duration / limit")
 
 local runButton = Instance.new("TextButton")
 runButton.Name = "RunAction"
@@ -232,10 +232,23 @@ lockdownButton.Font = Enum.Font.GothamBold
 lockdownButton.Parent = form
 Instance.new("UICorner", lockdownButton).CornerRadius = UDim.new(0, 8)
 
+local statusFrame = Instance.new("ScrollingFrame")
+statusFrame.Name = "CommandResult"
+statusFrame.Position = UDim2.new(0, 14, 0.84, 0)
+statusFrame.Size = UDim2.new(1, -28, 0.14, -8)
+statusFrame.BackgroundColor3 = Color3.fromRGB(17, 25, 38)
+statusFrame.BorderSizePixel = 0
+statusFrame.ScrollBarThickness = 3
+statusFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+statusFrame.CanvasSize = UDim2.new()
+statusFrame.Parent = main
+Instance.new("UICorner", statusFrame).CornerRadius = UDim.new(0, 9)
+
 local status = Instance.new("TextLabel")
 status.Name = "StatusLabel"
-status.Position = UDim2.new(0, 14, 1, -34)
-status.Size = UDim2.new(1, -28, 0, 23)
+status.Position = UDim2.fromOffset(9, 7)
+status.Size = UDim2.new(1, -18, 0, 0)
+status.AutomaticSize = Enum.AutomaticSize.Y
 status.BackgroundTransparency = 1
 status.Font = Enum.Font.Gotham
 status.Text = "Waiting for server authorization…"
@@ -243,7 +256,8 @@ status.TextColor3 = Color3.fromRGB(157, 174, 194)
 status.TextSize = 9
 status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
-status.Parent = main
+status.TextYAlignment = Enum.TextYAlignment.Top
+status.Parent = statusFrame
 
 type Command = {key: string, label: string, help: string, kind: string?}
 local groups: {[string]: {Command}} = {
@@ -323,7 +337,10 @@ local requestToken = 0
 local lockdownActive = false
 
 local function setStatus(message: string, success: boolean?)
-	status.Text = string.sub(message, 1, 220)
+	status.Text = string.sub(message, 1, 1800)
+	task.defer(function()
+		statusFrame.CanvasPosition = Vector2.new(0, math.max(0, statusFrame.AbsoluteCanvasSize.Y - statusFrame.AbsoluteSize.Y))
+	end)
 	status.TextColor3 = if success == true then Color3.fromRGB(119, 220, 173)
 		elseif success == false then Color3.fromRGB(245, 139, 139)
 		else Color3.fromRGB(157, 174, 194)
