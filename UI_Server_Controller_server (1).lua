@@ -2768,11 +2768,9 @@ ControllerFunctions.loadProfile = function(player: Player)
 	local function abandonDepartedLoad(): boolean
 		filteredTitleTextByUserId[userId] = nil
 		-- The join can finish its yielding DataStore/TextService work after
-		-- PlayerRemoving has already run. Release only this server's lease;
-		-- releaseProfileSession verifies SESSION_TOKEN inside UpdateAsync.
-		if not USE_STUDIO_MEMORY_PROFILES and type(ControllerFunctions.releaseProfileSession) == "function" then
-			ControllerFunctions.releaseProfileSession(userId)
-		end
+		-- PlayerRemoving has already run. Retain the lease until its normal expiry:
+		-- SESSION_TOKEN is server-scoped, so an immediate same-server rejoin could
+		-- otherwise acquire the same owner token and have this stale load clear it.
 		return false
 	end
 
