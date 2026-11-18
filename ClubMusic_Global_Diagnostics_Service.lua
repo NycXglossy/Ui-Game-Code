@@ -297,6 +297,20 @@ function Service:GetStatus(): {[string]: any}
 end
 
 function Service:GetMetrics(): {[string]: any}
+	if type(self.d.allowAnalyticsAggregation) == "function" then
+		local budgetOk, allowed = pcall(self.d.allowAnalyticsAggregation)
+		if budgetOk and allowed == false then
+			return {
+				state = "Deferred",
+				scope = "ServerLocal",
+				deferred = true,
+				detail = "Optional metrics aggregation was deferred by the adaptive workload budget.",
+				counters = {},
+				aggregate = {scope = "ServerLocal", counters = {}},
+				updatedAt = os.time(),
+			}
+		end
+	end
 	local counters = {}
 	local structuredCounters = {}
 	for name, values in pairs(self.metrics) do
