@@ -223,7 +223,7 @@ Instance.new("UICorner", runButton).CornerRadius = UDim.new(0, 8)
 
 local lockdownButton = Instance.new("TextButton")
 lockdownButton.Name = "LockdownBtn"
-lockdownButton.Position = UDim2.fromOffset(12, 1, 1, -43)
+lockdownButton.Position = UDim2.new(0, 12, 1, -43)
 lockdownButton.Size = UDim2.fromOffset(134, 32)
 lockdownButton.BackgroundColor3 = Color3.fromRGB(138, 53, 53)
 lockdownButton.Text = "LOCAL LOCKDOWN"
