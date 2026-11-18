@@ -455,10 +455,12 @@ script.Destroying:Connect(function()
 		for part, state in pairs(originalDoorState) do
 			pcall(function()
 				part.CanCollide = state.canCollide
-				part.BrickColor = state.brickColor
+				part.Color = state.color
+				part.Transparency = state.transparency
 			end)
 		end
 	end
+	clubClosed.Value = false
 end)
 
 print("[Tiki Tide][StaffActions] Phase 22 local lockdown and allowlisted ClubMusic staff command console ready.")
