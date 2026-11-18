@@ -288,7 +288,17 @@ local function getModeration(userId: number): {[string]: any}
 		warn("[ClubMusic Global] Moderation lookup failed for " .. key .. ": " .. tostring(data))
 		return {lookupFailed = true}
 	end
-	return if typeof(data) == "table" then data else {}
+	-- A missing key is the only valid empty-record case. Treat malformed stored
+	-- values or non-boolean enforcement flags as unknown so corrupt data can
+	-- never silently clear a global ban or request restriction.
+	if data == nil then return {} end
+	if typeof(data) ~= "table"
+		or (data.globalBan ~= nil and typeof(data.globalBan) ~= "boolean")
+		or (data.requestBlocked ~= nil and typeof(data.requestBlocked) ~= "boolean") then
+		warn("[ClubMusic Global] Moderation record has an invalid schema for " .. key .. "; failing closed.")
+		return {lookupFailed = true}
+	end
+	return data
 end
 
 local publishTopic: (string, {[string]: any}) -> boolean
