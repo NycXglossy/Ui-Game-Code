@@ -145,8 +145,8 @@ authority.OnInvoke = function(...) return movementExport.Invoke(...) end
 local loadControl = ServerStorage:FindFirstChild("TikiTideSecurityLoadManager")
 local function getMovementSampleInterval()
  local mode = Workspace:GetAttribute("TikiTideAdaptiveLoadMode")
- if mode == "Critical" then return 1.25 end
- if mode == "Reduced" then return 1.0 end
+ if mode == "Critical" then return 3.0 end
+ if mode == "Reduced" then return 1.5 end
  return 0.5
 end
 local function allowMovementSample()
