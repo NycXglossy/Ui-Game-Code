@@ -176,3 +176,10 @@ Validation: static source inspection and reference checks only; no Luau compiler
 
 
 The same stale shared-result requirement was also present in the global XP boost DataStore budget helper and its read/activation paths. Those checks now honor the local per-server budget result while leaving the actual XP boost record and receipt journal in the existing cross-server DataStores. In other words, the *state* remains global because XP boosts are shared, but the *request budget* is local to each server.
+
+
+## Active MusicValidationService cache alignment
+
+The controller resolves the ModuleScript named `MusicValidationService` from ServerStorage (or the packaged `ClubMusic_ServerStorage_Modules` folder). The active root `MusicValidationService.lua` and the embedded ModuleScript source in `ClubMusic_ServerStorage_Modules.rbxmx` had still contained the older O(n) eviction scan and did not include the short failure cache, even though the separate `MusicValidationService.luau` source already contained a circular FIFO implementation. Updated the controller-facing module without changing its constructor or public method contract: bounded O(1) circular FIFO eviction, generation-safe stale queue entries, configurable short failure TTL (default 5 seconds), and bounded positive metadata TTL. The packaged ModuleScript source was synchronized to the same exact content so the normal ServerStorage package install receives the optimization. The controller still performs its own audio preload/playability validation; metadata cache hits do not authorize playback.
+
+Validation: confirmed the controller's ModuleScript lookup name, confirmed the package's embedded ModuleScript source matches the canonical root file, and statically reviewed FIFO/expiry behavior. No Luau compiler or Roblox runtime test was run.
