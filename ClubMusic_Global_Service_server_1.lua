@@ -148,6 +148,17 @@ local function finiteNumber(value: any): boolean
 	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
 
+local function getMessagingPayloadLimit(): number
+	local limit = CONFIG.MaxMessageBytes
+	if globalSecurityPolicyService then
+		local ok, configured = pcall(globalSecurityPolicyService.Get, globalSecurityPolicyService, "messageMaxBytes")
+		if ok and finiteNumber(configured) then
+			limit = math.min(limit, configured)
+		end
+	end
+	return limit
+end
+
 local function recordSecurityReplay(eventType: string, userId: number, targetUserId: number, severity: string, source: string, metadata: {[string]: any}?)
 	local storage = game:GetService("ServerStorage")
 	local endpoint = storage:FindFirstChild("TikiTideSecurityReplay")
@@ -336,7 +347,7 @@ publishTopic = function(topic: string, payload: {[string]: any}): boolean
 	-- Apply the same conservative byte ceiling used by inbound validation.
 	-- Roblox documents a 1 KiB maximum; the margin avoids backend-envelope edge cases.
 	local encodeOk, encodedPayload = pcall(function() return HttpService:JSONEncode(payload) end)
-	if not encodeOk or typeof(encodedPayload) ~= "string" or #encodedPayload > CONFIG.MaxMessageBytes then
+	if not encodeOk or typeof(encodedPayload) ~= "string" or #encodedPayload > getMessagingPayloadLimit() then
 		messagingPublishFailures += 1
 		messagingLastError = "Payload exceeds the local MessagingService byte ceiling or cannot be encoded."
 		warn("[ClubMusic Global] Publish rejected before MessagingService on topic " .. topic .. ": " .. messagingLastError)
@@ -1191,10 +1202,7 @@ end)
 globalMessageValidationService = createOperationalService("ClubMusic_Global_Message_Validation_Service", {
 	getJobId = function() return JOB_ID end,
 	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
-	getMaxBytes = function()
-		local configured = if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxBytes") else CONFIG.MaxMessageBytes
-		return math.min(if finiteNumber(configured) then configured else CONFIG.MaxMessageBytes, CONFIG.MaxMessageBytes)
-	end,
+	getMaxBytes = getMessagingPayloadLimit,
 	getMaxAge = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxAgeSeconds") else 120 end,
 }, {"Start", "GetStatus", "Validate"})
 if globalMessageValidationService and not startOperationalService("ClubMusic_Global_Message_Validation_Service", globalMessageValidationService) then globalMessageValidationService = nil end
