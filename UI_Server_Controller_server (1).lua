@@ -2263,6 +2263,8 @@ do
 				and type(instance.Unban) == "function"
 				and type(instance.GetHistory) == "function"
 				and type(instance.GetRiskSignals) == "function"
+				and type(instance.RevokeRestrictions) == "function"
+				and type(instance.RecordVerifiedViolation) == "function"
 				and type(instance.IsRestricted) == "function" then
 				phase32Services = instance
 			else
@@ -5858,6 +5860,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		elseif operation == "Phase32Unban" then
 			if not remainder then return false, "An unban reason is required." end
 			return phase32Services:Unban(caller, targetUserId, remainder)
+		elseif operation == "Phase32Unrestrict" then
+			if not remainder then return false, "A restriction-reversal reason is required." end
+			return phase32Services:RevokeRestrictions(caller, targetUserId, remainder)
 		elseif operation == "Phase32History" then
 			local ok, history = phase32Services:GetHistory(caller, targetUserId, 10)
 			if not ok or typeof(history) ~= "table" then return false, "Moderation history is unavailable or access was denied." end
