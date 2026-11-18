@@ -4976,8 +4976,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			syncState.lastAppliedRevision = -1
 			syncState.lastSyncAppliedAt = 0
 		end
-		syncState.authorityReady = true
-		syncState.statusError = nil
+		syncState.authorityReady = payload.enabled ~= true
+		syncState.statusError = if payload.enabled then "Waiting for playback leader election." else nil
 		publishState(nil)
 		local message = if payload.enabled
 			then "Global playback sync enabled. Every server keeps its own request queue."
