@@ -215,6 +215,38 @@ local function sendResult(player: Player, action: string, ok: boolean, message: 
 	end
 end
 
+-- Client-visible command IDs are deliberately mapped to fixed bridge operations.
+-- The client never supplies a bridge operation name. The controller remains the
+-- source of truth for per-operation staff/admin authorization and argument rules.
+local STAFF_COMMANDS: {[string]: string} = {
+	PlaybackSkip = "Skip", PlaybackPause = "TogglePause", PlaybackRestart = "Restart",
+	RequestLock = "ToggleRequestLock", PlaybackStatus = "Status", QueueView = "Queue",
+	QueueRemove = "RemoveQueueEntry", QueueClear = "ClearQueue",
+	EmergencyRequestLock = "EmergencyLock", PlaybackForceStop = "ForceStop",
+	RequestMute = "RequestMute", ClearUserQueue = "ClearUserQueue",
+	TrackBlock = "TrackBlock", ModerationHistory = "ModerationHistory",
+	DJSessionStatus = "DJSessionStatus", DJSessionStart = "DJSessionStart",
+	DJSessionHandoff = "DJSessionHandoff", DJSessionEnd = "DJSessionEnd",
+	Warn = "Phase32Warn", Restrict = "Phase32Restrict", TempBan = "Phase32TempBan",
+	PermanentBan = "Phase32PermanentBan", PermanentBanAlts = "Phase32PermanentBanAlts",
+	Unban = "Phase32Unban", Unrestrict = "Phase32Unrestrict",
+	PunishmentHistory = "Phase32History", AccountRisk = "Phase32Risk",
+	SecurityReplay = "SecurityReplay", ThreatIntelligence = "SecurityThreatIntelligence",
+	SpectateEnter = "StaffSpectatorEnter", SpectateSwitch = "StaffSpectatorSwitch",
+	SpectateExit = "StaffSpectatorExit", SpectateState = "StaffSpectatorState",
+	SecurityStatus = "SecurityStatus", SecurityIncidents = "SecurityIncidents",
+	ThreatCaseOpen = "SecurityThreatCaseOpen", IncidentOpen = "SecurityIncidentOpen",
+	IncidentResolve = "SecurityIncidentResolve", SecurityPolicy = "SecurityPolicy",
+	SecurityPolicySet = "SecurityPolicySet",
+	Health = "OperationalHealth", Diagnostics = "OperationalDiagnostics",
+	PurchaseDiagnostics = "PurchaseDiagnostics", Services = "OperationalServices",
+	Errors = "OperationalErrors", Metrics = "OperationalMetrics",
+	SecurityLog = "OperationalSecurityLog", RateLimit = "OperationalRateLimit",
+	Config = "OperationalConfig", Recovery = "OperationalRecovery",
+	Reconcile = "OperationalReconcile", CatalogRefresh = "OperationalCatalogRefresh",
+	Maintenance = "OperationalMaintenance",
+}
+
 securityAction.OnServerEvent:Connect(function(player: Player, action: any, targetName: any, rawReason: any)
 	if player.Parent ~= Players or typeof(action) ~= "string" then return end
 
@@ -224,7 +256,7 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 		if previousStatus and now - previousStatus < 1 then return end
 		lastStatusAt[player.UserId] = now
 		local level = getVerifiedLevel(player)
-		if level == nil or level < 2 then
+		if level == nil or level < 1 then
 			sendResult(player, action, false, "Staff console access is unavailable.")
 			return
 		end
@@ -232,13 +264,66 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 		return
 	end
 
-	if action ~= "ToggleLockdown" and action ~= "KickPlayer" then
+	if action ~= "ToggleLockdown" and action ~= "KickPlayer" and action ~= "RunClubMusicCommand" then
 		sendResult(player, tostring(action):sub(1, 32), false, "Unsupported security action.")
 		return
 	end
 
 	if not consumeActionCooldown(player) then
 		sendResult(player, action, false, "Please wait before using another security action.")
+		return
+	end
+
+	if action == "RunClubMusicCommand" then
+		local level = getVerifiedLevel(player)
+		if level == nil or level < 1 then
+			sendResult(player, action, false, "Staff authorization is unavailable or insufficient.")
+			return
+		end
+		if typeof(targetName) ~= "string" or #targetName > 40 then
+			sendResult(player, action, false, "Select a valid Staff Console action.")
+			return
+		end
+		local operation = STAFF_COMMANDS[targetName]
+		if not operation then
+			sendResult(player, action, false, "That Staff Console action is not allowlisted.")
+			return
+		end
+		local argument = if typeof(rawReason) == "string" then rawReason else ""
+		if #argument > 320 or not utf8.len(argument) or string.find(argument, "%c") then
+			sendResult(player, action, false, "The command details are invalid or too long.")
+			return
+		end
+		if not consumeActionCooldown(player) then
+			sendResult(player, action, false, "Please wait before using another staff action.")
+			return
+		end
+		local bridge = ServerStorage:FindFirstChild("ClubMusicAdminBridge")
+		if not bridge or not bridge:IsA("BindableFunction") or bridge.Parent ~= ServerStorage then
+			sendResult(player, action, false, "ClubMusic admin bridge is unavailable.")
+			return
+		end
+		if not recordAudit("staff_console_command_requested", player.UserId, 0, "Warning", {
+			command = targetName,
+			operation = operation,
+		}) then
+			sendResult(player, action, false, "Security audit is unavailable; the command was not run.")
+			return
+		end
+		local invokeOk, accepted, message = pcall(function()
+			return bridge:Invoke(player, operation, argument)
+		end)
+		local succeeded = invokeOk and accepted == true
+		local resultMessage = if typeof(message) == "string" then message
+			elseif not invokeOk then "The ClubMusic command failed. Check server Output."
+			else "ClubMusic rejected the command."
+		recordAudit(if succeeded then "staff_console_command_completed" else "staff_console_command_rejected",
+			player.UserId, 0, if succeeded then "Info" else "Warning", {
+				command = targetName,
+				operation = operation,
+				accepted = succeeded,
+			})
+		sendResult(player, action, succeeded, resultMessage)
 		return
 	end
 
