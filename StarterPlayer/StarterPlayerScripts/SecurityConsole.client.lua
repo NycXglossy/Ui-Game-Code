@@ -785,9 +785,9 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 		launcherGui.Enabled = succeeded
 		if not succeeded then
 			gui.Enabled = false
-		elseif not initialStatusHandled then
-			gui.Enabled = true
 		end
+		-- Authorization only reveals the launcher; opening the console requires
+		-- an explicit staff click on the launcher button.
 		initialStatusHandled = true
 	end
 	if action == "ClubClosurePrepare" and succeeded then
