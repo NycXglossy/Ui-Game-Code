@@ -1,10 +1,10 @@
 --!strict
--- Optional client-local diagnostics bootstrap.
+-- Client-local diagnostics bootstrap.
 -- Install this LocalScript under StarterPlayerScripts and the matching
 -- ClubMusic_Client_Diagnostics_Service ModuleScript under ReplicatedStorage.
--- Enable only in a test session or when a local client explicitly needs telemetry.
+-- Sampling is local to this client; no measurements are sent to the server.
 
-local ENABLE_CLIENT_DIAGNOSTICS = false
+local ENABLE_CLIENT_DIAGNOSTICS = true
 
 if not ENABLE_CLIENT_DIAGNOSTICS then
 	return
@@ -27,6 +27,8 @@ if not ok or typeof(exported) ~= "table" or type(exported.new) ~= "function" the
 	return
 end
 
+-- The default service options keep the full Workspace effects inventory disabled.
+-- FPS/frame-time, client memory, and optional modern AudioPlayer observations remain local.
 local createOk, diagnostics = pcall(exported.new)
 if not createOk or typeof(diagnostics) ~= "table"
 	or type(diagnostics.Start) ~= "function" or type(diagnostics.GetStatus) ~= "function"
