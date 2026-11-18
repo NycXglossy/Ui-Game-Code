@@ -20,14 +20,19 @@ end
 
 function Service.new(options: {[string]: any}?)
 	local config = if typeof(options) == "table" then options else {}
-	return setmetatable({
+	local service = setmetatable({
 		lastSubmit = {} :: {[number]: number},
 		submissions = 0,
 		rejected = 0,
 		filterFailures = 0,
 		lastError = nil :: string?,
 		onVerifiedViolation = if type(config.onVerifiedViolation) == "function" then config.onVerifiedViolation else nil,
+		removingConnection = nil :: RBXScriptConnection?,
 	}, Service)
+	service.removingConnection = Players.PlayerRemoving:Connect(function(player)
+		service:RemovePlayer(player)
+	end)
+	return service
 end
 
 function Service:FilterBroadcast(player: Player, rawText: any): (boolean, string?, string?)
@@ -82,6 +87,14 @@ function Service:RemovePlayer(player: Player)
 	if typeof(player) == "Instance" and player:IsA("Player") then
 		self.lastSubmit[player.UserId] = nil
 	end
+end
+
+function Service:Destroy()
+	if self.removingConnection then
+		self.removingConnection:Disconnect()
+		self.removingConnection = nil
+	end
+	table.clear(self.lastSubmit)
 end
 
 function Service:GetStatus(): {[string]: any}
