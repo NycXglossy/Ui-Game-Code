@@ -3997,8 +3997,16 @@ do
 				end,
 				processValidatedReceipt = processValidatedReceipt,
 				onEvent = function(eventName: string, receiptInfo: any, detail: string?)
-					local userId = if typeof(receiptInfo) == "table" and typeof(receiptInfo.PlayerId) == "number" then receiptInfo.PlayerId else 0
-					local productId = if typeof(receiptInfo) == "table" and typeof(receiptInfo.ProductId) == "number" then receiptInfo.ProductId else 0
+					local userId, productId = 0, 0
+					if typeof(receiptInfo) == "table" then
+						local candidateUserId, candidateProductId = receiptInfo.PlayerId, receiptInfo.ProductId
+						if typeof(candidateUserId) == "number" and candidateUserId == candidateUserId
+							and candidateUserId > 0 and candidateUserId < math.huge and candidateUserId % 1 == 0
+							and candidateUserId <= 9007199254740991 then userId = candidateUserId end
+						if typeof(candidateProductId) == "number" and candidateProductId == candidateProductId
+							and candidateProductId > 0 and candidateProductId < math.huge and candidateProductId % 1 == 0
+							and candidateProductId <= 9007199254740991 then productId = candidateProductId end
+					end
 					local outcomes = {
 						MalformedReceipt = "MalformedReceipt",
 						ReceiptDuplicate = "ReceiptDuplicate",
