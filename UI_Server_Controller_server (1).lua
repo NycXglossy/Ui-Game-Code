@@ -6837,10 +6837,10 @@ task.spawn(function()
 			syncState.wasLeader = syncState.isLeader == true
 			syncState.isLeader = status.isLeader == true
 			local authorityError = if typeof(status.lastServiceError) == "string" then status.lastServiceError
-				elseif typeof(status.error) == "string" then status.error
-				elseif typeof(status.lastError) == "string" then status.lastError else nil
+				elseif typeof(status.error) == "string" then status.error else nil
+			local diagnosticError = authorityError or (if typeof(status.lastError) == "string" then status.lastError else nil)
 			syncState.authorityReady = status.enabled == true and authorityError == nil
-			syncState.statusError = if authorityError then string.sub(authorityError, 1, 120) else nil
+			syncState.statusError = if diagnosticError then string.sub(diagnosticError, 1, 120) else nil
 			local current = table.concat({tostring(syncState.isLeader), tostring(syncState.leaderJobId), tostring(syncState.authorityReady)}, "|")
 			if previous ~= current then publishState(nil) end
 			if syncState.isLeader then
