@@ -199,3 +199,60 @@ The branch source inspected for this audit contains no `TipPlayerRemote` referen
 - Staff VIP contributes tier 1. Owner remains tier 3. Admin and Co-Owner do not automatically receive VVIP or Tiki Tide.
 - Installer release pin updated to the Security Core commit containing this change.
 - Runtime verification of each rank remains outstanding.
+
+## Dance Floor playtime rewards — server-authoritative integration
+
+The supplied PlaytimeRewards.server.lua example was integrated into the existing main controller rather than installed as a second economy owner.
+
+- The controller runs one bounded server loop at a 10-second interval. It awards 15 main-profile Coins per eligible interval.
+- A 2x payout (30 Coins) is resolved through ControllerFunctions.passTier and the existing Security Core EntitlementAuthority. It does not trust the replicated IsVIP attribute or any client-supplied multiplier. Group members, all verified staff ranks, paid VIP owners, and owner-awarded VIP tiers receive the existing VIP entitlement according to the established policy.
+- Zone presence uses oriented-part local coordinates and supports up to 16 valid zones. The map must tag each approved dance-floor BasePart with TikiTideDanceFloorZone. Missing/invalid zones fail closed; no guessed DanceFloorPart world instance is created.
+- The player must have a live character, living Humanoid, and HumanoidRootPart inside a tagged zone. The vertical tolerance remains 10 studs above/below the zone's half-height to accommodate jumping.
+- AFK activity is refreshed by server-observed displacement (0.5 studs), Humanoid MoveDirection, or playing Movement/Action-priority animation tracks. Animation inspection is capped at 64 tracks per player. Players inactive for more than 180 seconds receive no payout. This is an eligibility heuristic, not an anti-cheat verdict or punishment signal.
+- Character replacement resets the activity baseline; PlayerRemoving clears per-player state. The loop inspects at most 64 tagged instances and 16 valid zones per interval.
+- The main profile adds danceFloorLastRewardAt. The balance and interval marker are written together in the existing profile snapshot, preventing repeat awards within 10 seconds after the updated snapshot is persisted. Saves are coalesced on a 30-second reward cadence and remain covered by normal autosave and final leave save. No third currency, remote, receipt callback, or separate DataStore is introduced.
+- Rewards update the existing coins field and Coins player attribute. Tickets and the separate empty Tool Shop currency are untouched.
+
+### Dance Floor acceptance tests still required
+
+1. No tag / wrong-class tag / tag outside Workspace: no payout and no startup failure.
+2. One rotated zone and multiple zones; test boundary edges, jumping tolerance, and a character outside every zone.
+3. Living versus dead Humanoid, missing root, respawn during interval, and PlayerRemoving cleanup.
+4. 15 Coins for regular players; 30 for group VIP, Moderator, Admin, Co-Owner, Owner, paid VIP, and owner-awarded VIP; no VIP multiplier when ownership is not verified.
+5. Dancing in place with a Movement/Action animation remains active; walking, jumping, and MoveDirection refresh activity; 180 seconds inactive stops rewards; activity resumes eligibility.
+6. Two or more rapid loop starts / controller restart; no more than one award per profile interval after the marker has been persisted.
+7. Concurrent receipt, daily reward, title purchase, autosave, and final leave save; verify profile write serialization preserves both Coins and danceFloorLastRewardAt.
+8. DataStore budget exhaustion and server interruption before/after a profile snapshot; verify no duplicate balance+marker commit and document the expected possibility of losing not-yet-saved session rewards.
+9. Long sessions and full servers; measure DataStore request budget, save queue delay, loop CPU, and bounded per-player state.
+
+The map is unfinished, so this code is intentionally inactive until the actual dance-floor BasePart(s) receive the documented CollectionService tag. No map geometry was invented or modified.
+
+## ReceiptProcessor example — retained single authority and acceptance coverage
+
+The supplied ReceiptProcessor.server.lua example was reviewed but was not installed. Its in-memory ProcessedReceipts table and second MarketplaceService.ProcessReceipt assignment would weaken the existing implementation.
+
+- The existing controller remains the sole intended ProcessReceipt owner and delegates to ClubMusicSecurityCore.ReceiptAuthority.
+- ReceiptAuthority already validates safe-integer PlayerId/ProductId and bounded PurchaseId, resolves products through the server-owned PRODUCT_MAP, excludes concurrent callbacks for the same purchase, caps in-flight handlers at 64, and uses a 512-entry session fast-path cache.
+- The existing per-profile durable receipt journal and separate global XP receipt journal remain authoritative. Cache eviction does not remove durable receipt history.
+- Missing player/profile, unknown product, malformed identity, capacity pressure, concurrent duplicate, DataStore failure, and handler errors remain retryable as NotProcessedYet. Only a completed authoritative transaction returns PurchaseGranted.
+- No new receipt table, ProductId, currency grant, remote, client purchase authority, or callback assignment was added. Client purchase-prompt telemetry remains diagnostic only.
+
+### ReceiptProcessor acceptance tests still required
+
+1. Static search of the actual deployed hierarchy for every MarketplaceService.ProcessReceipt assignment; verify only the main controller owns it.
+2. Execute the matching Security Core installer and controller together in a disposable Studio universe; confirm ReceiptAuthority loads and its status endpoint reports Ready.
+3. Deliver the same PurchaseId sequentially and concurrently, including after the 512-entry cache evicts it; verify exactly one durable grant.
+4. Deliver malformed metadata and unknown ProductIds; verify no reward and a retryable result.
+5. Test missing player/profile, profile lock contention, DataStore budget exhaustion, and transient failure at each Prepared/apply/Completed/pending-marker-clear boundary.
+6. Interrupt/restart after receipt preparation and after durable profile reward application; rejoin and verify recovery grants exactly once.
+7. Test all configured donation products, both global XP products, and title slots 2/3; verify exact existing reward amounts and global XP journal compatibility.
+8. Test 64-handler saturation and distinct concurrent receipts without starving moderation, security recording, profile recovery, or other essential operations.
+9. Spoof client purchase prompt telemetry; verify it changes only bounded diagnostics and never grants a product or pass.
+10. Verify no new ReceiptProcessor.server.lua is installed alongside the existing controller.
+
+## Verification update for the script-example implementation
+
+- Dance Floor reward logic and profile marker were added to the tracked controller source in commit a2f8a8271b23be1b326051c4d136f743518f3cbd.
+- ReceiptAuthority and the existing durable receipt transaction handlers were source-reviewed and intentionally left intact; the example's duplicate callback and in-memory receipt cache were not copied.
+- Source changes are static repository work only. No Luau parser, Roblox Studio runtime, live DataStore, live Marketplace catalog, or published-server test was available.
+- The feature branch remains unmerged and unpublished. The live Roblox place and production player data are unchanged.
