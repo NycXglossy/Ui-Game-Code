@@ -112,3 +112,17 @@ Phase 16's client FPS/frame-time/memory/ping diagnostics remain client-local and
 - Runtime acceptance: enable the existing client diagnostics bootstrap only in a test client; verify a managed AudioPlayer is discovered during normal playback and crossfade, the log cadence is approximately 10 seconds while playing, ping is a recent local sample, pause/stop states are not reported as playing, missing audio graphs return a bounded NotFound/Unavailable state, and client diagnostics remain disabled by default.
 
 **Limitation:** This is playback-state/time diagnostics for the modern AudioPlayer backend, not a loudness meter or track-title resolver. Do not add an AudioAnalyzer solely to reproduce the legacy Sound.PlaybackLoudness field without a separate measured need and audio-graph performance review.
+
+
+## Phase 16 follow-up — one-shot workspace visual-effects inventory
+
+- Extended the existing opt-in client diagnostics service with a one-time workspace scan when diagnostics starts.
+- Counts Light instances, lights with Shadows == true, and the combined number of ParticleEmitter and Beam instances. Also records the number of workspace descendants scanned.
+- The scan yields after each 500 descendants so processing is spread across frames rather than running the entire counting loop without yielding. The scan can be cancelled when the diagnostics service stops.
+- Results are available through the existing client-local GetStatus() snapshot under mapAudit and are printed once with the '--- CLUB MAP BOTTLENECK AUDIT ---' heading when complete.
+- This is a count-based inventory, not a direct measurement of GPU time or proof that any individual light/effect is a bottleneck. Actual cost depends on scene visibility, device, graphics quality, effect properties, and runtime conditions.
+- With StreamingEnabled, the client sees only the currently replicated/streamed portion of Workspace; counts are not guaranteed to represent the entire server map. Compare audits from the same location/streaming conditions, or perform a separate server-side inventory when a full-map count is required.
+- The scan is one-shot per diagnostics start, not repeated on a timer. It sends no counts to the server and does not disable shadows, throttle emitters, alter lighting, destroy instances, or make optimization decisions.
+- Runtime acceptance: enable diagnostics in a test client; confirm counts against a controlled test map, verify the scan reaches Complete, verify stopping diagnostics cancels an in-progress scan, and compare results at different streamed locations before treating them as a whole-map baseline.
+
+**Interpretation:** prioritize review of shadow-casting lights and dense particle/beam populations, but profile on representative low-end devices before changing map content or effect settings.
