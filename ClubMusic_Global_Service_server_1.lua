@@ -58,7 +58,8 @@ local CONFIG = {
 	SubscriptionRetrySeconds = 10,
 	MaxAnnouncementLength = 240,
 	MaxModerationReasonLength = 120,
-	MaxMessageBytes = 4096,
+	-- Roblox documents a 1 KiB MessagingService payload ceiling; retain margin for backend envelope overhead.
+	MaxMessageBytes = 900,
 }
 
 local IS_STUDIO = RunService:IsStudio()
@@ -326,11 +327,22 @@ local function updateModeration(userId: number, field: string, value: any, actor
 end
 
 publishTopic = function(topic: string, payload: {[string]: any}): boolean
-	if not SERVICE_ENABLED then return false end
+	if not SERVICE_ENABLED or globalServiceShuttingDown then return false end
 	payload.version = 1
 	payload.senderJob = JOB_ID
 	payload.id = HttpService:GenerateGUID(false)
 	payload.at = os.time()
+
+	-- Apply the same conservative byte ceiling used by inbound validation.
+	-- Roblox documents a 1 KiB maximum; the margin avoids backend-envelope edge cases.
+	local encodeOk, encodedPayload = pcall(function() return HttpService:JSONEncode(payload) end)
+	if not encodeOk or typeof(encodedPayload) ~= "string" or #encodedPayload > CONFIG.MaxMessageBytes then
+		messagingPublishFailures += 1
+		messagingLastError = "Payload exceeds the local MessagingService byte ceiling or cannot be encoded."
+		warn("[ClubMusic Global] Publish rejected before MessagingService on topic " .. topic .. ": " .. messagingLastError)
+		return false
+	end
+
 	local ok, err = pcall(function() MessagingService:PublishAsync(topic, payload) end)
 	if not ok then
 		messagingPublishFailures += 1
@@ -482,7 +494,9 @@ bindFunction("SetTrackBlocked", function(trackId: any, blocked: any, actorUserId
 	end)
 	if not ok or typeof(record) ~= "table" or record.blocked ~= blocked then return false end
 	if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "Moderation", math.floor(actorUserId), trackId, "trackBlock=" .. tostring(blocked) .. (if cleanReason then " | " .. cleanReason else "")) end
-	publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog", trackId = trackId, blocked = blocked})
+	if not publishTopic(CONFIG.Topics.Catalog, {kind = "Catalog", trackId = trackId, blocked = blocked}) then
+		warn("[ClubMusic Global] Track moderation is durable, but cross-server catalog invalidation was not published; other servers may retain cached state until their next authoritative refresh.")
+	end
 	globalEventBindable:Fire({kind = "TrackModeration", trackId = trackId, blocked = blocked, senderJob = JOB_ID})
 	return true
 end)
@@ -1177,7 +1191,10 @@ end)
 globalMessageValidationService = createOperationalService("ClubMusic_Global_Message_Validation_Service", {
 	getJobId = function() return JOB_ID end,
 	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
-	getMaxBytes = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxBytes") else CONFIG.MaxMessageBytes end,
+	getMaxBytes = function()
+		local configured = if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxBytes") else CONFIG.MaxMessageBytes
+		return math.min(if finiteNumber(configured) then configured else CONFIG.MaxMessageBytes, CONFIG.MaxMessageBytes)
+	end,
 	getMaxAge = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxAgeSeconds") else 120 end,
 }, {"Start", "GetStatus", "Validate"})
 if globalMessageValidationService and not startOperationalService("ClubMusic_Global_Message_Validation_Service", globalMessageValidationService) then globalMessageValidationService = nil end
@@ -1731,7 +1748,9 @@ local function publishXPState(record: any): (number, number)
 	local multiplier, expiry, lowerExpiry = globalXPState(record)
 	local message = {kind = "XPBoost", multiplier = multiplier, expiresAt = expiry, lowerExpiresAt = lowerExpiry}
 	globalEventBindable:Fire(message)
-	publishTopic(CONFIG.Topics.XPBoost, message)
+	if not publishTopic(CONFIG.Topics.XPBoost, message) then
+		warn("[ClubMusic Global] XP boost state is durable, but its cross-server notification was not published; other servers may refresh on their next authoritative read.")
+	end
 	return multiplier, expiry
 end
 
