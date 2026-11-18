@@ -6836,8 +6836,11 @@ task.spawn(function()
 			syncState.leaderJobId = if typeof(status.leaderJobId) == "string" then status.leaderJobId else nil
 			syncState.wasLeader = syncState.isLeader == true
 			syncState.isLeader = status.isLeader == true
-			syncState.authorityReady = status.enabled == true and status.error == nil
-			syncState.statusError = if typeof(status.error) == "string" then string.sub(status.error, 1, 120) else nil
+			local authorityError = if typeof(status.lastServiceError) == "string" then status.lastServiceError
+				elseif typeof(status.error) == "string" then status.error
+				elseif typeof(status.lastError) == "string" then status.lastError else nil
+			syncState.authorityReady = status.enabled == true and authorityError == nil
+			syncState.statusError = if authorityError then string.sub(authorityError, 1, 120) else nil
 			local current = table.concat({tostring(syncState.isLeader), tostring(syncState.leaderJobId), tostring(syncState.authorityReady)}, "|")
 			if previous ~= current then publishState(nil) end
 			if syncState.isLeader then
