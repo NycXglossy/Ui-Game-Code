@@ -1,6 +1,6 @@
 # Phase 18 — Client Integrity Telemetry
 
-**Status:** Source implementation committed; Studio and published-server acceptance remains open.
+**Status:** Source implementation committed for dependency, movement-observation, and observer-liveness telemetry; Studio and published-server acceptance remains open.
 
 ## Purpose and scope
 
@@ -36,9 +36,9 @@ The client is fully untrusted. An exploiter can suppress, forge, replay, or modi
 - Client reports are server-local replay observations only. No DataStore, MemoryStore, MessagingService, or cross-server diagnostic aggregation is added.
 
 
-## Proposed extensions — movement observations and observer liveness
+## Implemented extensions — movement observations and observer liveness
 
-**Status:** Design additions only. These items are not represented as implemented source until the corresponding server and client code is reviewed, committed, and tested.
+**Source status:** The client observer and existing server receiver have been extended and committed. Runtime acceptance remains open; this is still untrusted review telemetry, not client attestation.
 
 ### 18.6 — Client movement observation signals
 
@@ -47,7 +47,7 @@ The supplied example LocalScript monitors Humanoid.WalkSpeed and reports when th
 - A fixed client threshold such as 24 studs/second is not authoritative and can produce false positives during legitimate Tiki Tide Settings, Utility Bar, VIP, or authorized administrator movement changes.
 - The client can change its own Humanoid properties, suppress the LocalScript, forge the RemoteEvent call, or report an arbitrary value. A client-reported speed is not evidence of actual server-observed movement.
 - Do not transmit the numeric WalkSpeed, concatenated diagnostic text, stack traces, or arbitrary property values.
-- If a client-side property-change observation is retained for troubleshooting, send only a fixed allowlisted code such as client_walkspeed_observed_change. Its meaning is strictly “this client observer noticed a local property-change event,” not “the player cheated” or “the speed was invalid.”
+- The client observer now sends only the fixed allowlisted code `client_walkspeed_observed_change`, with no speed value or diagnostic text. Its meaning is strictly “this client observer noticed a local property-change event,” not “the player cheated” or “the speed was invalid.” The client locally debounces reports, and the server applies a separate 30-second interval and a maximum of ten accepted movement observations per player session.
 - Treat the signal as an untrusted SecurityReplay observation at Info severity. It must not independently create a threat score, incident, moderation action, movement correction, permission decision, or gameplay restriction.
 - Server-side movement evaluation remains separate and authoritative. Reuse the existing MovementAuthority and CharacterPhysicsGuard observations; do not add a parallel movement enforcement system or assume that an approval marker proves a client report is genuine.
 - Do not introduce a universal WalkSpeed threshold until actual movement sources, authorized modifiers, device behavior, network ownership, and latency have been inventoried and measured.
@@ -57,11 +57,11 @@ The supplied example LocalScript monitors Humanoid.WalkSpeed and reports when th
 The example sends a heartbeat every five seconds with client os.clock(). Do not use that design as an integrity proof.
 
 - A heartbeat can show only that the server received a message claiming the observer is active. It cannot prove that the expected LocalScript is genuine, unmodified, or the source of the message.
-- If liveness monitoring is needed, use a fixed allowlisted heartbeat code with no client timestamp, arbitrary payload, or client-generated identity.
+- The client sends the fixed allowlisted code `client_integrity_observer_heartbeat` every 60 seconds, with no client timestamp, arbitrary payload, or client-generated identity.
 - Record receive time using the server's own clock. Do not compare client os.clock() or client wall-clock timestamps with server time.
-- Give heartbeat traffic its own bounded rate limit and last-received state. Repeated heartbeats must not be treated as unique dependency reports or consume the existing eight-unique-report allowance.
-- Prefer a substantially slower interval (for example, 30–60 seconds) over a five-second loop; choose the final interval only after profiling server event volume and deciding what operational detection delay is acceptable.
-- A missing or late heartbeat is an observer-liveness timeout, not evidence of exploitation. It may result from startup delay, replication, client shutdown, disconnect, network interruption, or deliberate suppression.
+- Heartbeats have a separate server-side minimum interval of 20 seconds and last-received clock. Repeated heartbeats do not consume the existing eight-unique-dependency-report allowance and are not written to SecurityReplay, avoiding a high-volume timeline of routine liveness messages.
+- The implemented 60-second interval is a conservative initial setting, not a certified performance optimum. Revisit it only after profiling server event volume and deciding what operational detection delay is acceptable.
+- The server exposes aggregate heartbeat counts and a 120-second stale window in its ServerStorage-only status endpoint. A missing or late heartbeat is an observer-liveness timeout, not evidence of exploitation. It may result from startup delay, replication, client shutdown, disconnect, network interruption, or deliberate suppression.
 - Heartbeat state must be bounded, cleared on PlayerRemoving, and exposed only as aggregate or appropriately staff-authorized diagnostics. It must not create unbounded per-player histories or persistent cross-server records.
 - Do not add automatic kicks, bans, shadow restrictions, or gameplay changes for missed heartbeats.
 
@@ -70,8 +70,8 @@ The example sends a heartbeat every five seconds with client os.clock(). Do not 
 Any optional client property observer must follow character lifecycle safely.
 
 - Handle an already-existing character and subsequent CharacterAdded events.
-- Wait for the Humanoid with a bounded timeout and verify that the character is still the player's current character before attaching observers.
-- Disconnect the previous Humanoid property-change connection when the character is replaced or removed; do not accumulate connections across respawns.
+- Wait up to ten seconds for the Humanoid and verify that the character is still the player's current character before attaching observers.
+- Disconnect the previous Humanoid property-change connection when the character is replaced or removed; do not accumulate connections across respawns. The LocalScript also disconnects player lifecycle connections when destroyed.
 - Ignore callbacks from stale characters and destroyed Humanoids.
 - Do not create a tight polling loop. Prefer the property-change signal and bounded work.
 - Ensure observer startup failure or missing character parts does not block UI startup or gameplay.
@@ -98,7 +98,14 @@ Before enabling these extensions, test:
 9. Profile event volume and server overhead at realistic player counts before choosing the heartbeat interval.
 10. Re-run playback, crossfade, local queue, playback-only global sync, purchases, moderation, Utility Bar, Settings, spectator, and diagnostics regressions.
 
-**Integration constraint:** Reuse the existing TikiTideClientIntegrityTelemetry_v1 endpoint and ClientIntegrityTelemetry service if these extensions are implemented. Do not create a second ClientTelemetry RemoteEvent or a parallel receiver. The server must explicitly support and separately rate-limit any new signal category before the client begins sending it.
+**Integration constraint:** Implemented by extending the existing `TikiTideClientIntegrityTelemetry_v1` endpoint and `ClientIntegrityTelemetry` service. No second `ClientTelemetry` RemoteEvent or parallel receiver was created. The receiver rejects extra arguments, allowlists the new fixed signal codes, and separately rate-limits heartbeat and movement observations.
+
+## Source changes committed
+
+- Extended `ClientIntegrityTelemetry.lua` with strict argument rejection, allowlisted movement and heartbeat signals, independent movement/heartbeat quotas, server-receive-time liveness state, bounded aggregate status, and PlayerRemoving cleanup.
+- Extended `ClientIntegrityTelemetry.client.lua` with a 60-second heartbeat and a debounced WalkSpeed property-change observation that sends no numeric value.
+- Character observation uses a bounded ten-second Humanoid wait, checks current-character identity after yielding, and disconnects stale Humanoid and player lifecycle connections.
+- The SecurityCore installer now pins the updated module and LocalScript release. Existing Phase 17 HoneypotManager, SecurityReplay, ThreatIntelligence, movement authority, and enforcement paths were not replaced or modified.
 
 ## Runtime acceptance still required
 
