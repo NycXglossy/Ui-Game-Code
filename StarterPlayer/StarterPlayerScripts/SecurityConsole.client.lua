@@ -502,11 +502,14 @@ stopClientDiagnostics = function()
 	if clientDiagnostics and type(clientDiagnostics.Stop) == "function" then
 		pcall(clientDiagnostics.Stop, clientDiagnostics)
 	end
-	clientDiagnostics = nil
 end
 
 local function startClientDiagnostics()
-	if clientDiagnostics or clientDiagnosticsModuleAttempted then return end
+	if clientDiagnostics then
+		pcall(clientDiagnostics.Start, clientDiagnostics)
+		return
+	end
+	if clientDiagnosticsModuleAttempted then return end
 	clientDiagnosticsModuleAttempted = true
 	local moduleScript = ReplicatedStorage:FindFirstChild("ClubMusic_Client_Diagnostics_Service")
 	if not moduleScript or not moduleScript:IsA("ModuleScript") then
