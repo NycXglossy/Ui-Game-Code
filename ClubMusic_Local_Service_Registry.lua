@@ -178,6 +178,7 @@ function Registry:GetStatus(): {[string]: any}
 		scope = "ServerLocal",
 		observationalOnly = true,
 		serviceCount = self.registered,
+		dependencyCount = dependencyCount,
 		counts = counts,
 		issues = requiredIssues,
 		services = services,
