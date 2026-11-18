@@ -514,7 +514,7 @@ table.insert(lifecycleConnections, Players.PlayerAdded:Connect(function(player)
 	bindPlayerLifecycle(player)
 end))
 
-Players.PlayerRemoving:Connect(function(player)
+table.insert(lifecycleConnections, Players.PlayerRemoving:Connect(function(player)
 	lastRequest[player.UserId] = nil
 	sizeStep[player.UserId] = nil
 	sizeBaseline[player.UserId] = nil
@@ -525,7 +525,7 @@ Players.PlayerRemoving:Connect(function(player)
 		for _, connection in ipairs(connections) do connection:Disconnect() end
 		playerLifecycleConnections[player.UserId] = nil
 	end
-end)
+end))
 
 script.Destroying:Connect(function()
 	for _, connection in ipairs(lifecycleConnections) do connection:Disconnect() end
