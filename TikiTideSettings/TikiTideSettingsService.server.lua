@@ -59,7 +59,8 @@ serviceMarker.Parent = ServerStorage
 local FOLDER_NAME = "TikiTideSettingsRemotes"
 local REQUEST_COOLDOWN = 0.25
 local ANNOUNCEMENT_COOLDOWN = 180
-local BUBBLE_COOLDOWN = 5
+local BUBBLE_COOLDOWN = 60
+local AFK_TEXT_COOLDOWN = 60
 local MAX_MESSAGE_LENGTH = 180
 
 local existingFolder = ReplicatedStorage:FindFirstChild(FOLDER_NAME)
@@ -109,6 +110,7 @@ type Settings = {
 local settingsByUserId: {[number]: Settings} = {}
 local lastRequestAt: {[number]: number} = {}
 local lastBubbleAt: {[number]: number} = {}
+local lastAFKTextAt: {[number]: number} = {}
 -- Social-action budgets are server-owned and scoped to live sessions. A recipient
 -- cooldown prevents several callers from repeatedly moving the same player.
 local lastTeleportByActor: {[number]: number} = {}
@@ -402,12 +404,23 @@ local function handleRequest(player: Player, action: any, payload: any)
 		if typeof(payload.enabled) ~= "boolean" then return fail("Invalid AFK setting.") end
 		local message = ""
 		if payload.enabled then
+			local textNow = os.clock()
+			local previousTextAt = lastAFKTextAt[player.UserId] or 0
+			if previousTextAt > 0 and textNow - previousTextAt < AFK_TEXT_COOLDOWN then
+				local remaining = math.ceil(AFK_TEXT_COOLDOWN - (textNow - previousTextAt))
+				return fail("AFK message text can only be changed once every 60 seconds. Wait " .. tostring(remaining) .. " seconds.")
+			end
 			local filtered = filterBroadcastText(player, payload.message or "")
 			if filtered == nil then return fail("Enter a valid AFK message (maximum 180 characters).") end
-			-- Text filtering yields; re-check entitlement before committing state.
-			if not hasTikiTideAccess(player) or player.Parent ~= Players then
-				return fail("Tiki Tide access is required.")
+			-- Filtering yields; re-check entitlement, liveness, and cooldown before replication.
+			if not hasTikiTideAccess(player) or player.Parent ~= Players then return fail("Tiki Tide access is required.") end
+			local commitNow = os.clock()
+			local latestTextAt = lastAFKTextAt[player.UserId] or 0
+			if latestTextAt > 0 and commitNow - latestTextAt < AFK_TEXT_COOLDOWN then
+				local remaining = math.ceil(AFK_TEXT_COOLDOWN - (commitNow - latestTextAt))
+				return fail("AFK message text can only be changed once every 60 seconds. Wait " .. tostring(remaining) .. " seconds.")
 			end
+			lastAFKTextAt[player.UserId] = commitNow
 			message = filtered
 		end
 		settings.afk = payload.enabled
@@ -651,6 +664,7 @@ Players.PlayerRemoving:Connect(function(player)
 	settingsByUserId[player.UserId] = nil
 	lastRequestAt[player.UserId] = nil
 	lastBubbleAt[player.UserId] = nil
+	lastAFKTextAt[player.UserId] = nil
 	lastTeleportByActor[player.UserId] = nil
 	lastTeleportToRecipient[player.UserId] = nil
 	local character = player.Character
