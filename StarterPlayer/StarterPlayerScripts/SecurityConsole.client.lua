@@ -341,6 +341,7 @@ local pendingRequest = false
 local requestToken = 0
 local initialStatusHandled = false
 local lockdownActive = false
+local closurePreparedMode: string? = nil
 
 local function setStatus(message: string, success: boolean?)
 	status.Text = string.sub(message, 1, 1800)
@@ -474,7 +475,6 @@ local function buildArgument(command: Command): string
 	return ""
 end
 
-local closurePreparedMode: string? = nil
 runButton.Activated:Connect(function()
 	if pendingRequest then return end
 	if selected and (selected.key == "ClubClose" or selected.key == "ClubReopen" or selected.key == "ClubStatus") then
