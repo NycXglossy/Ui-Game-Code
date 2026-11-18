@@ -16,32 +16,27 @@ function MusicValidationService.new(config, assetInfoProvider)
 	end
 	self.musicIdCache = {}
 	self.audioAssetInfoCache = {}
-	self.musicIdCacheOrder = {items = {}, head = 1, tail = 0, count = 0}
-	self.audioAssetInfoCacheOrder = {items = {}, head = 1, tail = 0, count = 0}
+	self.musicIdCacheOrder = {items = {}, head = 1, count = 0}
+	self.audioAssetInfoCacheOrder = {items = {}, head = 1, count = 0}
 	self.playerCooldowns = {}
 	self.playerLastAction = {}
 	return self
 end
 
--- Bounded FIFO cache insertion is O(1); cache misses never scan the full cache
--- to find an eviction candidate. Existing keys are refreshed in place.
+-- Fixed-size circular FIFO cache insertion is O(1) and bounded in both
+-- lookup work and bookkeeping memory. Existing keys are refreshed in place.
 local function setBoundedCache(cache, order, key, value, maxEntries)
 	if cache[key] == nil then
 		if order.count >= maxEntries then
-			while order.head <= order.tail do
-				local oldestKey = order.items[order.head]
-				order.items[order.head] = nil
-				order.head += 1
-				if oldestKey ~= nil and cache[oldestKey] ~= nil then
-					cache[oldestKey] = nil
-					order.count = math.max(0, order.count - 1)
-					break
-				end
-			end
+			local oldestKey = order.items[order.head]
+			order.items[order.head] = key
+			order.head = (order.head % maxEntries) + 1
+			if oldestKey ~= nil then cache[oldestKey] = nil end
+		else
+			local tailIndex = ((order.head + order.count - 1) % maxEntries) + 1
+			order.items[tailIndex] = key
+			order.count += 1
 		end
-		order.tail += 1
-		order.items[order.tail] = key
-		order.count += 1
 	end
 	cache[key] = value
 end
@@ -250,8 +245,8 @@ end
 function MusicValidationService:ClearCache()
 	self.musicIdCache = {}
 	self.audioAssetInfoCache = {}
-	self.musicIdCacheOrder = {items = {}, head = 1, tail = 0, count = 0}
-	self.audioAssetInfoCacheOrder = {items = {}, head = 1, tail = 0, count = 0}
+	self.musicIdCacheOrder = {items = {}, head = 1, count = 0}
+	self.audioAssetInfoCacheOrder = {items = {}, head = 1, count = 0}
 end
 
 function MusicValidationService:GetCacheStats()
