@@ -236,9 +236,6 @@ local function recordPurchaseDiagnostic(source: string, userId: number, itemId: 
 	if outcome == "ReceiptGranted" then
 		purchaseDiagnosticStats.granted += 1
 		purchaseDiagnosticStats.lastSuccessAt = now
-	elseif outcome == "AwaitingPlayerProfile" then
-		purchaseDiagnosticStats.pending += 1
-		purchaseDiagnosticStats.lastPendingAt = now
 	elseif outcome == "AwaitingPlayerProfile" or outcome == "XPBoostActivationFailed"
 		or outcome == "ReceiptPersistenceFailed" or outcome == "ReceiptConcurrentRetry"
 		or outcome == "ReceiptConcurrencyCapacity" then
