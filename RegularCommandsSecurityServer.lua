@@ -288,6 +288,10 @@ return function(_K: any)
 		-- Use ;cmtempban, ;cmpermban, ;cmpermban-alts, and ;cmunban instead.
 		ban = "Use the Tiki Tide Phase 32 moderation commands so bans and reversals are recorded.",
 		unban = "Use ;cmunban so the reversal is authorized and retained in moderation history.",
+		tempban = "Use ;cmtempban so the suspension is recorded and authorized.",
+		permban = "Use ;cmpermban so the permanent ban is recorded and authorized.",
+		serverban = "Use the Tiki Tide Phase 32 moderation commands for persistent bans.",
+		globalban = "Use the Tiki Tide Phase 32 moderation commands for persistent bans.",
 		-- Disable client-crashing/repeated-kill commands and arbitrary script/global execution.
 		crash = "This command is disabled by Tiki Tide security.",
 		loopkill = "This command is disabled by Tiki Tide security.",
