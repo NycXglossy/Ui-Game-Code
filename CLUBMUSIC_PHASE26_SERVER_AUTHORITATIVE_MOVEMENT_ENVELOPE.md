@@ -155,3 +155,13 @@ No fixed scale clamp, standalone network-owner loop, or automatic movement corre
 ## Phase 28 cross-reference
 
 Mount, vehicle, Tool, Accessory, companion, and asset-provenance findings were moved into the standalone **Phase 28** record: [CLUBMUSIC_PHASE28_TOOL_ACCESSORY_MOUNT_VEHICLE_ASSET_INTEGRITY.md](CLUBMUSIC_PHASE28_TOOL_ACCESSORY_MOUNT_VEHICLE_ASSET_INTEGRITY.md). Phase 26 remains focused on the server-authoritative character movement envelope. Its existing requirement to inventory mounts, vehicles, knockback, launch sources, and movement context remains an open Phase 26 dependency; Phase 28 owns the asset/lifecycle and vehicle-specific investigation. Phase 28 does not change Phase 26's status or enable movement correction.
+
+
+## Performance follow-up — network context sampling
+
+- Character displacement measurements retain their existing adaptive Normal/Reduced/Critical intervals and event-driven property checks.
+- Optional network-owner and ping context are now sampled at most once per five seconds per character, rather than on every accepted displacement sample.
+- Movement speed bands and context sampling remain server-local aggregates; no positions, per-player movement histories, remotes, persistence, or cross-server state are added.
+- The status exposes a separate `networkObservationSamples` count and configured interval so the lower sampling frequency is not confused with the movement sample count.
+- Source commit: `373f1cb1448cc58ec220932481d32c117fa77349`.
+- Runtime profiling and movement/teleport regression testing remain required.
