@@ -1,3 +1,15 @@
+# Phase 31 moderation follow-up
+
+## Implemented source changes
+
+- Custom-title text submissions now have a 60-second per-player cooldown shared by both custom-title save actions. The server checks before filtering and again after the yielding TextService call, preventing concurrent submissions from racing through the cooldown. Cooldown state is cleared on PlayerRemoving.
+- Tiki Tide AFK message submissions now have a 60-second per-player cooldown, also checked before filtering and immediately before replication. Disabling AFK remains immediately available.
+- The custom BillboardGui used for staff overhead broadcasts has been removed. The client now calls TextChatService:DisplayBubble with the server-filtered one-way staff broadcast, routing avatar bubble display through Roblox's native bubble system. The separate one-way announcement banner remains a developer/admin announcement and is not a player chat channel.
+
+## Kohl's Admin package audit limitation
+
+The tracked RegularCommandsSecurityServer adapter applies SecurityCore authorization, target validation, and bounded Broadcast budgets to `announce`, `unannounce`, `hint`, `message`, `fullmessage`, and `privatehint`. However, it wraps native command handlers after the original handler runs and does not control their text delivery. The repository's 7.4 MB `Kohl's Admin.rbxmx` package could not be fully inspected with the available source reader. Therefore its actual message rendering, filtering, recipient delivery, and reply behavior remain **unverified**. Do not treat the adapter as proof of package-level moderation compliance; inspect the installed package handlers in Studio before enabling any command that could provide two-way messaging.
+
 # Phase 31 — Chat, Text & Social Safety Closure
 
 ## Status
