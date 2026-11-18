@@ -4,7 +4,7 @@
 
 Audit the ClubMusic/Tiki Tide economy and move the Developer Product receipt ingress and transaction coordinator into ClubMusic Security Core without changing the existing Roblox receipt owner, durable receipt stores, journal keys, profile schema, reward mappings, or purchase IDs.
 
-This is the first Security Core receipt integration. It is deliberately staged: Security Core now owns receipt metadata validation, registered-product resolution, same-server concurrency exclusion, and the bounded successful-receipt fast path. The existing controller profile-journal adapter and global XP-boost journal remain the durable transaction backends until their migration can be performed with explicit recovery compatibility tests.
+Phase 29 introduced the staged Security Core receipt boundary. Phase 33 completed the profile-journal migration: Security Core now owns receipt metadata validation, registered-product resolution, same-server concurrency exclusion, the bounded successful-receipt fast path, the durable profile receipt journal, and pending-receipt recovery. The Global Service continues to own the cross-server XP boost journal because that transaction atomically updates shared boost state.
 
 ## Authority invariants
 
@@ -30,9 +30,9 @@ New module: `ClubMusicSecurityCore/ReceiptAuthority.lua`.
 - Exposes bounded server-local counters through `ServerStorage.GetTikiTideReceiptAuthorityStatus`.
 - Does not persist PurchaseIds in a new store, add MemoryStore traffic, create remotes, or change the existing durable journal format.
 
-The controller remains the sole Roblox callback owner. It passes the server product resolver and existing transaction handler to ReceiptAuthority. The durable profile transaction and the separate global XP transaction remain in their existing storage adapters. This preserves the established recovery implementation while moving the trust boundary and in-server receipt coordination into Security Core.
+The controller remains the sole Roblox callback adapter because Roblox requires one `MarketplaceService.ProcessReceipt` assignment. It supplies the server product allowlist, game-specific reward mutators, profile/session adapters, and presentation callbacks. `ReceiptAuthority` delegates profile-backed persistence to `ReceiptTransactionService`; the Global Service retains its existing durable XP boost journal.
 
-Installer update: `ClubMusic_Security_Core_Installer.lua` includes `ReceiptAuthority` and pins the Security Core release to commit `d5a38b3740e7c2e1e03d4115db2d46cb3e813ec4`, which contains the module. Install the matching Security Core release and controller source together. If the module is unavailable, the controller leaves receipts retryable rather than granting outside Security Core.
+Installer update: `ClubMusic_Security_Core_Installer.lua` includes `ReceiptAuthority`, `ReceiptTransactionService`, and `ReceiptHash`, and pins the Security Core release to the source snapshot containing all three modules. Install the matching Security Core release and controller/global-service source together. If a required module is unavailable, the controller leaves receipts retryable rather than granting outside Security Core.
 
 ## Existing durable receipt guarantees preserved
 
@@ -49,7 +49,7 @@ Installer update: `ClubMusic_Security_Core_Installer.lua` includes `ReceiptAutho
 ### Global XP boost products
 
 - DataStore: `ClubMusic_XPBoostReceipts_v1`, with existing `globalXPBoost_v1` timer state in `ClubMusic_GlobalControl_v1`.
-- New hashed receipt keys use the existing `xph_` prefix and `ClubMusic_ReceiptHash`; legacy `xpr_` keys and the legacy shared `receipts` map remain readable.
+- New hashed receipt keys use the existing `xph_` prefix and `ClubMusicSecurityCore.ReceiptHash`; legacy `xpr_` keys and the legacy shared `receipts` map remain readable.
 - The active boost extension and `pendingReceipt` marker are committed atomically in the global timer record. The per-purchase journal is completed and the pending marker cleared before activation is acknowledged.
 - 2x and 4x global boost durations remain 900 and 1,800 seconds respectively; existing timer stacking/cap behavior is unchanged.
 - Studio's existing session-only boost path remains a Studio-only exception and is not represented as a production durable purchase.
@@ -256,3 +256,17 @@ The supplied ReceiptProcessor.server.lua example was reviewed but was not instal
 - ReceiptAuthority and the existing durable receipt transaction handlers were source-reviewed and intentionally left intact; the example's duplicate callback and in-memory receipt cache were not copied.
 - Source changes are static repository work only. No Luau parser, Roblox Studio runtime, live DataStore, live Marketplace catalog, or published-server test was available.
 - The feature branch remains unmerged and unpublished. The live Roblox place and production player data are unchanged.
+
+
+## Phase 33 completion — receipt transaction ownership
+
+- Added `ClubMusicSecurityCore/ReceiptTransactionService.lua` for the profile-backed `ClubMusic_ProductReceipts_v1` journal, pending marker recovery, session-lock checks, and per-profile write-lock coordination.
+- Moved the unchanged SHA-256 key derivation implementation to `ClubMusicSecurityCore/ReceiptHash.lua`; both the controller adapter and Global Service now load this Security Core module.
+- Removed the controller's old `persistReceipt` / `recoverPendingProductReceipt` implementation and receipt-memory cache tables. The controller now delegates commit/recovery and profile-memory reconciliation to `ReceiptTransactionService`.
+- Removed root-level `ClubMusic_ReceiptHash.lua` from the repository after migrating both consumers.
+- Preserved all durable store names, key formats, full PurchaseId collision comparisons, profile schema markers, legacy profile receipt map compatibility, XP receipt journal compatibility, and reward/product mappings.
+- Updated the Security Core installer module list and release pin to include both new modules.
+
+The controller still contains the product allowlist and game-specific reward/presentation adapter; this is not a second receipt processor. There remains exactly one `MarketplaceService.ProcessReceipt` assignment. The global XP receipt journal remains in the Global Service and is not duplicated in Security Core.
+
+Static source migration is complete; Studio and published test-server purchase/recovery verification remain outstanding.
