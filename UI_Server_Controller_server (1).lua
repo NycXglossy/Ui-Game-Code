@@ -3933,7 +3933,7 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 	end
 	local ok, alreadyProcessed, err = ControllerFunctions.persistReceipt(userId, receiptId, productData)
 	if not ok then
-		warn("[ClubMusic] Receipt persistence failed for " .. receiptId .. ": " .. tostring(err))
+		warn("[ClubMusic] Receipt persistence failed for userId " .. tostring(userId) .. " productId " .. tostring(productId) .. ": " .. tostring(err))
 		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptPersistenceFailed", tostring(err))
 		recordReceiptReplayEvent("receipt_persistence_failed", userId, productId, "Warning", "RetryPending")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
@@ -3981,7 +3981,6 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
-end
 
 local receiptAuthority: any = nil
 do
