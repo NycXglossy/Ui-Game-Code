@@ -540,3 +540,12 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - Changed the existing server-local reconciliation worker to run a pending-only follow-up sweep 15 seconds after a sweep encounters read failures. The follow-up checks only players still marked `GlobalModerationPending`; verified players are skipped. If any pending reads still fail, another pending-only sweep follows after 15 seconds. Once pending players are resolved, the worker returns to the normal full sweep interval.
 - The worker remains sequential and keeps the 1.1-second inter-read pacing and three-token shared DataStore reserve. It adds no per-player retry threads, no request burst, no additional budget bucket, and no cross-server state. Failure continues to restrict moderation-sensitive actions without kicking solely on lookup failure.
 - Static source checks only; no high-player-count simulation, backend outage/fault injection, Luau compilation, Studio runtime test, or deployment.
+
+
+## Join-time moderation retry and duplicate initialization audit (2026-11-18)
+
+- Audited the controller's `PlayerAdded` handler and startup `Players:GetPlayers()` sweep. Because the event connection is established before the startup sweep, a joining player can be observed by both paths. Added a per-Player-instance idempotency guard at `onJoin` entry and release it on `PlayerRemoving`, preventing duplicate profile/join initialization and duplicate moderation retry workers for the same live Player object.
+- Join-time moderation retries remain one worker per Player, stop when the Player leaves, and retain the existing bounded exponential schedule (1, 2, 4, 8, then at most 15 seconds). Added stable per-user staggering to the retry delay, capped at 15 seconds, to reduce synchronized retry bursts when multiple players join during a DataStore outage.
+- Confirmed the existing departure cleanup removes `blockedUsers` and other per-user request state. The retry worker still exits after its next wake if the Player has left; no new persistent worker registry or cross-server state was added.
+- Security semantics unchanged: unresolved moderation remains request-restricted, only a successful authoritative lookup can clear pending state, and only a confirmed global ban can kick.
+- Static source checks only. No concurrency simulation, high-player-count test, DataStore outage injection, Luau compilation, Studio runtime test, or deployment.
