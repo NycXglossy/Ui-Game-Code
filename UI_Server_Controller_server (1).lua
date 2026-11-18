@@ -2312,6 +2312,13 @@ do
 	end
 end
 
+script.Destroying:Connect(function()
+	if avatarAccessoryValidation then
+		pcall(avatarAccessoryValidation.Stop, avatarAccessoryValidation)
+		avatarAccessoryValidation = nil
+	end
+end)
+
 -- Rank names, levels and refreshes are projections of the single SecurityCore cache.
 ControllerFunctions.computeRank = function(player: Player): (string, number)
 	if not authorizationService then return "GUEST", 0 end
