@@ -511,6 +511,12 @@ local function sanitizeTrack(raw: any): {[string]: any}?
 	}
 end
 
+local function allowStoreOperation(self: any): boolean
+	if type(self.allowStoreOperation) ~= "function" then return true end
+	local ok, allowed = pcall(self.allowStoreOperation)
+	return ok and allowed == true
+end
+
 local function sanitizeSnapshot(raw: any): {[string]: any}
 	local state = {
 		schemaVersion = 1,
@@ -548,6 +554,7 @@ function PlaybackAuthority.new(dependencies: {[string]: any})
 		jobId = tostring(dependencies.jobId or ""),
 		guid = dependencies.guid,
 		publish = dependencies.publish,
+		allowStoreOperation = dependencies.allowStoreOperation,
 		store = nil,
 		leaseMap = nil,
 		leaseToken = nil,
@@ -628,6 +635,10 @@ function PlaybackAuthority:AcquireOrRenewLeadership(): (boolean, {[string]: any}
 		end
 		claimed = snapshot
 	else
+		if not allowStoreOperation(self) then
+			self.lastError = "Per-server DataStore operation budget unavailable."
+			return false, nil, self.lastError
+		end
 		local claimOk, claimResult = self:_safeCall("DataStore.ClaimLeaderFence", function()
 			return self.store:UpdateAsync(SNAPSHOT_KEY, function(old)
 				local state = sanitizeSnapshot(old)
@@ -673,6 +684,7 @@ end
 
 function PlaybackAuthority:GetSnapshot(): (boolean, {[string]: any}?, string?)
 	if not self.started or not self.store then return false, nil, "Playback authority is not started." end
+	if not allowStoreOperation(self) then return false, nil, "Per-server DataStore operation budget unavailable." end
 	local ok, raw = self:_safeCall("DataStore.GetPlaybackSnapshot", function() return self.store:GetAsync(SNAPSHOT_KEY) end)
 	if not ok then return false, nil, tostring(raw) end
 	return true, sanitizeSnapshot(raw), nil
@@ -694,6 +706,7 @@ function PlaybackAuthority:CommitPlayback(raw: any, expectedRevision: any): (boo
 		return false, nil, "Playback leader lease expired or was replaced."
 	end
 	local token = self.leaseToken
+	if not allowStoreOperation(self) then return false, nil, "Per-server DataStore operation budget unavailable." end
 	local accepted = false
 	local ok, result = self:_safeCall("DataStore.CommitPlayback", function()
 		return self.store:UpdateAsync(SNAPSHOT_KEY, function(old)
