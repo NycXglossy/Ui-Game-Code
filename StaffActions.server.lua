@@ -107,18 +107,34 @@ end
 -- Door state is stored only in this server's memory. Original values are restored
 -- exactly when lockdown is disabled. Newly added BaseParts are captured as well.
 local lockdownActive = false
-local originalDoorState: {[BasePart]: {canCollide: boolean, brickColor: BrickColor}} = {}
+local originalDoorState: {[BasePart]: {canCollide: boolean, color: Color3, transparency: number}} = {}
+
+-- Server-local closure state; this is not persisted or broadcast cross-server.
+local clubClosed = ServerStorage:FindFirstChild("TikiTideClubClosed") :: BoolValue?
+if clubClosed and not clubClosed:IsA("BoolValue") then
+	warn("[Tiki Tide][StaffActions] TikiTideClubClosed has the wrong class; closure controls disabled.")
+	return
+end
+if not clubClosed then
+	clubClosed = Instance.new("BoolValue")
+	clubClosed.Name = "TikiTideClubClosed"
+	clubClosed.Value = false
+	clubClosed.Parent = ServerStorage
+end
+local pendingClosure: {[number]: {mode: string, expiresAt: number}} = {}
 local doorAddedConnection: RBXScriptConnection? = nil
 
 local function applyLockdownToPart(part: BasePart)
 	if originalDoorState[part] == nil then
 		originalDoorState[part] = {
 			canCollide = part.CanCollide,
-			brickColor = part.BrickColor,
+			color = part.Color,
+			transparency = part.Transparency,
 		}
 	end
 	part.CanCollide = true
-	part.BrickColor = BrickColor.new("Really red")
+	part.Color = Color3.fromRGB(255, 55, 55)
+	part.Transparency = math.min(part.Transparency, 0.2)
 end
 
 local function setLockdown(enabled: boolean): (boolean, string)
@@ -156,12 +172,90 @@ local function setLockdown(enabled: boolean): (boolean, string)
 	for part, state in pairs(originalDoorState) do
 		pcall(function()
 			part.CanCollide = state.canCollide
-			part.BrickColor = state.brickColor
+			part.Color = state.color
+			part.Transparency = state.transparency
 		end)
 	end
 	table.clear(originalDoorState)
 	lockdownActive = false
 	return true, "Lockdown disabled; original door settings restored."
+end
+
+
+local function isVerifiedStaff(player: Player): (boolean?, string?)
+	local level = getVerifiedLevel(player)
+	if level == nil then return nil, "Staff verification is unavailable." end
+	return level >= 1
+end
+
+local function prepareClosure(player: Player, mode: string): (boolean, string)
+	local allowed, denial = hasPermission(player, "SecurityPolicy")
+	if not allowed then return false, denial or "SecurityPolicy permission required." end
+	pendingClosure[player.UserId] = {mode = mode, expiresAt = os.clock() + 10}
+	return true, "Confirmation prepared. Select Confirm within 10 seconds."
+end
+
+local function confirmClosure(player: Player, mode: string): (boolean, string)
+	local pending = pendingClosure[player.UserId]
+	if not pending or pending.mode ~= mode or os.clock() > pending.expiresAt then
+		pendingClosure[player.UserId] = nil
+		return false, "Confirmation expired. Prepare the action again."
+	end
+	pendingClosure[player.UserId] = nil
+	local allowed, denial = hasPermission(player, "SecurityPolicy")
+	if not allowed then return false, denial or "SecurityPolicy permission required." end
+
+	if mode == "Close" then
+		if clubClosed.Value then return true, "The club is already closed in this server." end
+		-- Verify all current staff before changing state or removing anyone.
+		local guests: {Player} = {}
+		for _, target in ipairs(Players:GetPlayers()) do
+			local staffStatus, detail = isVerifiedStaff(target)
+			if staffStatus == nil then return false, "Closure aborted: " .. tostring(detail) end
+			if not staffStatus then table.insert(guests, target) end
+		end
+		if not recordAudit("club_closure_requested", player.UserId, 0, "Warning", {scope = "current_server"}) then
+			return false, "Security audit unavailable; club remains open."
+		end
+		clubClosed.Value = true
+		local removed = 0
+		for _, guest in ipairs(guests) do
+			if guest.Parent == Players then
+				if not recordAudit("club_closure_guest_removed", player.UserId, guest.UserId, "Warning", {scope = "current_server"}) then
+					clubClosed.Value = false
+					return false, "Audit failed during evacuation; closure was rolled back. Some guests may already have left."
+				end
+				guest:Kick("Thank you for visiting Tiki Tide. The club is now closed for the evening.")
+				removed += 1
+			end
+		end
+		recordAudit("club_closure_completed", player.UserId, 0, "Warning", {removedGuests = removed, scope = "current_server"})
+		return true, string.format("Club closed in this server. %d guest(s) removed; verified staff remain.", removed)
+	end
+
+	if not clubClosed.Value then return true, "The club is already open in this server." end
+	if not recordAudit("club_reopening_requested", player.UserId, 0, "Warning", {scope = "current_server"}) then
+		return false, "Security audit unavailable; club remains closed."
+	end
+	clubClosed.Value = false
+	recordAudit("club_reopening_completed", player.UserId, 0, "Info", {scope = "current_server"})
+	return true, "Club reopened in this server."
+end
+
+local function handleClosedServerJoin(player: Player)
+	if not clubClosed.Value then return end
+	task.delay(3, function()
+		if player.Parent ~= Players or not clubClosed.Value then return end
+		local staffStatus = isVerifiedStaff(player)
+		if staffStatus ~= true then
+			player:Kick("Tiki Tide is currently closed. Please return another time.")
+		end
+	end)
+end
+
+Players.PlayerAdded:Connect(handleClosedServerJoin)
+for _, existingPlayer in ipairs(Players:GetPlayers()) do
+	task.spawn(handleClosedServerJoin, existingPlayer)
 end
 
 local function sendResult(player: Player, action: string, ok: boolean, message: string)
@@ -218,6 +312,22 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 			return
 		end
 		sendResult(player, action, true, "Security status refreshed.")
+		return
+	end
+
+	if action == "ClubClosurePrepare" or action == "ClubClosureConfirm"
+		or action == "ClubReopenPrepare" or action == "ClubReopenConfirm"
+		or action == "ClubClosureStatus" then
+		if action == "ClubClosureStatus" then
+			local allowed, denial = hasPermission(player, "SecurityPolicy")
+			if not allowed then sendResult(player, action, false, denial or "SecurityPolicy permission required."); return end
+			sendResult(player, action, true, if clubClosed.Value then "Club status: CLOSED (this server only)." else "Club status: OPEN (this server only).")
+			return
+		end
+		local mode = if string.find(action, "Reopen", 1, true) then "Reopen" else "Close"
+		local preparing = string.find(action, "Prepare", 1, true) ~= nil
+		local accepted, message = if preparing then prepareClosure(player, mode) else confirmClosure(player, mode)
+		sendResult(player, action, accepted, message)
 		return
 	end
 
@@ -312,6 +422,7 @@ end)
 Players.PlayerRemoving:Connect(function(player)
 	lastActionAt[player.UserId] = nil
 	lastStatusAt[player.UserId] = nil
+	pendingClosure[player.UserId] = nil
 end)
 
 script.Destroying:Connect(function()
