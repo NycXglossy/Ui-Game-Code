@@ -1677,8 +1677,7 @@ local function publishXPState(record: any): (number, number)
 end
 
 local function allowXPDataStoreOperation(): boolean
-	local allowed, shared = consumeLocalBudget("all:datastore", 90, 15, 1)
-	return shared and allowed
+	return consumeLocalBudget("all:datastore", 90, 15, 1)
 end
 
 local function xpReceiptKey(receiptId: string): string?
@@ -1754,8 +1753,8 @@ end
 
 bindFunction("GetGlobalXPBoost", function()
 	if not SERVICE_ENABLED then return nil, nil end
-	local budgetAllowed, budgetShared = consumeLocalBudget("all:datastore", 90, 15, 1)
-	if not budgetShared or not budgetAllowed then return nil, nil end
+	local budgetAllowed = consumeLocalBudget("all:datastore", 90, 15, 1)
+	if not budgetAllowed then return nil, nil end
 	local ok, record = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
 	if not ok then
 		warn("[ClubMusic Global] XP boost lookup failed: " .. tostring(record))
@@ -1774,8 +1773,8 @@ bindFunction("ActivateGlobalXPBoost", function(multiplier: any, duration: any, r
 		warn("[ClubMusic Global] XP PurchaseId is invalid or too long; receipt remains pending.")
 		return false, 0, 1
 	end
-	local budgetAllowed, budgetShared = consumeLocalBudget("all:datastore", 90, 15, 1)
-	if not budgetShared or not budgetAllowed then return false, 0, 1 end
+	local budgetAllowed = consumeLocalBudget("all:datastore", 90, 15, 1)
+	if not budgetAllowed then return false, 0, 1 end
 
 	local readOk, current = pcall(function() return globalControlStore:GetAsync(GLOBAL_XP_BOOST_KEY) end)
 	if not readOk then return false, 0, 1 end
