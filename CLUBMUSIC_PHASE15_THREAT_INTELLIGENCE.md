@@ -63,7 +63,7 @@
 - Bounded collections: 256 player buckets, 256 player reviews, 256 event IDs, 256 session records, 128 joiners/cohort subjects, 32 raid reviews, 12 distinct signal codes per subject, and 8 source identifiers per subject.
 - Counters are numeric and capped. Stop disconnects Player lifecycle listeners and clears retained in-memory state.
 - Existing IncidentResponse remains a separate, explicit staff case-management workflow.
-- Installer stages the module from pinned immutable source commit 40816ddb91b29fbde5bab30ccbe3a7972df63262 and retains the previous SecurityCore release for rollback.
+- Installer stages the module from pinned immutable source commit 2b0c8ad144bf3257798c18f149c922d44ad350f1 and retains the previous SecurityCore release for rollback.
 
 ## Runtime acceptance still required
 
