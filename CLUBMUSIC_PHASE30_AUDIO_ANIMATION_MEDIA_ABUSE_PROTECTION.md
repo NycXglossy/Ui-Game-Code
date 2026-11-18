@@ -163,3 +163,23 @@ This is a source inspection result, not runtime permission certification.
 - No Luau parser/compiler, Roblox Studio runtime, live DataStore, live Marketplace asset check, or published two-server test was available during this pass.
 - User previously reported modern-only playback working; this does not replace the full Phase 30 matrix above.
 - Feature branch remains unmerged/unpublished. No live Roblox place or production data was changed.
+
+## Follow-up review: standalone PlayAudioEvent example
+
+The supplied `PlayAudioEvent` / `DJSpeaker.ClubSound` script was reviewed against the active controller. It is **not installed** and should not be added as a parallel playback path.
+
+Reasons:
+
+- It creates a separate client-to-server `PlayAudioEvent` ingress and directly assigns `Sound.SoundId` / calls `Sound:Play()`. That would create a second playback authority and reintroduce legacy Sound playback beside the modern controller-owned AudioPlayer.
+- The sample's `ApprovedSongs` table is not enforced (the whitelist check is commented out), so any numeric ID reaches the metadata lookup. `math.floor` silently accepts fractional IDs instead of rejecting them; explicit finite positive integer validation is required.
+- `GetProductInfo` and `AssetTypeId == 3` alone do not prove that the asset is loadable by this experience, permitted for playback, or decodable. The sample does not preload an AudioPlayer probe, measure real duration, or apply the existing max-duration policy.
+- The sample has only a per-player cooldown, no pending-inspection/reentrancy guard, no server-wide token budget/concurrency cap, and no PlayerRemoving cleanup for its cooldown table.
+- It has no SecurityCore staff authorization, no DJ Control Mode controller recheck after the yielding Marketplace lookup, no queue/request-limit/moderation checks, and no state recheck before playback.
+- Clamping the pre-existing Sound volume does not validate an input gain value; resetting PlaybackSpeed can also overwrite intentional server-owned track speed settings.
+- `DJSpeaker` / `ClubSound` existence checks do not establish a reviewed asset owner, safe speaker lifecycle, or valid modern audio graph.
+
+The existing `RequestAudioAsset` action is the approved equivalent for direct Creator Hub asset IDs: it is staff-only, validates a finite positive integer ID, optionally enforces the configured allowlist, applies per-player cooldown and pending-request protection, consumes a server-wide inspection token, caps concurrent inspections, validates the actual Audio asset type, creates/preloads a temporary modern `AudioPlayer` probe to verify experience playability and real duration, and rechecks staff status, DJ Control Mode ownership, and queue/request constraints after yielding before inserting the request into the server-owned queue. The normal catalog `RequestTrack` path remains open to all players while DJ Control Mode is off.
+
+The allowlist remains an explicit configuration option (`RestrictAudioToAllowlist`); it is not enabled with an empty list. Enabling it safely requires populating a reviewed approved-ID catalog first. Do not enable an empty allowlist or treat the sample's two IDs as approved without an explicit content-policy decision.
+
+**Disposition:** no new RemoteEvent, Sound object, DJSpeaker controller, cooldown table, or playback handler was added. Reuse the existing server action and modern AudioPlayer path.
