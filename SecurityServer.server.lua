@@ -214,20 +214,13 @@ if vipZone and vipZone:IsA("BasePart") then
 				and (clubClosedState :: BoolValue).Value
 			local level = getStaffLevel(player)
 			local isStaff = level ~= nil and level >= 1
-			if closed and isStaff then
-				task.delay(ZONE_COOLDOWN_SECONDS, function()
-					if zoneCooldowns[player.UserId] == zoneCheckAt then zoneCooldowns[player.UserId] = nil end
-				end)
-				return
-			end
-			if not closed and hasVip == true then
+			if isStaff or (not closed and hasVip == true) then
 				task.delay(ZONE_COOLDOWN_SECONDS, function()
 					if zoneCooldowns[player.UserId] == zoneCheckAt then zoneCooldowns[player.UserId] = nil end
 				end)
 				return
 			end
 			-- Unknown entitlement and unavailable staff verification fail closed.
-			if isStaff then return end
 
 			local now = os.clock()
 			zoneCooldowns[player.UserId] = now
