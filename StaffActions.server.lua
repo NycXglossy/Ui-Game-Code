@@ -7,12 +7,10 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
-local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
 
 local GROUP_ID = 500470662
 local ACTION_COOLDOWN_SECONDS = 2
-local MAX_REASON_BYTES = 200
 
 local function getOrCreateRemote(parent: Instance, name: string): RemoteEvent?
 	local existing = parent:FindFirstChild(name)
@@ -196,23 +194,6 @@ for _, player in ipairs(Players:GetPlayers()) do
 	updateConsoleForPlayer(player)
 end
 
-local function cleanReason(value: any): string?
-	if typeof(value) ~= "string" or #value > MAX_REASON_BYTES or not utf8.len(value) then return nil end
-	if string.find(value, "%c") then return nil end
-	local trimmed = string.match(value, "^%s*(.-)%s*$") or ""
-	if trimmed == "" then return "Removed by Club Security." end
-	if #trimmed > MAX_REASON_BYTES then return nil end
-	return trimmed
-end
-
-local function findExactUsername(value: string): Player?
-	local wanted = string.lower(value)
-	for _, candidate in ipairs(Players:GetPlayers()) do
-		if string.lower(candidate.Name) == wanted then return candidate end
-	end
-	return nil
-end
-
 local function sendResult(player: Player, action: string, ok: boolean, message: string)
 	if player.Parent == Players and actionResult.Parent then
 		pcall(function()
@@ -270,7 +251,7 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 		return
 	end
 
-	if action ~= "ToggleLockdown" and action ~= "KickPlayer" and action ~= "RunClubMusicCommand" then
+	if action ~= "ToggleLockdown" and action ~= "RunClubMusicCommand" then
 		sendResult(player, tostring(action):sub(1, 32), false, "Unsupported security action.")
 		return
 	end
@@ -356,69 +337,7 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 		return
 	end
 
-	local allowed, denial = hasPermission(player, "GlobalModeration")
-	if not allowed then
-		sendResult(player, action, false, denial or "GlobalModeration permission required.")
-		return
-	end
-	if typeof(targetName) ~= "string" or #targetName < 1 or #targetName > 20
-		or string.find(targetName, "[^%w_]") then
-		sendResult(player, action, false, "Enter an exact Roblox username.")
-		return
-	end
-
-	local target = findExactUsername(targetName)
-	if not target or target.Parent ~= Players then
-		sendResult(player, action, false, "That exact username is not in this server.")
-		return
-	end
-	if target == player then
-		sendResult(player, action, false, "You cannot remove yourself.")
-		return
-	end
-
-	local targetLevel = getVerifiedLevel(target)
-	if targetLevel == nil then
-		sendResult(player, action, false, "Target staff status could not be verified; no action was taken.")
-		return
-	end
-	if targetLevel >= 1 then
-		sendResult(player, action, false, "Protected staff members cannot be removed through this console.")
-		return
-	end
-
-	local reason = cleanReason(rawReason)
-	if not reason then
-		sendResult(player, action, false, "The reason is invalid or too long.")
-		return
-	end
-
-	local filterOk, filteredReason = pcall(function()
-		local filterResult = TextService:FilterStringAsync(reason, player.UserId)
-		return filterResult:GetNonChatStringForUserAsync(target.UserId)
-	end)
-	if not filterOk or typeof(filteredReason) ~= "string" or filteredReason == "" then
-		sendResult(player, action, false, "The removal reason could not be filtered; no action was taken.")
-		return
-	end
-
-	if not recordAudit("staff_action_requested", player.UserId, target.UserId, "Warning", {
-		action = "KickPlayer",
-		reason = filteredReason,
-		targetName = target.Name,
-	}) then
-		sendResult(player, action, false, "Security audit is unavailable; the player was not removed.")
-		return
-	end
-
-	recordAudit("staff_action_completed", player.UserId, target.UserId, "Warning", {
-		action = "KickPlayer",
-		reason = filteredReason,
-		targetName = target.Name,
-	})
-	target:Kick(filteredReason)
-	sendResult(player, action, true, "Player removal was issued for " .. target.Name .. ".")
-end)
+end))
 
 Players.PlayerRemoving:Connect(function(player)
 	lastActionAt[player.UserId] = nil
