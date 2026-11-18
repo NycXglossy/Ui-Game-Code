@@ -127,3 +127,10 @@ Static source changes are not proof of FPS, memory, or latency improvement. The 
 ### E. Request-song architecture compatibility
 
 The standalone `RequestSongEvent` / `songQueue` sample is not installed. The existing ClubMusic `RequestAction` / `RequestTrack` path remains the only request ingress and queue owner. It already applies server-side validation, request cooldowns and budgets, entitlement checks where required, duplicate/current-track checks, queue capacity, and catalog validation. Do not add a parallel queue, pass lookup, or asset metadata request path.
+
+### F. Remove the retired sync control from the client surface
+
+- `UI_Renderer (2).lua`: removed the Cross-Server Playback section and its toggle button from the DJ Booth.
+- `UI_Network.lua`: removed the retired action from client allowlists and cooldown maps (including duplicate entries).
+- The server retains only a compatibility rejection for old clients that still send the retired action.
+- Commits: renderer `c7b2630c0875d8bdca0ae2d5301f8b127332b8f4`; network `a010461abd588f4b2a17a6568ed72d11433373eb`.
