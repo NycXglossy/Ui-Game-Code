@@ -90,7 +90,7 @@ The five older Shop Item product IDs (`Glowsticks`, `TikiMask`, `NeonAura`, `Neo
 | Island Companion Game Pass | 2088585676 |
 | Stage & Club Lighting Game Pass | 2088315619 |
 
-Membership tiers continue to resolve through `ClubMusicSecurityCore.Authorization` and `EntitlementAuthority`. The group member rule grants VIP; the highest valid paid/group/owner-awarded tier wins; the configured owner receives all membership tiers. Other staff do not automatically receive membership unless the existing rules grant it. `rewardedPassTier` remains the existing profile field and owner award path.
+Membership tiers continue to resolve through `ClubMusicSecurityCore.Authorization` and `EntitlementAuthority`. Group members receive VIP. All verified staff ranks receive VIP automatically: Moderator (150), Admin (200), Co-Owner (254), and Owner (255). The configured Owner receives all membership tiers; other staff receive VIP only unless a higher tier is independently paid or owner-awarded. `rewardedPassTier` remains the existing profile field and owner award path.
 
 The server's `PromptGamePassPurchaseFinished` listener uses the `purchased` signal only to decide whether to refresh. Actual access is rechecked through `UserOwnsGamePassAsync` / EntitlementAuthority. Client prompt telemetry never grants a pass or Developer Product.
 
@@ -190,3 +190,12 @@ A safe transfer requires a durable transfer journal and a recoverable two-phase 
 ### Source verification boundary
 
 The branch source inspected for this audit contains no `TipPlayerRemote` reference and no player-to-player transfer handler. The main profile save path uses per-user `UpdateAsync` calls and a per-user in-memory lock; the Tool Shop uses a separate `TikiTideCoins_v1` DataStore and currently has no spend/grant operations. No runtime tests were run.
+
+
+### Staff VIP policy update
+
+- User-confirmed policy: every verified staff rank from Moderator (150) upward receives VIP automatically.
+- `EntitlementAuthority:GetTier` now derives staff status from the existing `Authorization.GetRank` result; it does not introduce another role resolver or staff list.
+- Staff VIP contributes tier 1. Owner remains tier 3. Admin and Co-Owner do not automatically receive VVIP or Tiki Tide.
+- Installer release pin updated to the Security Core commit containing this change.
+- Runtime verification of each rank remains outstanding.
