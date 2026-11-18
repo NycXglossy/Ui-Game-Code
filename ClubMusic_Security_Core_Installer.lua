@@ -10,9 +10,9 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "1601754bae5629a25070c9ffea8894eb9e0ef7b4"
+local RELEASE_COMMIT = "24a26719f36a63fd5efeaf73420eaf78491f521c"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
-local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence", "HoneypotManager", "ClientIntegrityTelemetry"}
+local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence", "HoneypotManager", "ClientIntegrityTelemetry", "ReceiptAuthority"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 local BOOTSTRAP_NAME = "TikiTideCharacterPhysicsGuardBootstrap"
 local STAGE_NAME = FOLDER_NAME .. "_Staging"
