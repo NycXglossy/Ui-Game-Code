@@ -53,6 +53,18 @@ The controller's `canUseDJBooth` calls the shared SecurityCore Authorization ser
 - The historical `Music Role System` is a separate legacy role/pass helper. It is not part of the current SecurityCore permission path and must not be used as a second authority.
 - Small binary `.rbxm` assets named for old Music Remotes / Music Group were not parsed by the text-only repository reader. Their contents and any live-place descendants remain unverified. Do not delete them by filename or assume they are harmless.
 
+### Proposed club-screen image RemoteEvent review
+
+A supplied example proposes a new `ReplicatedStorage.UpdateScreenEvent` that accepts a client image ID, checks `player:GetAttribute("IsDJ")`, calls `MarketplaceService:GetProductInfo`, then writes to `Workspace.ClubScreen.SurfaceGui.ImageLabel.Image`.
+
+- This endpoint is not part of the audited active `ClubMusicRemotes` contract. No `UpdateScreenEvent`, `ClubScreen`, or `IsDJ` authorization path was found in the inspected controller/UI network source. Do not add this standalone remote or treat the sample as an existing feature.
+- `IsDJ` is a client-visible attribute, not an authorization authority. Any future screen mutation must call the existing server-side SecurityCore Authorization path and use the intended DJ/staff permission; VIP ownership or a client-set role attribute is not sufficient.
+- The existing `CatalogAddAudio` artwork path is staff-only and checks that the supplied asset resolves as a Roblox Image or Decal before storing it as catalog metadata. That does not authorize arbitrary players to replace a shared in-world display.
+- `GetProductInfo` asset type metadata and a name comparison against `[ Content Deleted ]` are not a complete moderation or experience-renderability guarantee. Asset metadata may be unavailable or stale, and a name string is not a reliable moderation signal.
+- The sample floors fractional values instead of rejecting them, does not bound the ID to a safe positive integer, has no per-player/global mutation budget, and does not recheck permission after any yielding validation call.
+- `Workspace:FindFirstChild("ClubScreen")` is an unscoped name lookup. A future implementation would need a server-owned, explicit allowlist of display instances and their permitted surfaces, bounded validation/preload work, rate limits, and a defined policy for concurrent updates and restoring the approved/default image.
+- No display mutation feature, new remote, image allowlist, or runtime screen change was implemented in this review. The live map/display hierarchy and any third-party screen controllers remain unverified.
+
 **Live-place limitation:** a repository audit cannot prove which old Scripts, Models, remotes, plugins, package descendants, or runtime-inserted assets exist in the published place. Before removing historical objects, inspect the actual live hierarchy and all consumers, including third-party packages and scripts that may reference those remote names.
 
 ## Server-core conversion and canonical source ownership
