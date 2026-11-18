@@ -29,12 +29,17 @@ end
 
 local activeCharacter: Model? = nil
 local humanoidConnection: RBXScriptConnection? = nil
-local lastMovementReportAt = 0
+local humanoidDestroyingConnection: RBXScriptConnection? = nil
+local lastMovementReportAt = -math.huge
 
 local function disconnectHumanoid()
 	if humanoidConnection then
 		humanoidConnection:Disconnect()
 		humanoidConnection = nil
+	end
+	if humanoidDestroyingConnection then
+		humanoidDestroyingConnection:Disconnect()
+		humanoidDestroyingConnection = nil
 	end
 	activeCharacter = nil
 end
@@ -47,6 +52,9 @@ local function monitorCharacter(character: Model)
 	if not script.Parent or player.Character ~= character or activeCharacter ~= character then return end
 	if not humanoid or not humanoid:IsA("Humanoid") then return end
 
+	humanoidDestroyingConnection = humanoid.Destroying:Connect(function()
+		if activeCharacter == character then disconnectHumanoid() end
+	end)
 	humanoidConnection = humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
 		if not script.Parent or activeCharacter ~= character
 			or player.Character ~= character or humanoid.Parent ~= character then
