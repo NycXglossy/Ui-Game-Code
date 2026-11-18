@@ -1,14 +1,13 @@
 # Phase 24 — Production Release & Legacy Retirement
 
-**Status:** Release procedure and rollback boundaries documented. This phase is not permission to publish unverified source automatically.
+**Status:** Release procedure and rollback boundaries documented. Phase 24.1 incident-intake hardening is tracked on `phase24-incident-response-hardening`; Studio and published multiplayer tests remain outstanding.
 
 ## Release candidate
 
-- Branch: security/phase1-foundation
-- SecurityCore is the central authorization source for audited controller, global-service, spectator, threat-review and incident paths.
-- Installer release pin must reference the exact source commit containing the approved SecurityCore modules and client adapters.
-- Current installer pin: eba230a9606465fb2d19fd4e4a803df66e3a3c82. The installer update itself is committed separately so the pinned parent already contains all Phase 20–24 source files, staff command integrations and the Phase 23 adaptive threat-query budget.
-- Installer pin update commit: 9501945f385a0cc921bbaede63b458942e491fea.
+- Branch: phase24-incident-response-hardening
+- SecurityCore remains the central authorization source for audited controller, global-service, spectator, threat-review, incident and report-intake paths.
+- Installer release pin: e894e50a9f3d837854049e1bfa5c758502760984 (the exact source commit containing the additive IncidentResponse intake methods).
+- The Global Service loader must use the same SecurityCore release pin. The Phase 32 modules remain independently pinned.
 - Install only in a dedicated test place first. Record the exact branch commit installed.
 - Keep the existing single ClubMusic controller and single Global Service owner. Never install a second queue/playback controller or the standalone legacy Music System / MusicRemotes transport alongside the secured controller.
 

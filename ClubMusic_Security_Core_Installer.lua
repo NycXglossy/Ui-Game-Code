@@ -10,7 +10,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "67bfde5823d81d2b4d55ca372127b026403e1f5a"
+local RELEASE_COMMIT = "e894e50a9f3d837854049e1bfa5c758502760984"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
 -- Phase 32 is pinned independently so the previously certified SecurityCore
 -- module snapshot is not silently changed by later commits.

@@ -589,7 +589,7 @@ local SECURITY_MODULE_EXPORTS: {[string]: string} = {
 }
 local cachedSecurityBundle: any = nil
 local securityBundleLoadAttempted = false
-local EXPECTED_SECURITY_CORE_RELEASE = "eba230a9606465fb2d19fd4e4a803df66e3a3c82"
+local EXPECTED_SECURITY_CORE_RELEASE = "e894e50a9f3d837854049e1bfa5c758502760984"
 local securityCoreInstallStatus: {[string]: any} = {
  state = "NotChecked",
  expectedRelease = EXPECTED_SECURITY_CORE_RELEASE,
@@ -1260,7 +1260,7 @@ globalIncidentResponseService = createOperationalService("ClubMusic_Global_Incid
 	onChange = function(action, incident)
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", incident.actorUserId, incident.kind, "incident-" .. action) end
 	end,
-}, {"Start", "GetStatus", "Open", "Resolve", "GetRecent"})
+}, {"Start", "GetStatus", "Open", "Resolve", "GetRecent", "SubmitReport", "SubmitSystemSignal"})
 if globalIncidentResponseService then globalIncidentResponseService:Start() end
 
 local janitorModule = loadOptionalGlobalModule("ClubMusic_Global_Connection_Janitor_Service")
@@ -1564,6 +1564,17 @@ end)
 bindFunction("GetGlobalSecurityIncidents", function(limit: any, moderatorUserId: any)
 	if not globalIncidentResponseService then return false, {} end
 	return globalIncidentResponseService:GetRecent(limit, moderatorUserId)
+end)
+
+-- These intake endpoints live only in ServerStorage/ClubMusicGlobalAPI. They are
+-- for trusted server scripts; no client RemoteEvent is connected to them directly.
+bindFunction("SubmitGlobalSecurityReport", function(reporterUserId: any, subjectUserId: any, summary: any)
+	if not globalIncidentResponseService then return false, "Incident service unavailable." end
+	return globalIncidentResponseService:SubmitReport(reporterUserId, subjectUserId, summary)
+end)
+bindFunction("SubmitGlobalSecuritySystemSignal", function(kind: any, summary: any, subjectUserId: any, source: any)
+	if not globalIncidentResponseService then return false, "Incident service unavailable." end
+	return globalIncidentResponseService:SubmitSystemSignal(kind, summary, subjectUserId, source)
 end)
 
 local function validEnvelope(data: any, topic: string): boolean
