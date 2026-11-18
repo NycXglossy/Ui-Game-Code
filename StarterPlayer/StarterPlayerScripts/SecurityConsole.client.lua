@@ -280,27 +280,32 @@ diagnosticsScope.TextSize = 9
 diagnosticsScope.TextXAlignment = Enum.TextXAlignment.Left
 diagnosticsScope.Parent = diagnosticsPanel
 
-local diagnosticsReadout = Instance.new("TextLabel")
+local diagnosticsReadout = Instance.new("ScrollingFrame")
 diagnosticsReadout.Name = "DiagnosticsReadout"
 diagnosticsReadout.Position = UDim2.fromOffset(12, 52)
 diagnosticsReadout.Size = UDim2.new(1, -24, 1, -104)
 diagnosticsReadout.BackgroundColor3 = Color3.fromRGB(11, 18, 29)
 diagnosticsReadout.BorderSizePixel = 0
-diagnosticsReadout.Font = Enum.Font.Code
-diagnosticsReadout.Text = "Select Refresh to request this server's current authorized diagnostic snapshot."
-diagnosticsReadout.TextColor3 = Color3.fromRGB(220, 230, 241)
-diagnosticsReadout.TextSize = 10
-diagnosticsReadout.TextWrapped = true
-diagnosticsReadout.TextXAlignment = Enum.TextXAlignment.Left
-diagnosticsReadout.TextYAlignment = Enum.TextYAlignment.Top
+diagnosticsReadout.ScrollBarThickness = 3
+diagnosticsReadout.AutomaticCanvasSize = Enum.AutomaticSize.Y
+diagnosticsReadout.CanvasSize = UDim2.new()
 diagnosticsReadout.Parent = diagnosticsPanel
 Instance.new("UICorner", diagnosticsReadout).CornerRadius = UDim.new(0, 8)
-local diagnosticsReadoutPadding = Instance.new("UIPadding")
-diagnosticsReadoutPadding.PaddingTop = UDim.new(0, 8)
-diagnosticsReadoutPadding.PaddingBottom = UDim.new(0, 8)
-diagnosticsReadoutPadding.PaddingLeft = UDim.new(0, 8)
-diagnosticsReadoutPadding.PaddingRight = UDim.new(0, 8)
-diagnosticsReadoutPadding.Parent = diagnosticsReadout
+
+local diagnosticsReadoutText = Instance.new("TextLabel")
+diagnosticsReadoutText.Name = "ReadoutText"
+diagnosticsReadoutText.Position = UDim2.fromOffset(8, 8)
+diagnosticsReadoutText.Size = UDim2.new(1, -16, 0, 0)
+diagnosticsReadoutText.AutomaticSize = Enum.AutomaticSize.Y
+diagnosticsReadoutText.BackgroundTransparency = 1
+diagnosticsReadoutText.Font = Enum.Font.Code
+diagnosticsReadoutText.Text = "Select Refresh to request this server's current authorized diagnostic snapshot."
+diagnosticsReadoutText.TextColor3 = Color3.fromRGB(220, 230, 241)
+diagnosticsReadoutText.TextSize = 10
+diagnosticsReadoutText.TextWrapped = true
+diagnosticsReadoutText.TextXAlignment = Enum.TextXAlignment.Left
+diagnosticsReadoutText.TextYAlignment = Enum.TextYAlignment.Top
+diagnosticsReadoutText.Parent = diagnosticsReadout
 
 local diagnosticsRefresh = Instance.new("TextButton")
 diagnosticsRefresh.Name = "RefreshDiagnostics"
@@ -513,7 +518,7 @@ local function startClientDiagnostics()
 	clientDiagnosticsModuleAttempted = true
 	local moduleScript = ReplicatedStorage:FindFirstChild("ClubMusic_Client_Diagnostics_Service")
 	if not moduleScript or not moduleScript:IsA("ModuleScript") then
-		diagnosticsReadout.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics module is not installed."
+		diagnosticsReadoutText.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics module is not installed."
 		return
 	end
 	local requireOk, exported = pcall(require, moduleScript)
