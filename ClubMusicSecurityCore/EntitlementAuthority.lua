@@ -150,9 +150,13 @@ function Service:GetTier(player: Player, rewardedTier: any): (number, {[string]:
 	local authOk, isMember = pcall(authorization.IsGroupMember, authorization, player)
 	if authOk and isMember == true then groupMember = true end
 
+	local staff = false
 	local owner = false
 	local rankOk, _, level = pcall(authorization.GetRank, authorization, player)
-	if rankOk and typeof(level) == "number" and level >= 4 then owner = true end
+	if rankOk and typeof(level) == "number" then
+		staff = level >= 1 -- Moderator (150) and every higher staff rank receive VIP.
+		owner = level >= 4
+	end
 
 	local awarded = if typeof(rewardedTier) == "number" and rewardedTier == rewardedTier
 		then math.clamp(math.floor(rewardedTier), 0, 3) else 0
@@ -160,13 +164,15 @@ function Service:GetTier(player: Player, rewardedTier: any): (number, {[string]:
 		elseif state and state.vvip then 2
 		elseif state and state.vip then 1 else 0
 	local groupTier = if groupMember then 1 else 0
-	local tier = if owner then 3 else math.max(groupTier, paidTier, awarded)
+	local staffTier = if staff then 1 else 0
+	local tier = if owner then 3 else math.max(groupTier, paidTier, awarded, staffTier)
 
 	return tier, {
 		ready = state ~= nil and state.expiresAt > os.clock(),
 		groupMember = groupMember,
+		staff = staff,
 		owner = owner,
-		vip = state ~= nil and state.vip == true,
+		vip = tier >= 1,
 		vvip = state ~= nil and state.vvip == true,
 		tikiTide = state ~= nil and state.tikiTide == true,
 		rewardedTier = awarded,
