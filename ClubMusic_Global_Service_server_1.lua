@@ -1048,6 +1048,7 @@ if playbackAuthorityModule and SERVICE_ENABLED then
 			safeCall = globalSafeCall,
 			dataStoreService = DataStoreService,
 			memoryStoreService = MemoryStoreService,
+			allowStoreOperation = allowGlobalDataStoreOperation,
 			jobId = JOB_ID,
 			guid = function() return HttpService:GenerateGUID(false) end,
 			publish = function(payload)
