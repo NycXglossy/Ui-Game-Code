@@ -3556,9 +3556,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				act("DJToggleLock", {})
 			end, if locked then C.Orange else C.Purple)
 		if canManage then
-			actionButton(staff, "CLEAR QUEUE", UDim2.new(0.5, 4, 0, 12), UDim2.new(0.5, -16, 0, 34), function()
-				act("DJClearQueue", {})
-			end, C.Red)
+			-- Full-queue clearing is now available only through the Staff Console.
 		end
 
 		if canManage then
@@ -3656,9 +3654,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local rosterCards: {Frame} = {}
 		for _, p: any in ipairs(roster) do
 			local canAwardPassTier = p.canAwardPassTier == true
-			local showButtons = (level >= 2 and p.canMod == true) or canAwardPassTier
+			local showButtons = canAwardPassTier
 			local isOwner = canAwardPassTier
-			local pcard = card(if isOwner then 146 elseif showButtons then 112 else 68)
+			local pcard = card(if isOwner then 146 else 68)
 			table.insert(rosterCards, pcard)
 			local displayName = nz(p.displayName, "Player")
 			local username = nz(p.name, "?")
@@ -3682,32 +3680,18 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					local baseTier = if p.groupMember == true then 1 else 0
 					local nextTier = math.clamp(math.max(rewardedTier, baseTier) + 1, 1, 3)
 					local nextName = tierNames[nextTier + 1]
-					local blockButton = actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0,12,0,buttonY), UDim2.new(1/3,-16,0,27), function()
-						act("ModBlockUser", {userId=userId, blocked=not isBlocked}, userId, not isBlocked)
-					end, if isBlocked then C.Green else C.Red)
-					local rankButton = actionButton(pcard, if nextTier > currentTier then "RANK UP → " .. nextName else "MAX TIER", UDim2.new(1/3,6,0,buttonY), UDim2.new(1/3,-16,0,27), function()
-						if nextTier <= currentTier then return end
-						act("ModSetPassTier", {userId=userId, passTier=nextTier}, userId, nextTier)
-					end, C.Purple)
-					local purgeButton = actionButton(pcard, "PURGE", UDim2.new(2/3,0,0,buttonY), UDim2.new(1/3,-12,0,27), function()
-						act("ModPurgeUser", {userId=userId}, userId)
-					end, C.Orange)
-					blockButton.TextSize = 9; rankButton.TextSize = 9; purgeButton.TextSize = 9
+					local rankButton = actionButton(pcard, if nextTier > currentTier then "RANK UP → " .. nextName else "MAX TIER",
+						UDim2.fromOffset(12,buttonY), UDim2.new(1,-24,0,27), function()
+							if nextTier <= currentTier then return end
+							act("ModSetPassTier", {userId=userId, passTier=nextTier}, userId, nextTier)
+						end, C.Purple)
+						rankButton.TextSize = 9
 					if rewardedTier > 0 then
 						local resetButton = actionButton(pcard, "RESET OWNER REWARD  •  KEEP GROUP VIP", UDim2.fromOffset(12,108), UDim2.new(1,-24,0,27), function()
 							act("ModSetPassTier", {userId=userId, passTier=0}, userId, 0)
 						end, C.SurfaceLight)
 						resetButton.TextSize = 9
 					end
-				else
-					local buttonWidth = UDim2.new(0.5,-16,0,27)
-					local blockButton = actionButton(pcard, if isBlocked then "UNBLOCK" else "BLOCK", UDim2.new(0,12,0,buttonY), buttonWidth, function()
-						act("ModBlockUser", {userId=userId, blocked=not isBlocked}, userId, not isBlocked)
-					end, if isBlocked then C.Green else C.Red)
-					local purgeButton = actionButton(pcard, "PURGE QUEUE", UDim2.new(0.5,4,0,buttonY), buttonWidth, function()
-						act("ModPurgeUser", {userId=userId}, userId)
-					end, C.Orange)
-					blockButton.TextSize = 9; purgeButton.TextSize = 9
 				end
 			end
 		end
@@ -4663,12 +4647,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function refreshNav()
 		local moderationButton = navButtons["Moderation"]
-		if moderationButton then moderationButton.Visible = perm() >= 1 end
+		if moderationButton then moderationButton.Visible = perm() >= 4 end
 		local playlistsButton = navButtons["Playlists"]
 		if playlistsButton then playlistsButton.Visible = perm() >= 1 end
 		local audioButton = navButtons["Audio ID"]
 		if audioButton then audioButton.Visible = perm() >= 1 end
-		if (activeTab == "Moderation" or activeTab == "Audio ID" or activeTab == "Playlists") and perm() < 1 then activeTab = "Home" end
+		if (activeTab == "Moderation" and perm() < 4) or ((activeTab == "Audio ID" or activeTab == "Playlists") and perm() < 1) then activeTab = "Home" end
 	end
 
 	local function applyMenuTypography()
