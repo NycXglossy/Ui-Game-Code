@@ -134,18 +134,6 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 	local state = self.states[player.UserId]
 	if not state or not accessory:IsA("Accessory") then return end
 	state.knownAccessories[accessory] = true
-	if state.observedAccessoryHandles[accessory] == nil then
-		local tracked = 0
-		for _ in pairs(state.observedAccessoryHandles) do tracked += 1 end
-		if tracked >= MAX_ACCESSORIES then
-			if not state.accessoryObservationCapSignaled then
-				state.accessoryObservationCapSignaled = true
-				self:_signal(player, "avatar_accessory_observation_cap", tostring(MAX_ACCESSORIES))
-			end
-		else
-			state.observedAccessoryHandles[accessory] = accessory:FindFirstChild("Handle") :: BasePart?
-		end
-	end
 	if runtimeAdded and state.appearanceReady then
 		self:_signal(player, "avatar_accessory_added_after_appearance", accessory.Name)
 	end
@@ -177,17 +165,27 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 	if handle.CanCollide then
 		self:_signal(player, "avatar_accessory_collidable_handle", accessory.Name)
 	end
-	if state.observedAccessoryHandles[accessory] == handle then
-		table.insert(state.characterConnections, handle:GetPropertyChangedSignal("Size"):Connect(function()
-			if self.states[player.UserId] == state and accessory.Parent == state.character then
-				self:_signal(player, "avatar_accessory_handle_size_changed", accessory.Name)
+	if state.observedAccessoryHandles[accessory] == nil then
+		local tracked = 0
+		for _ in pairs(state.observedAccessoryHandles) do tracked += 1 end
+		if tracked >= MAX_ACCESSORIES then
+			if not state.accessoryObservationCapSignaled then
+				state.accessoryObservationCapSignaled = true
+				self:_signal(player, "avatar_accessory_observation_cap", tostring(MAX_ACCESSORIES))
 			end
-		end))
-		table.insert(state.characterConnections, handle:GetPropertyChangedSignal("CanCollide"):Connect(function()
-			if self.states[player.UserId] == state and accessory.Parent == state.character then
-				self:_signal(player, "avatar_accessory_handle_collision_changed", accessory.Name)
-			end
-		end))
+		else
+			state.observedAccessoryHandles[accessory] = handle
+			table.insert(state.characterConnections, handle:GetPropertyChangedSignal("Size"):Connect(function()
+				if self.states[player.UserId] == state and accessory.Parent == state.character then
+					self:_signal(player, "avatar_accessory_handle_size_changed", accessory.Name)
+				end
+			end))
+			table.insert(state.characterConnections, handle:GetPropertyChangedSignal("CanCollide"):Connect(function()
+				if self.states[player.UserId] == state and accessory.Parent == state.character then
+					self:_signal(player, "avatar_accessory_handle_collision_changed", accessory.Name)
+				end
+			end))
+		end
 	end
 
 	if runtimeAdded and state.appearanceReady then
