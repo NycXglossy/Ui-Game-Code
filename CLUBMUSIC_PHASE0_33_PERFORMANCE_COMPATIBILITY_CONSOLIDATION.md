@@ -400,3 +400,11 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Added the equivalent post-GetAsync membership check in the periodic reconciliation worker. A departed Player is skipped before pending attributes or local reconciliation events are touched. The existing sequential pacing and worker lifecycle remain unchanged.
 - The onJoin idempotency marker and per-user moderation revision entry are still cleared by PlayerRemoving. An in-flight join/retry cannot repopulate the revision cache after cleanup because of the new post-yield guards. No per-player tasks, remotes, DataStores, MessagingService topics, or global coordination were added.
 - Static source inspection only. No concurrent leave/rejoin simulation, DataStore delay injection, Luau compilation, Studio/runtime test, or deployment was performed.
+
+
+## BindableFunction multi-return preservation audit (2026-11-18)
+
+- Found a critical bridge-contract bug in the controller's shared Global API invocation helper: its protected call captured only three BindableFunction return values. The durable GetModerationState contract returns a success flag, both moderation flags, reason, and revision; the revision was therefore dropped before reaching join/retry logic, which interpreted the missing revision as an invalid lookup and kept the player pending.
+- Updated the shared helper to pack and return the complete protected-call tuple, preserving every value and nil position. Error behavior remains protected: failed Invoke calls still return a leading false plus the error value. Existing two-value and shorter BindableFunction contracts remain compatible.
+- This restores delivery of the durable moderation revision to both join-time and retry checks, allowing valid legacy revision-zero records and versioned records to be evaluated against the controller's in-memory revision gate. Background reconciliation remains the recovery path for missed MessagingService notifications.
+- Static source inspection only. No BindableFunction runtime invocation, Luau compilation, DataStore test, Studio/runtime test, or deployment was performed.
