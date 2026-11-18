@@ -9,7 +9,7 @@
 
 - The server controller owns the sole modern `AudioPlayer` playback source, track selection, playback clock, queue, request accounting, Auto DJ refill, transition invocation, and authoritative state replication.
 - Per-server request queues, playlist cursors, Auto DJ state, request accounting, and skip votes remain independent.
-- Optional playback-only global sync shares only the current Now Playing/playhead snapshot and revision invalidations under the fenced leader. It never shares a queue or playlist cursor.
+- Cross-server playback synchronization is retired. Each server independently owns Now Playing, the playback clock, queue, playlist cursor, Auto DJ refill, request accounting, skip votes, and crossfade lifecycle.
 - SecurityCore Authorization remains the sole role/permission authority.
 - Client preferences and per-listener output routing remain client-local.
 - Do not install the standalone legacy Music System, add another playback controller, delete rollback sources, or remove live-place objects without a complete consumer audit.
@@ -39,7 +39,7 @@ The active `UI_Network.lua` wraps `RequestAction`; it does not create a second a
 | `DJPlayPlaylist/DJStopPlaylist` | Elevated DJ Booth controller check; playlist rotation remains server-owned and uses the server's own queue. |
 | `VoteSkip` | Available to any connected player; server records one vote per player and evaluates the configured vote threshold. No DJ permission is required. |
 | `ReloadSong` | Explicit self-service recovery for any connected player. No DJ/staff permission check. Existing three-second per-player cooldown and the common action ingress budget remain in force. It cannot select a new asset or mutate the catalog/queue. |
-| `DJPause/DJRestart/DJSkip` | Require the SecurityCore-backed `GlobalDJ` authorization callback and, when playback-only sync is enabled, the elected leader. |
+| `DJPause/DJRestart/DJSkip` | Require the SecurityCore-backed `GlobalDJ` authorization callback; the action affects only the current server's playback. |
 | DJ queue-management / emergency actions | Use the existing elevated DJ Booth or staff/admin authorization path; no client role attribute is accepted as authority. |
 
 The controller's `canUseDJBooth` calls the shared SecurityCore Authorization service with `GlobalDJ`; it does not maintain a role table. Elevated booth management uses the existing SecurityCore-derived level. The DJ session manager remains server-only and receives authorization/handoff callbacks from the controller, which rechecks connected players and staff ranks.
@@ -165,14 +165,12 @@ This is a source inspection result, not runtime permission certification.
 - Inventory all deployed remotes and scripts for boombox, animation, image/decal, Sound, and AudioPlayer mutations. Test or retire each live consumer only after provenance and authorization are understood.
 - Verify the standalone legacy Music System and its five remotes are absent/disabled in the live place; do not install it.
 
-### Two-server playback-only sync
+### Two-server local-isolation regression
 
-- Enable/disable only through Owner/Co-Owner SecurityCore-gated global configuration.
-- Both servers show the same Now Playing/playhead and revision while their local request queues, playlist cursors, request counters, skip votes, and Auto DJ refill remain independent.
-- Leader departure/lease expiry, failover, stale revision, blocked/missing catalog track, and DataStore/MemoryStore/MessagingService outage/recovery.
-- Followers cannot independently advance, pause, restart, or DJ-skip while sync is active.
-- Disable sync and verify each server resumes its own local playback/queue without importing another server's queue.
-- Verify no split-brain leader or shared queue appears during outage/failover.
+- Start two servers with different local queues and verify each retains its own Now Playing, playback clock, playlist cursor, Auto DJ refill, request accounting, skip votes, and crossfade state.
+- Verify skip, pause, restart, reload, and queue-management actions affect only the server receiving the action.
+- Verify no playback leader lease, playback snapshot store, playback topic, or playback message handler is active.
+- Verify catalog invalidation and explicitly global moderation/announcement/XP coordination continue through their separate approved paths.
 
 ### Compatibility and operational bounds
 
