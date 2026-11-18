@@ -8,7 +8,6 @@ MusicPlaybackManager.__index = MusicPlaybackManager
 
 export type Context = {
 	GetSnapshot: () -> any,
-	GetSound: (() -> Sound?)?,
 	GetAudioSnapshot: (() -> any)?,
 	GetElapsedTime: (() -> number)?,
 	PlayTrack: ((any, any?) -> (boolean, string?))?,
@@ -40,8 +39,8 @@ end
 function MusicPlaybackManager.new(context: Context)
 	assert(typeof(context) == "table", "Playback manager requires an injected controller context.")
 	assert(typeof(context.GetSnapshot) == "function", "Playback context requires GetSnapshot.")
-	assert(typeof(context.GetSound) == "function" or typeof(context.GetAudioSnapshot) == "function",
-		"Playback context requires GetSound or GetAudioSnapshot.")
+	assert(typeof(context.GetAudioSnapshot) == "function",
+		"Playback context requires the controller-owned modern audio snapshot.")
 	return setmetatable({ context = context, destroyed = false }, MusicPlaybackManager)
 end
 
@@ -62,23 +61,15 @@ function MusicPlaybackManager:GetCurrentSong()
 end
 
 function MusicPlaybackManager:GetSound(): Sound?
-	if self.destroyed or typeof(self.context.GetSound) ~= "function" then return nil end
-	local ok, sound = pcall(self.context.GetSound)
-	if ok and typeof(sound) == "Instance" and sound:IsA("Sound") then return sound end
+	-- Retained only as a compatibility-shaped accessor for older callers.
+	-- The modern-only controller never creates or adopts a Sound playback source.
 	return nil
 end
 
 function MusicPlaybackManager:IsPlaying(): boolean
-	-- Prefer the controller's canonical backend-neutral snapshot. The Sound
-	-- accessor remains a compatibility fallback for older injected contexts.
-	if not self.destroyed and typeof(self.context.GetAudioSnapshot) == "function" then
-		local ok, snapshot = pcall(self.context.GetAudioSnapshot)
-		if ok and typeof(snapshot) == "table" and typeof(snapshot.playing) == "boolean" then
-			return snapshot.playing
-		end
-	end
-	local sound = self:GetSound()
-	return sound ~= nil and sound.IsPlaying
+	if self.destroyed or typeof(self.context.GetAudioSnapshot) ~= "function" then return false end
+	local ok, snapshot = pcall(self.context.GetAudioSnapshot)
+	return ok and typeof(snapshot) == "table" and snapshot.playing == true
 end
 
 function MusicPlaybackManager:IsPaused(): boolean
@@ -109,13 +100,12 @@ function MusicPlaybackManager:GetElapsedTime(): number
 			end
 		end
 	end
-	local sound = self:GetSound()
-	return if sound then math.max(0, sound.TimePosition) else 0
+	return 0
 end
 
 -- One backend-neutral, read-only snapshot contract replaces the former
 -- ServerMusicAudioHandler inspection surface. The controller supplies the
--- canonical active-source snapshot; Sound access remains a guarded rollback fallback.
+-- canonical modern AudioPlayer snapshot; this adapter never inspects legacy Sound instances.
 function MusicPlaybackManager:GetPlaybackSnapshot()
 	if self.destroyed then
 		return { kind = "Unavailable", ready = false, playing = false, paused = false, position = 0, length = 0, asset = "" }
@@ -134,20 +124,7 @@ function MusicPlaybackManager:GetPlaybackSnapshot()
 			}
 		end
 	end
-	local sound = self:GetSound()
-	if not sound then
-		return { kind = "Unavailable", ready = false, playing = false, paused = self:IsPaused(), position = 0, length = 0, asset = "" }
-	end
-	local loaded = sound.IsLoaded
-	return {
-		kind = "Sound",
-		ready = loaded,
-		playing = sound.IsPlaying,
-		paused = self:IsPaused(),
-		position = finiteNonNegative(sound.TimePosition),
-		length = if loaded then finiteNonNegative(sound.TimeLength) else 0,
-		asset = sound.SoundId,
-	}
+	return { kind = "Unavailable", ready = false, playing = false, paused = self:IsPaused(), position = 0, length = 0, asset = "" }
 end
 
 function MusicPlaybackManager:GetTimePosition(): number
