@@ -564,3 +564,10 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - Reconciliation now emits a local snapshot of both durable moderation flags plus revision. The controller accepts only snapshots at least as new as the latest observed event, then applies the ban/request-block state and clears pending only after that check. A stale read cannot kick or clear a newer restriction.
 - Failed reads continue to preserve pending restrictions and the existing 15-second pending-only retry behavior. No new cross-server services, topics, remotes, or diagnostics telemetry.
 - Static source inspection only; no Luau compilation, DataStore fault injection, MessagingService multi-server ordering test, Studio/runtime test, or deployment.
+
+
+### Moderation lookup departure-race audit (2026-11-18)
+
+- Added post-yield Player membership checks after initial and retry IsEnabled/GetModerationState calls and after background reconciliation GetAsync. Departed Player instances are no longer mutated, kicked, revision-cached, or used to emit reconciliation events after those calls return.
+- PlayerRemoving continues to release the join idempotency marker and per-user revision entry. Existing retry/reconciliation timing, DataStore budget reserve, and fail-closed pending behavior for online players remain unchanged.
+- Static source review only; no concurrent leave/rejoin simulation, backend delay/fault injection, Luau compilation, Studio/runtime test, or deployment.
