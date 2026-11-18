@@ -219,7 +219,7 @@ local function pruneFallbackBuckets(now: number)
 	end
 end
 
-local function fallbackBucket(key: string, capacity: number, refill: number, cost: number): boolean
+local function fallbackBucket(key: string, capacity: number, refill: number, cost: number, minimumRemaining: number?): boolean
 	local now = os.clock()
 	pruneFallbackBuckets(now)
 	local state = fallbackBuckets[key]
@@ -243,17 +243,20 @@ local function fallbackBucket(key: string, capacity: number, refill: number, cos
 	end
 	state.tokens = math.min(capacity, state.tokens + math.max(0, now - state.updated) * refill)
 	state.updated = now
-	if state.tokens < cost then return false end
+	local reserve = minimumRemaining or 0
+	if state.tokens < cost or state.tokens - cost < reserve then return false end
 	state.tokens -= cost
 	return true
 end
 
-local function consumeLocalBudget(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
+local function consumeLocalBudget(key: string, capacity: number, refill: number, cost: number, minimumRemaining: number?): (boolean, boolean)
 	localBudgetChecks += 1
 	if typeof(key) ~= "string" or #key < 1 or #key > 100
 		or not finiteNumber(capacity) or capacity <= 0
 		or not finiteNumber(refill) or refill < 0
-		or not finiteNumber(cost) or cost <= 0 or cost > capacity then
+		or not finiteNumber(cost) or cost <= 0 or cost > capacity
+		or (minimumRemaining ~= nil and (not finiteNumber(minimumRemaining) or minimumRemaining < 0
+			or minimumRemaining >= math.min(capacity, CONFIG.FallbackPlayerCapacity))) then
 		localBudgetRejected += 1
 		return false, false
 	end
@@ -263,7 +266,8 @@ local function consumeLocalBudget(key: string, capacity: number, refill: number,
 		key,
 		math.min(capacity, CONFIG.FallbackPlayerCapacity),
 		math.min(refill, CONFIG.FallbackPlayerRefillPerSecond),
-		cost
+		cost,
+		minimumRemaining
 	)
 	if not allowed then localBudgetRejected += 1 end
 	return allowed, false
@@ -274,12 +278,12 @@ local function userKey(userId: number): string?
 	return tostring(math.floor(userId))
 end
 
-local function getModeration(userId: number): {[string]: any}
+local function getModeration(userId: number, minimumBudgetRemaining: number?): {[string]: any}
 	local key = userKey(userId)
 	if not key then return {} end
 	-- Bound durable reads with a per-server token bucket. Exhaustion fails closed;
 	-- no MemoryStore request or shared budget is involved.
-	local budgetAllowed = consumeLocalBudget("all:datastore", 90, 15, 1)
+	local budgetAllowed = consumeLocalBudget("all:datastore", 90, 15, 1, minimumBudgetRemaining)
 	if not budgetAllowed then
 		return {lookupFailed = true}
 	end
@@ -1768,7 +1772,9 @@ ownThread(task.spawn(function()
 		if SERVICE_ENABLED then
 			for _, player in ipairs(Players:GetPlayers()) do
 				if globalServiceShuttingDown then break end
-				local data = getModeration(player.UserId)
+				-- Background reconciliation must leave a small shared-bucket reserve
+				-- available for foreground moderation and purchase operations.
+				local data = getModeration(player.UserId, 3)
 				if data.lookupFailed then
 					-- Unknown is not the same as banned. Keep moderation-sensitive
 					-- actions closed while the authoritative record is unavailable,
