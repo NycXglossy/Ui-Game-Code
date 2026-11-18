@@ -28,7 +28,7 @@ function Service.new(options: {[string]: any}?)
 	options = if typeof(options) == "table" then options else {}
 	assert(RunService:IsClient(), "ClientDiagnostics can only run on a client.")
 	return setmetatable({
-		auditWorkspaceEffects = options.auditWorkspaceEffects ~= false,
+		auditWorkspaceEffects = options.auditWorkspaceEffects == true,
 		sampleAudio = options.sampleAudio ~= false,
 		running = false,
 		connection = nil,
@@ -44,7 +44,7 @@ function Service.new(options: {[string]: any}?)
 		audioSnapshot = {state = "Starting", playing = false, timePositionSeconds = nil, sourceCount = 0},
 		audioSampleAt = nil,
 		audioError = nil,
-		mapAudit = {state = "NotStarted", totalLights = nil, shadowLights = nil, particleEmittersAndBeams = nil, scannedInstances = 0},
+		mapAudit = {state = if options.auditWorkspaceEffects == true then "NotStarted" else "DisabledByDefault", totalLights = nil, shadowLights = nil, particleEmittersAndBeams = nil, scannedInstances = 0},
 		mapAuditThread = nil,
 		startedAt = 0,
 	}, Service)
