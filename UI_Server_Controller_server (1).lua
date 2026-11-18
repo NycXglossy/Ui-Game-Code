@@ -6681,6 +6681,31 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		return
 	end
 	if message.kind == "Catalog" then
+		-- Track moderation shares the catalog topic so one durable update can
+		-- invalidate both the custom catalog and per-server moderation decisions.
+		-- MessagingService delivery is best-effort; the local 300-second cache
+		-- expiry remains the fallback when this invalidation is missed.
+		if message.senderJob ~= game.JobId
+			and typeof(message.trackId) == "string"
+			and #message.trackId >= 1 and #message.trackId <= 64
+			and string.match(message.trackId, "^[%w%-_]+$")
+			and typeof(message.blocked) == "boolean" then
+			ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
+			ControllerFunctions.blockedTrackCache[message.trackId] = {
+				blocked = message.blocked,
+				checkedAt = os.clock(),
+			}
+			if message.blocked == true then
+				for index = #queue, 1, -1 do
+					if queue[index].trackId == message.trackId then queueManager:RemoveAt(index, true) end
+				end
+				if nowPlaying.trackId == message.trackId then
+					ControllerFunctions.cancelAudioTransition("track-blocked-global")
+					ControllerFunctions.advance()
+				end
+				publishState(nil)
+			end
+		end
 		if os.clock() - lastCatalogRefreshAt < 3 then return end
 		task.spawn(function()
 			ControllerFunctions.refreshCatalogWhenReady()
