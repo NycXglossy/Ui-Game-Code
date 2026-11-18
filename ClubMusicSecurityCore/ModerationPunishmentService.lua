@@ -330,6 +330,26 @@ end
 
 -- Internal adapter for AccountRiskSignalService. It returns only normalized,
 -- verified server-recorded outcomes and omits reasons and evidence text.
+function Service:RecordVerifiedViolation(targetUserId: number, category: string, evidenceReference: string): boolean
+	-- Trusted server-only callers must verify the violation before invoking this API.
+	if not validUserId(targetUserId) or typeof(category) ~= "string" or #category < 1 or #category > 48
+		or typeof(evidenceReference) ~= "string" or #evidenceReference < 1 or #evidenceReference > 96 then
+		return false
+	end
+	local caseId = HttpService:GenerateGUID(false)
+	local at = os.time()
+	local ok = self:_update(targetUserId, function(record)
+		self:_appendHistory(record, {
+			caseId = caseId, kind = "VerifiedViolation", status = "Active",
+			actorUserId = 0, targetUserId = targetUserId, at = at,
+			category = category, evidenceReference = evidenceReference,
+		})
+		return record
+	end)
+	if ok then self:_audit("VerifiedViolationRecorded", 0, targetUserId, caseId, category) end
+	return ok
+end
+
 function Service:GetRiskHistory(targetUserId: number, limit: number): (boolean, {any}?)
 	if not validUserId(targetUserId) or typeof(limit) ~= "number" or limit % 1 ~= 0
 		or limit < 1 or limit > MAX_HISTORY then return false, nil end
@@ -339,15 +359,18 @@ function Service:GetRiskHistory(targetUserId: number, limit: number): (boolean, 
 	local seenCases: {[string]: boolean} = {}
 	for index = #result.history, 1, -1 do
 		local item = result.history[index]
-		if typeof(item) == "table" and item.status == "Active"
-			and typeof(item.caseId) == "string" and not seenCases[item.caseId]
-			and typeof(item.at) == "number" then
+		if typeof(item) == "table" and typeof(item.caseId) == "string" and not seenCases[item.caseId] then
 			seenCases[item.caseId] = true
-			table.insert(output, {
-				caseId = item.caseId, verified = true, category = item.kind,
-				at = item.at, kind = item.kind,
-			})
-			if #output >= limit then break end
+			-- A reversal/failed operation is the latest state for its case and
+			-- must suppress the older active entry for that same case.
+			if item.status == "Active" and typeof(item.at) == "number" then
+				table.insert(output, {
+					caseId = item.caseId, verified = true,
+					category = if typeof(item.category) == "string" then item.category else item.kind,
+					at = item.at, kind = item.kind,
+				})
+				if #output >= limit then break end
+			end
 		end
 	end
 	return true, output
