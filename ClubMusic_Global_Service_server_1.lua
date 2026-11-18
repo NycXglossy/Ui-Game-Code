@@ -79,7 +79,6 @@ local globalStateReconciliationService: any = nil
 local globalMaintenanceService: any = nil
 local globalAuditService: any = nil
 local globalEventLogService: any = nil
-local globalRateLimitService: any = nil
 local globalAuthorizationService: any = nil
 local globalSecurityMonitorService: any = nil
 local globalMessageValidationService: any = nil
@@ -187,6 +186,8 @@ local function filterAnnouncementText(value: any, actorUserId: number): string?
 end
 
 local fallbackBuckets: {[string]: {tokens: number, updated: number}} = {}
+local localBudgetChecks = 0
+local localBudgetRejected = 0
 local signalCounts: {[string]: number} = {}
 local MAX_FALLBACK_BUCKETS = 2048
 local MAX_SIGNAL_KEYS = 2048
@@ -233,15 +234,21 @@ local function fallbackBucket(key: string, capacity: number, refill: number, cos
 end
 
 local function consumeLocalBudget(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
-	if not finiteNumber(cost) or cost <= 0 or cost > capacity then return false, false end
-	-- This limiter is intentionally local to this server. The bounded token
-	-- buckets do not depend on MemoryStore availability or shared state.
-	return fallbackBucket(
+	localBudgetChecks += 1
+	if not finiteNumber(cost) or cost <= 0 or cost > capacity then
+		localBudgetRejected += 1
+		return false, false
+	end
+	-- Rate limits are intentionally server-local. The fallback cap bounds
+	-- memory and burst size without introducing shared MemoryStore state.
+	local allowed = fallbackBucket(
 		key,
 		math.min(capacity, CONFIG.FallbackPlayerCapacity),
-		CONFIG.FallbackPlayerRefillPerSecond,
+		math.min(refill, CONFIG.FallbackPlayerRefillPerSecond),
 		cost
-	), false
+	)
+	if not allowed then localBudgetRejected += 1 end
+	return allowed, false
 end
 
 local function userKey(userId: number): string?
@@ -342,48 +349,37 @@ bindFunction("ConsumeActionBudget", function(userId: any, action: any, cost: any
 	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
 	if not key or typeof(action) ~= "string" or #action > 40 then return false end
-	local globalOk, globalShared
-	if globalRateLimitService then
-		globalOk, globalShared = globalRateLimitService:Consume("all:actions", CONFIG.GlobalActionCapacity, CONFIG.GlobalActionRefillPerSecond, if finiteNumber(cost) then cost else 1)
-	else
-		globalOk, globalShared = consumeLocalBudget("all:actions", CONFIG.GlobalActionCapacity, CONFIG.GlobalActionRefillPerSecond, if finiteNumber(cost) then cost else 1)
-	end
-	if not globalShared or not globalOk then return false end
-	local playerOk, playerShared
-	if globalRateLimitService then
-		playerOk, playerShared = globalRateLimitService:Consume("user:" .. key, CONFIG.GlobalPlayerCapacity, CONFIG.GlobalPlayerRefillPerSecond, if finiteNumber(cost) then cost else 1)
-	else
-		playerOk, playerShared = consumeLocalBudget("user:" .. key, CONFIG.GlobalPlayerCapacity, CONFIG.GlobalPlayerRefillPerSecond, if finiteNumber(cost) then cost else 1)
-	end
-	-- Global action enforcement must not silently degrade to independent server buckets.
-	return playerShared and playerOk
+	local globalOk = consumeLocalBudget("all:actions", CONFIG.GlobalActionCapacity, CONFIG.GlobalActionRefillPerSecond, if finiteNumber(cost) then cost else 1)
+	if not globalOk then return false end
+	local playerOk = consumeLocalBudget("user:" .. key, CONFIG.GlobalPlayerCapacity, CONFIG.GlobalPlayerRefillPerSecond, if finiteNumber(cost) then cost else 1)
+	return playerOk
 end)
 
 bindFunction("ConsumeStateBudget", function(userId: any)
 	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
 	if not key then return false end
-	local globalOk, globalShared = consumeLocalBudget("all:state", 300, 100, 1)
-	if not globalShared or not globalOk then return false end
-	local playerOk, playerShared = consumeLocalBudget("state:" .. key, 12, 2, 1)
-	return playerShared and playerOk
+	local globalOk = consumeLocalBudget("all:state", 300, 100, 1)
+	if not globalOk then return false end
+	local playerOk = consumeLocalBudget("state:" .. key, 12, 2, 1)
+	return playerOk
 end)
 
 bindFunction("ConsumeDataStoreBudget", function()
 	if not SERVICE_ENABLED then return true end
-	local allowed, shared = consumeLocalBudget("all:datastore", 90, 15, 1)
-	-- Avoid a cross-server DataStore thundering herd when MemoryStore is unavailable.
-	return shared and allowed
+	local allowed = consumeLocalBudget("all:datastore", 90, 15, 1)
+	-- The bounded budget is local to this server; durable writes remain authoritative.
+	return allowed
 end)
 
 bindFunction("ConsumeAudioBudget", function(userId: any)
 	if not SERVICE_ENABLED then return true end
 	local key = userKey(userId)
 	if not key then return false end
-	local globalOk, globalShared = consumeLocalBudget("all:audio", CONFIG.GlobalAudioCapacity, CONFIG.GlobalAudioRefillPerSecond, 1)
-	if not globalShared or not globalOk then return false end
-	local playerOk, playerShared = consumeLocalBudget("audio:" .. key, 3, 0.2, 1)
-	return playerShared and playerOk
+	local globalOk = consumeLocalBudget("all:audio", CONFIG.GlobalAudioCapacity, CONFIG.GlobalAudioRefillPerSecond, 1)
+	if not globalOk then return false end
+	local playerOk = consumeLocalBudget("audio:" .. key, 3, 0.2, 1)
+	return playerOk
 end)
 
 bindFunction("IsGloballyBanned", function(userId: any)
@@ -926,7 +922,17 @@ if diagnosticsModule then
 				}
 			end,
 			getAuthorizationStatus = function() return if globalAuthorizationService then globalAuthorizationService:GetStatus() else nil end,
-			getRateLimitStatus = function() return if globalRateLimitService then globalRateLimitService:GetStatus() else nil end,
+			getRateLimitStatus = function()
+				return {
+					state = "LocalOnly",
+					scope = "ServerLocal",
+					checks = localBudgetChecks,
+					rejected = localBudgetRejected,
+					usesSharedBuckets = false,
+					maxBuckets = MAX_FALLBACK_BUCKETS,
+					idleTtlSeconds = FALLBACK_BUCKET_IDLE_SECONDS,
+				}
+			end,
 			getSecurityPolicyStatus = function() return if globalSecurityPolicyService then globalSecurityPolicyService:GetStatus() else nil end,
 			getSecurityMonitorStatus = function() return if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else nil end,
 			getMessageValidationStatus = function() return if globalMessageValidationService then globalMessageValidationService:GetStatus() else nil end,
@@ -1038,12 +1044,6 @@ globalEventLogService = if globalAuditService then createOperationalService("Clu
 	auditService = globalAuditService,
 }, {"Start", "GetStatus", "Record", "GetRecent"}) else nil
 if globalEventLogService then globalEventLogService:Start() end
-
-globalRateLimitService = createOperationalService("ClubMusic_Global_RateLimit_Service", {
-	isEnabled = function() return SERVICE_ENABLED end,
-	consumeLocalBudget = consumeLocalBudget,
-}, {"Start", "GetStatus", "Consume"})
-if globalRateLimitService then globalRateLimitService:Start() end
 
 globalMaintenanceService = if globalConfigService then createOperationalService("ClubMusic_Global_Maintenance_Service", {
 	isEnabled = function() return SERVICE_ENABLED end,
@@ -1295,7 +1295,15 @@ bindFunction("GetGlobalOperationalStatus", function()
 		Metrics = if globalDiagnosticsService then globalDiagnosticsService:GetMetrics() else {state = "Unavailable"},
 		Audit = if globalAuditService then globalAuditService:GetStatus() else {state = "Unavailable"},
 		EventLog = if globalEventLogService then globalEventLogService:GetStatus() else {state = "Unavailable"},
-		RateLimit = if globalRateLimitService then globalRateLimitService:GetStatus() else {state = "Unavailable"},
+		RateLimit = {
+			state = "LocalOnly",
+			scope = "ServerLocal",
+			checks = localBudgetChecks,
+			rejected = localBudgetRejected,
+			usesSharedBuckets = false,
+			maxBuckets = MAX_FALLBACK_BUCKETS,
+			idleTtlSeconds = FALLBACK_BUCKET_IDLE_SECONDS,
+		},
 		Authorization = if globalAuthorizationService then globalAuthorizationService:GetStatus() else {state = "Unavailable"},
 		SecurityMonitor = if globalSecurityMonitorService then globalSecurityMonitorService:GetStatus() else {state = "Unavailable"},
 		MessageValidation = if globalMessageValidationService then globalMessageValidationService:GetStatus() else {state = "Unavailable"},
