@@ -10,7 +10,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 local TeleportValidationService = require(script.Parent:WaitForChild("TeleportValidationService"))
 
-local Service = {
+local Service = {}
 Service.__index = Service
 
 local CHECK_DELAY = 0.18
