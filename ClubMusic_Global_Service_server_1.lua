@@ -878,12 +878,23 @@ local function readServerStorageStatus(endpointName: string, action: string?)
 	return result
 end
 
+local diagnosticsModuleInstance: ModuleScript? = nil
+for _, candidateName in ipairs(OPTIONAL_GLOBAL_MODULE_ALIASES.ClubMusic_Global_Diagnostics_Service
+	or {"ClubMusic_Global_Diagnostics_Service"}) do
+	local candidate = ServerStorage:FindFirstChild(candidateName)
+		or ServerStorage:FindFirstChild(candidateName, true)
+	if candidate and candidate:IsA("ModuleScript") then
+		diagnosticsModuleInstance = candidate :: ModuleScript
+		break
+	end
+end
 local diagnosticsModule = loadOptionalGlobalModule("ClubMusic_Global_Diagnostics_Service")
 if globalServiceRegistry then
-	if diagnosticsModule and diagnosticsModule:IsA("ModuleScript") then
-		pcall(globalServiceRegistry.RegisterDependency, globalServiceRegistry, "DiagnosticsModule", diagnosticsModule, "ModuleScript", diagnosticsModule.Parent, false)
+	if diagnosticsModuleInstance then
+		pcall(globalServiceRegistry.RegisterDependency, globalServiceRegistry, "DiagnosticsModule",
+			diagnosticsModuleInstance, "ModuleScript", diagnosticsModuleInstance.Parent, false)
 	else
-		updateRegistryStatus("DiagnosticsModule", "NotInstalled", "Diagnostics ModuleScript is not installed directly under ServerStorage.")
+		updateRegistryStatus("DiagnosticsModule", "NotInstalled", "Diagnostics ModuleScript is not installed under ServerStorage.")
 	end
 end
 if diagnosticsModule then
