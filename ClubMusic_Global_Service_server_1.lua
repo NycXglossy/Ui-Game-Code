@@ -305,7 +305,9 @@ local publishTopic: (string, {[string]: any}) -> boolean
 
 local function updateModeration(userId: number, field: string, value: any, actorUserId: number, reason: string?): boolean
 	local key = userKey(userId)
-	if not key or (field ~= "globalBan" and field ~= "requestBlocked") then return false end
+	if not key or (field ~= "globalBan" and field ~= "requestBlocked")
+		or typeof(value) ~= "boolean" or not finiteNumber(actorUserId)
+		or actorUserId < 1 or actorUserId % 1 ~= 0 then return false end
 	local budgetAllowed = consumeLocalBudget("all:datastore", 90, 15, 1)
 	-- The bounded per-server token bucket remains mandatory; reject only when exhausted.
 	if not budgetAllowed then
@@ -314,14 +316,46 @@ local function updateModeration(userId: number, field: string, value: any, actor
 	end
 	local ok, result = pcall(function()
 		return moderationStore:UpdateAsync(key, function(old)
+			-- Never replace a corrupt durable record with an empty one: doing so
+			-- could erase the other enforcement flag during an unrelated update.
+			if old ~= nil and typeof(old) ~= "table" then return nil end
+			if typeof(old) == "table"
+				and ((old.globalBan ~= nil and typeof(old.globalBan) ~= "boolean")
+					or (old.requestBlocked ~= nil and typeof(old.requestBlocked) ~= "boolean")) then
+				return nil
+			end
+
 			local data = if typeof(old) == "table" then table.clone(old) else {}
+			local now = os.time()
 			data[field] = value
-			data.updatedAt = os.time()
+			data.updatedAt = now
 			data.updatedBy = actorUserId
 			data.reason = reason
-			local history = if typeof(data.history) == "table" then table.clone(data.history) else {}
-			table.insert(history, 1, {field = field, value = value, actorUserId = math.floor(actorUserId), reason = reason, at = os.time()})
-			while #history > 20 do table.remove(history) end
+
+			-- Rebuild a compact, validated array instead of cloning arbitrary
+			-- history keys or trusting malformed entries from a damaged record.
+			local history = {}
+			if typeof(data.history) == "table" then
+				for _, item in ipairs(data.history) do
+					if #history >= 19 then break end
+					if typeof(item) == "table"
+						and (item.field == "globalBan" or item.field == "requestBlocked")
+						and typeof(item.value) == "boolean"
+						and finiteNumber(item.actorUserId) and item.actorUserId >= 1
+						and item.actorUserId % 1 == 0 then
+						table.insert(history, {
+							field = item.field,
+							value = item.value,
+							actorUserId = math.floor(item.actorUserId),
+							reason = if typeof(item.reason) == "string" then string.sub(item.reason, 1, CONFIG.MaxModerationReasonLength) else nil,
+							at = if finiteNumber(item.at) then math.floor(item.at) else 0,
+						})
+					end
+				end
+			end
+			table.insert(history, 1, {
+				field = field, value = value, actorUserId = math.floor(actorUserId), reason = reason, at = now,
+			})
 			data.history = history
 			return data
 		end)
