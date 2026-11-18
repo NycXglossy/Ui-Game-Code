@@ -377,6 +377,7 @@ local function makeActionButton(command: Command, order: number)
 	button.Activated:Connect(function()
 		selected = command
 		pendingConfirmation = false
+		clearInputs()
 		updateForm()
 		for _, child in ipairs(actionList:GetChildren()) do
 			if child:IsA("TextButton") then child.BackgroundColor3 = Color3.fromRGB(34, 47, 65) end
@@ -391,6 +392,7 @@ local function renderGroup()
 	end
 	local commands = groups[activeGroup] or {}
 	for index, command in ipairs(commands) do makeActionButton(command, index) end
+	clearInputs()
 	selected = commands[1]
 	if selected then updateForm() end
 end
@@ -534,6 +536,7 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 		launcherGui.Enabled = succeeded
 		if succeeded then gui.Enabled = true end
 	end
+	if action == "RunClubMusicCommand" and succeeded then clearInputs() end
 	if action == "RunClubMusicCommand" or action == "ToggleLockdown" then
 		pendingRequest = false
 		requestToken += 1
