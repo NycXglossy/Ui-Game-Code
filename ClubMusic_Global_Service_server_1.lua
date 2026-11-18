@@ -1194,6 +1194,15 @@ if authorizationModule and type(authorizationModule.GetShared) == "function" the
 		local authStartOk, authStartResult = pcall(instance.Start, instance)
 		if not authStartOk or authStartResult ~= true then
 			warn("[ClubMusic][Authorization] SecurityCore authorization failed to start; protected actions remain denied.")
+			-- Start may have connected listeners before raising an error. Tear down
+			-- partial state before dropping the service reference.
+			if type(instance.Stop) == "function" then
+				local stopOk, stopError = pcall(instance.Stop, instance)
+				if not stopOk then
+					warn("[ClubMusic][Authorization] Partial-start cleanup failed: "
+						.. string.sub(tostring(stopError), 1, 180))
+				end
+			end
 			globalAuthorizationService = nil
 			updateRegistryStatus("Authorization", "Unavailable", "SecurityCore Authorization failed to start.")
 		end
