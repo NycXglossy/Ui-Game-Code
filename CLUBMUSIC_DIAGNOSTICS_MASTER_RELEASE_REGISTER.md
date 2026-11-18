@@ -591,3 +591,6 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 
 
 - **2026-11-18 — Global API BindableFunction shutdown invalidation:** Global Service now tracks its own bound endpoint instances/callbacks and clears only callbacks still owned by the shutting-down Script, preventing stale closures while protecting callbacks rebound by a replacement service. Static source review only; no Luau or Studio runtime test. Source commit: `0e2932ffd12e7f76b370e2c240e5ea814680eb61`.
+
+
+- **2026-11-18 — Global API endpoint contract inventory:** compared controller `globalInvoke` names with Global Service `bindFunction` registrations; all 10 distinct controller endpoints have matching registrations. Static source inventory only; no endpoint runtime invocation or deployment. Documentation commit: `c2bdd13c77b23396b942f4656fea76ea85c307f1`.
