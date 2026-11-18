@@ -1387,6 +1387,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local navButtons: {[string]: TextButton} = {}
 	local navIconLabels: {[string]: Frame} = {}
+	-- Native icon geometry is static after construction. Cache its tintable
+	-- Frames/UIStrokes once so tab changes do not traverse every icon tree.
+	local navIconColorParts: {[string]: {Instance}} = {}
 	local navTextLabels: {[string]: TextLabel} = {}
 	local navIconBadges: {[string]: Frame} = {}
 	local navGroupLabels: {TextLabel} = {}
@@ -4716,11 +4719,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local textLabel = navTextLabels[name]
 			local iconColor = if selected then C.Gold else C.Muted
 			if iconRoot then
-				for _, part in ipairs(iconRoot:GetDescendants()) do
+				for _, part in ipairs(navIconColorParts[name] or {}) do
 					if part:IsA("UIStroke") then
 						part.Color = iconColor
 						part.Transparency = if selected then 0.02 else 0.12
-					elseif part:IsA("Frame") and part.BackgroundTransparency < 1 then
+					elseif part:IsA("Frame") then
 						part.BackgroundColor3 = iconColor
 					end
 				end
@@ -4839,6 +4842,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local badgeStroke = stroke(iconBadge, C.SurfaceLight, 1)
 		badgeStroke.Transparency = 0.72
 		local iconLabel = createNavIcon(iconBadge, tabName)
+		local tintParts: {Instance} = {}
+		for _, part in ipairs(iconLabel:GetDescendants()) do
+			if part:IsA("UIStroke") or (part:IsA("Frame") and part.BackgroundTransparency < 1) then
+				table.insert(tintParts, part)
+			end
+		end
 		local textLabel = make("TextLabel", {
 			Name = "NavLabel",
 			Position = UDim2.fromOffset(39, 0),
@@ -4854,6 +4863,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		}, button) :: TextLabel
 		navButtons[tabName] = button
 		navIconLabels[tabName] = iconLabel
+		navIconColorParts[tabName] = tintParts
 		navTextLabels[tabName] = textLabel
 		navIconBadges[tabName] = iconBadge
 		if tabName == "Moderation" or tabName == "Audio ID" then button.Visible = false end
