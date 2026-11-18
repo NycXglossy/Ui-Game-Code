@@ -98,3 +98,17 @@ Phase 16's client FPS/frame-time/memory/ping diagnostics remain client-local and
 - No kicks, bans, restarts, cleanup actions, throttling, DataStore/MemoryStore/MessagingService writes, remotes, or cross-server reporting were added.
 
 **Runtime acceptance:** verify the three Stats properties return finite values on a dedicated published server, the log cadence is approximately 15 seconds, memory samples remain approximately 30 seconds apart, missing Stats values are reported as partial rather than crashing, and the existing diagnostics snapshot/staff diagnostics output remains compatible. Source changes are not Studio or production runtime certification.
+
+
+## Phase 16 follow-up — opt-in client audio observations
+
+- Extended the existing opt-in client-local diagnostics service; the existing bootstrap remains disabled by default.
+- Every 10 seconds, the client checks the replicated, controller-owned modern AudioPlayer folders under SoundService and records whether a managed AudioPlayer is playing and its current TimePosition.
+- While a managed AudioPlayer is playing, the test client prints a concise local diagnostic line with playback time and the most recently sampled client Data Ping value.
+- This intentionally does not use the old `workspace.ClubAudio.MainTrack` Sound path. The modern backend creates managed AudioPlayer instances under SoundService, not a legacy MainTrack Sound.
+- Roblox AudioPlayer does not expose Sound.PlaybackLoudness. Loudness is therefore explicitly reported as unsupported/null; no fake loudness value or additional AudioAnalyzer processing graph was introduced.
+- Track titles and audio asset IDs are not exposed by this local diagnostic. The source is identified as `Modern AudioPlayer`; the current source graph does not provide a verified human-readable track title to this client sampler.
+- Observations remain client-local, untrusted, and absent from server telemetry. No RemoteEvent, RemoteFunction, server authorization, moderation, recovery, queue, or playback-control behavior was added.
+- Runtime acceptance: enable the existing client diagnostics bootstrap only in a test client; verify a managed AudioPlayer is discovered during normal playback and crossfade, the log cadence is approximately 10 seconds while playing, ping is a recent local sample, pause/stop states are not reported as playing, missing audio graphs return a bounded NotFound/Unavailable state, and client diagnostics remain disabled by default.
+
+**Limitation:** This is playback-state/time diagnostics for the modern AudioPlayer backend, not a loudness meter or track-title resolver. Do not add an AudioAnalyzer solely to reproduce the legacy Sound.PlaybackLoudness field without a separate measured need and audio-graph performance review.
