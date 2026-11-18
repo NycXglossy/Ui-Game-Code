@@ -336,3 +336,12 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Moderation history is rebuilt as a compact array of at most 20 validated entries. Malformed history members and non-array keys are ignored; accepted entries retain only the allowlisted field, boolean value, positive integer actor ID, bounded reason text, and finite timestamp. The new entry is prepended, preserving the existing newest-first history behavior and cap.
 - Internal update arguments now independently require an allowlisted field, boolean value, and positive integer actor ID. Existing BindableFunction authorization and admin-only `GetModerationHistory` access remain unchanged.
 - Static source checks only. No Luau compilation, DataStore concurrency/fault-injection tests, Roblox Studio/runtime test, or deployment was performed.
+
+
+## Moderation record size and write-budget audit (2026-11-18)
+
+- Confirmed the moderation record is keyed by validated user ID and uses one `UpdateAsync` per accepted moderation action. Reads and writes share the existing bounded server-local DataStore token bucket; its effective cap is 20 tokens with a 5-token/second refill (the generic caller capacities are clamped to the configured fallback ceiling). No additional DataStore read, retry loop, or shared budget service was added.
+- Tightened the write transform to persist only the documented moderation schema: `globalBan`, `requestBlocked`, `updatedAt`, `updatedBy`, `reason`, and the bounded `history` array. This avoids carrying arbitrary unknown keys forward and prevents unrelated legacy/corrupt metadata from inflating every subsequent record write.
+- The two enforcement flags are copied from the latest `UpdateAsync` value after schema validation, then only the requested flag is changed. The history remains capped at 20 compact, validated entries with reasons truncated to the configured 120-character limit. This gives the record a predictable small upper bound rather than allowing unbounded history or arbitrary nested metadata.
+- Failed local budget admission rejects before the DataStore call. A failed/cancelled `UpdateAsync` does not emit replay records, publish notifications, or fire the local moderation event. Durable state remains authoritative; MessagingService remains best-effort and periodic reconciliation remains the recovery path.
+- Static source checks only. No live DataStore request-budget measurements, repeated-write load test, concurrency/fault injection, Luau compilation, Studio/runtime test, or deployment was performed.
