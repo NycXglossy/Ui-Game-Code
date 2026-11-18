@@ -157,9 +157,17 @@ local function open(name: string)
 		local reset=button(body,"RESET TO 100%",C.gold,UDim2.new(.08,0,0,resetY),UDim2.new(.84,0,0,38))
 		reset.Activated:Connect(function() value=1; valueLabel.Text="1.00×"; local resetAlpha=(1-.5)/4.5; fill.Size=UDim2.new(resetAlpha,0,1,0); knob.Position=UDim2.new(resetAlpha,0,.5,0); invoke("Size",1) end)
 	elseif name=="Mount" then
-		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.05,0,.12,0),Size=UDim2.new(.9,0,0,60),Font=Enum.Font.GothamMedium,Text="Equip or unequip your available mount. A Mount Tool must be installed in your inventory.",TextWrapped=true,TextColor3=C.muted,TextSize=12},body)
-		local act=button(body,"EQUIP / UNEQUIP MOUNT",C.teal,UDim2.new(.08,0,.52,0),UDim2.new(.84,0,0,52))
-		act.Activated:Connect(function() invoke("Mount") end)
+		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.05,0,.12,0),Size=UDim2.new(.9,0,0,60),Font=Enum.Font.GothamMedium,Text="Spawn your Island Mount beside you, then use this control again to despawn it. The approved mount model is managed by the server.",TextWrapped=true,TextColor3=C.muted,TextSize=12},body)
+		local act=button(body,if player:GetAttribute("HasActiveIslandMount")==true then "DESPAWN MOUNT" else "SPAWN MOUNT",C.teal,UDim2.new(.08,0,.52,0),UDim2.new(.84,0,0,52))
+		act.Activated:Connect(function()
+			local operation = if player:GetAttribute("HasActiveIslandMount")==true then "Despawn" else "Spawn"
+			invoke("Mount", operation)
+		end)
+		connectPanel(player:GetAttributeChangedSignal("HasActiveIslandMount"), function()
+			if act.Parent then
+				act.Text = if player:GetAttribute("HasActiveIslandMount")==true then "DESPAWN MOUNT" else "SPAWN MOUNT"
+			end
+		end)
 	elseif name=="Clone" then
 		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.05,0,.12,0),Size=UDim2.new(.9,0,0,60),Font=Enum.Font.GothamMedium,Text="Create a temporary visual companion that mirrors your character. It is non-interactive and disappears after 12 seconds.",TextWrapped=true,TextColor3=C.muted,TextSize=12},body)
 		local act=button(body,"CREATE COMPANION",C.gold,UDim2.new(.08,0,.52,0),UDim2.new(.84,0,0,52))
