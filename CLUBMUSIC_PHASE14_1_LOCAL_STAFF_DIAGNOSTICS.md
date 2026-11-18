@@ -14,7 +14,7 @@ Extend Phase 14/16 observability without replacing the existing diagnostics stac
 - Extended `ClubMusic_Local_Service_Registry` with `RegisterDependency`.
 - A dependency records its expected Roblox Instance class and expected parent.
 - Every registry status read rechecks that the instance still exists in the expected hierarchy and has the expected class.
-- Missing, destroyed, reparented, or wrong-class dependencies report `Unavailable`; restoring the same instance to its expected hierarchy reports healthy on the next read.
+- Missing or destroyed dependencies report `Unavailable`; wrong-class or wrong-parent dependencies report `Misconfigured`; restoring the expected class and hierarchy reports healthy on the next read.
 - Registered the required `ServerStorage.ClubMusicGlobalAPI` folder and the local ServerHealth, Watchdog, and Diagnostics ModuleScripts.
 - Service interface checks remain separate from hierarchy checks. The registry does not start, stop, repair, or replace a service.
 
