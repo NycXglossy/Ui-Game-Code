@@ -19,6 +19,8 @@ local MAX_EVENT_IDS = 256
 local EVENT_ID_TTL = 30
 local COHORT_WINDOW_SECONDS = 60
 local MAX_COHORT_SUBJECTS = 128
+local MAX_COHORT_SOURCES = 16
+local MAX_COHORT_CODES = 32
 local MAX_RAID_REVIEWS = 32
 local MAX_SESSION_EVENTS = 1000
 local MAX_SESSIONS = 256
@@ -480,11 +482,19 @@ function Service:Record(signal: any, userId: any, source: any, severity: any, ev
 			end
 			evidence.count = math.min(3, evidence.count + 1)
 			evidence.categories[registry.category] = true
-			evidence.sources[safeSource] = true
-			evidence.codes[safeSignal] = true
+			if evidence.sources[safeSource] or countKeys(evidence.sources) < MAX_SOURCES_PER_SUBJECT then
+				evidence.sources[safeSource] = true
+			end
+			if evidence.codes[safeSignal] or countKeys(evidence.codes) < MAX_SIGNALS_PER_SUBJECT then
+				evidence.codes[safeSignal] = true
+			end
 			self.cohortCategories[registry.category] = true
-			self.cohortSources[safeSource] = true
-			self.cohortCodes[safeSignal] = true
+			if self.cohortSources[safeSource] or countKeys(self.cohortSources) < MAX_COHORT_SOURCES then
+				self.cohortSources[safeSource] = true
+			end
+			if self.cohortCodes[safeSignal] or countKeys(self.cohortCodes) < MAX_COHORT_CODES then
+				self.cohortCodes[safeSignal] = true
+			end
 			self.cohortSignalCount = math.min(MAX_COUNTER, self.cohortSignalCount + 1)
 			self:_rememberRaid(now)
 		end
@@ -569,6 +579,9 @@ function Service:GetStatus()
 		windowSeconds = WINDOW_SECONDS,
 		reviewTtlSeconds = INCIDENT_TTL_SECONDS,
 		maxEventIds = MAX_EVENT_IDS,
+		maxCohortSources = MAX_COHORT_SOURCES,
+		maxCohortSignalCodes = MAX_COHORT_CODES,
+		maxSessions = MAX_SESSIONS,
 		automaticEnforcement = false,
 		persistentWrites = 0,
 		crossServerWrites = 0,
