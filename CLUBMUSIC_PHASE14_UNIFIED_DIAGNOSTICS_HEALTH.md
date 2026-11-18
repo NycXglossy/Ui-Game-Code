@@ -96,3 +96,14 @@ Phase 15 adds a read-only ThreatIntelligence status provider to the existing ope
 ## Phase 16 completion integration
 
 The Phase 16 diagnostics completion work extends the existing coordinator rather than replacing it. The server snapshot now reads the controller's server-only aggregate diagnostics endpoint and CharacterPhysicsGuard status; ServerHealth reports a bounded memory trend; SafeCall reports an explicit latest outcome; and staff diagnostics include purchase, moderation lookup, playback, and security signal summaries. Client measurements remain local and opt-in. See `CLUBMUSIC_PHASE16_DIAGNOSTICS_COMPLETION.md` for implementation scope and remaining runtime acceptance.
+
+
+## Phase 14.1 — Staff Controls integration and local health history (2026-11-18)
+
+Phase 14.1 extends the existing diagnostics architecture without creating a parallel monitor. It adds class/parent dependency validation to the local service registry, registers the Global API folder and local diagnostics modules, and rechecks dependency hierarchy when staff reads a status snapshot. It adds a bounded 20-transition health history with degraded duration, consecutive degraded checks, and recovery timestamp. ServerHealth now reports average estimated FPS and maximum frame time alongside its existing frame-time and memory samples.
+
+The Phase 22 Staff Controls console now contains a Diagnostics overview. Server snapshots are requested through the existing server-authorized allowlisted staff command. The existing detailed diagnostics commands remain available. The overview starts the existing opt-in client diagnostics module only while an authorized staff member views the panel; FPS, ping, and client memory remain on that client and are never transmitted.
+
+**Boundaries:** no new diagnostics remote, no client telemetry transport, no diagnostics DataStore/MemoryStore/MessagingService use, no cross-server health aggregation, no automatic recovery or gameplay action, and no legacy diagnostics retirement.
+
+**Runtime gate remains open:** Studio and published test-server acceptance, authorization/revocation tests, dependency removal/restoration tests, UI lifecycle tests, performance profiling, and the full playback/purchase/moderation regression matrix are not completed by source changes. See `CLUBMUSIC_PHASE14_1_LOCAL_STAFF_DIAGNOSTICS.md`.
