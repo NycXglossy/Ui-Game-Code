@@ -3626,14 +3626,12 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if typeof(roster) ~= "table" then roster = {} end
 
 		local summary = card(82)
-		local manageable = 0
 		local blockedCount = 0
 		for _, entry: any in ipairs(roster) do
-			if entry.canMod == true and level >= 2 then manageable += 1 end
 			if entry.blocked == true then blockedCount += 1 end
 		end
-		label(summary, "LIVE PLAYER ROSTER", UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 18), C.Gold, 11, true)
-		label(summary, string.format("%d online   •   %d blocked   •   %d manageable", #roster, blockedCount, manageable), UDim2.fromOffset(14, 29), UDim2.new(1, -28, 0, 17), C.White, 11, false)
+		label(summary, "OWNER PASS-TIER MANAGEMENT", UDim2.fromOffset(14, 8), UDim2.new(1, -28, 0, 18), C.Gold, 11, true)
+		label(summary, string.format("%d online   •   %d with requests blocked", #roster, blockedCount), UDim2.fromOffset(14, 29), UDim2.new(1, -28, 0, 17), C.White, 11, false)
 		local ownerAwardEligible = false
 		for _, entry: any in ipairs(roster) do
 			if entry.canAwardPassTier == true then ownerAwardEligible = true; break end
