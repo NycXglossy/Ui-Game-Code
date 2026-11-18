@@ -114,12 +114,17 @@ function Service:_observeToolRemoved(player: Player, tool: Tool)
 	end)
 end
 
-function Service:_detachToolContainer(state: PlayerState, container: Instance)
+function Service:_detachToolContainer(player: Player, state: PlayerState, container: Instance)
 	local connections = state.inventoryContainerConnections[container]
 	state.inventoryContainerConnections[container] = nil
 	state.inventoryContainers[container] = nil
 	if connections then
 		for _, connection in ipairs(connections) do connection:Disconnect() end
+	end
+	-- Reconcile Tools left inside a detached/replaced container. The deferred
+	-- check preserves any Tool already transferred to Character or a new Backpack.
+	for _, child in ipairs(container:GetChildren()) do
+		if child:IsA("Tool") then self:_observeToolRemoved(player, child) end
 	end
 end
 
@@ -140,7 +145,7 @@ function Service:_attachToolContainer(player: Player, container: Instance)
 	end))
 	table.insert(connections, container.AncestryChanged:Connect(function(_, parent)
 		if parent == nil and self.states[player.UserId] == state then
-			self:_detachToolContainer(state, container)
+			self:_detachToolContainer(player, state, container)
 		end
 	end))
 end
@@ -255,7 +260,7 @@ function Service:_attachCharacter(player: Player, character: Model)
 	for _, connection in ipairs(state.characterConnections) do connection:Disconnect() end
 	table.clear(state.characterConnections)
 
-	if state.character then self:_detachToolContainer(state, state.character) end
+	if state.character then self:_detachToolContainer(player, state, state.character) end
 	state.character = character
 	state.appearanceReady = false
 	table.clear(state.knownAccessories)
