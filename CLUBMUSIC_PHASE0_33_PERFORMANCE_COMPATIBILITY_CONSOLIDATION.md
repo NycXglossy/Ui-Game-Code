@@ -156,3 +156,10 @@ The standalone `RequestSongEvent` / `songQueue` sample is not installed. The exi
 - `UI_Network.lua`: removed the retired action from client allowlists and cooldown maps (including duplicate entries).
 - The server retains only a compatibility rejection for old clients that still send the retired action.
 - Commits: renderer `c7b2630c0875d8bdca0ae2d5301f8b127332b8f4`; network `a010461abd588f4b2a17a6568ed72d11433373eb`.
+
+
+## Follow-up audit correction — local fallback limiter TTL
+
+At branch head `ee80c913ea9943f08fd441adf6bce47199b2ab25`, the global service referenced an undefined `CONFIG.BudgetKeyTtlSeconds` while pruning its server-local fallback token buckets. Added the explicit `FallbackBucketIdleSeconds = 300` setting and wired the prune threshold to it. This prevents the periodic idle-bucket cleanup from comparing a number against nil after the first 15-second prune interval. The cleanup remains local, bounded, and independent of MemoryStore. Also corrected stale source comments that still described retired playback synchronization as opt-in.
+
+Validation: source-level reference check only; no Luau compiler or Roblox runtime test was run.
