@@ -2529,12 +2529,18 @@ ControllerFunctions.ownsGamePass = function(userId: number, passId: number): boo
 end
 
 ControllerFunctions.refreshPersonalPasses = function(player: Player)
+	if player.Parent ~= Players then return end
 	local userId = player.UserId
 	local ownsPersonal2x = ControllerFunctions.ownsGamePass(userId, CONFIG.PersonalXP2xPassId)
+	if player.Parent ~= Players or player.UserId ~= userId then return end
 	local ownsPersonal4x = ControllerFunctions.ownsGamePass(userId, CONFIG.PersonalXP4xPassId)
+	if player.Parent ~= Players or player.UserId ~= userId then return end
 	local ownsMount = ControllerFunctions.ownsGamePass(userId, CONFIG.MountPassId)
+	if player.Parent ~= Players or player.UserId ~= userId then return end
 	local ownsCompanion = ControllerFunctions.ownsGamePass(userId, CONFIG.CompanionPassId)
+	if player.Parent ~= Players or player.UserId ~= userId then return end
 	local ownsStageClubLighting = ControllerFunctions.ownsGamePass(userId, CONFIG.StageClubLightingPassId)
+	if player.Parent ~= Players or player.UserId ~= userId then return end
 	player:SetAttribute("HasPersonalXP2xPass", ownsPersonal2x)
 	player:SetAttribute("HasPersonalXP4xPass", ownsPersonal4x)
 	player:SetAttribute("HasIslandMountPass", ownsMount)
@@ -7092,8 +7098,11 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Playe
 		or passId == CONFIG.MountPassId or passId == CONFIG.CompanionPassId or passId == CONFIG.StageClubLightingPassId
 	if not isMembershipPass and not isNewFeaturePass then return end
 	task.spawn(function()
+		if player.Parent ~= Players then return end
 		if isNewFeaturePass then ControllerFunctions.refreshPersonalPasses(player) end
+		if player.Parent ~= Players then return end
 		if isMembershipPass then ControllerFunctions.refreshVip(player, true) end
+		if player.Parent ~= Players then return end
 		if isMembershipPass then
 			ControllerFunctions.applyVipAttribute(player)
 			ControllerFunctions.syncTitleTagUnlocks(player)
