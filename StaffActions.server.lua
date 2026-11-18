@@ -97,6 +97,7 @@ local function recordAudit(
 end
 
 local lastActionAt: {[number]: number} = {}
+local lastStatusAt: {[number]: number} = {}
 local function consumeActionCooldown(player: Player): boolean
 	local now = os.clock()
 	local previous = lastActionAt[player.UserId]
@@ -221,6 +222,10 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 	if player.Parent ~= Players or typeof(action) ~= "string" then return end
 
 	if action == "GetStatus" then
+		local now = os.clock()
+		local previousStatus = lastStatusAt[player.UserId]
+		if previousStatus and now - previousStatus < 1 then return end
+		lastStatusAt[player.UserId] = now
 		local level = getVerifiedLevel(player)
 		if level == nil or level < 2 then
 			sendResult(player, action, false, "Staff console access is unavailable.")
@@ -333,6 +338,7 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	lastActionAt[player.UserId] = nil
+	lastStatusAt[player.UserId] = nil
 end)
 
 script.Destroying:Connect(function()
