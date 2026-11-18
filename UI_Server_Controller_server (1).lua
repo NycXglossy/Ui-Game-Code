@@ -1772,15 +1772,16 @@ end
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
-local receiptHashModule = ControllerFunctions.findServerStorageModule("ClubMusic_ReceiptHash")
+local receiptSecurityCore = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+local receiptHashModule = receiptSecurityCore and receiptSecurityCore:FindFirstChild("ReceiptHash")
 if not receiptHashModule or not receiptHashModule:IsA("ModuleScript") then
-	remotes:SetAttribute("StartupError", "Missing ServerStorage.ClubMusic_ReceiptHash ModuleScript.")
-	error("[ClubMusic] Missing ServerStorage.ClubMusic_ReceiptHash ModuleScript.")
+	remotes:SetAttribute("StartupError", "Missing ServerStorage.ClubMusicSecurityCore.ReceiptHash ModuleScript.")
+	error("[ClubMusic] Security Core ReceiptHash module is required.")
 end
 local receiptHashOk, receiptHashResult = pcall(require, receiptHashModule)
-if not receiptHashOk then
-	remotes:SetAttribute("StartupError", "ClubMusic_ReceiptHash require failed: " .. string.sub(tostring(receiptHashResult), 1, 180))
-	error("[ClubMusic] ClubMusic_ReceiptHash failed to load: " .. tostring(receiptHashResult))
+if not receiptHashOk or typeof(receiptHashResult) ~= "table" or type(receiptHashResult.KeySuffix) ~= "function" then
+	remotes:SetAttribute("StartupError", "Security Core ReceiptHash failed to load.")
+	error("[ClubMusic] Security Core ReceiptHash failed to load: " .. tostring(receiptHashResult))
 end
 local ReceiptHash = receiptHashResult
 local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
@@ -1902,9 +1903,7 @@ type Profile = {
 }
 
 local profiles: {[number]: Profile} = {}
-type PendingReceiptMemory = { profile: Profile, productData: {[string]: any} }
-local receiptMemoryPending: {[string]: PendingReceiptMemory} = {}
-local receiptMemoryApplied: {[string]: Profile} = {}
+local receiptTransactions: any = nil
 queue = {}
 local ServerStorageForQueue = serverStorage
 remotes:SetAttribute("StartupStage", "LoadingMusicQueueManager")
@@ -2987,8 +2986,9 @@ ControllerFunctions.saveProfile = function(player: Player)
 				return nil -- This server no longer owns the profile; never overwrite another session.
 			end
 			local pendingReceiptId = if typeof(oldData.pendingReceipt) == "string" then oldData.pendingReceipt else nil
-			local pendingMemory = if pendingReceiptId then receiptMemoryPending[pendingReceiptId] else nil
-			if pendingMemory and pendingMemory.profile == profile then
+			local hasPendingReceiptMemory = if pendingReceiptId and receiptTransactions
+				then receiptTransactions:HasPendingMemory(profile, pendingReceiptId) else false
+			if hasPendingReceiptMemory then
 				-- Do not overwrite a durably applied reward with a stale in-memory snapshot.
 				return nil
 			end
@@ -4007,270 +4007,50 @@ for slotNumber = 2, TITLE_SLOT_COUNT do
 	})
 end
 
--- Durable receipt journal. The profile reward and pending marker are committed in
--- one UpdateAsync; a separate hashed per-purchase journal is completed before
--- ProcessReceipt acknowledges the purchase. The legacy profile receipt map is read
--- for migration only and is not expanded by new purchases.
-ControllerFunctions.applyReceiptToStoredData = function(data: {[string]: any}, productData: {[string]: any}): boolean
-	if productData.type == "Donation" then
-		local amount = math.max(0, math.floor(tonumber(productData.amount) or 0))
-		data.tickets = math.max(0, math.floor(tonumber(data.tickets) or 0)) + math.floor(amount * 1.5)
-		data.coins = math.max(0, math.floor(tonumber(data.coins) or 0)) + amount * 10
-		return true
-	elseif productData.type == "Item" then
-		local name = productData.name or ""
-		data.ownedTags = if typeof(data.ownedTags) == "table" then data.ownedTags else {}
-		if name == "Glowsticks" then data.glowsticks = math.max(0, math.floor(tonumber(data.glowsticks) or 0)) + 2
-		elseif name == "Tiki Mask" then data.ownedTags.tiki = true
-		elseif name == "Neon Aura" then data.ownedTags.sunset = true
-		elseif name == "Neon Lei" then data.coins = math.max(0, math.floor(tonumber(data.coins) or 0)) + 500
-		elseif name == "LED Shades" then data.ownedTags.bass = true
-		else return false end
-		return true
-	elseif productData.type == "TitleSlot" then
-		local slotNumber = math.clamp(math.floor(tonumber(productData.slot) or 2), 2, TITLE_SLOT_COUNT)
-		data.unlockedSlots = math.max(1, math.floor(tonumber(data.unlockedSlots) or 1), slotNumber)
-		return true
-	elseif productData.type == "XPBoost" then
-		return productData.multiplier == 2 or productData.multiplier == 4
-	end
-	return false
-end
-
-ControllerFunctions.applyReceiptToMemory = function(profile: Profile, productData: {[string]: any})
-	if productData.type == "Donation" then
-		local amount = math.max(0, math.floor(tonumber(productData.amount) or 0))
-		profile.tickets += math.floor(amount * 1.5)
-		profile.coins += amount * 10
-	elseif productData.type == "Item" then
-		local name = productData.name or ""
-		if name == "Glowsticks" then profile.glowsticks += 2
-		elseif name == "Tiki Mask" then profile.ownedTags.tiki = true
-		elseif name == "Neon Aura" then profile.ownedTags.sunset = true
-		elseif name == "Neon Lei" then profile.coins += 500
-		elseif name == "LED Shades" then profile.ownedTags.bass = true end
-	elseif productData.type == "TitleSlot" then
-		local slotNumber = math.clamp(math.floor(tonumber(productData.slot) or 2), 2, TITLE_SLOT_COUNT)
-		profile.unlockedSlots = math.max(profile.unlockedSlots, slotNumber)
-	elseif productData.type == "XPBoost" then
-		-- The global boost is applied by the global service, not to one profile.
-	end
-end
-
-local productReceiptJournalStore = DataStoreService:GetDataStore("ClubMusic_ProductReceipts_v1")
-
-ControllerFunctions.productReceiptKey = function(userId: number, receiptId: string): string
-	return "r_" .. ReceiptHash.KeySuffix(tostring(userId) .. ":" .. receiptId)
-end
-
-ControllerFunctions.recoverPendingProductReceipt = function(userId: number): (boolean, string?)
-	local journalStore = productReceiptJournalStore
-	if not ControllerFunctions.waitForDataStoreBudget(10) then return false, "DataStore budget is busy while recovering a receipt" end
-	local readOk, profileData = pcall(function() return store:GetAsync(tostring(userId)) end)
-	if not readOk then return false, tostring(profileData) end
-	if typeof(profileData) ~= "table" or typeof(profileData.pendingReceipt) ~= "string" then return true, nil end
-
-	local pendingId = profileData.pendingReceipt
-	local journalKey = ControllerFunctions.productReceiptKey(userId, pendingId)
-	if not ControllerFunctions.waitForDataStoreBudget(10) then return false, "DataStore budget is busy while reading receipt journal" end
-	local journalOk, journal = pcall(function() return journalStore:GetAsync(journalKey) end)
-	if not journalOk then return false, tostring(journal) end
-	if typeof(journal) ~= "table" or journal.purchaseId ~= pendingId
-		or journal.userId ~= userId or journal.status ~= "Prepared" and journal.status ~= "Completed" then
-		warn("[ClubMusic] Profile has an unrecoverable pending receipt marker for userId " .. tostring(userId))
-		return false, "Pending receipt journal is missing or mismatched"
-	end
-
-	local pendingMemory = receiptMemoryPending[pendingId]
-	local currentProfile = profiles[userId]
-	if pendingMemory and pendingMemory.profile == currentProfile and currentProfile then
-		ControllerFunctions.applyReceiptToMemory(currentProfile, pendingMemory.productData)
-		receiptMemoryApplied[pendingId] = currentProfile
-		receiptMemoryPending[pendingId] = nil
-	end
-
-	if journal.status ~= "Completed" then
-		if not ControllerFunctions.waitForDataStoreBudget(10) then return false, "DataStore budget is busy while completing receipt journal" end
-		local completeOk, completed = pcall(function()
-			return journalStore:UpdateAsync(journalKey, function(old)
-				if typeof(old) ~= "table" or old.purchaseId ~= pendingId or old.userId ~= userId then return nil end
-				local nextRecord = table.clone(old)
-				nextRecord.status = "Completed"
-				nextRecord.completedAt = os.time()
-				return nextRecord
-			end)
-		end)
-		if not completeOk or typeof(completed) ~= "table" or completed.status ~= "Completed" then
-			return false, "Could not complete pending receipt journal"
-		end
-	end
-
-	if not ControllerFunctions.waitForDataStoreBudget(10) then return false, "DataStore budget is busy while clearing pending receipt" end
-	local clearOk, cleared = pcall(function()
-		return store:UpdateAsync(tostring(userId), function(old)
-			if typeof(old) ~= "table" or typeof(old.sessionLock) ~= "table"
-				or old.sessionLock.owner ~= SESSION_TOKEN then return nil end
-			if old.pendingReceipt ~= pendingId then return old end
-			local nextData = table.clone(old)
-			nextData.pendingReceipt = nil
-			nextData.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
-			return nextData
-		end)
-	end)
-	if not clearOk or typeof(cleared) ~= "table" or cleared.pendingReceipt == pendingId then
-		return false, "Could not clear recovered pending receipt marker"
-	end
-	return true, nil
-end
-
-ControllerFunctions.persistReceipt = function(userId: number, receiptId: string, productData: {[string]: any}): (boolean, boolean, string?)
-	if USE_STUDIO_MEMORY_PROFILES then
-		return profiles[userId] ~= nil, false, nil
-	end
-	if not ControllerFunctions.acquireProfileWriteLock(userId) then
-		return false, false, "Profile is busy; receipt will be retried"
-	end
-
-	local journalStore = productReceiptJournalStore
-	local recovered, recoveryError = ControllerFunctions.recoverPendingProductReceipt(userId)
-	if not recovered then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, recoveryError end
-
-	local journalKey = ControllerFunctions.productReceiptKey(userId, receiptId)
-	if not ControllerFunctions.waitForDataStoreBudget(10) then
-		ControllerFunctions.releaseProfileWriteLock(userId)
-		return false, false, "DataStore budget is busy while reading receipt journal"
-	end
-	local readOk, journal = pcall(function() return journalStore:GetAsync(journalKey) end)
-	if not readOk then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, tostring(journal) end
-	if typeof(journal) == "table" then
-		if journal.purchaseId ~= receiptId or journal.userId ~= userId or journal.productId ~= productData.productId then
-			ControllerFunctions.releaseProfileWriteLock(userId)
-			return false, false, "Receipt journal key collision or product mismatch"
-		end
-		if journal.status == "Completed" then
-			local currentProfile = profiles[userId]
-			local pendingMemory = receiptMemoryPending[receiptId]
-			if pendingMemory and pendingMemory.profile == currentProfile and currentProfile then
-				ControllerFunctions.applyReceiptToMemory(currentProfile, pendingMemory.productData)
-				receiptMemoryApplied[receiptId] = currentProfile
-				receiptMemoryPending[receiptId] = nil
+-- Durable receipt journal ownership is in Security Core. This controller only
+-- supplies the existing profile/session adapters and product reward mutators.
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("ReceiptTransactionService") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new, {
+				profileStore = store,
+				journalStore = DataStoreService:GetDataStore("ClubMusic_ProductReceipts_v1"),
+				getProfile = function(userId: number) return profiles[userId] end,
+				getSessionToken = function() return SESSION_TOKEN end,
+				getSessionLockSeconds = function() return SESSION_LOCK_SECONDS end,
+				waitForDataStoreBudget = function(timeout: number)
+					return ControllerFunctions.waitForDataStoreBudget(timeout)
+				end,
+				acquireProfileWriteLock = function(userId: number)
+					return ControllerFunctions.acquireProfileWriteLock(userId)
+				end,
+				releaseProfileWriteLock = function(userId: number)
+					return ControllerFunctions.releaseProfileWriteLock(userId)
+				end,
+				applyReceiptToStoredData = function(data: {[string]: any}, productData: {[string]: any})
+					return ControllerFunctions.applyReceiptToStoredData(data, productData)
+				end,
+				applyReceiptToMemory = function(profile: Profile, productData: {[string]: any})
+					ControllerFunctions.applyReceiptToMemory(profile, productData)
+				end,
+				keySuffix = function(value: string) return ReceiptHash.KeySuffix(value) end,
+				useStudioMemoryProfiles = USE_STUDIO_MEMORY_PROFILES,
+			})
+			if createOk and typeof(instance) == "table" and type(instance.Commit) == "function"
+				and type(instance.HasPendingMemory) == "function" and type(instance.ForgetProfile) == "function" then
+				receiptTransactions = instance
+			else
+				warn("[ClubMusic][ReceiptTransaction] Security Core transaction service construction failed: " .. tostring(instance))
 			end
-			local memoryApplied = currentProfile ~= nil and receiptMemoryApplied[receiptId] == currentProfile
-			if not memoryApplied then receiptMemoryPending[receiptId] = nil end
-			ControllerFunctions.releaseProfileWriteLock(userId)
-			return true, not memoryApplied, nil
-		end
-		if journal.status ~= "Prepared" then
-			ControllerFunctions.releaseProfileWriteLock(userId)
-			return false, false, "Receipt journal has an invalid status"
+		else
+			warn("[ClubMusic][ReceiptTransaction] Security Core transaction module failed to load: " .. tostring(exported))
 		end
 	else
-		if not ControllerFunctions.waitForDataStoreBudget(10) then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while preparing receipt" end
-		local prepareOk, prepared = pcall(function()
-			return journalStore:UpdateAsync(journalKey, function(old)
-				if typeof(old) == "table" then return old end
-				return {status = "Prepared", purchaseId = receiptId, userId = userId,
-					productId = productData.productId, productType = productData.type, createdAt = os.time()}
-			end)
-		end)
-		if not prepareOk or typeof(prepared) ~= "table" or prepared.purchaseId ~= receiptId
-			or prepared.userId ~= userId or prepared.productId ~= productData.productId
-			or (prepared.status ~= "Prepared" and prepared.status ~= "Completed") then
-			ControllerFunctions.releaseProfileWriteLock(userId)
-			return false, false, "Could not prepare durable receipt journal"
-		end
-		journal = prepared
-		if prepared.status == "Completed" then
-			local currentProfile = profiles[userId]
-			local pendingMemory = receiptMemoryPending[receiptId]
-			if pendingMemory and pendingMemory.profile == currentProfile and currentProfile then
-				ControllerFunctions.applyReceiptToMemory(currentProfile, pendingMemory.productData)
-				receiptMemoryApplied[receiptId] = currentProfile
-				receiptMemoryPending[receiptId] = nil
-			end
-			local memoryApplied = currentProfile ~= nil and receiptMemoryApplied[receiptId] == currentProfile
-			if not memoryApplied then receiptMemoryPending[receiptId] = nil end
-			ControllerFunctions.releaseProfileWriteLock(userId)
-			return true, not memoryApplied, nil
-		end
+		warn("[ClubMusic][ReceiptTransaction] Security Core transaction module is missing; Developer Product receipts will remain retryable.")
 	end
-
-	if not ControllerFunctions.waitForDataStoreBudget(10) then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, "DataStore budget is busy while applying receipt" end
-	local alreadyProcessed = false
-	-- Set before yielding: UpdateAsync can commit even if the client-side call later errors.
-	-- A retry can then reconcile the same in-memory Profile exactly once.
-	local receiptProfile = profiles[userId]
-	if not receiptProfile then ControllerFunctions.releaseProfileWriteLock(userId); return false, false, "Profile disappeared before receipt application" end
-	receiptMemoryPending[receiptId] = {profile = receiptProfile, productData = productData}
-	local applyOk, applied = pcall(function()
-		return store:UpdateAsync(tostring(userId), function(oldData)
-			if typeof(oldData) ~= "table" or typeof(oldData.sessionLock) ~= "table"
-				or oldData.sessionLock.owner ~= SESSION_TOKEN then return nil end
-			if typeof(oldData.pendingReceipt) == "string" then return nil end
-			local data = table.clone(oldData)
-			data.receiptIds = if typeof(data.receiptIds) == "table" then table.clone(data.receiptIds) else {}
-			if data.receiptIds[receiptId] == true then
-				alreadyProcessed = true
-				return data
-			end
-			if not ControllerFunctions.applyReceiptToStoredData(data, productData) then return nil end
-			data.pendingReceipt = receiptId -- reward and recovery marker are one atomic profile write.
-			data.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
-			return data
-		end)
-	end)
-	if not applyOk or typeof(applied) ~= "table" then
-		ControllerFunctions.releaseProfileWriteLock(userId)
-		return false, false, "Receipt reward was not confirmed in the profile"
-	end
-
-	if alreadyProcessed then
-		receiptMemoryPending[receiptId] = nil
-	else
-		ControllerFunctions.applyReceiptToMemory(receiptProfile, productData)
-		receiptMemoryApplied[receiptId] = receiptProfile
-		receiptMemoryPending[receiptId] = nil
-	end
-	if not ControllerFunctions.waitForDataStoreBudget(10) then
-		ControllerFunctions.releaseProfileWriteLock(userId)
-		return false, false, "DataStore budget is busy while completing receipt journal"
-	end
-	local completeOk, completed = pcall(function()
-		return journalStore:UpdateAsync(journalKey, function(old)
-			if typeof(old) ~= "table" or old.purchaseId ~= receiptId or old.userId ~= userId then return nil end
-			local nextRecord = table.clone(old)
-			nextRecord.status = "Completed"
-			nextRecord.completedAt = os.time()
-			return nextRecord
-		end)
-	end)
-	if not completeOk or typeof(completed) ~= "table" or completed.status ~= "Completed" then
-		ControllerFunctions.releaseProfileWriteLock(userId)
-		return false, false, "Reward is saved; receipt journal completion will recover on retry"
-	end
-
-	if not ControllerFunctions.waitForDataStoreBudget(10) then
-		ControllerFunctions.releaseProfileWriteLock(userId)
-		return false, false, "Receipt is durable; pending marker cleanup will recover on retry"
-	end
-	local clearOk, cleared = pcall(function()
-		return store:UpdateAsync(tostring(userId), function(old)
-			if typeof(old) ~= "table" or typeof(old.sessionLock) ~= "table"
-				or old.sessionLock.owner ~= SESSION_TOKEN then return nil end
-			if old.pendingReceipt ~= receiptId then return old end
-			local nextData = table.clone(old)
-			nextData.pendingReceipt = nil
-			nextData.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
-			return nextData
-		end)
-	end)
-	if not clearOk or typeof(cleared) ~= "table" or cleared.pendingReceipt == receiptId then
-		ControllerFunctions.releaseProfileWriteLock(userId)
-		return false, false, "Receipt is durable; pending marker cleanup will recover on retry"
-	end
-
-	ControllerFunctions.releaseProfileWriteLock(userId)
-	return true, alreadyProcessed, nil
 end
 
 local function recordReceiptReplayEvent(eventType: string, userId: number, productId: number, severity: string, outcome: string)
@@ -4335,7 +4115,8 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 		publishState(nil)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
-	local ok, alreadyProcessed, err = ControllerFunctions.persistReceipt(userId, receiptId, productData)
+	if not receiptTransactions then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	local ok, alreadyProcessed, err = receiptTransactions:Commit(userId, receiptId, productData)
 	if not ok then
 		warn("[ClubMusic] Receipt persistence failed for userId " .. tostring(userId) .. " productId " .. tostring(productId) .. ": " .. tostring(err))
 		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptPersistenceFailed", tostring(err))
@@ -4354,7 +4135,6 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	if USE_STUDIO_MEMORY_PROFILES then ControllerFunctions.applyReceiptToMemory(profile, productData) end
-	receiptMemoryApplied[receiptId] = nil
 	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Receipt persistence completed and reward application proceeded")
 	recordReceiptReplayEvent("receipt_granted", userId, productId, "Info", "DurableReceiptCommitted")
 	player:SetAttribute("Tickets", profile.tickets)
@@ -4452,14 +4232,17 @@ else
 end
 if receiptAuthorityStatus then
 	receiptAuthorityStatus.OnInvoke = function()
-		return if receiptAuthority then receiptAuthority:GetStatus()
-			else {state = "Unavailable", scope = "ServerLocalIngress", durableAuthority = "ExistingClubMusicReceiptJournals"}
+		local ingress = if receiptAuthority then receiptAuthority:GetStatus()
+			else {state = "Unavailable", scope = "ServerLocalIngress"}
+		local transaction = if receiptTransactions then receiptTransactions:GetStatus() else {state = "Unavailable"}
+		return {state = if ingress.state == "Ready" and transaction.state == "Ready" then "Ready" else "Degraded",
+			scope = "ServerLocalReceiptAuthority", ingress = ingress, transaction = transaction}
 	end
 end
 
--- This controller remains the only MarketplaceService.ProcessReceipt owner.
--- Security Core validates, serializes and fast-path deduplicates; the existing
--- durable profile and global XP receipt journals remain the transaction authority.
+-- This controller remains Roblox's single ProcessReceipt callback adapter.
+-- Security Core owns validation, serialization, profile receipt journaling, and
+-- recovery. The Global Service retains the existing cross-server XP boost journal.
 MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	if not receiptAuthority then return Enum.ProductPurchaseDecision.NotProcessedYet end
 	return receiptAuthority:Process(receiptInfo)
@@ -7336,12 +7119,7 @@ Players.PlayerRemoving:Connect(function(player)
 		warn("[ClubMusic] Final profile save failed; retaining session lease until expiry for userId " .. tostring(userId))
 	end
 	local departingProfile = profiles[userId]
-	for receiptId, pendingMemory in pairs(receiptMemoryPending) do
-		if pendingMemory.profile == departingProfile then receiptMemoryPending[receiptId] = nil end
-	end
-	for receiptId, appliedProfile in pairs(receiptMemoryApplied) do
-		if appliedProfile == departingProfile then receiptMemoryApplied[receiptId] = nil end
-	end
+	if receiptTransactions then receiptTransactions:ForgetProfile(departingProfile) end
 	profiles[userId] = nil
 	-- Final save/lease handling has completed; discard the local writer lock.
 	profileWriteLocks[userId] = nil
