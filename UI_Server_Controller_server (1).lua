@@ -2639,8 +2639,11 @@ end
 
 -- Filters player-authored text on the server before storing or replicating it. Returns nil on failure.
 ControllerFunctions.filterTitleText = function(player: Player, rawText: string): string?
+	if typeof(rawText) ~= "string" or #rawText > 256 then return nil end
 	local trimmed = string.match(rawText, "^%s*(.-)%s*$") or ""
 	if trimmed == "" then return "" end
+	local characterLength = utf8.len(trimmed)
+	if not characterLength or characterLength > MAX_CUSTOM_TITLE_LENGTH then return nil end
 	local ok, result = pcall(function()
 		local filtered = TextService:FilterStringAsync(trimmed, player.UserId)
 		return filtered:GetNonChatStringForBroadcastAsync()
@@ -4594,8 +4597,11 @@ ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number,
 	end
 	clean.text = filtered
 
-	-- The profile may have been unloaded while the filter request yielded.
-	if profiles[player.UserId] ~= profile or player.Parent ~= Players then return false end
+	-- Filtering yields. Revalidate profile ownership, live caller, entitlement,
+	-- and slot access immediately before committing the filtered text.
+	if profiles[player.UserId] ~= profile or player.Parent ~= Players
+		or not ControllerFunctions.hasTikiTideAccess(player)
+		or slotNumber > profile.unlockedSlots then return false end
 	ControllerFunctions.recordTextReplayEvent(player, "custom_title_filtered")
 	local safeTexts = filteredTitleTextByUserId[player.UserId]
 	if not safeTexts then safeTexts = {}; filteredTitleTextByUserId[player.UserId] = safeTexts end
@@ -5468,6 +5474,11 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, "Roblox text filtering is unavailable. This title remains hidden; please try again.", "warn")
 			return
 		end
+		-- The filter call yields; entitlement and profile identity must still be
+		-- valid before switching the replicated active title.
+		if profiles[player.UserId] ~= profile or player.Parent ~= Players
+			or not ControllerFunctions.hasTikiTideAccess(player)
+			or slotNumber > profile.unlockedSlots then return end
 		profile.activeSlot = slotNumber
 		ControllerFunctions.applyTitleAttributes(player, profile)
 		ControllerFunctions.scheduleProfileSave(player)
