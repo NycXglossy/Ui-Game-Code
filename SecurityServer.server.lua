@@ -200,6 +200,8 @@ if vipZone and vipZone:IsA("BasePart") then
 
 			-- VIP is resolved only by the main controller's EntitlementAuthority.
 			-- Wait briefly for the authoritative entitlement attribute; unresolved access is denied.
+			local zoneCheckAt = os.clock()
+			zoneCooldowns[player.UserId] = zoneCheckAt
 			local hasVip = player:GetAttribute("IsVIP")
 			local entitlementDeadline = os.clock() + 8
 			while typeof(hasVip) ~= "boolean" and os.clock() < entitlementDeadline
@@ -212,8 +214,18 @@ if vipZone and vipZone:IsA("BasePart") then
 				and (clubClosedState :: BoolValue).Value
 			local level = getStaffLevel(player)
 			local isStaff = level ~= nil and level >= 1
-			if closed and isStaff then return end
-			if not closed and hasVip == true then return end
+			if closed and isStaff then
+				task.delay(ZONE_COOLDOWN_SECONDS, function()
+					if zoneCooldowns[player.UserId] == zoneCheckAt then zoneCooldowns[player.UserId] = nil end
+				end)
+				return
+			end
+			if not closed and hasVip == true then
+				task.delay(ZONE_COOLDOWN_SECONDS, function()
+					if zoneCooldowns[player.UserId] == zoneCheckAt then zoneCooldowns[player.UserId] = nil end
+				end)
+				return
+			end
 			-- Unknown entitlement and unavailable staff verification fail closed.
 			if isStaff then return end
 
