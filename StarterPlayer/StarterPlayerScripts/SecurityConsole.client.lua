@@ -314,7 +314,7 @@ local function updateForm()
 	hint.Text = selected.help
 	local kind = selected.kind or "none"
 	inputA.Visible = kind ~= "none" and kind ~= "detail"
-	inputB.Visible = kind == "targetReason" or kind == "targetOptionReason" or kind == "targetReasonOption" or kind == "incident" or kind == "policy" or kind == "detail"
+	inputB.Visible = kind == "targetReason" or kind == "targetOptionReason" or kind == "targetReasonOption" or kind == "incident" or kind == "policy" or kind == "maintenance" or kind == "detail"
 	inputC.Visible = kind == "targetOptionReason" or kind == "targetReasonOption" or kind == "replay" or kind == "incident"
 	if kind == "target" then inputA.PlaceholderText = "Roblox UserId"
 	elseif kind == "queue" then inputA.PlaceholderText = "Queue entry ID"
