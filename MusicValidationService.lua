@@ -115,7 +115,8 @@ function MusicValidationService:GetAudioAssetInfo(assetId: number): (boolean, As
 	local cached = self.cache[assetId]
 	if cached then
 		if cached.expiresAt > now then
-			return cached.valid, if cached.valid then cached.info :: AssetInfo else cached.error :: string, true
+			local cachedValue: AssetInfo | string = if cached.valid then cached.info :: AssetInfo else cached.error :: string
+			return cached.valid, cachedValue, true
 		end
 		self.cache[assetId] = nil
 	end
