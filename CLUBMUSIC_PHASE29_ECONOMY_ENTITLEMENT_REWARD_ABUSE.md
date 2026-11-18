@@ -160,3 +160,33 @@ Daily claim and title-tag purchase state changes are synchronous against the one
 Static source checks confirmed the expected 20 configured group/pass/product identifiers are present, the donation IDs are included in startup metadata checks, the controller contains one ProcessReceipt assignment, the callback delegates to ReceiptAuthority, the old controller-local 512-entry cache is removed, and the existing profile/global durable journals and legacy XP receipt compatibility paths remain in place.
 
 **Migration boundary:** ReceiptAuthority now owns validation, server product resolution, in-flight exclusion, bounded successful-receipt caching, and dispatch into the existing transaction handlers. The durable profile journal implementation still resides in the controller, while global XP receipt persistence remains in the cross-server service. Those storage backends were intentionally not rewritten in this first integration slice; their journal names, keys, recovery protocol, and existing production data compatibility remain unchanged.
+
+## Player-to-player transfer proposal audit (TipPlayerRemote)
+
+The supplied `EconomyHandler.server.lua` example was reviewed against the actual branch source. It is not installed as written and no `TipPlayerRemote` or existing player-to-player transfer endpoint was found in the inspected controller and Utility Bar sources.
+
+### Confirmed existing economy ownership
+
+- Main ClubMusic currency is `Profile.coins` and `Profile.tickets`, persisted in per-user keys in `SunsetStageClubProfiles_v1`.
+- The main controller owns the active profile session lease, per-user in-memory write lock, snapshot save path, and coalesced save queue.
+- The separate Utility Bar `TikiTideCoins_v1` store is exposed only through the current empty Tool Shop query endpoint. It is not a safe substitute for the main profile currency and must not be used for tips.
+- The supplied example's local `Balances` table would create a third non-persistent currency authority and is rejected.
+- Security Core `RateLimit` is a facade over the existing shared token buckets. `Idempotency` is a local-first / optional MemoryStore reservation service, not a durable two-account transaction ledger.
+
+### Transaction-safety blocker
+
+The main profile store persists each player under a separate DataStore key. Its current write lock is per user and protects a single profile snapshot. Roblox DataStore `UpdateAsync` cannot atomically mutate two different player keys in one transaction. Therefore, simply acquiring two in-memory locks, subtracting from one profile, adding to another, and scheduling two independent saves is not crash-safe: a server interruption or a failed save between the two writes can lose or duplicate currency.
+
+A safe transfer requires a durable transfer journal and a recoverable two-phase protocol integrated with profile load/save/session ownership. Each transfer must have a server-generated immutable transaction ID, explicit Prepared/Debited/Credited/Completed progression, participant identity and amount validation, and idempotent recovery for both profiles. Recovery must not depend on either player remaining online or on a bounded in-memory cache. The design must also serialize conflicting transfers involving the same profile and preserve the existing profile receipt pending markers and session leases.
+
+### Safe implementation decision
+
+- No new RemoteEvent, balance mutation, third balance store, or partial debit/credit handler was added in this audit.
+- Do not use Security Core's generic TTL idempotency cache as the durable transfer journal.
+- Do not assume two independent profile saves constitute an atomic transfer.
+- Before implementing the feature, select the currency explicitly (`coins` or `tickets`) and design/test the durable transfer journal and profile recovery protocol against the existing per-user session lease.
+- Once implemented, validate targetUserId and amount as positive finite safe integers, reject self/offline targets, enforce the 10–5,000 amount range if retained, and use Security Core's existing rate-limit facade without throttling essential recovery or profile persistence.
+
+### Source verification boundary
+
+The branch source inspected for this audit contains no `TipPlayerRemote` reference and no player-to-player transfer handler. The main profile save path uses per-user `UpdateAsync` calls and a per-user in-memory lock; the Tool Shop uses a separate `TikiTideCoins_v1` DataStore and currently has no spend/grant operations. No runtime tests were run.
