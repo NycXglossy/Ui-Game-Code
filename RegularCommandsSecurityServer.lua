@@ -79,6 +79,7 @@ return function(_K: any)
 		visible = {permission = "GlobalModeration", property = "Visible", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		resetstats = {permission = "GlobalModeration", property = "ResetStats", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		collide = {permission = "GlobalModeration", property = "CharacterCollision", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		notrip = {permission = "GlobalModeration", property = "PreventTrip", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		join = {permission = "GlobalModeration", property = "JoinPlayerServer", auditKind = "AdminAction", budget = "Moderation"},
 		sword = {permission = "GlobalConfig", property = "AssetSwordGrant", targetArg = 1, auditKind = "AdminAction", budget = "Asset"},
 		
@@ -127,6 +128,7 @@ return function(_K: any)
 		vote = {permission = "GlobalAnnouncement", property = "PlayerVote", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
 		poll = {permission = "GlobalAnnouncement", property = "PlayerPoll", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
 		countdown = {permission = "GlobalAnnouncement", property = "Countdown", auditKind = "AdminAction", budget = "Broadcast"},
+		tts = {permission = "GlobalAnnouncement", property = "TextToSpeechBroadcast", auditKind = "AdminAction", budget = "Broadcast"},
 
 		-- Respawn/refresh and destructive world actions are sensitive too.
 		respawn = {permission = "GlobalModeration", property = "Respawn", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
