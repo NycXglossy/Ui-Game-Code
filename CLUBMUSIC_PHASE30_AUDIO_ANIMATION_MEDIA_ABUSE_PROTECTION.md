@@ -1,0 +1,165 @@
+# Phase 30 — Audio, Animation & Media Abuse Protection
+
+**Branch:** `fix/security-core-release-and-queue-loop`  
+**Source audit baseline:** `83f6cf36a55ee09f9447686fdae0c005bda4d856`  
+**Status:** Tracked-source integration is substantially complete. Runtime certification and live-place consumer reconciliation remain open.  
+**Do not certify Phase 30** until the Studio and published two-server acceptance matrix at the end of this document passes.
+
+## Scope and non-negotiable invariants
+
+- The server controller owns the sole modern `AudioPlayer` playback source, track selection, playback clock, queue, request accounting, Auto DJ refill, transition invocation, and authoritative state replication.
+- Per-server request queues, playlist cursors, Auto DJ state, request accounting, and skip votes remain independent.
+- Optional playback-only global sync shares only the current Now Playing/playhead snapshot and revision invalidations under the fenced leader. It never shares a queue or playlist cursor.
+- SecurityCore Authorization remains the sole role/permission authority.
+- Client preferences and per-listener output routing remain client-local.
+- Do not install the standalone legacy Music System, add another playback controller, delete rollback sources, or remove live-place objects without a complete consumer audit.
+
+## Active source inventory and media ingress
+
+### Controller and client network contract
+
+The active UI uses the controller-owned `ReplicatedStorage.ClubMusicRemotes` contract:
+
+- `RequestAction`: client-to-server action requests; controller validates the live caller, applies per-player/server ingress budgets, validates the bounded payload, allowlists action names, and applies action cooldowns before dispatch.
+- `GetState`, `GetMusicCatalog`, and `GetMusicPlaylists`: read-only server queries with bounded invocation work/cooldowns.
+- `StateChanged` and `Notice`: server-to-client state/notification channels.
+- `PurchaseDiagnostic`: bounded, explicitly unverified client prompt telemetry; it is not a media, purchase, or entitlement grant path.
+
+The active `UI_Network.lua` wraps `RequestAction`; it does not create a second audio remote or playback owner. No active controller/UI_Network boombox-specific endpoint was found in the audited source set.
+
+### Audio and catalog mutation paths
+
+| Entry point | Server-side policy / boundary |
+|---|---|
+| `RequestTrack` | Resolves only an existing server catalog track; rejects placeholders, blocked tracks, duplicate/current tracks, full queue, exhausted request slots, and cooldowns. Enforces DJ Control Mode ownership before queue insertion. Queue and priority mutation stay server-side. |
+| `RequestAudioAsset` | Staff-only Creator Hub asset request. Validates numeric asset ID, optional allowlist, per-player cooldown, server-wide audio token budget, bounded concurrent inspection, audio type/experience access/playability and duration. Rechecks caller presence, staff permission, and DJ Control Mode after yielding before queue insertion. |
+| `CatalogAddAudio` | Staff-only persistent catalog mutation. Validates asset ID and genre; optional artwork ID must resolve to an accessible Roblox Image or Decal asset; audio is independently inspected and duration-bounded before the catalog service writes it. Uses existing catalog storage and invalidation. |
+| `CatalogRemoveTrack` | Staff-only; only custom catalog entries can be removed. Rejects current or queued tracks and updates active playlist rotation safely. |
+| `PlaylistCreate/Delete/AddTrack/RemoveTrack/MoveTrack` | Staff-only, storage-ready and DataStore-budget gated. Track IDs must resolve in the current server catalog; persistent playlist service owns storage only, not playback or queue state. |
+| `DJPlayPlaylist/DJStopPlaylist` | Elevated DJ Booth controller check; playlist rotation remains server-owned and uses the server's own queue. |
+| `VoteSkip` | Available to any connected player; server records one vote per player and evaluates the configured vote threshold. No DJ permission is required. |
+| `ReloadSong` | Explicit self-service recovery for any connected player. No DJ/staff permission check. Existing three-second per-player cooldown and the common action ingress budget remain in force. It cannot select a new asset or mutate the catalog/queue. |
+| `DJPause/DJRestart/DJSkip` | Require the SecurityCore-backed `GlobalDJ` authorization callback and, when playback-only sync is enabled, the elected leader. |
+| DJ queue-management / emergency actions | Use the existing elevated DJ Booth or staff/admin authorization path; no client role attribute is accepted as authority. |
+
+The controller's `canUseDJBooth` calls the shared SecurityCore Authorization service with `GlobalDJ`; it does not maintain a role table. Elevated booth management uses the existing SecurityCore-derived level. The DJ session manager remains server-only and receives authorization/handoff callbacks from the controller, which rechecks connected players and staff ranks.
+
+### Animation, image/artwork, and boombox audit
+
+- No active `AnimationId` assignment, animation-load remote, or animation mutation endpoint was found in the controller, `UI_Network.lua`, renderer, or client audio-preferences module inspected for this pass. Dance Floor activity inspection reads playing animation tracks only; it does not grant or change animations.
+- The renderer displays artwork from server-published catalog metadata. Client image rendering is presentation, not authority. Catalog artwork mutation is limited to the staff-only `CatalogAddAudio` path described above.
+- No active boombox-specific remote was found in the current controller/UI network path.
+- The repository still contains the historical plain-text `Music System` and `Music Storage Handle` artifacts. The old Music System creates its own `DispatchAction`, `DispatchEvent`, `MusicBroadcast`, `MusicUpdate`, and `RequestSync` remotes and calls the legacy Sound storage handler. The old storage handler creates and caches Roblox `Sound` instances. These are not loaded by the current controller or current audio installer; do not install them.
+- The historical `Music Role System` is a separate legacy role/pass helper. It is not part of the current SecurityCore permission path and must not be used as a second authority.
+- Small binary `.rbxm` assets named for old Music Remotes / Music Group were not parsed by the text-only repository reader. Their contents and any live-place descendants remain unverified. Do not delete them by filename or assume they are harmless.
+
+**Live-place limitation:** a repository audit cannot prove which old Scripts, Models, remotes, plugins, package descendants, or runtime-inserted assets exist in the published place. Before removing historical objects, inspect the actual live hierarchy and all consumers, including third-party packages and scripts that may reference those remote names.
+
+## Server-core conversion and canonical source ownership
+
+### Runtime ownership
+
+- `UI_Server_Controller_server (1).lua` owns the only active `AudioPlayer` source through `activeAudioSource`. It does not reference `ServerMusicSound` or `MusicGroup`, create legacy `Sound` objects, or select a legacy Sound fallback.
+- `ClubMusicAudioBackend.luau` owns construction/teardown of the modern managed AudioPlayer graph under server `SoundService`.
+- `ClubMusicAudioCrossfadeManager.luau` remains a separate transition coordinator. It handles generation fencing, cancellation, fade, commit settlement, failed-deck retention, and cleanup. The controller owns transition invocation and queue/source ownership transfer.
+- The controller's local playback-quality inspection replaces the old `MusicPlaybackManager` facade. Watchdog decisions use the normalized modern backend snapshot; manual reload/recovery, pause/resume, restart, and crossfade are modern-only.
+- `ClubMusicPlayerPreferences.luau` remains client-only. Each listener creates its own `AudioFader` → `AudioDeviceOutput` route; it does not change server gain or another player's volume.
+- `ClubMusicDJSessionManager.luau` remains a server-only session lifecycle helper with injected controller authorization; it does not own playback, queues, or roles.
+- `ClubMusicSpatialAudioGraph.luau` remains optional and separate because spatial graph resource ownership/teardown is distinct from playback state.
+
+### Canonical queue, catalog, validation, and playlist sources
+
+- Canonical queue path: `MusicQueueManager.lua` adapter + `MusicQueueManagerService.lua` operating on the controller-injected queue and request-slot release callback.
+- Canonical validation path: `MusicValidationService.lua`, including the controller-required bounded metadata normalization API. Preload/playability checks remain in the controller.
+- `MusicCatalogService.lua` owns catalog lookup and persistent custom-track overlay.
+- `MusicPlaylistService.lua` owns persistent playlist storage only. Playlist rotation cursor remains controller-local.
+- Skip-vote state remains controller-local; no skip-vote manager is loaded.
+- The historical `.luau` duplicate implementations `MusicQueueManager.luau` and `MusicValidationService.luau`, plus the unused `MusicPlaybackManager.luau`, `MusicPlaylistManager.luau`, and `MusicSkipVoteManager.luau`, remain in the repository as rollback/reference artifacts. The current controller and installer do not load/install these duplicates. Do not delete them until the actual live-place ServerStorage hierarchy and all package/installer consumers are reconciled.
+- `ServerMusicAudioHandler` is absent from the current tracked tree and is not loaded by the current controller.
+
+### Standalone / RBXMX parity
+
+Static source extraction compared embedded ModuleScript CDATA with the standalone source. The following were byte-identical at the audit baseline:
+
+- Five audio server modules: Backend, Crossfade Manager, Quality Profiles, DJ Session Manager, Spatial Audio Graph.
+- Six ServerStorage core modules: Catalog Service, Playlist Service, Receipt Hash, Queue Manager adapter, Queue Manager Service, Validation Service.
+- Client Player Preferences module.
+- Global Optional Services bundle's `MusicGlobalPlaybackAuthority` and standalone source.
+
+No source drift was found in those comparisons. The standalone files are canonical; embedded bundles are generated snapshots. Regenerate a bundle from canonical standalone source after any future module edit and repeat byte-for-byte comparison.
+
+### Installer manifest reconciliation
+
+- `ClubMusic_Studio_CommandBar_Installer.lua` previously pinned the audio sources to commit `f47410ac9a9674d3df0b24eb1714b31d1a4ef816` and the six ServerStorage modules to `4857fd9c5b763a2a685b37bccf812a6f85425524`.
+- All twelve installer source files were compared against the current branch copies; each old pin was byte-identical to its current standalone file.
+- The installer was updated in commit `fedcd345b6e8d1e7809857611c29d3964242570c` so all twelve module URLs point to the single audited source snapshot `83f6cf36a55ee09f9447686fdae0c005bda4d856`.
+- The installer does not install the standalone legacy Music System, the old role helper, or duplicate `.luau` queue/validation/playback facades. It leaves pre-existing legacy objects untouched pending live-place consumer reconciliation.
+- The Global Optional Services bundle and its installer/deployment path are separate from the audio ModuleScript installer; preserve its existing SecurityCore authorization and playback-only authority contract.
+
+## DJ Control Mode permission acceptance rule — source result
+
+The tracked controller currently implements the requested rule:
+
+1. With DJ Control Mode off, all players can submit valid normal catalog requests subject to ordinary moderation, cooldown, per-player request count, queue capacity, duplicate, and catalog-playability checks.
+2. When a player with the existing SecurityCore `GlobalDJ` permission enables DJ Control Mode, that player remains allowed to request; every other player is rejected from normal request submission.
+3. Only the current controller can disable the mode. If that controller leaves, `Players.PlayerRemoving` clears the mode and controller UserId, broadcasts that normal requests are open, and publishes state.
+4. Auto DJ refill is not gated by DJ Control Mode; the separate emergency request lock remains a distinct staff incident control.
+5. Every connected player can vote to skip and read the replicated Now Playing/queue state.
+6. Every connected player can invoke `ReloadSong` under the three-second cooldown and common action ingress limits. It does not require DJ permission.
+7. Pause, restart, DJ skip, playlist/catalog mutation, and DJ session/handoff operations retain their respective SecurityCore-backed DJ/staff/elevated authorization.
+
+This is a source inspection result, not runtime permission certification.
+
+## Runtime acceptance matrix — mandatory before certification
+
+### Modern playback and recovery (single server)
+
+- Start a catalog track; verify server-owned AudioPlayer graph, correct playhead/length, and private client output on PC/mobile/console.
+- Pause/resume, restart, seek, track advance, manual ReloadSong while playing and paused; confirm pause state/playhead are preserved as designed.
+- Force decoder readiness failure, asset failure, backend construction failure, and replacement candidate failure. The controller must remain modern-only/unavailable on failure; no legacy Sound fallback is created or selected.
+- Watchdog detects stalled/degraded playback, performs bounded modern recovery, and reports active AudioPlayer context.
+- Crossfade success, cancellation before readiness, cancellation during fade, rapid repeated Begin, queue-head change, failed bind/pop rollback, gain restoration, failed cleanup retry, server shutdown during transition; verify no orphaned backend/deck graph.
+- Confirm player departure does not tear down server-wide playback.
+
+### DJ permissions and queue behavior
+
+- With DJ Control Mode off, a normal player submits a valid catalog track.
+- Enable DJ Control Mode as the current permitted controller. Confirm controller can submit a valid catalog track; a different normal player is rejected; Auto DJ still refills.
+- Confirm the emergency request lock is independent and does not silently become DJ Control Mode.
+- Any player can vote to skip and view Now Playing/queue. Duplicate votes are rejected.
+- Any player can use ReloadSong, including while DJ Control Mode is enabled, subject to cooldown and common action budget.
+- Unauthorized players cannot pause, restart, DJ-skip, clear/reorder/remove queue entries, manage playlists/catalog, or start/handoff/end privileged DJ sessions.
+- Only current controller can turn DJ Control Mode off. On controller departure, verify state clears and normal requests reopen.
+- Exercise the same checks through the UI remotes and Kohl's Admin command bridge; verify no client-side UI visibility decision is treated as authorization.
+
+### Media and mutation abuse
+
+- Forge invalid/oversized/non-finite action payloads, unsupported action names, arbitrary asset IDs, blocked IDs, non-audio IDs, too-long audio, inaccessible assets, invalid artwork IDs, and non-image/decal artwork.
+- Concurrent Creator Hub audio inspections, per-player cooldown, global audio budget, and caller departure during inspection.
+- Attempt catalog and playlist mutations from non-staff players; verify no DataStore write.
+- Verify artwork can only be introduced through the staff-authorized server catalog path and client renderers cannot write authoritative metadata.
+- Inventory all deployed remotes and scripts for boombox, animation, image/decal, Sound, and AudioPlayer mutations. Test or retire each live consumer only after provenance and authorization are understood.
+- Verify the standalone legacy Music System and its five remotes are absent/disabled in the live place; do not install it.
+
+### Two-server playback-only sync
+
+- Enable/disable only through Owner/Co-Owner SecurityCore-gated global configuration.
+- Both servers show the same Now Playing/playhead and revision while their local request queues, playlist cursors, request counters, skip votes, and Auto DJ refill remain independent.
+- Leader departure/lease expiry, failover, stale revision, blocked/missing catalog track, and DataStore/MemoryStore/MessagingService outage/recovery.
+- Followers cannot independently advance, pause, restart, or DJ-skip while sync is active.
+- Disable sync and verify each server resumes its own local playback/queue without importing another server's queue.
+- Verify no split-brain leader or shared queue appears during outage/failover.
+
+### Compatibility and operational bounds
+
+- PC, mobile, console; R6/R15/custom avatars; repeated join/leave; full server; long session; low-memory and network-latency conditions.
+- Confirm bounded queue, inspection concurrency, token buckets, diagnostics, transition generation state, and cleanup registries.
+- Verify Studio isolation remains disabled by default. Use a disposable multi-server Studio copy for global-service tests.
+- Inspect the actual published place hierarchy, including binary RBXM assets, installed packages, plugins, runtime-created scripts/remotes, and all consumers before deleting rollback artifacts.
+
+## Certification status
+
+- Static source audit and manifest update only.
+- No Luau parser/compiler, Roblox Studio runtime, live DataStore, live Marketplace asset check, or published two-server test was available during this pass.
+- User previously reported modern-only playback working; this does not replace the full Phase 30 matrix above.
+- Feature branch remains unmerged/unpublished. No live Roblox place or production data was changed.
