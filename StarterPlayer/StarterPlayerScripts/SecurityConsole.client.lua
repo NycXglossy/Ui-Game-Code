@@ -28,6 +28,7 @@ local lockdownActive = false
 local awaitingLockdownConfirmation = false
 local confirmationGeneration = 0
 local requestPending = false
+local requestGeneration = 0
 local pendingKickTarget = ""
 
 local function setStatus(message: string)
@@ -36,17 +37,35 @@ local function setStatus(message: string)
 	end
 end
 
+local function setLockdownButtonText(value: string)
+	if lockdownButton:IsA("TextButton") then
+		lockdownButton.Text = value
+	end
+end
+
 local function updateLockdownButton()
 	lockdownButton.Active = not requestPending
 	lockdownButton.AutoButtonColor = not requestPending
-	(lockdownButton :: any).Text = if lockdownActive then "Disable Lockdown" else "Enable Lockdown"
+	setLockdownButtonText(if lockdownActive then "Disable Lockdown" else "Enable Lockdown")
 end
 
 local function requestFinished()
+	requestGeneration += 1
 	requestPending = false
 	updateLockdownButton()
 	kickButton.Active = true
 	kickButton.AutoButtonColor = true
+end
+
+local function startRequestTimeout()
+	requestGeneration += 1
+	local thisGeneration = requestGeneration
+	task.delay(8, function()
+		if requestPending and requestGeneration == thisGeneration then
+			requestFinished()
+			setStatus("No server response was received. Check the server before retrying.")
+		end
+	end)
 end
 
 lockdownButton.Activated:Connect(function()
@@ -55,7 +74,7 @@ lockdownButton.Activated:Connect(function()
 		awaitingLockdownConfirmation = true
 		confirmationGeneration += 1
 		local thisGeneration = confirmationGeneration
-		(lockdownButton :: any).Text = if lockdownActive then "Confirm Disable" else "Confirm Lockdown"
+		setLockdownButtonText(if lockdownActive then "Confirm Disable" else "Confirm Lockdown")
 		setStatus("Click the lockdown button again within 5 seconds to confirm.")
 		task.delay(5, function()
 			if confirmationGeneration == thisGeneration and awaitingLockdownConfirmation then
@@ -74,12 +93,7 @@ lockdownButton.Activated:Connect(function()
 	kickButton.AutoButtonColor = false
 	setStatus("Sending lockdown request to the server...")
 	securityAction:FireServer("ToggleLockdown")
-	task.delay(8, function()
-		if requestPending then
-			requestFinished()
-			setStatus("No server response was received. Check the server before retrying.")
-		end
-	end)
+	startRequestTimeout()
 end)
 
 kickButton.Activated:Connect(function()
