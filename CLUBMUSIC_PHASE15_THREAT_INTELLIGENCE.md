@@ -45,7 +45,8 @@
 - No client RemoteEvent or RemoteFunction is added.
 - No automatic kick, ban, shadow restriction, gameplay nerf, movement correction, or other enforcement is performed.
 - No persistent or cross-server writes are performed by the correlation service.
-- No additional polling loop or background worker is created; expiry is pruned on record/query calls.
+- No additional polling loop or background worker is created; expiry is pruned on record/query calls with a five-second minimum sweep interval, avoiding a full retained-state scan on every signal.
+- Existing incident updates use a per-server ID index instead of linearly searching the retained incident list for each qualifying signal. The index is cleared on incident eviction, expiry, and service shutdown.
 - All in-memory maps and lists have explicit capacity limits.
 - Existing IncidentResponse remains a separate, explicit staff case-management workflow.
 - The installer stages the new module and retains the previous SecurityCore release for rollback.
@@ -61,6 +62,6 @@
 7. Confirm ReportSignal, CharacterPhysicsGuard, SafeCall, watchdog, and SecurityMonitor adapters produce only the intended fixed codes.
 8. Verify a missing correlation module/endpoint does not block core ClubMusic startup or security validation.
 9. Profile per-signal overhead and test under burst traffic.
-10. Re-run playback controls, crossfade, local queues, playback-only global sync, purchases, moderation, Utility Bar, Settings, and spectator regressions.
+10. Re-run playback controls, crossfade, independent per-server queues, purchases, moderation, Utility Bar, Settings, and spectator regressions.
 
 **Release note:** This is a source-level implementation only. No Roblox runtime test is claimed. Correlation results are advisory staff-review items, not proof and not an enforcement decision.
