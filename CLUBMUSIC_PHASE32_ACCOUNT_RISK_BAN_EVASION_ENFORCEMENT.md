@@ -23,7 +23,7 @@
 | `ChatAbuseDetectionService.lua` | Server-side TextService filtering, bounded input, per-player rate limit, fail-closed output, trusted verified-violation callback |
 | `Phase32ServiceBundle.lua` | Composes the three services with the existing shared SecurityCore Authorization instance |
 
-All three are ModuleScripts intended for `ServerStorage.ClubMusicSecurityCore`. They are not client remotes and must not be required from a LocalScript.
+All four are ModuleScripts intended for `ServerStorage.ClubMusicSecurityCore`. They are not client remotes and must not be required from a LocalScript.
 
 ## Account-risk signals
 
@@ -41,6 +41,7 @@ Supported actions:
 - `TempBan`: uses Roblox `Players:BanAsync()` for 60 seconds through 365 days.
 - `PermanentBan`: uses Roblox `Players:BanAsync()` with `Duration = -1`.
 - `Unban`: uses `Players:UnbanAsync()`, retains reversal history, and never deletes the original case.
+- `RevokeRestrictions`: removes all active feature restrictions for an account and records the reversal.
 
 Every action requires a live staff Player, bounded reason, and SecurityCore `GlobalModeration` authorization. Persistent evidence is written before enforcement. If persistence fails, no punishment is applied. If Roblox banning is disabled or `BanAsync` fails, the pending case is removed from active sanctions and a failure record is retained where storage permits.
 
@@ -65,8 +66,9 @@ Every action requires a live staff Player, bounded reason, and SecurityCore `Glo
 ## Storage and access
 
 - DataStore key: `TikiTideModeration_v1` (configurable at construction).
-- Per-account active sanctions are keyed by case ID. History is pruned to the latest 50 entries and 180 days.
-- Service callers must enforce SecurityCore authorization before querying `GetActive` or `GetHistory`; do not expose these methods through an unguarded RemoteFunction.
+- Per-account active sanctions are keyed by case ID. History is pruned to the latest 50 entries and 180 days, including cleanup on reads.
+- Only minimal active-sanction metadata remains while a restriction or permanent ban is active; detailed reasons remain in the bounded history. Expired temporary sanctions are removed during cleanup.
+- `GetHistory` checks `GlobalModeration` internally. `GetActive` is a server-only feature-enforcement helper and must never be exposed through a client RemoteFunction.
 - The module injects the existing Authorization service and checks `GlobalModeration` for issuing/reversing punishments. Permanent-ban alt propagation additionally checks `IncidentResponse`.
 - Audit events are emitted through an injected server-only callback. Do not include raw chat or unnecessary personal information in audit details.
 - DataStore errors fail closed for punishment writes, history reads, and reversals.
@@ -100,6 +102,7 @@ The feature branch now includes source-level wiring:
 - `;cmpermban <UserId> <reason>` — permanent universe ban; no alt propagation.
 - `;cmpermban-alts <UserId> <reason>` — permanent ban with Roblox suspected-alt propagation; requires `IncidentResponse` in addition to `GlobalModeration`.
 - `;cmunban <UserId> <reason>` — reverse an active native ban.
+- `;cmunrestrict <UserId> <reason>` — remove all active feature restrictions.
 - `;cmunrestrict <UserId> <reason>` — reverse all active feature restrictions.
 - `;cmpunishmenthistory <UserId>` — bounded history; requires `GlobalModeration`.
 - `;cmrisk <UserId>` — advisory risk review; requires `IncidentResponse`.
@@ -133,4 +136,4 @@ The feature branch now includes source-level wiring:
 
 ## Certification boundary
 
-The source modules and source-level controller/Kohl's integration are committed to the feature branch. This does not certify that the modules are installed in the live place, that Roblox BanAsync/DataStore behavior works in Studio, or that the updated sources are active in the published experience. No Studio runtime or published two-server test was performed. Do not describe Phase 32 as runtime-certified until the acceptance matrix passes.
+The four source modules and source-level controller/Kohl's integration are committed to the feature branch. This does not certify that the modules are installed in the live place, that Roblox BanAsync/DataStore behavior works in Studio, or that the updated sources are active in the published experience. No Studio runtime or published two-server test was performed. Do not describe Phase 32 as runtime-certified until the acceptance matrix passes.
