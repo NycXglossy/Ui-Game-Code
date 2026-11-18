@@ -233,3 +233,25 @@ The project owner has stated that the implemented systems and phases are working
 - [ ] Keep all Studio/published-server certification claims tied to reproducible evidence and the exact installed revision.
 
 The Phase 25–39 plan is recorded in `CLUBMUSIC_FUTURE_ADDITIONS_ROADMAP.md`; Phase 25 acceptance scope is in `CLUBMUSIC_PHASE25_ADVANCED_EXPLOIT_PREVENTION.md`. The future phase headings are plans, not completed implementations.
+
+
+## Phase 14.1 — Local Staff Controls diagnostics (2026-11-18)
+
+**Source status:** Implemented on `phase14.1-local-staff-diagnostics`.
+**Runtime status:** Not verified; release gate remains open.
+
+- [x] Extend local registry with expected Instance class/parent checks and dynamic restoration verification.
+- [x] Register GlobalAPI and the ServerHealth, Watchdog, and Diagnostics ModuleScript dependencies.
+- [x] Add bounded 20-entry local health transition history, degraded duration, consecutive degraded checks, and last recovery timestamp.
+- [x] Add average estimated server FPS and maximum Heartbeat frame-time values to ServerHealth.
+- [x] Integrate Diagnostics overview into the Phase 22 Staff Controls console using the existing authorized staff command path.
+- [x] Read client FPS/ping/memory from the existing client-local diagnostics module only while the authorized staff overview is open.
+- [x] Preserve detailed diagnostics commands and all Phase 14/16 diagnostic service APIs.
+- [ ] Studio test staff authorization, revocation, dashboard refresh, category switching, close/reopen, and sampler lifecycle.
+- [ ] Test dependency removal, wrong-class/reparenting, and restoration in a disposable test place.
+- [ ] Verify the 20-transition cap and state-duration/recovery behavior under repeated state changes.
+- [ ] Profile server/client overhead at low and full player counts and during long-running playback/crossfade/queue activity.
+- [ ] Complete purchase, moderation, playback, local queue, playback-only global sync, and Utility Bar regression tests.
+- [ ] Complete binary/package and live-place hierarchy review before any production installation.
+
+No live Roblox place was modified. No diagnostics sharing, persistence, client telemetry transmission, automatic recovery, enforcement, or legacy retirement was introduced. See `CLUBMUSIC_PHASE14_1_LOCAL_STAFF_DIAGNOSTICS.md` for the implementation and test matrix.
