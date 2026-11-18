@@ -30,11 +30,11 @@ No durable receipt history is pruned or replaced by this cache.
 
 ## Preserved transaction guarantees
 
-- Existing `Prepared` / `Completed` journal lifecycle remains intact.
+- Existing `Prepared` / `Completed` journal lifecycle remains intact and is now implemented by `ClubMusicSecurityCore.ReceiptTransactionService`.
 - Reward mutation and profile pending marker remain in the existing atomic profile update.
 - Receipt journal completion and pending-marker cleanup remain required before `PurchaseGranted`.
 - Failed DataStore operations continue to return `NotProcessedYet` so Roblox can retry.
-- Existing receipt hash key derivation and full PurchaseId collision comparison remain intact.
+- Existing SHA-256-derived receipt hash key derivation and full PurchaseId collision comparison remain intact; the hash implementation now lives at `ClubMusicSecurityCore.ReceiptHash`.
 - Existing legacy profile receipt map and legacy XP receipt keys remain readable.
 - Product reward mappings, donation rewards, title-slot unlocks and XP boost durations are unchanged.
 - Legitimate purchases are not denied based on security threat scores or moderation state.
@@ -52,7 +52,7 @@ No durable receipt history is pruned or replaced by this cache.
 
 The sole `MarketplaceService.ProcessReceipt` assignment remains in `UI_Server_Controller_server (1).lua`, but now delegates to `ClubMusicSecurityCore.ReceiptAuthority`. Security Core owns receipt metadata validation, registered-product resolution, same-server in-flight exclusion, a 64-handler concurrency cap, and the bounded 512-entry successful-receipt cache.
 
-The existing durable profile receipt journal (`ClubMusic_ProductReceipts_v1`), `ClubMusic_ReceiptHash` key derivation, Prepared/Completed recovery, profile pending marker, and separate global XP receipt journal remain unchanged as the transaction storage backends. This is an intentional staged migration: no second ProcessReceipt callback, replacement ledger, MemoryStore receipt reservation, or new purchase ID format is introduced.
+`ClubMusicSecurityCore.ReceiptTransactionService` now owns the profile-backed durable journal, `Prepared`/`Completed` transitions, profile pending-marker recovery, per-profile write-lock coordination, and bounded in-memory reconciliation. `ClubMusicSecurityCore.ReceiptHash` preserves the exact previous key derivation. The separate global XP receipt journal remains owned by the Global Service because its atomic global boost timer mutation is cross-server domain state. The standalone root-level `ClubMusic_ReceiptHash` module and controller-side journal implementation are retired. No second ProcessReceipt callback, replacement ledger, MemoryStore receipt reservation, or new purchase ID format is introduced.
 
 See [Phase 29 — Economy, Entitlement & Reward Abuse Protection](CLUBMUSIC_PHASE29_ECONOMY_ENTITLEMENT_REWARD_ABUSE.md) for the economy mutation inventory, configured IDs, entitlement rules, and runtime acceptance checklist. The Security Core installer must be updated with the matching ReceiptAuthority module release before the updated controller is deployed. If the module is unavailable, the callback returns `NotProcessedYet`; it does not fall back to an unprotected grant path.
 
@@ -70,3 +70,16 @@ See [Phase 29 — Economy, Entitlement & Reward Abuse Protection](CLUBMUSIC_PHAS
 10. Profile CPU and memory during normal purchase traffic and controlled bursts.
 
 No Roblox Studio or published-server runtime tests have been performed for this phase.
+
+
+## Phase 33 — Complete Security Core transaction migration
+
+- `ReceiptAuthority` remains the only receipt ingress coordinator and is called by the controller's single `MarketplaceService.ProcessReceipt` adapter.
+- `ReceiptTransactionService` owns the normal product durable journal and pending-receipt recovery.
+- `ReceiptHash` is installed under `ServerStorage.ClubMusicSecurityCore` and is shared by the profile journal and Global Service XP journal.
+- The controller retains only the product allowlist, game-specific reward application/presentation adapters, profile/session adapter closures, and the one Roblox callback assignment. It no longer owns the durable receipt journal implementation or receipt-memory caches.
+- `ClubMusic_ReceiptHash.lua` was removed from the repository after both consumers moved to Security Core.
+- Existing DataStore names, key prefixes, hash output, full PurchaseId checks, legacy `receiptIds`, legacy XP key compatibility, reward mappings, and boost timer behavior are preserved.
+- The installer includes `ReceiptHash` and `ReceiptTransactionService` and is pinned to the source snapshot containing both modules.
+
+This is source-level migration only. The purchase matrix, interrupted-write recovery, and two-server XP boost tests remain required in a disposable Studio universe before production installation.
