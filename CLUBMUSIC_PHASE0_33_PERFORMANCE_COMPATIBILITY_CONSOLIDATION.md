@@ -190,3 +190,10 @@ Validation: confirmed the controller's ModuleScript lookup name, confirmed the p
 The optional client diagnostics module previously enabled its one-shot Workspace effects inventory by default whenever the module was started. That scan calls `workspace:GetDescendants()`, which allocates a full descendant array before yielding through the inspection loop; on this project's large scene this can create an avoidable startup memory/CPU spike. The map audit now defaults to `DisabledByDefault` and runs only when a caller explicitly constructs the service with `auditWorkspaceEffects = true`. FPS/frame sampling, periodic client memory sampling, and optional modern AudioPlayer observation remain independent. The diagnostics bootstrap remains disabled by default, and all measurements remain client-local/untrusted.
 
 Validation: source re-fetch confirmed the default is false unless explicitly true; no client runtime test or memory measurement was performed.
+
+## Client diagnostics bootstrap scope correction
+
+The client diagnostics bootstrap is enabled by default again. The earlier global disable prevented all client-local FPS/frame-time, memory, and optional modern AudioPlayer observations from starting, even though the expensive workspace inventory had already been made opt-in. The bootstrap now starts the diagnostics service with default options; `auditWorkspaceEffects` remains false unless a caller explicitly opts in. This restores useful local diagnostics without adding remotes, transmission, persistence, or cross-server aggregation.
+
+Validation: re-fetched the bootstrap and service source; confirmed the bootstrap enables the local sampler and the service constructor defaults `auditWorkspaceEffects` to false / `DisabledByDefault`. No Roblox runtime test or performance measurement was performed.
+
