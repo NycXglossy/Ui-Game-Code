@@ -34,7 +34,7 @@ The server validates the reporter, live target, target identity, UTF-8, control 
 
 ## Release pin alignment
 
-The Global Service loader and Security Core installer must both use the exact IncidentResponse source release commit `9719eb20b2e8d7cf7716bfcb23d633c4e8943322`. The installer continues to pin Phase 32 independently. Do not install a different Core folder revision while leaving the Global Service loader pin unchanged.
+The Global Service loader and Security Core installer must both use the exact IncidentResponse source release commit `142562f0727f8c3fa748a9bd00dbd1871e5f4fe9`. The installer continues to pin Phase 32 independently. Do not install a different Core folder revision while leaving the Global Service loader pin unchanged.
 
 ## Studio isolation note
 
