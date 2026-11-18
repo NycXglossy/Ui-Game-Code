@@ -370,3 +370,12 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - Phase15 and Phase0–33 consolidation documentation updated. No runtime or device profiling has been performed.
 
 - `ClubMusicSecurityCore/CharacterPhysicsGuard.lua`: reduced optional per-character network-owner and ping context queries to one sample every five seconds while preserving adaptive displacement sampling and event-driven checks. Commit `373f1cb1448cc58ec22093248132c117fa77349`; Phase26 doc updated in `ed22d4b67ce8cb818c2affd5d11bcecdcd20ab85`.
+
+
+### Performance compatibility follow-up (branch-local)
+
+- Fixed the global service's missing fallback bucket idle TTL and undefined action/player/audio budget configuration.
+- Removed the inactive shared-rate-limit facade from the global service path. Action, state, DataStore, audio and XP receipt request budgets are now enforced with bounded per-server buckets; durable global moderation/configuration/XP boost state remains server-authoritative and cross-server where required.
+- Kept the legacy `ConsumeGlobalRateLimit` bindable signature for compatibility while returning `shared = false` when a local decision is made.
+- Updated the controller-facing `MusicValidationService.lua` and its embedded `MusicValidationService` ModuleScript in `ClubMusic_ServerStorage_Modules.rbxmx` to use bounded generation-safe circular FIFO caching and a short failure TTL. Metadata caching still does not bypass AudioPlayer preload/playability checks.
+- Static source and package parity checks completed; Luau compilation, Studio tests, and live-server validation remain outstanding.
