@@ -239,3 +239,11 @@ Validation: re-fetched the renderer and confirmed there is one initial PlayerGui
 The client diagnostics bootstrap previously existed as a source file but had no installer path that placed its required ModuleScript in the exact location it waits for. The bootstrap expects `ReplicatedStorage.ClubMusic_Client_Diagnostics_Service`, while the bootstrap itself belongs under `StarterPlayer/StarterPlayerScripts`. Added `ClubMusic_Client_Diagnostics_Installer.lua`, a dedicated Studio Command Bar installer pinned to the reviewed branch snapshot. It fetches both sources before changing instances, validates existing object classes, stages both instances, and retains the previous pair with `_Previous` suffixes for rollback. It does not add remotes, transmit diagnostics, or enable the Workspace effects inventory.
 
 Validation: source-level review confirms the installer destination names match the bootstrap's direct ReplicatedStorage lookup and StarterPlayerScripts placement. The installer was not executed in Studio; no live place was changed. The diagnostics bootstrap still starts local sampling by default when installed, and the Workspace audit remains disabled unless explicitly requested.
+
+
+### Performance compatibility follow-up — Studio audio installer snapshot and receipt module
+
+- Audited `ClubMusic_Studio_CommandBar_Installer.lua` against the active controller's module resolution. The controller loads `ReceiptHash` only from `ServerStorage/ClubMusicSecurityCore/ReceiptHash`; the standalone root-level `ClubMusic_ReceiptHash.lua` has been retired and is absent from the reviewed tree.
+- Updated all eleven audio/catalog/playlist/queue/validation source URLs to the same immutable branch snapshot (`b8ee084b4dc001b084e4b36c79f02031097cbe76`), verified each file exists at that commit, and removed the stale root-level receipt-hash install entry. The Security Core installer remains the sole installer for `ClubMusicSecurityCore.ReceiptHash` and `ReceiptTransactionService`.
+- Corrected the installer inventory/count and stale playback-sync comment to reflect the local-only queue/playback architecture. Added a stopped-simulation guard and preflight class validation for all existing audio module destinations before any source replacement.
+- Static checks only. The installer has not been executed in Studio; no live place was changed.
