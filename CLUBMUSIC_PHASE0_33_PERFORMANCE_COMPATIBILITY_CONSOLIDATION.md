@@ -354,3 +354,12 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Added an optional minimum-remaining-token floor to the existing local bucket admission path. Reconciliation reads alone request a three-token floor; they are deferred when spending would cross that floor. Foreground callers retain the existing behavior and can use the reserve when necessary. The bucket capacity, refill ceiling, key, and total aggregate budget remain unchanged.
 - Reconciliation remains fail-closed on budget exhaustion: the player stays `GlobalModerationPending` and no kick occurs solely due to an unavailable read. The next scheduled reconciliation cycle retries. Join-time reads and moderation/purchase operations do not inherit the background reserve restriction.
 - Static source checks only. No measured DataStore budgets, large-player-count load test, Roblox runtime test, Luau compilation, or deployment was performed.
+
+
+## Moderation reconciliation retry scheduling (2026-11-18)
+
+- Audited join-time retries and periodic online-player reconciliation. Join-time controller checks already use one combined authoritative moderation read and bounded exponential retry; verified state is not treated as a ban when a read fails.
+- Found that a player whose previously verified state became unavailable during the periodic sweep was marked pending but could wait for the next full 180-second interval (plus scan duration) before the next background retry.
+- Changed the existing server-local reconciliation worker to run a pending-only follow-up sweep 15 seconds after a sweep encounters read failures. The follow-up checks only players still marked `GlobalModerationPending`; verified players are skipped. If any pending reads still fail, another pending-only sweep follows after 15 seconds. Once pending players are resolved, the worker returns to the normal full sweep interval.
+- The worker remains sequential and keeps the 1.1-second inter-read pacing and three-token shared DataStore reserve. It adds no per-player retry threads, no request burst, no additional budget bucket, and no cross-server state. Failure continues to restrict moderation-sensitive actions without kicking solely on lookup failure.
+- Static source checks only; no high-player-count simulation, backend outage/fault injection, Luau compilation, Studio runtime test, or deployment.
