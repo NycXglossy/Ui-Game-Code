@@ -213,6 +213,24 @@ function Service:Issue(actor: Player, targetUserId: number, action: {[string]: a
 	end)
 	if not writeOk then return false, "Moderation evidence could not be saved; no punishment was applied.", nil end
 
+	-- DataStore writes yield. Revalidate the actor and any senior alt-propagation
+	-- permission after the pending case is durable and immediately before action.
+	local stillAuthorized = actor.Parent == Players
+		and hasPermission(self.authorization, actor, "GlobalModeration")
+	if propagateAlt then
+		stillAuthorized = stillAuthorized and hasPermission(self.authorization, actor, "IncidentResponse")
+	end
+	if not stillAuthorized then
+		self:_update(targetUserId, function(record)
+			if record.active then record.active[caseId] = nil end
+			self:_appendHistory(record, {caseId = caseId, kind = "PunishmentCanceled", status = "Canceled",
+				actorUserId = actor.UserId, targetUserId = targetUserId, at = os.time(),
+				reason = "Actor disconnected or authorization changed during persistence."})
+			return record
+		end)
+		return false, "Authorization changed before enforcement; no punishment was applied.", caseId
+	end
+
 	if kind == "TempBan" or kind == "PermanentBan" then
 		local enabledOk, enabled = pcall(function() return Players.BanningEnabled end)
 		if not enabledOk or enabled ~= true then
