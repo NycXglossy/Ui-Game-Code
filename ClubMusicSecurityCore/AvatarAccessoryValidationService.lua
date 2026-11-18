@@ -8,6 +8,7 @@ local Service = {}
 Service.__index = Service
 
 local MAX_ACCESSORIES = 50
+local MAX_TRACKED_TOOLS = 100
 local MAX_PARTS_PER_ACCESSORY = 32
 local MAX_HANDLE_AXIS = 30
 local ADD_WINDOW_SECONDS = 10
@@ -17,6 +18,11 @@ type PlayerState = {
 	character: Model?,
 	playerConnections: {RBXScriptConnection},
 	characterConnections: {RBXScriptConnection},
+	inventoryContainers: {[Instance]: boolean},
+	knownTools: {[Tool]: boolean},
+	presentTools: {[Tool]: boolean},
+	knownAccessories: {[Accessory]: boolean},
+	toolCapSignaled: boolean,
 	appearanceReady: boolean,
 	additions: {number},
 	lastSignalAt: {[string]: number},
@@ -64,9 +70,68 @@ function Service:_signal(player: Player, signal: string, detail: string)
 	if not ok then self.lastError = string.sub(tostring(err), 1, 180) end
 end
 
+function Service:_observeToolAdded(player: Player, tool: Tool)
+	local state = self.states[player.UserId]
+	if not state or not tool:IsA("Tool") then return end
+	local known = state.knownTools[tool] == true
+	if not known then
+		local count = 0
+		for _ in pairs(state.knownTools) do count += 1 end
+		if count >= MAX_TRACKED_TOOLS then
+			if not state.toolCapSignaled then
+				state.toolCapSignaled = true
+				self:_signal(player, "tool_inventory_observation_cap", tostring(MAX_TRACKED_TOOLS))
+			end
+			return
+		end
+		state.knownTools[tool] = true
+		if state.appearanceReady then
+			self:_signal(player, "tool_added_after_appearance", tool.Name)
+		end
+	elseif state.presentTools[tool] == false and state.appearanceReady then
+		self:_signal(player, "tool_returned_to_inventory", tool.Name)
+	end
+	state.presentTools[tool] = true
+end
+
+function Service:_observeToolRemoved(player: Player, tool: Tool)
+	local state = self.states[player.UserId]
+	if not state or not state.knownTools[tool] then return end
+	task.defer(function()
+		if self.states[player.UserId] ~= state then return end
+		local backpack = player:FindFirstChildOfClass("Backpack")
+		if tool.Parent == player.Character or (backpack and tool.Parent == backpack) then return end
+		if state.presentTools[tool] then
+			state.presentTools[tool] = false
+			if state.appearanceReady then
+				self:_signal(player, "tool_removed_from_inventory", tool.Name)
+			end
+		end
+	end)
+end
+
+function Service:_attachToolContainer(player: Player, container: Instance, connections: {RBXScriptConnection})
+	local state = self.states[player.UserId]
+	if not state or state.inventoryContainers[container] then return end
+	state.inventoryContainers[container] = true
+	for _, child in ipairs(container:GetChildren()) do
+		if child:IsA("Tool") then self:_observeToolAdded(player, child) end
+	end
+	table.insert(connections, container.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then self:_observeToolAdded(player, child) end
+	end))
+	table.insert(connections, container.ChildRemoved:Connect(function(child)
+		if child:IsA("Tool") then self:_observeToolRemoved(player, child) end
+	end))
+end
+
 function Service:_inspectAccessory(player: Player, accessory: Accessory, runtimeAdded: boolean)
 	local state = self.states[player.UserId]
 	if not state or not accessory:IsA("Accessory") then return end
+	state.knownAccessories[accessory] = true
+	if runtimeAdded and state.appearanceReady then
+		self:_signal(player, "avatar_accessory_added_after_appearance", accessory.Name)
+	end
 
 	local partCount = 0
 	for _, descendant in ipairs(accessory:GetDescendants()) do
@@ -164,6 +229,8 @@ function Service:_attachCharacter(player: Player, character: Model)
 			if child:IsA("Accessory") then
 				count += 1
 				self:_inspectAccessory(player, child, false)
+			elseif child:IsA("Tool") then
+				self:_observeToolAdded(player, child)
 			end
 		end
 		if count > MAX_ACCESSORIES then
@@ -171,9 +238,26 @@ function Service:_attachCharacter(player: Player, character: Model)
 		end
 	end
 
+	self:_attachToolContainer(player, character, state.characterConnections)
 	table.insert(state.characterConnections, character.ChildAdded:Connect(function(child)
 		if child:IsA("Accessory") then
 			self:_inspectAccessory(player, child, state.appearanceReady)
+		elseif child:IsA("Tool") then
+			self:_observeToolAdded(player, child)
+		end
+	end))
+	table.insert(state.characterConnections, character.ChildRemoved:Connect(function(child)
+		if child:IsA("Accessory") and state.knownAccessories[child] then
+			task.defer(function()
+				if self.states[player.UserId] == state and child.Parent ~= character then
+					state.knownAccessories[child] = nil
+					if state.appearanceReady then
+						self:_signal(player, "avatar_accessory_removed_after_appearance", child.Name)
+					end
+				end
+			end)
+		elseif child:IsA("Tool") then
+			self:_observeToolRemoved(player, child)
 		end
 	end))
 
@@ -206,12 +290,25 @@ function Service:_attachPlayer(player: Player)
 		character = nil,
 		playerConnections = {},
 		characterConnections = {},
+		inventoryContainers = {},
+		knownTools = {},
+		presentTools = {},
+		knownAccessories = {},
+		toolCapSignaled = false,
 		appearanceReady = false,
 		additions = {},
 		lastSignalAt = {},
 		signals = 0,
 	}
 	self.states[player.UserId] = state
+	local function attachBackpack(backpack: Instance)
+		if backpack:IsA("Backpack") then
+			self:_attachToolContainer(player, backpack, state.playerConnections)
+		end
+	end
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if backpack then attachBackpack(backpack) end
+	table.insert(state.playerConnections, player.ChildAdded:Connect(attachBackpack))
 	table.insert(state.playerConnections, player.CharacterAdded:Connect(function(character)
 		self:_attachCharacter(player, character)
 	end))
