@@ -340,6 +340,8 @@ function Service:RevokeRestrictions(actor: Player, targetUserId: number, reason:
 	if not writeOk then return false, "Restriction reversal could not be saved; restrictions remain in force." end
 	self.restrictionCache[targetUserId] = nil
 	self:_audit("RestrictionsReversed", actor.UserId, targetUserId, "unknown", cleanReasonValue)
+	local target = Players:GetPlayerByUserId(targetUserId)
+	if target then pcall(self.onNotify, target, "ok", "Your active experience feature restrictions have been removed.") end
 	return true, "Active feature restrictions were reversed."
 end
 
