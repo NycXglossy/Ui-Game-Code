@@ -1,6 +1,6 @@
 # Phase 26 — Server-Authoritative Movement Envelope
 
-**Status:** Source inventory and bounded passive displacement measurement committed. No anomaly thresholds, path enforcement, correction, or punishment is enabled. Live movement-source inventory, representative runtime measurements, and acceptance remain open.
+**Status:** Source inventory, bounded passive displacement measurement, and one-use verified-teleport sampling integration committed. No anomaly thresholds, path enforcement, correction, or punishment is enabled. Live movement-source inventory, representative runtime measurements, and acceptance remain open.
 
 **Branch:** `fix/security-core-release-and-queue-loop`
 
@@ -98,12 +98,21 @@ The Phase 26 target includes the following distinct detection and prevention cap
 - These bands are measurement bins, not movement limits or exploit verdicts. They do not emit anomaly signals and cannot change gameplay. The existing coarse velocity observer remains detection-only and unchanged.
 - The installer release pin now points to the commit containing the updated CharacterPhysicsGuard source. The module remains server-only.
 
+## Verified teleport integration — passive only
+
+- `TeleportValidationService.Complete` now records a short-lived (2.5-second), target-character-scoped marker only after the existing ticket has been consumed and the server-observed destination has passed verification.
+- `CharacterPhysicsGuard` consumes that marker once, resets its previous-position/time baseline to the server-observed post-teleport position, and increments an aggregate `authorizedTeleportSamples` counter. This prevents the verified Tiki Tide Settings CFrame teleport from polluting ordinary displacement-speed measurements.
+- The marker is server-only, character-identity checked, expiring, one-use, and cleaned up on PlayerRemoving. It does not create a client exemption, authorize a teleport, skip property/velocity observation, or alter character physics.
+- The Security Core installer release pin is updated to the exact commit containing both module changes.
+- This integration covers the tracked Tiki Tide Settings teleport path that calls Begin → server CFrame assignment → Complete. It does not automatically cover native Kohl's teleport commands, spawn transitions, mounts, vehicles, or other untracked CFrame/PivotTo/MoveTo writers.
+- This is not CFrame rollback or horizontal speed correction. Safe recovery CFrames, collision-safe destination validation, sustained anomaly detection, and clamping remain unimplemented and disabled.
+
 ## Runtime measurement and acceptance matrix — outstanding
 
 - [ ] Collect baseline traces for normal players on PC, mobile, and console; default and Tiki Tide movement profiles; R6/R15/custom rigs; low/medium/high latency; and normal server load.
 - [ ] Exercise Utility Bar scale endpoints and intermediate values, respawn, entitlement revoke, and character replacement.
 - [ ] Test every actual mount/vehicle and every knockback/launch/impulse source.
-- [ ] Test teleport ticket success, expiry, replay, destination mismatch, actor/target departure, respawn during action, and external teleport origins.
+- [ ] Test teleport ticket success, expiry, replay, destination mismatch, actor/target departure, respawn during action, and external teleport origins; verify exactly one movement sample is exempted only after successful Complete.
 - [ ] Test network ownership changes, seats, moving platforms, collisions, swimming, slopes, stairs, and large but legitimate impulses.
 - [ ] Validate vertical and horizontal displacement measurements independently across grounded, airborne, seated, swimming, falling, and moving-platform contexts.
 - [ ] Build disposable-map tests for noclip and wall-clip detection: intended solid walls, collision groups, doors, moving barriers, pass-through zones, respawns, and authorized teleports; measure false positives and missed detections.
@@ -118,4 +127,4 @@ The Phase 26 target includes the following distinct detection and prevention cap
 
 Phase 26 is not complete until the live movement sources are inventoried, legitimate movement envelopes are measured, reliable server-observed path/displacement signals are demonstrated with acceptable false-positive rates, and Studio plus published-server tests prove safe recovery. Correction and enforcement remain disabled unless a later explicit design review authorizes them.
 
-**Current Phase 26 status:** source inventory and separate aggregate horizontal/vertical displacement-speed measurement committed. Noclip/wall-clip geometry validation, sustained fly analysis, thresholds, correction/clamping, runtime measurement, and live hierarchy/package inspection remain open. Phase 25 remains separately recorded. Phases 27–39 and Phase 40 cleanup are not changed by this document.
+**Current Phase 26 status:** source inventory, separate aggregate horizontal/vertical displacement-speed measurement, and one-use verified-teleport sampling integration committed. Noclip/wall-clip geometry validation, sustained fly analysis, thresholds, safe CFrame recovery, horizontal correction/clamping, runtime measurement, and live hierarchy/package inspection remain open. Phase 25 remains separately recorded. Phases 27–39 and Phase 40 cleanup are not changed by this document.
