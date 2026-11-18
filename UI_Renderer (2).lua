@@ -644,7 +644,8 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	PlaylistCreate = true, PlaylistDelete = true, PlaylistAddTrack = true,
 	PlaylistRemoveTrack = true, PlaylistMoveTrack = true,
 	DJPlayPlaylist = true, DJStopPlaylist = true,
-	-- Owner/Co-Owner playback-sync mode toggle; server rechecks permissions.
+	-- Owner/Co-Owner playback-sync mode toggle; server rechecks SecurityCore permissions.
+	DJToggleGlobalPlaybackSync = true,
 }
 local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	RequestTrack = true, ToggleFavorite = true, VoteSkip = true,
@@ -652,7 +653,7 @@ local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	EquipTitleTag = true, BuyTitleTag = true, RequestAudioAsset = true, SaveTitleSlot = true,
 	SaveCustomTitle = true,
 	-- Wrappers that UI_Network exposes; act() prefers these over raw Network.Send.
-	ReloadSong = true, DJClearQueue = true, DJToggleLock = true,
+	ReloadSong = true, DJClearQueue = true, DJToggleLock = true, DJToggleGlobalPlaybackSync = true,
 	ModBlockUser = true, ModSetPassTier = true, ModPurgeUser = true,
 	SelectTitleSlot = true, ClearTitleSlot = true, SetTitleVisible = true,
 }
@@ -3558,6 +3559,31 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			actionButton(staff, "CLEAR QUEUE", UDim2.new(0.5, 4, 0, 12), UDim2.new(0.5, -16, 0, 34), function()
 				act("DJClearQueue", {})
 			end, C.Red)
+		end
+
+		if canManage then
+			sectionLabel("CROSS-SERVER PLAYBACK")
+			local sync = if typeof(state.globalPlaybackSync) == "table" then state.globalPlaybackSync else {}
+			local syncEnabled = sync.enabled == true
+			local syncReady = sync.authorityReady == true
+			local syncCard = card(112)
+			label(syncCard, if syncEnabled then "GLOBAL PLAYBACK SYNC: ON" else "GLOBAL PLAYBACK SYNC: OFF",
+				UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 20), if syncEnabled then C.Green else C.Muted, 11, true)
+			local roleText = if not syncEnabled then "Each server plays independently."
+				elseif sync.isLeader == true then "This server is the elected playback leader."
+				elseif typeof(sync.leaderJobId) == "string" then "Following the elected playback leader."
+				else "Waiting for playback leader election."
+			label(syncCard, roleText, UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 18), C.White, 10, false)
+			label(syncCard, if syncReady then "Playback authority is ready."
+				else nz(sync.error, "Playback authority status is unavailable."),
+				UDim2.fromOffset(12, 52), UDim2.new(1, -24, 0, 16), if syncReady then C.Muted else C.Orange, 9, false)
+			actionButton(syncCard, if syncEnabled then "DISABLE GLOBAL SYNC" else "ENABLE GLOBAL SYNC",
+				UDim2.new(1, -166, 0, 76), UDim2.fromOffset(154, 28), function()
+					local requestedEnabled = not syncEnabled
+					act("DJToggleGlobalPlaybackSync", {enabled = requestedEnabled})
+				end, if syncEnabled then C.Orange else C.Green)
+			label(syncCard, "Request queues remain separate on every server.",
+				UDim2.fromOffset(12, 82), UDim2.new(1, -182, 0, 16), C.Muted, 9, false)
 		end
 
 		sectionLabel("UP NEXT")
