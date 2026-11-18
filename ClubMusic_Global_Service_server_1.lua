@@ -1395,18 +1395,47 @@ bindFunction("GetGlobalOperationalStatus", function()
 	}
 	return true, status
 end)
+local function filterMaintenanceMessage(message: any, actorUserId: any): string?
+	if typeof(message) ~= "string" or #message > CONFIG.MaxAnnouncementLength then return nil end
+	-- Empty text is an intentional clear operation; non-empty text must pass
+	-- broadcast filtering before it enters shared configuration or MessagingService.
+	if message == "" then return "" end
+	if not finiteNumber(actorUserId) or actorUserId < 1 or actorUserId % 1 ~= 0
+		or actorUserId > 9007199254740991 then return nil end
+	local actor = Players:GetPlayerByUserId(math.floor(actorUserId))
+	if not actor or actor.Parent ~= Players or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return nil end
+	local filtered = filterAnnouncementText(message, math.floor(actorUserId))
+	if not filtered or Players:GetPlayerByUserId(math.floor(actorUserId)) ~= actor
+		or actor.Parent ~= Players or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return nil end
+	return filtered
+end
+
 bindFunction("GetGlobalConfig", function()
 	if not globalConfigService then return false, nil end
 	return true, globalConfigService:GetStatus()
 end)
 bindFunction("SetGlobalConfig", function(key: any, value: any, actorUserId: any)
-	if not SERVICE_ENABLED or not globalConfigService or not finiteNumber(actorUserId) or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false end
+	if not SERVICE_ENABLED or not globalConfigService or not finiteNumber(actorUserId)
+		or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false end
+	if key == "maintenanceMessage" then
+		local filtered = filterMaintenanceMessage(value, actorUserId)
+		if filtered == nil then return false, "Maintenance text could not be safely filtered." end
+		value = filtered
+	end
 	local ok, result = globalConfigService:Set(key, value, actorUserId)
 	if ok and globalAuditService then globalAuditService:Record("AdminAction", actorUserId, tostring(key), "config-update") end
 	return ok, result
 end)
 bindFunction("SetGlobalMaintenance", function(enabled: any, message: any, actorUserId: any)
-	if not SERVICE_ENABLED or not globalMaintenanceService or typeof(actorUserId) ~= "number" or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false end
+	if not SERVICE_ENABLED or not globalMaintenanceService or not finiteNumber(actorUserId)
+		or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false end
+	if message ~= nil then
+		local filtered = filterMaintenanceMessage(message, actorUserId)
+		if filtered == nil then return false, "Maintenance text could not be safely filtered." end
+		message = filtered
+	end
+	local actor = Players:GetPlayerByUserId(math.floor(actorUserId))
+	if not actor or actor.Parent ~= Players or not authorizeGlobalActor(actorUserId, "GlobalConfig") then return false end
 	local ok, err = globalMaintenanceService:Set(enabled, message, actorUserId)
 	return ok, err
 end)
