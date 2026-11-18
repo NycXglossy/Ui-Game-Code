@@ -379,3 +379,6 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - Kept the legacy `ConsumeGlobalRateLimit` bindable signature for compatibility while returning `shared = false` when a local decision is made.
 - Updated the controller-facing `MusicValidationService.lua` and its embedded `MusicValidationService` ModuleScript in `ClubMusic_ServerStorage_Modules.rbxmx` to use bounded generation-safe circular FIFO caching and a short failure TTL. Metadata caching still does not bypass AudioPlayer preload/playability checks.
 - Static source and package parity checks completed; Luau compilation, Studio tests, and live-server validation remain outstanding.
+
+
+- Client diagnostics Workspace descendant inventory is now explicitly opt-in; normal local FPS/memory/audio sampling does not allocate a full `GetDescendants()` array.
