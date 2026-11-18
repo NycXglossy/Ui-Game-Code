@@ -368,3 +368,5 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - `ClubMusicSecurityCore/SecurityThreatIntelligence.lua`: added an O(1) per-server incident lookup index and five-second minimum expiry sweep cadence; bounded capacity and review semantics unchanged. Commit `50289e2525605bb308462465f9cd50253dec054d`.
 - Local-first boundary clarified: FPS/memory/audio/visual diagnostics remain client-local and untrusted. The pre-existing ClientIntegrityTelemetry is a separate, narrow security-review exception that sends only fixed allowlisted signal codes at low frequency; it sends no performance measurements or free-form client data and cannot authorize or punish.
 - Phase15 and Phase0–33 consolidation documentation updated. No runtime or device profiling has been performed.
+
+- `ClubMusicSecurityCore/CharacterPhysicsGuard.lua`: reduced optional per-character network-owner and ping context queries to one sample every five seconds while preserving adaptive displacement sampling and event-driven checks. Commit `373f1cb1448cc58ec22093248132c117fa77349`; Phase26 doc updated in `ed22d4b67ce8cb818c2affd5d11bcecdcd20ab85`.
