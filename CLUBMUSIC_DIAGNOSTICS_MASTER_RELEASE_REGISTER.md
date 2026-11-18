@@ -255,3 +255,34 @@ The Phase 25–39 plan is recorded in `CLUBMUSIC_FUTURE_ADDITIONS_ROADMAP.md`; P
 - [ ] Complete binary/package and live-place hierarchy review before any production installation.
 
 No live Roblox place was modified. No diagnostics sharing, persistence, client telemetry transmission, automatic recovery, enforcement, or legacy retirement was introduced. See `CLUBMUSIC_PHASE14_1_LOCAL_STAFF_DIAGNOSTICS.md` for the implementation and test matrix.
+
+
+
+## Phase 13.1 adaptive workload integration addendum (2026-11-18)
+
+**Development branch:** `phase13.1-adaptive-load-integration`
+**Base:** `phase14.1-local-staff-diagnostics`
+**Source status:** Phase 13.1 source integration committed; not merged or installed.
+**Runtime status:** All Roblox Studio, published test-server, load-profile, and gameplay regression gates remain open.
+
+- AdaptiveSecurityLoadManager now reports bounded attempted/accepted/deferred counters for each optional task, cumulative mode durations, current mode duration, and recovery healthy-window streak.
+- ReplayQueries and ThreatReviewQueries retain their existing query-only budget integration.
+- AnalyticsAggregation now defers only optional metrics aggregation when its token budget is unavailable. Global health checks, ServerHealth, and watchdog sampling are not gated.
+- DiagnosticsSampling now controls only passive aggregate movement measurement inside CharacterPhysicsGuard. The sample cadence adapts to Normal/Reduced/Critical mode; event-driven movement property checks, MovementAuthority, TeleportValidationService, and security event recording remain active.
+- BackgroundMaintenance remains reserved because no safe optional maintenance worker was identified. Profile persistence, receipt handling, storage cleanup, and security retention are not deferred.
+- Added a client-local visual-quality LocalScript for explicitly tagged ClubEffect particle rates and StageClubLight shadows. It reads a server-local Workspace attribute; no RemoteEvent/RemoteFunction or client telemetry is introduced. Light Enabled/Color/Brightness remain owned by existing Stage & Club Lighting controls.
+- Existing OperationalDiagnostics output inside the authorized Staff Controls console now exposes adaptive workload counters, mode trend, and movement sampling counts.
+- The SecurityCore installer now stages, backs up, promotes, and rolls back the visual-quality LocalScript. Its module/client release pin points to the commit containing the updated AdaptiveSecurityLoadManager, CharacterPhysicsGuard, and client script.
+
+### Phase 13.1 release gates still open
+
+- [ ] Luau syntax/type review in Roblox Studio.
+- [ ] Installer stage/promotion/rollback acceptance in a disposable Studio place.
+- [ ] Adaptive mode, hysteresis, mode-duration, and token-bucket tests.
+- [ ] VIP speed, size, mount, teleport, respawn, and scripted movement regression tests.
+- [ ] Client visual restoration, dynamic tag, and Stage & Club Lighting regression tests.
+- [ ] Staff authorization and diagnostics lifecycle tests.
+- [ ] Server/client performance profiling and full gameplay regression tests.
+- [ ] Published test-server acceptance.
+
+No Roblox runtime testing was performed by the source update. Do not install or publish this branch until the release gates pass and the project owner explicitly approves deployment.
