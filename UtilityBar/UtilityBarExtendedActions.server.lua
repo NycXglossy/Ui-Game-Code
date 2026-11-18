@@ -265,10 +265,10 @@ local function spawnMount(player: Player): (boolean, string)
 		mount:Destroy()
 		return false, "Your character changed before the mount could spawn."
 	end
-	local record = {model = mount, connections = {}}
+	local record: {model: Model, connections: {RBXScriptConnection}} = {model = mount, connections = {}}
 	for _, descendant in ipairs(mount:GetDescendants()) do
 		if descendant:IsA("Seat") or descendant:IsA("VehicleSeat") then
-			local seat = descendant :: Seat
+			local seat: any = descendant
 			-- Default policy is owner-only driving/riding until a passenger policy
 			-- is deliberately configured and tested for the actual mount model.
 			table.insert(record.connections, seat:GetPropertyChangedSignal("Occupant"):Connect(function()
@@ -302,7 +302,12 @@ local function spawnMount(player: Player): (boolean, string)
 			despawnMount(player.UserId, false)
 		end
 	end))
-	mount.Parent = workspace
+	local parentOk, parentError = pcall(function() mount.Parent = workspace end)
+	if not parentOk then
+		despawnMount(player.UserId, true)
+		warn("[UtilityBar] Mount parenting failed: " .. tostring(parentError))
+		return false, "The server could not place the mount into the world."
+	end
 	player:SetAttribute("HasActiveIslandMount", true)
 	return true, "Your Island Mount has spawned. Use the Mount button again to despawn it."
 end
@@ -624,6 +629,7 @@ local function bindPlayerLifecycle(player: Player)
 	if existing then
 		for _, connection in ipairs(existing) do connection:Disconnect() end
 	end
+	player:SetAttribute("HasActiveIslandMount", activeMounts[player.UserId] ~= nil)
 	local connections = {}
 	table.insert(connections, player.CharacterAdded:Connect(function()
 		destroyCompanion(player.UserId)
