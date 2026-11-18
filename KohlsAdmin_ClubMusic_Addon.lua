@@ -285,6 +285,9 @@ return function(_K: any)
 	register("clubmusic-unban", "Reverse an active Roblox experience ban and retain the reversal history.", "Administration", "Phase32Unban", {"cmunban"}, {
 		{type = "string", name = "UserIdAndReason", description = "Numeric UserId followed by the reversal reason.", optional = false},
 	})
+	register("clubmusic-unrestrict", "Reverse all active feature restrictions for a player.", "Administration", "Phase32Unrestrict", {"cmunrestrict"}, {
+		{type = "string", name = "UserIdAndReason", description = "Numeric UserId followed by the reversal reason.", optional = false},
+	})
 	register("clubmusic-punishment-history", "Show retained Phase 32 punishment history for a UserId.", "Administration", "Phase32History", {"cmpunishmenthistory"}, {
 		{type = "string", name = "UserId", description = "Numeric Roblox UserId.", optional = false},
 	})
