@@ -1,9 +1,8 @@
 # ClubMusic Audio Server-Core Conversion & Module Consolidation
 
-**Branch:** `security/phase1-foundation`  
-**Audit baseline:** `f62fd46e4ae17e12ae00dc01418d7bdd6208459f`  
-**Status:** Source inventory completed; implementation is staged behind dependency and runtime gates.  
-**Runtime status:** Owner reports modern audio playback is functional. This document does not claim independent Roblox Studio or published-server verification.
+**Branch:** `fix/security-core-release-and-queue-loop`  
+**Phase 30 status:** Server-first audio, media ingress, optional playback-only sync, and bundle/installer reconciliation are in source integration.  
+**Runtime status:** Static repository audit only. Studio and published two-server certification remain outstanding.
 
 ## Objective
 
@@ -21,7 +20,7 @@ The server controller remains the authority for playback state, per-server queue
 - The server ModuleScripts remain under `ServerStorage/ClubMusicAudioModules`; the client-only preferences ModuleScript remains under `ReplicatedStorage/ClubMusicClientAudioModules`.
 - Do not replicate `AudioDeviceOutput` or the private output wires from the server. Each client creates its own output route.
 - Keep queue state, catalog validation, playlist persistence, DJ sessions, authorization, transition ownership, recovery, and watchdog logic server-side. None belongs in `ReplicatedStorage`.
-- `MemoryStoreService` is not part of the audio runtime. Cross-server playback synchronization, leader leases, shared playback snapshots, and playback peer coordination are retired; each server owns its own playback, clock, Auto DJ selection, transitions, and request queue. Do not add MemoryStore or MessagingService dependencies to playback. Any remaining MemoryStore use must be justified by a separate, actively consumed security/operations feature and audited independently.
+- Optional playback-only global sync is part of the current Phase 30 design but is disabled by default. When enabled, MemoryStore provides only a fenced leader lease, DataStore stores only the current Now Playing snapshot/playhead, and MessagingService publishes revision invalidations. No queue, playlist cursor, request accounting, or Auto DJ state is shared. If disabled, each server owns its playback and request queue independently.
 - Roblox's audio documentation describes the 2D output graph using `SoundService` and identifies `AudioPlayer:Play()` / `Stop()` as server-to-client replicated actions. `AudioPlayer.IsReady` is explicitly not replicated, so decoder readiness must remain a server-side check; clients must not be made authoritative by reading it.
 
 **Implementation result:** no runtime parent change is required for this boundary. The controller and backend already construct the server-owned graph in `SoundService`, and the client module already constructs local output routing. Moving the graph to `ReplicatedStorage` would be an unnecessary architectural change and could break the established audio routing. This is a verified source-layout decision, not a claim of Roblox Studio runtime certification.
@@ -29,7 +28,7 @@ The server controller remains the authority for playback state, per-server queue
 ## Non-negotiable invariants
 
 1. Modern `AudioPlayer` is the only intended long-term playback source; the controller remains its lifecycle owner.
-2. Each server independently owns its playback state, playback clock, Auto DJ selection, transitions, and request queue. Global playback sync and shared playback authority are retired.
+2. Each server independently owns its request queue, playlist cursor, Auto DJ refill, request accounting, and skip votes. Optional global playback sync shares only Now Playing/playhead under a fenced leader; it never shares or consumes another server's queue.
 3. `SecurityCore.Authorization` remains the sole permission authority. DJ/session modules may call injected authorization but must not implement a parallel role system.
 4. Normal player song requests and Auto DJ remain available to all players; DJ Control Mode allows the current controller to request tracks while blocking other players. Requests remain subject to server-side catalog validation, request cooldowns/limits, queue capacity, idempotency, and abuse controls.
 5. Pause, restart, DJ skip, playlist/catalog management, and DJ session/handoff actions require the appropriate SecurityCore-backed DJ/staff permission. `ReloadSong` is explicitly excluded: it is a self-service recovery action available to every live player under its existing cooldown and ingress limits. Read-only Now Playing/queue access and skip voting retain their existing player-facing behavior.
@@ -45,12 +44,12 @@ The server controller remains the authority for playback state, per-server queue
 
 | Module | Current role | Conversion decision |
 |---|---|---|
-| `ServerMusicAudioHandler.luau` | Backend-neutral snapshot and audio access adapter; still exposes legacy `Sound` methods | Merge with playback inspection into one server-only runtime adapter, or replace with controller-local helpers. Retain no independent playback ownership. |
-| `MusicPlaybackManager.luau` | Playback snapshot, elapsed/remaining time, quality inspection, controller action delegation | Consolidate with `ServerMusicAudioHandler`. Preserve `InspectQuality()` semantics because watchdog/track-advance logic consumes quality state. |
-| `MusicPlaylistManager.luau` | Thin facade over `MusicPlaylistService` and controller-owned rotation callbacks | **Consolidated in controller commit `ff748b8`.** Controller now calls its rotation functions directly; CRUD and refresh continue through `MusicPlaylistService`. Source file retained pending installed-place reconciliation. |
-| `MusicSkipVoteManager.luau` | Thin facade over controller-owned vote state and callbacks | **Consolidated in controller commit `06e85c7`.** Controller now owns vote casting and player-departure cleanup directly; source file retained pending installer/live-place reconciliation. |
+| `ServerMusicAudioHandler.luau` | Historical backend/Sound adapter | Not present in the current tracked branch tree and not loaded by the current controller. Treat any live-place copy as rollback-only pending hierarchy inspection. |
+| `MusicPlaybackManager.luau` | Historical playback facade and quality inspector | **Consolidated into controller-local `inspectPlaybackQuality()`.** The controller no longer loads it; the current installer no longer provisions it. The standalone source remains as a rollback artifact until live-place consumers are checked. |
+| `MusicPlaylistManager.luau` | Historical facade over `MusicPlaylistService` and controller-owned rotation | Consolidated in the existing controller path; not loaded by the current controller. Keep source as rollback until live-place reconciliation. |
+| `MusicSkipVoteManager.luau` | Historical facade over controller-owned vote state | Consolidated in the controller path; not loaded by the current controller. Keep source as rollback until live-place reconciliation. |
 
-`MusicPlaybackManager` remains in the controller's `ChildManagerModules` list. `MusicPlaylistManager` and `MusicSkipVoteManager` have been removed from that list; rotation and vote call sites now call controller-owned functions directly. The facades do not independently own playback loops, queue state, playlist cursors, or vote timers.
+The current controller owns playlist rotation, skip-vote state, playback quality classification, watchdog decisions, and playback state. No separate facade owns a playback loop, queue, playlist cursor, or vote timer. The `MusicPlaybackManager` quality classifications are preserved in controller-local code and use only the modern AudioPlayer snapshot.
 
 ### Core server audio modules
 
@@ -62,11 +61,11 @@ The server controller remains the authority for playback state, per-server queue
 | `ClubMusicDJSessionManager.luau` | DJ session/handoff state with injected authorization | Keep server-only. It may be folded into controller DJ management only after session lifecycle and handoff callbacks are fully mapped. It must not become an authorization authority. |
 | `ClubMusicSpatialAudioGraph.luau` | Optional AudioPlayer-to-emitter/listener/output graph lifecycle | Keep separate while optional spatial routing exists; resource ownership and teardown are distinct. |
 
-The five core sources above are stored as ModuleScripts in `ClubMusic_Audio_Server_Modules.rbxmx` and also exist as standalone `.luau` files. A canonical source policy must be established before either copy is edited.
+The five core sources above exist as standalone `.luau` files and are embedded byte-identically in `ClubMusic_Audio_Server_Modules.rbxmx`. Standalone sources are canonical; the RBXMX bundle is regenerated from them and checked for exact source equality.
 
 ### Queue, catalog, validation, and persistence
 
-- `MusicQueueManager.lua` is the controller's expected adapter and delegates to `MusicQueueManagerService.lua`.
+- `MusicQueueManager.lua` is the canonical controller adapter and delegates to `MusicQueueManagerService.lua`; it supports both direct ServerStorage installation and the `ClubMusic_ServerStorage_Modules` bundle folder.
 - `MusicQueueManagerService.lua` mutates the injected controller-owned queue and does not create a second queue or own playback.
 - `MusicQueueManager.luau` is a second implementation that retains a legacy config-backed mode. It is a duplicate retirement candidate, but **must not be deleted** until every installer, package, and live-place consumer is confirmed to use the canonical adapter/service pair.
 - `MusicCatalogService.lua` owns catalog lookup/storage; keep it separate from queue and playback state.
@@ -81,7 +80,7 @@ The five core sources above are stored as ModuleScripts in `ClubMusic_Audio_Serv
 - `MusicQueueManager.luau` retains a second config-backed queue and per-player counters. It is not loaded by the controller. The inspected ServerStorage and Audio Server RBXMX bundles do not contain either queue-manager name, and the inspected audio and SecurityCore installers do not install either queue module. Keep the legacy `.luau` source as a rollback artifact until the actual live-place ServerStorage hierarchy is confirmed.
 - The controller requires only `ServerStorage.MusicValidationService`. Its live API contract is `GetAudioAssetInfo(assetId)` followed by `NormalizeAudioMetadata(assetId, info, duration)` after the controller independently preloads an `AudioPlayer` and confirms playability. The `.lua` service previously lacked `NormalizeAudioMetadata`; this audit added the bounded metadata-shaping method expected by the controller, without moving preload/playability checks into the cache service.
 - `MusicValidationService.luau` is not loaded by the controller and contains extra legacy music-ID, spam, cooldown, player-validation, and `RoleSystem` logic. Those responsibilities remain outside the canonical metadata cache; request limits and authorization stay with the controller and SecurityCore.
-- The inspected ServerStorage and Audio Server RBXMX bundles and the audio/SecurityCore installers contain no `MusicValidationService` source reference. Keep the `.luau` duplicate as a rollback artifact until live-place hierarchy reconciliation is complete.
+- `ClubMusic_ServerStorage_Modules.rbxmx` now contains the canonical `MusicQueueManager`, `MusicQueueManagerService`, and `MusicValidationService.lua` sources alongside catalog, playlist, and receipt-hash modules. The Command Bar installer stages and installs the six controller-required ServerStorage core modules directly. The legacy `.luau` validation duplicate remains outside the bundle and installer.
 - No repository deletion was made: the controller-facing adapter and service pair are the canonical queue path; `MusicValidationService.lua` is the canonical metadata path. Both legacy `.luau` variants remain unreferenced rollback candidates, not approved live runtime dependencies.
 
 ### Client-only boundary
