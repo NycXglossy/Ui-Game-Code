@@ -2,7 +2,7 @@
 
 **Branch:** `fix/security-core-release-and-queue-loop`  
 **Source audit baseline:** `83f6cf36a55ee09f9447686fdae0c005bda4d856`  
-**Status:** Tracked-source integration is substantially complete. Runtime certification and live-place consumer reconciliation remain open.  
+**Status:** Tracked-source modern-only audio, media ingress hardening, and bounded detection-only animation inventory are implemented. Runtime certification and live-place consumer reconciliation remain open.  
 **Do not certify Phase 30** until the Studio and published two-server acceptance matrix at the end of this document passes.
 
 ## Scope and non-negotiable invariants
@@ -227,11 +227,17 @@ The main controller's profile-backed Dance Floor reward service samples each pla
 
 This activity observer deliberately does not require a particular animation ID. Replacing it with the supplied allowlist, or stopping unknown tracks, would risk breaking legitimate dance-floor activity and rewards. It is not an animation authorization service.
 
-### Safe disposition
+### Implemented: bounded detection-only animation inventory
 
-- Do not add the sample's stop/destroy handler, a competing animation controller, or a second permission/entitlement system.
-- Preserve default Roblox animation behavior and all legitimate R6/R15/custom rig and emote paths.
-- If animation enforcement is later required, first inventory the actual live Animate scripts, HumanoidDescription animation/emote configuration, game dance/emote grant paths, tool animations, server-created Animator instances, third-party packages, and all animation asset IDs used in production. Establish server-owned provenance/authorization for each source before defining a policy.
-- Any initial monitor should be bounded, detection-only, and aggregate/record fixed event categories through the existing SecurityCore recording path. It must not stop tracks, destroy animations, kick players, or permanently punish from an unclassified ID. Only consider enforcement after legitimate-source coverage and Studio/published R6/R15/custom-avatar regression tests pass.
+A new `ClubMusicSecurityCore/AnimationIntegrityService.lua` is now wired into the main controller and included in the Security Core installer release.
 
-**Disposition:** no animation IDs were added to an allowlist; no AnimationPlayed enforcement or observer was installed; no legitimate animation was stopped or destroyed.
+- The server observes `Animator.AnimationPlayed` for live player characters and inspects a bounded snapshot of already-playing tracks when an Animator is attached.
+- Each distinct canonical `rbxassetid://` animation ID is recorded once per character, with only the numeric asset ID, animation priority, and R6/R15 rig type. Animation names, keyframes, chat, and client-supplied metadata are not retained.
+- Per character, observation is bounded to 128 track starts, 32 distinct asset IDs, 64 initial tracks, four Humanoids, and four Animators. The observer records cap events and reports aggregate status.
+- Player, character, Humanoid, and Animator connections are disconnected on replacement, removal, player departure, or controller shutdown. PlayerAdded and already-connected players are both covered.
+- Events flow to the existing server-local `TikiTideSecurityReplay` recording endpoint, with the existing global security-signal recorder as an additional signal path. A server-only `GetTikiTideAnimationIntegrityStatus` BindableFunction exposes observer health/counters.
+- No animation is stopped, destroyed, rewritten, or blocked. The observer does not grant animations, create a permission system, or kick/ban/punish players.
+
+**Interpretation limit:** this is an observed asset inventory, not an approved-animation allowlist or provenance verdict. An ID not yet seen is not automatically suspicious. The observer currently accepts canonical `rbxassetid://` strings for its inventory; other URI forms are counted as unreadable and ignored rather than blocked. Before any allowlist or enforcement is considered, inventory the live Animate scripts, HumanoidDescription animation/emote configuration, game dance/emote grant paths, tool animations, server-created Animator instances, third-party packages, and production asset IDs.
+
+**Static integration status:** the controller starts/stops the service; the Security Core installer includes `AnimationIntegrityService` and pins its source release. This was a source-level change only. Roblox Studio tests are still required for R6, R15, custom rigs, default locomotion, emotes, tools, dance systems, rapid track starts, respawns, Animator replacement, player departure, and observer cleanup. No Luau parser or Studio runtime was available here.
