@@ -206,7 +206,7 @@ function Service:_attachCharacter(player: Player, character: Model)
 	end))
 	table.insert(state.characterConnections, character.AncestryChanged:Connect(function(_, parent)
 		if parent == nil and self.states[player.UserId] == state and state.character == character then
-			self:_detachCharacter(player, state)
+			self:_detachCharacter(state)
 		end
 	end))
 end
