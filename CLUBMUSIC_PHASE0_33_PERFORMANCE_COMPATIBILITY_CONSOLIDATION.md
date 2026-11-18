@@ -391,3 +391,12 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Replaced that direct mutation with one local ModerationReconcile snapshot containing both durable enforcement flags and the record revision. The controller applies the snapshot only for the currently online player and only when its revision is equal to or newer than the latest observed revision. A current snapshot enforces a confirmed global ban, otherwise repairs request-block state and clears pending. An older snapshot has no effect.
 - Failed DataStore reads still mark pending and trigger the existing pending-only retry sweep; no kick occurs from a failed read. Existing 1.1-second pacing, three-token reserve, 180-second full sweep and 15-second pending retry remain unchanged.
 - No new remote, DataStore, MemoryStore, MessagingService topic, diagnostics aggregation, or client telemetry was added. Static source inspection only; no Luau compilation, backend fault injection, multi-server ordering test, Studio/runtime test, or deployment.
+
+
+## Moderation lookup departure-race audit (2026-11-18)
+
+- Audited join-time and background moderation lookups for PlayerRemoving races. Both GetModerationState BindableFunction calls and the background GetAsync can yield while the target Player leaves.
+- Added Player.Parent == Players rechecks immediately after each yielding join-time service/read call and each retry service/read call. A departed Player's join/retry worker now exits before storing a revision, changing local restriction state, kicking, or clearing pending.
+- Added the equivalent post-GetAsync membership check in the periodic reconciliation worker. A departed Player is skipped before pending attributes or local reconciliation events are touched. The existing sequential pacing and worker lifecycle remain unchanged.
+- The onJoin idempotency marker and per-user moderation revision entry are still cleared by PlayerRemoving. An in-flight join/retry cannot repopulate the revision cache after cleanup because of the new post-yield guards. No per-player tasks, remotes, DataStores, MessagingService topics, or global coordination were added.
+- Static source inspection only. No concurrent leave/rejoin simulation, DataStore delay injection, Luau compilation, Studio/runtime test, or deployment was performed.
