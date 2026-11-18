@@ -94,14 +94,14 @@ Run in a dedicated test universe/place, not against production data:
 6. From an ordinary client, attempt to locate or invoke diagnostics APIs. Confirm no diagnostic records, traces, or privileged service methods are client-reachable.
 7. Test avatar refresh while respawning/leaving and rapid Tool Shop query calls; confirm cooldowns and safe rejection.
 8. Inspect the live place hierarchy to confirm it matches the documented secured ClubMusic layout; specifically confirm the standalone legacy `Music System` and `MusicRemotes` are not installed, and review the five ClubMusic adapters, Kohl's adapter, and installer scripts.
-9. Run the existing purchase/profile/session-lock, global playback sync, and two-server regression tests in the isolated environment. Do not use live production DataStores for test fixtures.
+9. Run purchase/profile/session-lock recovery, per-server playback/queue isolation, and retained cross-server global-feature regression tests in the isolated environment. Do not test or enable cross-server playback sync; do not use live production DataStores for test fixtures.
 
 ## Sign-off criteria
 - [ ] Live-place hierarchy confirmed to use the secured ClubMusic transport, with no separately installed legacy `Music System` / `MusicRemotes` stack.
 - [ ] Binary model/package scope reviewed or explicitly excluded by the project owner.
 - [ ] Studio multiplayer test matrix passes.
 - [ ] Published test-server matrix passes, including two-server MessagingService/MemoryStore behavior.
-- [ ] No regressions in modern audio playback controls, crossfade, local queues, or optional playback-only global sync.
+- [ ] No regressions in modern audio playback controls, crossfade, and independent per-server queues; verify retired playback-sync code remains absent.
 - [ ] No regression in DJ role separation or Kohl's adapter behavior.
 - [ ] Installation package/revision is pinned to the verified commit and only then presented for installation.
 
@@ -251,7 +251,7 @@ The Phase 25–39 plan is recorded in `CLUBMUSIC_FUTURE_ADDITIONS_ROADMAP.md`; P
 - [ ] Test dependency removal, wrong-class/reparenting, and restoration in a disposable test place.
 - [ ] Verify the 20-transition cap and state-duration/recovery behavior under repeated state changes.
 - [ ] Profile server/client overhead at low and full player counts and during long-running playback/crossfade/queue activity.
-- [ ] Complete purchase, moderation, playback, local queue, playback-only global sync, and Utility Bar regression tests.
+- [ ] Complete purchase, moderation, playback, two-server local-queue isolation, retained global-feature, and Utility Bar regression tests.
 - [ ] Complete binary/package and live-place hierarchy review before any production installation.
 
 No live Roblox place was modified. No diagnostics sharing, persistence, client telemetry transmission, automatic recovery, enforcement, or legacy retirement was introduced. See `CLUBMUSIC_PHASE14_1_LOCAL_STAFF_DIAGNOSTICS.md` for the implementation and test matrix.
