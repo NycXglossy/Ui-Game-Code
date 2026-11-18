@@ -6525,6 +6525,7 @@ ControllerFunctions.onJoin = function(player: Player)
 	onJoinStarted[player] = true
 	task.spawn(ControllerFunctions.checkNativeBanHistory, player)
 	local enabledCallOk, globalServiceEnabled = ControllerFunctions.globalInvoke("IsEnabled")
+	if player.Parent ~= Players then return end
 	local globalModerationRequired = not RunService:IsStudio()
 	local globalServiceReady = enabledCallOk and globalServiceEnabled == true
 	-- A service-readiness failure is not a ban. Keep moderation-sensitive actions
@@ -6532,6 +6533,7 @@ ControllerFunctions.onJoin = function(player: Player)
 	-- Fetch ban and request-block status together to avoid serial durable reads.
 	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked, moderationRevision =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+	if player.Parent ~= Players then return end
 	local knownModerationRevision = ControllerFunctions.moderationRevisions
 		and ControllerFunctions.moderationRevisions[player.UserId] or 0
 	if moderationCallOk and moderationLookupOk == true
@@ -6584,11 +6586,13 @@ ControllerFunctions.onJoin = function(player: Player)
 				if player.Parent ~= Players then return end
 				if not serviceResolved then
 					local callOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
+					if player.Parent ~= Players then return end
 					serviceResolved = callOk and enabled == true
 				end
 				if not moderationResolved then
 					local callOk, lookupOk, banned, blocked, revision =
 						ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
+					if player.Parent ~= Players then return end
 					local latestRevision = ControllerFunctions.moderationRevisions
 						and ControllerFunctions.moderationRevisions[player.UserId] or 0
 					if callOk and lookupOk == true
