@@ -1031,22 +1031,43 @@ local sharedDependencies = {
 	jsonEncode = function(value) return HttpService:JSONEncode(value) end,
 	jsonDecode = function(value) return HttpService:JSONDecode(value) end,
 }
+
+
+-- Optional service startup must be isolated: a failed Start must not prevent
+-- unrelated services or the shutdown janitor from being initialized.
+local function startOperationalService(moduleName: string, service: any): boolean
+	local ok, startError = pcall(service.Start, service)
+	if ok then return true end
+	warn("[ClubMusic Global] Optional service startup failed for " .. moduleName .. ": "
+		.. string.sub(tostring(startError), 1, 240))
+		-- Stop is best-effort because Start may have partially initialized resources.
+	if type(service.Stop) == "function" then
+		local stopOk, stopError = pcall(service.Stop, service)
+		if not stopOk then
+			warn("[ClubMusic Global] Partial-start cleanup failed for " .. moduleName .. ": "
+				.. string.sub(tostring(stopError), 1, 180))
+		end
+	end
+	updateRegistryStatus(moduleName, "Unavailable", "Optional service startup failed; dependent functionality remains unavailable.")
+	return false
+end
+
 globalConfigService = createOperationalService("ClubMusic_Global_Config_Service", sharedDependencies, {"Start", "GetStatus", "Get", "Set", "SetLocal"})
 
-if globalConfigService then globalConfigService:Start() end
+if globalConfigService and not startOperationalService("ClubMusic_Global_Config_Service", globalConfigService) then globalConfigService = nil end
 
 local auditDependencies = table.clone(sharedDependencies)
 auditDependencies.isEnabled = function()
 	return SERVICE_ENABLED and globalConfigService ~= nil and globalConfigService:Get("auditEnabled") == true
 end
 globalAuditService = createOperationalService("ClubMusic_Global_Audit_Service", auditDependencies, {"Start", "GetStatus", "Record", "GetRecent"})
-if globalAuditService then globalAuditService:Start() end
+if globalAuditService and not startOperationalService("ClubMusic_Global_Audit_Service", globalAuditService) then globalAuditService = nil end
 
 globalEventLogService = if globalAuditService then createOperationalService("ClubMusic_Global_Event_Log_Service", {
 	isEnabled = auditDependencies.isEnabled,
 	auditService = globalAuditService,
 }, {"Start", "GetStatus", "Record", "GetRecent"}) else nil
-if globalEventLogService then globalEventLogService:Start() end
+if globalEventLogService and not startOperationalService("ClubMusic_Global_Event_Log_Service", globalEventLogService) then globalEventLogService = nil end
 
 globalMaintenanceService = if globalConfigService then createOperationalService("ClubMusic_Global_Maintenance_Service", {
 	isEnabled = function() return SERVICE_ENABLED end,
@@ -1056,7 +1077,7 @@ globalMaintenanceService = if globalConfigService then createOperationalService(
 		if globalAuditService then globalAuditService:Record("Maintenance", 0, "global", if payload.enabled then "enabled" else "disabled") end
 	end,
 }, {"Start", "GetStatus", "Set"}) else nil
-if globalMaintenanceService then globalMaintenanceService:Start() end
+if globalMaintenanceService and not startOperationalService("ClubMusic_Global_Maintenance_Service", globalMaintenanceService) then globalMaintenanceService = nil end
 
 -- Authorization is owned by the installed SecurityCore module. There is no
 -- controller BindableFunction resolver or legacy authorization fallback.
@@ -1117,7 +1138,7 @@ globalSecurityPolicyService = createOperationalService("ClubMusic_Global_Securit
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", actor, key, "policy-update") end
 	end,
 }, {"Start", "GetStatus", "Get", "GetAll", "Set"})
-if globalSecurityPolicyService then globalSecurityPolicyService:Start() end
+if globalSecurityPolicyService and not startOperationalService("ClubMusic_Global_Security_Policy_Service", globalSecurityPolicyService) then globalSecurityPolicyService = nil end
 
 globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Security_Monitor_Service", {
 	isEnabled = function() return SERVICE_ENABLED and globalSecurityPolicyService ~= nil and globalSecurityPolicyService:Get("monitoringEnabled") == true end,
@@ -1133,7 +1154,7 @@ globalSecurityMonitorService = createOperationalService("ClubMusic_Global_Securi
 		recordThreatIntelligence("security_monitor_threshold", subjectUserId, "SecurityMonitor", "Warning")
 	end,
 }, {"Start", "GetStatus", "Record", "ForgetSubject"})
-if globalSecurityMonitorService then globalSecurityMonitorService:Start() end
+if globalSecurityMonitorService and not startOperationalService("ClubMusic_Global_Security_Monitor_Service", globalSecurityMonitorService) then globalSecurityMonitorService = nil end
 
 -- Local character-physics detections feed the existing bounded SecurityMonitor.
 -- This is telemetry only; it never changes enforcement or creates another storage map.
@@ -1155,7 +1176,7 @@ globalMessageValidationService = createOperationalService("ClubMusic_Global_Mess
 	getMaxBytes = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxBytes") else CONFIG.MaxMessageBytes end,
 	getMaxAge = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("messageMaxAgeSeconds") else 120 end,
 }, {"Start", "GetStatus", "Validate"})
-if globalMessageValidationService then globalMessageValidationService:Start() end
+if globalMessageValidationService and not startOperationalService("ClubMusic_Global_Message_Validation_Service", globalMessageValidationService) then globalMessageValidationService = nil end
 
 globalIdempotencyService = createOperationalService("ClubMusic_Global_Idempotency_Service", {
 	isEnabled = function() return SERVICE_ENABLED end,
@@ -1163,7 +1184,7 @@ globalIdempotencyService = createOperationalService("ClubMusic_Global_Idempotenc
 	guid = function() return HttpService:GenerateGUID(false) end,
 	getDefaultTtl = function() return if globalSecurityPolicyService then globalSecurityPolicyService:Get("idempotencyTtlSeconds") else 120 end,
 }, {"Start", "GetStatus", "Reserve"})
-if globalIdempotencyService then globalIdempotencyService:Start() end
+if globalIdempotencyService and not startOperationalService("ClubMusic_Global_Idempotency_Service", globalIdempotencyService) then globalIdempotencyService = nil end
 
 globalIncidentResponseService = createOperationalService("ClubMusic_Global_Incident_Response_Service", {
 	isEnabled = function() return SERVICE_ENABLED end,
@@ -1174,7 +1195,7 @@ globalIncidentResponseService = createOperationalService("ClubMusic_Global_Incid
 		if globalAuditService then pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", incident.actorUserId, incident.kind, "incident-" .. action) end
 	end,
 }, {"Start", "GetStatus", "Open", "Resolve", "GetRecent", "SubmitReport", "SubmitSystemSignal"})
-if globalIncidentResponseService then globalIncidentResponseService:Start() end
+if globalIncidentResponseService and not startOperationalService("ClubMusic_Global_Incident_Response_Service", globalIncidentResponseService) then globalIncidentResponseService = nil end
 
 local janitorModule = loadOptionalGlobalModule("ClubMusic_Global_Connection_Janitor_Service")
 local lifecycleJanitor = nil
