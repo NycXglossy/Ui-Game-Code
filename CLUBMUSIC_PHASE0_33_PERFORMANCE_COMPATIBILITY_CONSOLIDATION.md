@@ -282,3 +282,10 @@ Validation: source-level review confirms the installer destination names match t
 The Global Service startup path now wraps each optional operational service `Start()` independently. A thrown startup error is bounded in the warning, triggers best-effort `Stop()` cleanup for partially initialized resources, marks that service unavailable in the local registry, and clears its active service reference. Later services and the shutdown janitor can still initialize. The SecurityCore Authorization startup retains its separate protected, fail-closed path. The diagnostics coordinator already uses protected delayed startup. Message validation remains fail-closed: if it cannot start, inbound cross-server envelopes are rejected. No purchase/receipt, moderation enforcement, permission, persistence schema, remote, or cross-server coordination behavior was weakened.
 
 Static source review only; no Luau compiler, Roblox Studio runtime, live place, or device test was available. The change has not been installed or deployed.
+
+
+## Performance compatibility follow-up — background task shutdown guard
+
+The delayed diagnostics startup is now tracked and cancelled on script destruction, and its callback checks a shutdown flag before starting. Shutdown observation is connected even if the optional ConnectionJanitor module is unavailable. MessagingService retry loops and the durable moderation reconciliation loop now cooperatively stop when shutdown begins; reconciliation also checks the flag between player records. When the janitor is present, its existing cancellation/disconnection cleanup remains active. The moderation reconciliation interval, durable lookups, pending-state behavior, and ban enforcement are unchanged.
+
+Static source review only; no Luau compiler, Roblox Studio runtime, live place, or device test was available. The change has not been installed or deployed.
