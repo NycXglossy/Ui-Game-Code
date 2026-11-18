@@ -114,7 +114,7 @@ function Service:_transition(nextMode: string, reason: string)
 end
 
 function Service:_evaluate(averageDelta: number, maxDelta: number)
-	self.sampleCount += 1
+	self.sampleCount = math.min(MAX_COUNTER, self.sampleCount + 1)
 	self.lastAverageDelta = averageDelta
 	self.lastMaxDelta = maxDelta
 	self.lastSampleAt = os.time()
@@ -123,9 +123,9 @@ function Service:_evaluate(averageDelta: number, maxDelta: number)
 	local overloaded = averageDelta >= 0.10 or maxDelta >= 0.45
 	local healthy = averageDelta <= 0.07 and maxDelta <= 0.25
 
-	self.criticalStreak = if critical then self.criticalStreak + 1 else 0
-	self.overloadStreak = if overloaded then self.overloadStreak + 1 else 0
-	self.healthyStreak = if healthy then self.healthyStreak + 1 else 0
+	self.criticalStreak = if critical then math.min(MAX_COUNTER, self.criticalStreak + 1) else 0
+	self.overloadStreak = if overloaded then math.min(MAX_COUNTER, self.overloadStreak + 1) else 0
+	self.healthyStreak = if healthy then math.min(MAX_COUNTER, self.healthyStreak + 1) else 0
 
 	if self.criticalStreak >= 2 then
 		self:_transition("Critical", "Sustained severe server heartbeat delay")
