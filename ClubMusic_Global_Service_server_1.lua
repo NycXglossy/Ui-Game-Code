@@ -235,7 +235,10 @@ end
 
 local function consumeLocalBudget(key: string, capacity: number, refill: number, cost: number): (boolean, boolean)
 	localBudgetChecks += 1
-	if not finiteNumber(cost) or cost <= 0 or cost > capacity then
+	if typeof(key) ~= "string" or #key < 1 or #key > 100
+		or not finiteNumber(capacity) or capacity <= 0
+		or not finiteNumber(refill) or refill < 0
+		or not finiteNumber(cost) or cost <= 0 or cost > capacity then
 		localBudgetRejected += 1
 		return false, false
 	end
@@ -1360,9 +1363,12 @@ bindFunction("SetGlobalMaintenance", function(enabled: any, message: any, actorU
 	return ok, err
 end)
 bindFunction("ConsumeGlobalRateLimit", function(key: any, capacity: any, refill: any, cost: any)
-	if not globalRateLimitService or typeof(key) ~= "string" or #key > 100
-		or not finiteNumber(capacity) or not finiteNumber(refill) or not finiteNumber(cost) then return false, false end
-	return globalRateLimitService:Consume(key, capacity, refill, cost)
+	if not SERVICE_ENABLED then return false, false end
+	if typeof(key) ~= "string" or #key < 1 or #key > 100 then return false, false end
+	-- Compatibility API: preserve the existing call shape while reporting that
+	-- enforcement is local to this server, never cross-server shared.
+	local allowed = consumeLocalBudget("external:" .. key, capacity, refill, cost)
+	return allowed, false
 end)
 bindFunction("RecordLocalWatchdogPulse", function(name: any, detail: any, healthy: any, metadata: any)
 	if not globalLocalWatchdog or typeof(name) ~= "string" or #name > 24
