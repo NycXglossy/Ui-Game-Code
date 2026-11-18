@@ -1992,6 +1992,8 @@ local lastAdminActionAt: {[number]: number} = {}
 local lastReloadAt: {[number]: number} = {}
 local reloadNonce: {[number]: number} = {}
 local pendingAudio: {[number]: boolean} = {}
+local pendingArtwork: {[number]: boolean} = {}
+local artworkInspectionCount = 0
 local lastActionByType: {[number]: {[string]: number}} = {}
 -- Admin-addon commands use their own per-action cooldown namespace so recent
 -- UI actions cannot reject a trusted command (and vice versa).
@@ -4663,15 +4665,34 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, "Artwork must be a valid Roblox image asset ID.", "warn"); return
 		end
 		if artworkAssetId ~= nil then
+			-- Metadata lookups yield. Bound concurrent artwork inspections separately
+			-- from audio preloads, and allow only one pending artwork lookup per caller.
+			if pendingArtwork[userId] then
+				notify(player, "An artwork inspection is already running.", "warn"); return
+			end
+			if artworkInspectionCount >= 4 then
+				notify(player, "Artwork inspection is busy. Try again shortly.", "warn"); return
+			end
+			pendingArtwork[userId] = true
+			artworkInspectionCount += 1
 			local artworkInfoOk, artworkInfo = pcall(function()
 				return MarketplaceService:GetProductInfo(artworkAssetId, Enum.InfoType.Asset)
 			end)
+			pendingArtwork[userId] = nil
+			artworkInspectionCount = math.max(0, artworkInspectionCount - 1)
 			local imageType = Enum.AssetType.Image.Value
 			local decalType = Enum.AssetType.Decal.Value
+			local deletedName = artworkInfoOk and typeof(artworkInfo) == "table"
+				and typeof(artworkInfo.Name) == "string"
+				and string.lower(string.gsub(artworkInfo.Name, "%s+", " ")) == "[ content deleted ]"
 			if not artworkInfoOk or typeof(artworkInfo) ~= "table"
-				or (artworkInfo.AssetTypeId ~= imageType and artworkInfo.AssetTypeId ~= decalType) then
-				notify(player, "That artwork ID is not an accessible Roblox image or decal asset.", "warn"); return
+				or (artworkInfo.AssetTypeId ~= imageType and artworkInfo.AssetTypeId ~= decalType)
+				or deletedName then
+				notify(player, "That artwork is unavailable or is not an accessible Roblox image/decal asset.", "warn"); return
 			end
+			-- Recheck the caller after the yielding marketplace lookup. A role or
+			-- session change while inspection was in flight must not authorize a write.
+			if player.Parent ~= Players or not ControllerFunctions.isStaff(player) then return end
 		end
 		if CONFIG.RestrictAudioToAllowlist and not table.find(CONFIG.AllowedAudioAssetIds, assetId) then
 			notify(player, "That audio asset is not on the approved list.", "warn"); return
