@@ -2315,6 +2315,80 @@ script.Destroying:Connect(function()
 	end
 end)
 
+-- Server-observed animation inventory. This is bounded telemetry only: it does
+-- not stop tracks, rewrite assets, or infer that an unfamiliar ID is malicious.
+local animationIntegrityService: any = nil
+local animationIntegrityStatus: BindableFunction? = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("AnimationIntegrityService") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new, {
+				onSignal = function(signal: string, subject: number, detail: string, metadata: {[string]: any})
+					local severity = if string.find(signal, "_cap", 1, true) then "Warning" else "Info"
+					local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+					if replay and replay:IsA("BindableFunction") then
+						pcall(function()
+							replay:Invoke("Record", signal, subject, 0, severity, "AnimationIntegrity", metadata)
+						end)
+					end
+					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+					local recorder = api and api:FindFirstChild("RecordGlobalSecuritySignal")
+					if recorder and recorder:IsA("BindableFunction") then
+						pcall(function() recorder:Invoke(signal, subject) end)
+					end
+				end,
+			})
+			if createOk and typeof(instance) == "table"
+				and type(instance.Start) == "function"
+				and type(instance.GetStatus) == "function"
+				and type(instance.Stop) == "function" then
+				animationIntegrityService = instance
+				local startOk, started = pcall(instance.Start, instance)
+				if not startOk or started ~= true then
+					warn("[Tiki Tide][AnimationIntegrity] Startup failed: " .. tostring(started))
+					animationIntegrityService = nil
+				end
+			end
+		end
+	end
+
+	local existingStatus = ServerStorage:FindFirstChild("GetTikiTideAnimationIntegrityStatus")
+	if existingStatus and existingStatus:IsA("BindableFunction") then
+		animationIntegrityStatus = existingStatus
+	elseif not existingStatus then
+		animationIntegrityStatus = Instance.new("BindableFunction")
+		animationIntegrityStatus.Name = "GetTikiTideAnimationIntegrityStatus"
+		animationIntegrityStatus.Parent = ServerStorage
+	else
+		warn("[Tiki Tide][AnimationIntegrity] Status endpoint has the wrong class; status endpoint was not replaced.")
+	end
+	if animationIntegrityStatus then
+		animationIntegrityStatus.OnInvoke = function()
+			return if animationIntegrityService
+				then animationIntegrityService:GetStatus()
+				else {state = "Unavailable", mode = "DetectionOnly", automaticEnforcement = false}
+		end
+	end
+
+	if not animationIntegrityService then
+		warn("[Tiki Tide][AnimationIntegrity] Observer unavailable; animation telemetry is inactive.")
+	end
+end
+
+script.Destroying:Connect(function()
+	if animationIntegrityService then
+		pcall(animationIntegrityService.Stop, animationIntegrityService)
+		animationIntegrityService = nil
+	end
+	if animationIntegrityStatus then
+		animationIntegrityStatus.OnInvoke = nil
+		animationIntegrityStatus = nil
+	end
+end)
+
 -- Rank names, levels and refreshes are projections of the single SecurityCore cache.
 ControllerFunctions.computeRank = function(player: Player): (string, number)
 	if not authorizationService then return "GUEST", 0 end
