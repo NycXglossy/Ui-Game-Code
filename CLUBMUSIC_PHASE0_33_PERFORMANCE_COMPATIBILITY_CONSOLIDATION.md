@@ -220,3 +220,9 @@ Validation: re-fetched the renderer and confirmed there is one initial PlayerGui
 - `applyMenuTypography()` now builds its text-object target list with one initial panel scan, then maintains that list through `DescendantAdded` and `DescendantRemoving` signals.
 - Repeated tab renders and desktop/mobile layout changes update the maintained text targets instead of traversing the entire panel hierarchy each time. Existing per-device text scaling, base-size attributes, font selection, and wrapping rules are preserved.
 - Static source checks only; no Studio lifecycle, viewport-resize, or device regression test has been run.
+
+### Menu typography no-op update guard
+
+- Added a dirty/device/viewport guard around menu typography updates. When the text-object set, detected device class, and viewport width are unchanged, `applyMenuTypography()` returns without rewriting text properties.
+- New text descendants mark the target list dirty; device or viewport-width changes force a fresh typography pass. Existing per-device scale, clamp, font, and wrapping calculations remain unchanged.
+- This reduces redundant property writes during repeated menu/layout callbacks. Static source verification only; no Roblox Studio runtime or device profiling was performed.
