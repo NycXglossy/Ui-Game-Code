@@ -268,21 +268,6 @@ local function spawnMount(player: Player): (boolean, string)
 		return false, "Your character changed before the mount could spawn."
 	end
 	local record: {model: Model, connections: {RBXScriptConnection}} = {model = mount, connections = {}}
-	-- Keep newly spawned assemblies server-owned until the verified owner sits.
-	-- Deduplicate by assembly root so multi-part rigs do not repeat the same call.
-	local initializedAssemblies: {[BasePart]: boolean} = {}
-	for _, descendant in ipairs(mount:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			local part = descendant :: BasePart
-			local assemblyRoot = part.AssemblyRootPart or part
-			if not initializedAssemblies[assemblyRoot] then
-				initializedAssemblies[assemblyRoot] = true
-				local canSet = false
-				pcall(function() canSet = part:CanSetNetworkOwnership() end)
-				if canSet then pcall(function() part:SetNetworkOwner(nil) end) end
-			end
-		end
-	end
 	for _, descendant in ipairs(mount:GetDescendants()) do
 		if descendant:IsA("Seat") or descendant:IsA("VehicleSeat") then
 			local seat: any = descendant
@@ -324,6 +309,21 @@ local function spawnMount(player: Player): (boolean, string)
 		despawnMount(player.UserId, true)
 		warn("[UtilityBar] Mount parenting failed: " .. tostring(parentError))
 		return false, "The server could not place the mount into the world."
+	end
+	-- Set ownership only after the assemblies are in Workspace, so Roblox can
+	-- validate each actual assembly. Keep them server-owned until the owner sits.
+	local initializedAssemblies: {[BasePart]: boolean} = {}
+	for _, descendant in ipairs(mount:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			local part = descendant :: BasePart
+			local assemblyRoot = part.AssemblyRootPart or part
+			if not initializedAssemblies[assemblyRoot] then
+				initializedAssemblies[assemblyRoot] = true
+				local canSet = false
+				pcall(function() canSet = part:CanSetNetworkOwnership() end)
+				if canSet then pcall(function() part:SetNetworkOwner(nil) end) end
+			end
+		end
 	end
 	player:SetAttribute("HasActiveIslandMount", true)
 	return true, "Your Island Mount has spawned. Use the Mount button again to despawn it."
