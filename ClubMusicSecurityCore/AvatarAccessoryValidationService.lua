@@ -90,8 +90,6 @@ function Service:_observeToolAdded(player: Player, tool: Tool)
 		if state.appearanceReady then
 			self:_signal(player, "tool_added_after_appearance", tool.Name)
 		end
-	elseif state.presentTools[tool] == false and state.appearanceReady then
-		self:_signal(player, "tool_returned_to_inventory", tool.Name)
 	end
 	state.presentTools[tool] = true
 end
