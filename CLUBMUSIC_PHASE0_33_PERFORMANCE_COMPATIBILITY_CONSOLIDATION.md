@@ -451,3 +451,13 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Changes to group ID, Studio-staff mode, thresholds, or configured staff IDs invalidate cached decisions and in-flight refresh ownership so configuration changes cannot reuse old authorization results. If Global Service startup fails after Authorization has partially connected listeners, it now calls the service's protected Stop cleanup before dropping the reference.
 - Permission levels, group-rank thresholds, staff IDs, Studio policy, and the 120–300 second cache TTL were not changed. No client-side authorization, remotes, persistence, cross-server state, or diagnostics telemetry was added.
 - Static source inspection only; no Luau compilation, concurrent Stop/restart simulation, Roblox group API fault injection, Roblox Studio/runtime test, or deployment was performed.
+
+
+
+### Administrative authorization boundary and callback lifecycle audit (2026-11-18)
+
+- Reviewed the server-only `ClubMusicAdminBridge` entry point, its operation dispatch, the main controller's action handler, the Global SecurityCore authorization permission map, Phase 32 moderation composition, and the DJ session manager.
+- Confirmed the bridge requires a live Player and staff-level authorization before dispatch. Moderation/security/configuration operations apply their own elevated permission checks; Global Service mutation endpoints independently authorize their actor; Phase 32 punishment/history/risk services perform their own authorization checks. The action handler retains its own server-side rank/role checks for DJ booth, playlist, catalog, and local moderation actions. The DJ session manager also calls its supplied server authorization callback for start, handoff, and end.
+- Found and fixed a lifecycle gap: the controller previously assigned an anonymous `OnInvoke` callback to the ServerStorage BindableFunction without clearing that exact callback on Script destruction. The controller now rejects calls once shutdown begins and clears the callback only if the BindableFunction still belongs to ServerStorage and its `OnInvoke` is the exact callback owned by the shutting-down controller. A replacement controller's callback is therefore not cleared.
+- No permission levels, rank thresholds, operation mappings, remote contracts, or moderation/purchase authority were changed. No client authorization or new remotes were added.
+- Static source inspection only; no Luau compilation, BindableFunction lifecycle simulation, adversarial server-script test, Roblox Studio/runtime test, or deployment was performed.
