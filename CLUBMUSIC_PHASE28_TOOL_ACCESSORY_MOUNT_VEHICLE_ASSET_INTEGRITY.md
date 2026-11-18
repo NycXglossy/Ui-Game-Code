@@ -195,6 +195,19 @@ The user confirmed that the map is unfinished but map-independent updates may pr
 - Aura cleanup now shares the same tracked CharacterRemoving connection instead of creating an untracked per-player connection.
 - The 12-second companion lifetime, visual-only clone behavior, and pass gate are unchanged.
 
+### Island Mount Spawn/Despawn lifecycle
+
+- `UtilityBar/UtilityBarExtendedActions.server.lua` replaces the former Tool equip/unequip action with explicit `Spawn` and `Despawn` operations through the existing `ExecuteUtility` RemoteFunction. The client does not provide an asset ID, Instance, or template name.
+- The server reuses the existing server-populated `HasIslandMountPass` gate. It does not use `IsVIP` or add another entitlement resolver.
+- Approved mount templates are server-only under `ServerStorage.TikiTideMounts`. The server creates the empty folder if absent. With one Model, it is the default; with multiple Models, exactly one must have `DefaultMount=true`.
+- The selected Model must contain BaseParts and at least one Seat/VehicleSeat and is bounded to 500 descendants. No mount model is included in the repository, so the action reports a clear not-configured response until the reviewed model is installed.
+- The server-owned `activeMounts` registry is authoritative; replicated `OwnerId` is metadata only. One active mount is maintained per player. Spawn is idempotent; Despawn only affects the invoking player's own registry entry.
+- Mount state is exposed to the local UI through server-set `HasActiveIslandMount`; the panel changes between SPAWN MOUNT and DESPAWN MOUNT.
+- The default seat policy is owner-only for all seats (no passenger access yet). Unauthorized or non-player occupants are asked to stand. Newly spawned assemblies are assigned server network ownership where possible; a verified owner occupant receives network ownership for that seat assembly when Roblox permits it; empty seats return to server ownership.
+- Cleanup covers explicit Despawn, CharacterAdded, CharacterRemoving, PlayerRemoving, external model removal, and script teardown. Seat and ancestry connections are disconnected with the registry record.
+- No fixed vehicle speed threshold, Heartbeat rollback, velocity-zeroing, or automated movement punishment is added. Vehicle movement monitoring and any recovery require the actual mount assembly and measured legitimate speed/impulse envelope.
+- This is static source work only. Safe spawn placement, model provenance, seat/network-ownership behavior, and all lifecycle paths still require Studio tests with the actual model.
+
 ### Inventory observer connection lifecycle
 
 - `ClubMusicSecurityCore/AvatarAccessoryValidationService.lua` now stores inventory-container connections per Backpack, StarterGear, and Character rather than appending all container connections to a player/character lifetime array.
@@ -218,4 +231,4 @@ This is a tracked-source investigation and design decision record, not a runtime
 
 **Completed:** companion clone lifecycle cleanup hardened; inventory observer connection cleanup across Backpack/Character replacement hardened; existing Utility Bar mount behavior traced; server-side feature-pass source distinguished from membership EntitlementAuthority; current movement and avatar observers reviewed; supplied collision, Tool ownership, mount spawning, and vehicle anti-speed examples assessed; existing companion, Tool Shop, avatar refresh, Kohl's/F3X boundaries documented.
 
-**Not implemented yet:** Spawn/Despawn service (the actual approved mount model and hierarchy are not in the tracked source tree, so the old Tool action remains until a coordinated model-backed migration can be built), approved mount catalog, seat/driver/passenger policy, mount/vehicle network ownership, vehicle movement monitor, collision matrix changes, Tool grant provenance registry, package/live-place audit, and runtime certification. These require the actual mount/vehicle model and live hierarchy to avoid inventing assets, scripts, or physics assumptions.
+**Still open:** actual approved mount model installation and provenance review; safe spawn-location validation against the unfinished map; passenger authorization; vehicle-specific sustained movement monitoring and any recovery; collision matrix changes; Tool grant provenance registry; full third-party package/live-place audit; and runtime certification. The Spawn/Despawn lifecycle, default owner-only seat handling, server-side mount registry, and network-ownership handoff scaffold are implemented in source, but they are not runtime-certified and cannot spawn until the reviewed model is installed.
