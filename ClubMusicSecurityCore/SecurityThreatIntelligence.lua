@@ -61,8 +61,11 @@ add("Remote", 3, {
 add("Authorization", 2, {
 	"admin_bridge_invalid_operation", "admin_bridge_access_denied",
 	"admin_moderation_access_denied", "admin_security_access_denied",
-	"admin_operational_access_denied", "admin_security_access_denied",
+	"admin_operational_access_denied",
 })
+add("Monitor", 2, {"security_monitor_threshold"})
+add("SafeCall", 2, {"safe_call_failed"})
+add("Watchdog", 2, {"watchdog_degraded"})
 -- Client integrity heartbeat and observation-only telemetry are deliberately not
 -- risk signals. Add a code here only after its server-side producer is audited.
 
@@ -73,7 +76,7 @@ local function finite(value: any): boolean
 end
 
 local function validUserId(value: any): boolean
-	return finite(value) and value % 1 == 0 and value >= 1 and value <= MAX_USER_ID
+	return finite(value) and value % 1 == 0 and value >= 0 and value <= MAX_USER_ID
 end
 
 local function cleanCode(value: any, maxLength: number): string?
