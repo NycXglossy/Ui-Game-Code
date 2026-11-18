@@ -289,3 +289,10 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 The delayed diagnostics startup is now tracked and cancelled on script destruction, and its callback checks a shutdown flag before starting. Shutdown observation is connected even if the optional ConnectionJanitor module is unavailable. MessagingService retry loops and the durable moderation reconciliation loop now cooperatively stop when shutdown begins; reconciliation also checks the flag between player records. When the janitor is present, its existing cancellation/disconnection cleanup remains active. The moderation reconciliation interval, durable lookups, pending-state behavior, and ban enforcement are unchanged.
 
 Static source review only; no Luau compiler, Roblox Studio runtime, live place, or device test was available. The change has not been installed or deployed.
+
+
+## Performance compatibility follow-up — MessagingService subscription lifecycle
+
+The Global Service now retains each active topic subscription in an explicit server-local connection registry in addition to the optional ConnectionJanitor. Script destruction disconnects every retained subscription even when the janitor module is unavailable. A subscription that completes after shutdown begins is immediately disconnected rather than being registered. Inbound callbacks return immediately once shutdown starts. Each topic supervisor checks the returned RBXScriptConnection's Connected state at a five-second interval and retries after a disconnect, instead of leaving a stale Active status indefinitely. The four existing allowlisted topics (announcements, moderation, XP boost, and catalog invalidation) and their envelope validation, replay suppression, and handlers are unchanged; no new topics or cross-server features were added.
+
+Static source inspection only. No Luau compiler, Roblox Studio runtime, live place, or device test was performed; the change has not been installed or deployed.
