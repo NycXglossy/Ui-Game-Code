@@ -31,7 +31,7 @@ All four are ModuleScripts intended for `ServerStorage.ClubMusicSecurityCore`. T
 - MembershipType is deliberately excluded; it is not identity verification.
 - Verified moderation history is supplied through an injected, authorized history provider. Only records marked `verified = true` and within the rolling 30-day window contribute.
 - The service caps its score at 100 and returns the source signal metadata. A score is for staff triage only.
-- Cross-account linkage remains unavailable unless Roblox exposes a specific authorized platform signal to this experience. No indirect matching is implemented.
+- The experience currently has no authorized Roblox account-linkage feed to inspect. Cross-account linkage remains unavailable unless Roblox exposes a specific authorized platform signal. No indirect matching is implemented.
 
 ## Punishment policy
 
@@ -50,7 +50,7 @@ Every action requires a live staff Player, bounded reason, and SecurityCore `Glo
 - Default is `ExcludeAltAccounts = true`: no native alt propagation.
 - Propagation can only be requested for a permanent ban.
 - The actor must have both `GlobalModeration` and `IncidentResponse`, and explicitly set `confirmAltPropagation = true`.
-- This is an additional senior-staff confirmation. The platform determines suspected alternate accounts; this experience does not receive or persist a list of linked accounts.
+- This is an explicit, manual senior-staff enforcement choice after case review; it is never triggered by the risk score or by an inferred relationship. The platform determines suspected alternate accounts; this experience does not receive or persist a list of linked accounts.
 - A possible association is not proof of shared identity. Any separate enforcement against another account requires independent authorization and evidence.
 - Roblox's `BanAsync` documentation states that `ExcludeAltAccounts = false` permits platform propagation to suspected alternate accounts. It does not guarantee that every alternate account will be detected.
 
@@ -59,7 +59,7 @@ Every action requires a live staff Player, bounded reason, and SecurityCore `Glo
 - `FilterBroadcast(player, rawText)` enforces a 120-byte / 120-codepoint bound and a 1.25-second per-player submission interval.
 - It uses `TextService:FilterStringAsync()` and `TextFilterResult:GetNonChatStringForBroadcastAsync()`.
 - If filtering fails, no raw or partially filtered text is returned for display.
-- Hash-heavy output is not a strike. Roblox filtering may legitimately replace content with `#`; the previous hash-ratio heuristic is removed.
+- Hash-heavy output is not a strike. Roblox filtering may legitimately replace content with `#`; the previous hash-ratio heuristic and its automatic three-strike kick are removed. Repeated independently verified violations can raise the advisory risk score and be reviewed for graduated staff-issued punishment.
 - `RecordVerifiedViolation` is a trusted server-to-server hook only. It must be called only after a distinct, independently verified rule violation and should write through the moderation evidence service. It is not exposed to clients.
 - Repeated filter-service outages are operational errors, not player violations.
 
