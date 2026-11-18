@@ -178,7 +178,7 @@ local function updateConsoleForPlayer(player: Player)
 
 		while player.Parent == Players do
 			local level = getVerifiedLevel(player)
-			console.Enabled = level ~= nil and level >= 2
+			console.Enabled = level ~= nil and level >= 1
 			task.wait(30)
 		end
 		if console.Parent then console.Enabled = false end
