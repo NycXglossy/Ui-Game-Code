@@ -207,10 +207,12 @@ local function resolveMountTemplate(): (Model?, string?)
 	end
 	local models = {}
 	for _, child in ipairs(mountFolder:GetChildren()) do
-		if child:IsA("Model") then table.insert(models, child) end
+		if child:IsA("Model") and child:GetAttribute("TikiTideApprovedMount") == true then
+			table.insert(models, child)
+		end
 	end
 	if #models == 0 then
-		return nil, "Island Mount is not configured yet. The approved mount model must be placed in ServerStorage.TikiTideMounts."
+		return nil, "Island Mount is not configured yet. Add an approved Model with TikiTideApprovedMount=true to ServerStorage.TikiTideMounts."
 	end
 	if #models == 1 then return models[1], nil end
 	local defaultModel: Model? = nil
@@ -678,6 +680,12 @@ table.insert(lifecycleConnections, Players.PlayerRemoving:Connect(function(playe
 		playerLifecycleConnections[player.UserId] = nil
 	end
 end))
+
+game:BindToClose(function()
+	for userId in pairs(activeMounts) do despawnMount(userId, true) end
+	for userId in pairs(companionByPlayer) do destroyCompanion(userId) end
+	for userId in pairs(auraByPlayer) do clearAura(userId) end
+end)
 
 script.Destroying:Connect(function()
 	for _, connection in ipairs(lifecycleConnections) do connection:Disconnect() end
