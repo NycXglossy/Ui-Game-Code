@@ -837,7 +837,8 @@ local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
 local audioTransitionTrackToken = 0
 
-legacy group migration and setup-- Publish the number of active controller-owned main outputs (0 or 1).
+-- legacy group migration and setup
+-- Publish the number of active controller-owned main outputs (0 or 1).
 -- The binding is refreshed whenever the canonical source changes.
 local activeAudioPlayingConnection: RBXScriptConnection? = nil
 ControllerFunctions.refreshActiveMusicSoundCount = function()
