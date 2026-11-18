@@ -192,7 +192,9 @@ function Service:GetStatus(): {[string]: any}
 		heartbeat = {
 			sampleCount = frameCount,
 			averageDeltaSeconds = average,
+			averageFps = if average and average > 0 then 1 / average else nil,
 			maxDeltaSeconds = frameMax,
+			maxFrameMilliseconds = frameMax * 1000,
 			slowFrameCount = slow,
 			severeFrameCount = severe,
 			windowSeconds = SAMPLE_WINDOW_SECONDS,
