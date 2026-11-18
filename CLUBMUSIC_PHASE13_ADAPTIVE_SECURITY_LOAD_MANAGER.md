@@ -1,70 +1,65 @@
 # Phase 13 — Adaptive Security Load Manager
 
-**Status:** Server-local adaptive workload budgeting, installer staging, and bounded replay-query integration are implemented in source. Roblox Studio, published-server, and load-profile verification remain outstanding.
+**Source status:** Base server-local adaptive workload governor implemented. Phase 13.1 integration is recorded separately in `CLUBMUSIC_PHASE13_1_ADAPTIVE_LOAD_INTEGRATION.md`.
+**Runtime status:** Roblox Studio, published test-server, and controlled-load verification remain open.
 
 ## Purpose
 
-Phase 13 adds a small server-only workload manager that reduces optional security/observability work when the server heartbeat is persistently delayed. It is a workload governor, not an anti-cheat bypass, moderation engine, memory cleaner, or replacement for the existing watchdog and ResourceGuard.
+Phase 13 adds a server-only workload governor that reduces optional security/observability work when server Heartbeat is persistently delayed. It is not an anti-cheat bypass, moderation engine, memory cleaner, or replacement for the existing watchdog and ResourceGuard.
 
-## Scope delivered
+## Base implementation
 
 - `ClubMusicSecurityCore/AdaptiveSecurityLoadManager.lua` samples server Heartbeat delta in fixed five-second windows.
-- The manager tracks only bounded counters, four optional task buckets, the current mode, transition history, and the latest sample. It creates no storage records, remotes, polling task, or client state.
-- Three modes are available:
-  - **Normal:** normal optional diagnostics, replay-query, analytics, and maintenance budgets.
-  - **Reduced:** lower optional workload budgets after three consecutive overloaded windows.
-  - **Critical:** optional work is paused after two consecutive severe windows, or six consecutive overloaded windows while Reduced.
-- Recovery is staged: four consecutive healthy windows move Critical to Reduced; the healthy streak resets at that transition, then six additional consecutive healthy windows are required to move Reduced to Normal.
-- Thresholds are intentionally conservative and hysteretic:
-  - overloaded: average Heartbeat delta at least 0.10 seconds or maximum delta at least 0.45 seconds in the window;
-  - critical: average at least 0.20 seconds or maximum at least 0.75 seconds;
-  - healthy: average at most 0.07 seconds and maximum at most 0.25 seconds.
-- Optional task classes have bounded token-bucket budgets: `DiagnosticsSampling`, `ReplayQueries`, `AnalyticsAggregation`, and `BackgroundMaintenance`.
+- Modes are `Normal`, `Reduced`, and `Critical`.
+- Three consecutive overloaded windows move Normal to Reduced; two consecutive severe windows move to Critical; six overloaded windows while Reduced also move to Critical.
+- Recovery is staged: four consecutive healthy windows move Critical to Reduced; six additional healthy windows move Reduced to Normal.
+- Thresholds use server Heartbeat timing, not a single instantaneous FPS reading:
+  - overloaded: average delta at least 0.10 seconds or maximum delta at least 0.45 seconds;
+  - critical: average delta at least 0.20 seconds or maximum delta at least 0.75 seconds;
+  - healthy: average delta at most 0.07 seconds and maximum delta at most 0.25 seconds.
+- The governor uses bounded token buckets for five optional task classes:
+  - `DiagnosticsSampling`
+  - `ReplayQueries`
+  - `ThreatReviewQueries`
+  - `AnalyticsAggregation`
+  - `BackgroundMaintenance`
 - Essential task classes always pass and are never throttled: `EssentialSecurityValidation`, `RemoteAuthorization`, `RateLimiting`, `PurchaseReceiptProcessing`, `ModerationEnforcement`, and `SecurityEventRecording`.
-- The installer stages the module with the existing SecurityCore release and exposes a server-only `ServerStorage.TikiTideSecurityLoadManager` BindableFunction supporting `Status`, `GetBudget`, and `TryConsume`. A read-only `GetTikiTideSecurityLoadStatus` BindableFunction is also installed.
-- Replay event recording remains available in all modes. Staff replay queries consume the optional `ReplayQueries` budget and can be temporarily refused during Critical load or when the query token bucket is empty.
-- Mode transitions are recorded in the existing bounded replay timeline with mode, heartbeat sample values, and a fixed reason string. No player text or client-provided values are included.
-- The installer release pin is updated to the commit containing the new module. Existing modules, camera adapter, and rollback strategy remain in place.
+- The installer exposes `ServerStorage.TikiTideSecurityLoadManager` with `Status`, `GetBudget`, and `TryConsume`, plus the read-only `GetTikiTideSecurityLoadStatus` BindableFunction. These are server-only.
+- Replay event recording remains available in all modes. Staff replay queries consume `ReplayQueries`; threat-review queries consume `ThreatReviewQueries`.
+- Mode transitions are recorded in the existing bounded server-local replay timeline. No player text or client-supplied data is included.
 
-## Server-only API
+## Phase 13.1 integration status
 
-Trusted server scripts may use the internal BindableFunction:
+See `CLUBMUSIC_PHASE13_1_ADAPTIVE_LOAD_INTEGRATION.md` for the detailed changes. The follow-up adds bounded per-task attempted/accepted/deferred counters, cumulative time per mode, recovery streak visibility, adaptive passive movement sampling, optional analytics aggregation deferral, tagged client visual scaling, and Staff Controls visibility.
 
-```lua
-local ServerStorage = game:GetService("ServerStorage")
-local loadManager = ServerStorage:WaitForChild("TikiTideSecurityLoadManager")
+## Explicit boundaries
 
-local status = loadManager:Invoke("Status")
-local budget = loadManager:Invoke("GetBudget", "AnalyticsAggregation")
-local allowed = loadManager:Invoke("TryConsume", "AnalyticsAggregation", 1)
-```
-
-Do not create a client RemoteFunction for this API. Do not call `TryConsume` around essential validation, authorization, rate limiting, receipts, moderation, or replay event recording.
-
-## Explicit limitations
-
-- The current automatic signal is server Heartbeat delay only. It does **not** claim to measure total server memory, network saturation, DataStore queue depth, or CPU utilization directly.
-- Existing ResourceGuard and StorageGuard continue to own storage concurrency and circuit-breaker behavior; this phase does not override their limits.
-- Only replay-query work is wired to a budget in this phase. Other optional subsystems can adopt the server-only `TryConsume` contract after their actual call sites are reviewed.
-- No validation, authorization, receipt, moderation, or security-event recording path is disabled or weakened.
-- The manager does not automatically kick, ban, teleport, restrict, or otherwise enforce against players.
-- No Roblox runtime or performance test is claimed by this source change.
+- The automatic load signal is server Heartbeat delay only. It does not claim to directly measure total server memory, network saturation, DataStore queue depth, or CPU utilization.
+- ResourceGuard and StorageGuard retain ownership of storage concurrency and circuit-breaker behavior.
+- Essential validation, authorization, rate limiting, receipts, moderation, security-event recording, and replay event recording are never gated by optional budgets.
+- No remote cooldown is changed dynamically. Existing per-action rate limits remain authoritative.
+- No automatic kick, ban, teleport, rubber-band, restriction, restart, or other player enforcement is performed by this governor.
+- No DataStore, MemoryStore, MessagingService, diagnostics remote, or client-to-server diagnostics telemetry is added.
+- `BackgroundMaintenance` remains a reserved budget because source review did not identify a safe, genuinely optional background-maintenance callsite. Profile persistence, storage cleanup, purchase processing, and security retention are not safe to defer merely to consume a budget.
+- No Roblox runtime or performance test is claimed by source changes.
 
 ## Studio test plan
 
-1. Run the installer with simulation stopped and HTTP Requests enabled. Verify the manifest includes `AdaptiveSecurityLoadManager`.
-2. Verify `TikiTideSecurityLoadManager` and `GetTikiTideSecurityLoadStatus` exist only under ServerStorage; confirm no new replicated RemoteEvent/RemoteFunction exists.
-3. Query status and confirm the initial mode is Normal, budgets are bounded, and storage writes/client remotes are zero.
-4. In an isolated test harness, feed synthetic Heartbeat deltas to a manager instance or use a controlled server-load test; verify the three-window Reduced and two-window Critical transitions.
-5. Verify recovery requires the documented healthy streaks and cannot jump directly from Critical to Normal.
-6. Verify token buckets refill at their configured rates and cannot exceed burst capacity.
-7. Verify all essential task classes always return true in Normal, Reduced, and Critical modes.
-8. Verify replay event recording still works in Critical mode, while staff replay queries are rate-limited/paused as configured.
-9. Verify mode transitions appear in ` ;cmreplay ` without player text or arbitrary payloads.
-10. Run multi-client playback, queue, Tiki Tide Settings, Utility Bar, Tool Shop, receipt, moderation, and spectator regression tests while the server is under controlled load.
-11. Profile frame time and memory before/after installation; confirm the manager's Heartbeat callback and bounded tables do not create measurable gameplay regressions.
-12. Verify server shutdown/installer rollback disconnects the Heartbeat connection and does not leave duplicate managers or BindableFunctions.
+1. Run the installer with simulation stopped and HTTP Requests enabled. Verify the manifest and pinned release include `AdaptiveSecurityLoadManager` and the adaptive visual client.
+2. Verify `TikiTideSecurityLoadManager` and `GetTikiTideSecurityLoadStatus` exist only under ServerStorage; confirm no new RemoteEvent/RemoteFunction is created.
+3. Verify initial mode, five bounded buckets, task counters, mode durations, and zero storage writes/client remotes.
+4. In an isolated test harness, feed synthetic Heartbeat deltas and verify Normal/Reduced/Critical transitions and staged recovery.
+5. Verify token refill, burst limits, attempted/accepted/deferred counters, and every essential task class in every mode.
+6. Verify ReplayQueries and ThreatReviewQueries are deferred under Critical load while replay event recording remains available.
+7. Verify AnalyticsAggregation can be deferred without suppressing the health coordinator, ServerHealth Heartbeat sampling, watchdog, or essential security status.
+8. Verify DiagnosticsSampling reduces only passive aggregate movement sampling; movement property checks, velocity signals, MovementAuthority, and TeleportValidationService remain active.
+9. Verify VIP speed changes, size changes, mounts, authorized teleports, respawns, and scripted movement are not corrected or misclassified by a new fixed speed threshold.
+10. Verify visual mode affects only `ClubEffect` particle rates and `StageClubLight` shadows; existing light Enabled/Color/Brightness and player-selected lighting presets remain intact.
+11. Verify newly tagged/untagged effects follow the current mode and original properties restore correctly.
+12. Run multi-client playback, queue, Tiki Tide Settings, Utility Bar, Tool Shop, receipt, moderation, and spectator regression tests under controlled load.
+13. Profile server frame time, client frame time, memory, and visual rendering before/after integration.
+14. Verify installer rollback, bootstrap shutdown, and absence of duplicate services, scripts, or endpoints.
 
 ## Exit criteria
 
-The module must remain server-only and bounded; essential security paths must remain unrestricted in every mode; optional budgets and staged recovery must behave as specified; staff replay review must fail safely under pressure; and Studio/published-server performance tests must pass. Source review alone is not runtime verification.
+The manager remains server-local and bounded; essential security paths remain unrestricted; optional budgets and staged recovery behave as specified; visual changes restore cleanly; and Studio/published-server performance and regression tests pass. Source review alone is not runtime verification.
