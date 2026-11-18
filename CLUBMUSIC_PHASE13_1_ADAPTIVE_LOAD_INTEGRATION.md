@@ -35,7 +35,7 @@ Updated `ClubMusicSecurityCore/CharacterPhysicsGuard.lua` and the embedded boots
 
 - Existing CharacterPhysicsGuard remains detection-only.
 - Existing MovementAuthority and TeleportValidationService continue to own authorized movement and teleport exemptions.
-- Passive aggregate displacement measurement changes sampling interval by mode: Normal 0.5s, Reduced 1.0s, Critical 1.25s.
+- Passive aggregate displacement measurement changes sampling interval by mode: Normal 0.5s, Reduced 1.5s, Critical 3.0s. The maximum accepted passive sample gap is 3.5s.
 - Each sample consumes a fractional `DiagnosticsSampling` budget normalized by the current server player count, keeping the budget server-wide rather than granting every player an independent bucket.
 - If a sample is deferred, the local position/time baseline is refreshed so the next accepted sample does not count the skipped interval as movement.
 - Deferred sample counts are exposed in the existing CharacterPhysicsGuard status.
@@ -62,7 +62,7 @@ Added `TikiTideAdaptiveVisualQuality.client.lua`, installed by the existing Secu
 
 Updated `ClubMusic_Security_Core_Installer.lua`:
 
-- Pins the SecurityCore module release to commit `416bec42ba8dce0404435ae7ac62e4e9932aaacf`, which contains the updated AdaptiveSecurityLoadManager, CharacterPhysicsGuard, and visual-quality LocalScript.
+- Pins the SecurityCore module release to commit `d66e5033d948f516db78de50d668ee686bbd78d6`, which contains the updated AdaptiveSecurityLoadManager, CharacterPhysicsGuard, and visual-quality LocalScript.
 - Stages the visual LocalScript with the existing camera/integrity clients.
 - Preserves an existing visual client backup and restores it on failed promotion.
 - Adds the visual client name to the install manifest.
