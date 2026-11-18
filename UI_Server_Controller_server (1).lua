@@ -6723,8 +6723,10 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		syncState.enabled = message.enabled
 		if not message.enabled then
 			syncState.isLeader = false
+			syncState.wasLeader = false
 			syncState.leaderJobId = nil
-			syncState.lastAppliedRevision = 0
+			syncState.lastAppliedRevision = -1
+			syncState.lastSyncAppliedAt = 0
 		else
 			task.defer(function()
 				local ok, readOk, snapshot = ControllerFunctions.globalInvoke("GetGlobalPlaybackSnapshot")
@@ -6867,7 +6869,10 @@ task.spawn(function()
 			syncState.statusError = if typeof(status.error) == "string" then string.sub(status.error, 1, 120) else nil
 			publishState(nil)
 		elseif not enabledOk then
-			-- A transient status outage must not let a follower advance its private queue.
+			-- A transient status outage must not let a stale former leader keep advancing.
+			syncState.isLeader = false
+			syncState.wasLeader = false
+			syncState.leaderJobId = nil
 			syncState.authorityReady = false
 			syncState.statusError = "Global playback status unavailable."
 		end
