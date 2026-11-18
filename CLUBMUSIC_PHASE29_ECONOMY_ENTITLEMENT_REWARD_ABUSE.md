@@ -153,6 +153,7 @@ Daily claim and title-tag purchase state changes are synchronous against the one
 - The controller's sole ProcessReceipt callback delegates to Security Core in commit `59e7bdf1ad58aca8e5b61c6c61754246f1d1f5f1`; callback structure/logging refinements followed in `cbaf57a6c4b8a7685e090ed548ca334c20e080ec`.
 - Receipt diagnostics and malformed-ID sanitization were refined in `6df1539279ec288af61063df2e016b391f74d356`, `7260c9e18b26d2b57bc8f1d97ad026b3b5d2bb7e`, and `94000c0d85e9530b33b8c60ec9f231d688c657e8`.
 - Startup Marketplace metadata diagnostics now include all seven donation products in `62df424d5189d2a6a653dac330f4ee7f453d7e43`.
+- Receipt status endpoint typing and PurchaseId log redaction were hardened in `756ed8577cd64da2eb7bd5e3ed467d718cb45a97` and `de61ff51473345d6fa83894e0882c7c3a5fcd655`.
 - Security Core installer first included the module in `08db637fbeb9cea0502afd5288af38472d325aad`; it now pins the refined module source in `f87a15fb7a155adbbee9caa8a541d48dc3e06b27`.
 - Phase 5 receipt documentation cross-reference: `30458b8f0a20c46792f8d1ebaf3bddcddb9a81b8`.
 
