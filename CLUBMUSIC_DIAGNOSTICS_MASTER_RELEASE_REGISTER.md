@@ -394,3 +394,8 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 
 - Native navigation icon tint targets are collected once at construction and reused during tab changes; the repeated per-render descendant traversal was removed.
 - Static source verification only; Studio/device profiling and UI regression tests remain outstanding.
+
+### Performance compatibility follow-up — menu typography target index
+
+- Menu typography now uses a maintained text-object index instead of repeating a full panel descendant scan on every render/layout update. The original typography scaling and wrapping rules are retained.
+- Static source verification only; Studio and device regression testing remain outstanding.
