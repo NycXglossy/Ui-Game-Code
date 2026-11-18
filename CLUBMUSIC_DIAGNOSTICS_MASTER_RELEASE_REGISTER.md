@@ -577,3 +577,9 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 
 - Corrected the controller's protected Global API invocation helper to preserve the full BindableFunction return tuple instead of truncating it after three values. This restores the GetModerationState revision return used by join and retry ordering checks; failed calls retain the leading false/error contract.
 - Static source review only; no Luau compilation, BindableFunction runtime test, backend fault injection, Studio/runtime test, or deployment.
+
+
+### Moderation return-tuple alignment follow-up
+
+- Aligned both GetModerationState controller call sites with the existing return contract, explicitly skipping the reason value before capturing the durable revision. The BindableFunction API remains unchanged.
+- Static source review only; no runtime invocation or deployment.
