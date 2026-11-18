@@ -9,6 +9,7 @@ local Service = {}
 Service.__index = Service
 
 local SAMPLE_WINDOW_SECONDS = 60
+local DIAGNOSTIC_SAMPLE_SECONDS = 15
 local MEMORY_SAMPLE_SECONDS = 30
 local SLOW_FRAME_SECONDS = 0.05
 local SEVERE_FRAME_SECONDS = 0.1
@@ -29,6 +30,9 @@ function Service.new(options: {[string]: any}?)
 		running = false,
 		connection = nil,
 		memoryThread = nil,
+		lastRuntimeSampleAt = nil,
+		runtimeStats = {instanceCount = nil, dataSendKbps = nil, dataReceiveKbps = nil},
+		runtimeStatsError = nil,
 		frameBuckets = {},
 		lastPruneSecond = -1,
 		lastFrameAt = 0,
@@ -80,6 +84,46 @@ function Service:_sampleMemory()
 	end
 end
 
+function Service:_sampleRuntimeStats()
+	local sampledAt = os.time()
+	local values = {}
+	local properties = {
+		instanceCount = "InstanceCount",
+		dataSendKbps = "DataSendKbps",
+		dataReceiveKbps = "DataReceiveKbps",
+	}
+	local errors = {}
+	for key, propertyName in pairs(properties) do
+		local ok, value = pcall(function()
+			return Stats[propertyName]
+		end)
+		if ok and finite(value) then
+			values[key] = value
+		else
+			table.insert(errors, propertyName .. " unavailable")
+		end
+	end
+	self.runtimeStats = values
+	self.runtimeStatsError = if #errors > 0 then table.concat(errors, ", ") else nil
+	self.lastRuntimeSampleAt = sampledAt
+end
+
+function Service:_logDiagnosticSnapshot()
+	local status = self:GetStatus()
+	local heartbeatFps = if status.heartbeat.averageDeltaSeconds and status.heartbeat.averageDeltaSeconds > 0
+		then 1 / status.heartbeat.averageDeltaSeconds else nil
+	local stats = self.runtimeStats
+	local memory = self.memoryMb
+	print(string.format(
+		"[CLUB DIAGNOSTICS] Server FPS(avg): %s | Memory: %s MB | Instances: %s | Net Out: %s KB/s | Net In: %s KB/s",
+		if heartbeatFps then tostring(math.floor(heartbeatFps + 0.5)) else "n/a",
+		if memory then tostring(math.floor(memory + 0.5)) else "n/a",
+		if stats.instanceCount then tostring(math.floor(stats.instanceCount + 0.5)) else "n/a",
+		if stats.dataSendKbps then tostring(math.floor(stats.dataSendKbps + 0.5)) else "n/a",
+		if stats.dataReceiveKbps then tostring(math.floor(stats.dataReceiveKbps + 0.5)) else "n/a"
+	))
+end
+
 function Service:Start(): boolean
 	if self.running then return false end
 	self.running = true
@@ -88,9 +132,16 @@ function Service:Start(): boolean
 		if finite(deltaTime) then self:_recordFrame(deltaTime) end
 	end)
 	self.memoryThread = task.spawn(function()
+		local elapsed = 0
 		while self.running do
-			self:_sampleMemory()
-			task.wait(MEMORY_SAMPLE_SECONDS)
+			self:_sampleRuntimeStats()
+			elapsed += DIAGNOSTIC_SAMPLE_SECONDS
+			if elapsed >= MEMORY_SAMPLE_SECONDS then
+				self:_sampleMemory()
+				elapsed = 0
+			end
+			self:_logDiagnosticSnapshot()
+			task.wait(DIAGNOSTIC_SAMPLE_SECONDS)
 		end
 	end)
 	return true
@@ -145,6 +196,15 @@ function Service:GetStatus(): {[string]: any}
 			slowFrameCount = slow,
 			severeFrameCount = severe,
 			windowSeconds = SAMPLE_WINDOW_SECONDS,
+		},
+		runtime = {
+			state = if self.runtimeStatsError then "Partial" elseif self.lastRuntimeSampleAt then "Measured" else "Starting",
+			instanceCount = self.runtimeStats.instanceCount,
+			dataSendKbps = self.runtimeStats.dataSendKbps,
+			dataReceiveKbps = self.runtimeStats.dataReceiveKbps,
+			sampledAt = self.lastRuntimeSampleAt,
+			lastError = self.runtimeStatsError,
+			sampleIntervalSeconds = DIAGNOSTIC_SAMPLE_SECONDS,
 		},
 		memory = {
 			state = if self.memoryError then "Unavailable" elseif memoryStale then "Stale"
