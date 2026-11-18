@@ -226,3 +226,9 @@ Validation: re-fetched the renderer and confirmed there is one initial PlayerGui
 - Added a dirty/device/viewport guard around menu typography updates. When the text-object set, detected device class, and viewport width are unchanged, `applyMenuTypography()` returns without rewriting text properties.
 - New text descendants mark the target list dirty; device or viewport-width changes force a fresh typography pass. Existing per-device scale, clamp, font, and wrapping calculations remain unchanged.
 - This reduces redundant property writes during repeated menu/layout callbacks. Static source verification only; no Roblox Studio runtime or device profiling was performed.
+
+### Hidden compact HUD visualizer guard
+
+- The 30 FPS visualizer clock continues to accumulate active playback time, but the renderer now skips loudness queries and bar updates when the compact HUD is hidden and no expanded-menu visualizer/title animation needs work.
+- Compact HUD bars update only while the local ScreenGui is enabled and the HUD is visible. Expanded-menu visualizer behavior and title animations remain independently gated by expanded state.
+- This does not change the visualizer cadence or playback clock. Static source checks only; no Studio/runtime or device profiling was performed.
