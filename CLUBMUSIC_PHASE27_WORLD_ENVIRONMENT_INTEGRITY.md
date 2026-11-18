@@ -76,6 +76,40 @@ Do not remove or rewrite terrain, disable scripts, revoke passes, change VIP tie
 - Did not add a global Lighting watcher, Terrain mutation hook, auto-reset, or automatic enforcement because the complete live writer inventory is not yet established.
 - Did not change game behavior or player entitlements in this audit pass.
 
+## Phase 27 follow-up source trace — tracked writers and ownership (2026-11-17)
+
+### Confirmed tracked mutation paths
+
+| Area | Tracked writer / path | Existing gate and scope | Remaining concern |
+|---|---|---|---|
+| Global gravity | TikiTideSettings/TikiTideSettingsService.server.lua → SetGravity | Requires Tiki Tide access and SecurityCore GlobalConfig; finite numeric validation; clamps to 20–192.62; registers exact resulting value as WorldGravity with MovementAuthority | Verify installed hierarchy, reset/default path, and command alias interactions in Studio |
+| Teleport CFrame | Tiki Tide Settings TeleportTo | Validates live actor/target, recipient consent or GlobalModeration, actor/recipient cooldowns, uses server-observed target CFrame, reserves and completes a server ticket, rechecks characters around the mutation | Verify the new one-use movement-observer marker in Studio; audit other teleport writers |
+| Stage/club lights | UtilityBar/UtilityBarExtendedActions.server.lua | Only tagged StageClubLight roots and supported Light/Beam descendants; pass-gated server action; fixed preset allowlist; bounded request token bucket and cooldown | Original-state restore can conflict with another authorized writer changing a fixture after the first snapshot; runtime writer inventory still required |
+| Utility avatar clone | Utility Bar extended actions | Server creates clone from caller's current character and uses server-observed root CFrame; clone is temporary and cleaned up | Confirm intended collision/query/touch settings and cleanup under character churn |
+| Kohl's global environment aliases | RegularCommandsSecurityServer.lua | time, brightness, colorshift, latitude, diffusescale, exposure, disco, gravity, and clearterrain map to SecurityCore permissions and bounded World budget | Wrapped native handler success/failure and aliases outside adapter still require testing |
+| Terrain clear | Kohl's clearterrain policy | Requires GlobalConfig, global World budget, fixed-code audit | Adapter records command intent after the wrapped handler; it does not inventory or intercept every Terrain writer |
+
+### Collision-group and protected-geometry status
+
+- The repository files reviewed in this follow-up do not establish a complete collision-group matrix or a server-owned ClubPlayers collision assignment service. The sample collision-group script supplied in chat is a design reference, not a committed game script.
+- No blanket collision-group registration or matrix mutation was added. Changing a group pair globally without inventory could break map walls, stage barriers, mounts, vehicles, doors, or other intended interactions.
+- Noclip and wall-clip detection remain blocked on a live map inventory: protected geometry, collision groups, CanCollide/CanQuery policies, streaming behavior, doors, moving/temporary geometry, and legitimate pass-through mechanics must be identified first.
+- The Tiki Tide Settings teleport path is now ticket-validated and movement-observer-aware, but this does not cover native Kohl's teleport, respawn/spawn placement, mount/vehicle movement, or other external CFrame/PivotTo/MoveTo writers.
+
+### Entitlement and policy boundary reaffirmed
+
+- Utility Bar Stage & Club Lighting checks the server-populated HasStageClubLightingPass attribute; clients do not provide a pass ID or ownership claim.
+- Tiki Tide Settings privileged gravity and moderation/configuration paths use SecurityCore Authorization. The membership access attribute is populated by the main controller's verified server-side pass/rank flow; verify that flow and refresh lifecycle in the live place.
+- Do not replace these with a client-owned HasVIP attribute check or a parallel role resolver.
+
+### Backdoor / environment writer boundary
+
+This source pass is not a full backdoor audit. It has not inspected native Kohl's Admin package internals, third-party package descendants, live-place scripts, runtime-inserted models, plugin-installed assets, or every dynamically created Instance. A full Phase 27 audit must trace script provenance and all writers to Lighting, Gravity, Terrain, Atmosphere, Clouds, post-processing, collision groups, and protected map state. Keyword matches alone are not proof of a backdoor and must not trigger automatic deletion or punishment.
+
+### Follow-up decision
+
+No global Lighting/Terrain watcher, collision-matrix rewrite, automatic environment restoration, or player enforcement was added. The current tracked writers have meaningful local authorization boundaries, but the missing live-place/package writer inventory prevents a safe authoritative baseline and rollback design. Continue with inventory and Studio acceptance before adding drift enforcement.
+
 ## Runtime acceptance matrix — outstanding
 
 - [ ] Confirm the installed SecurityCore release and installer pin match the reviewed branch release.
