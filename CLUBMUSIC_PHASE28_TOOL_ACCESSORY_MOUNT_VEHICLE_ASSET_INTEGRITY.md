@@ -207,6 +207,8 @@ The user confirmed that the map is unfinished but map-independent updates may pr
 **Code commits:**
 - Companion lifecycle: `2c33e76651cf7afd9a64ebf751309a1f7166925c`, with connection teardown refinements in `a45b95d5be0ea195171ce40581fbaf3b2e9b3a23` and `e7493d988a17b64fc81a7264add600983bde62d2`.
 - Inventory observer replacement cleanup: `677f19bf198dad22aabe6ec32d221dd964b81624` and detached-container Tool reconciliation `1601754bae5629a25070c9ffea8894eb9e0ef7b4`.
+- Installer release pin updated to the exact observer source commit `1601754bae5629a25070c9ffea8894eb9e0ef7b4` in `82b1d07a5f115145276c3d8be9dea48f8b203db5`.
+- Utility Bar teardown additionally clears any remaining aura effects in `47173858451986467bb41ed0065f829889d4a550`.
 
 These are static source changes only. They still require Luau/Studio runtime tests for respawn, replacement, concurrent grants, player churn, and teardown.
 
