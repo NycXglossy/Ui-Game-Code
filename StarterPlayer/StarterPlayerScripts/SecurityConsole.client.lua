@@ -46,7 +46,7 @@ launcherButton.Activated:Connect(function()
 	if gui:GetAttribute("StaffAuthorized") == true then
 		gui.Enabled = true
 	else
-		setStatus("Staff authorization is unavailable.", false)
+		warn("[Tiki Tide][SecurityConsole] Staff authorization is unavailable.")
 	end
 end)
 
