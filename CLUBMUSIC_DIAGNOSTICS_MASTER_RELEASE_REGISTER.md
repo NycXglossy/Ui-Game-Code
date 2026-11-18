@@ -416,3 +416,11 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - Added `ClubMusic_Client_Diagnostics_Installer.lua` to install the client diagnostics ModuleScript at `ReplicatedStorage/ClubMusic_Client_Diagnostics_Service` and its LocalScript bootstrap under `StarterPlayer/StarterPlayerScripts`, matching the bootstrap's runtime lookup.
 - Both source files are fetched and staged before promotion; previous instances are retained with `_Previous` suffixes. The installer is pinned to the reviewed branch snapshot.
 - Source and destination alignment was statically reviewed. The installer has not been executed in Roblox Studio, and no live place was changed.
+
+
+### Performance compatibility follow-up — Studio audio installer snapshot and receipt module
+
+- Audited `ClubMusic_Studio_CommandBar_Installer.lua` against the active controller's module resolution. The controller loads `ReceiptHash` only from `ServerStorage/ClubMusicSecurityCore/ReceiptHash`; the standalone root-level `ClubMusic_ReceiptHash.lua` has been retired and is absent from the reviewed tree.
+- Updated all eleven audio/catalog/playlist/queue/validation source URLs to the same immutable branch snapshot (`b8ee084b4dc001b084e4b36c79f02031097cbe76`), verified each file exists at that commit, and removed the stale root-level receipt-hash install entry. The Security Core installer remains the sole installer for `ClubMusicSecurityCore.ReceiptHash` and `ReceiptTransactionService`.
+- Corrected the installer inventory/count and stale playback-sync comment to reflect the local-only queue/playback architecture. Added a stopped-simulation guard and preflight class validation for all existing audio module destinations before any source replacement.
+- Static checks only. The installer has not been executed in Studio; no live place was changed.
