@@ -1008,6 +1008,26 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			or normalizedName == "clubmusiccompacthud"
 	end
 
+	-- Maintain a small index of compact HUD candidates instead of rescanning
+	-- the entire PlayerGui every time a panel attribute or menu state changes.
+	local compactHudCandidates: {GuiObject} = {}
+	for _, descendant in ipairs(playerGui:GetDescendants()) do
+		if descendant ~= hud and isCompactClubHud(descendant) then
+			table.insert(compactHudCandidates, descendant :: GuiObject)
+		end
+	end
+
+	local function hideDuplicateCompactHuds()
+		for index = #compactHudCandidates, 1, -1 do
+			local candidate = compactHudCandidates[index]
+			if candidate.Parent == nil then
+				table.remove(compactHudCandidates, index)
+			elseif candidate ~= hud then
+				candidate.Visible = false
+			end
+		end
+	end
+
 	local function syncLauncherVisibility()
 		-- Keep the floating full-UI launcher hidden behind every companion panel.
 		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
@@ -1020,11 +1040,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		playerGui:SetAttribute("ClubMusicMenuExpanded", expanded)
 		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
 		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
-		for _, descendant in ipairs(playerGui:GetDescendants()) do
-			if descendant ~= hud and isCompactClubHud(descendant) then
-				(descendant :: GuiObject).Visible = false
-			end
-		end
+		hideDuplicateCompactHuds()
 		hud.Visible = visible and not expanded and not tikiTideSettingsOpen and not inventoryOpen
 		syncLauncherVisibility()
 	end
@@ -1033,11 +1049,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
 		local tikiTideSettingsOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
 		if inventoryOpen or tikiTideSettingsOpen or expanded then
-			for _, descendant in ipairs(playerGui:GetDescendants()) do
-				if descendant ~= hud and isCompactClubHud(descendant) then
-					(descendant :: GuiObject).Visible = false
-				end
-			end
+			hideDuplicateCompactHuds()
 		end
 		hud.Visible = not expanded and not tikiTideSettingsOpen and not inventoryOpen
 		syncLauncherVisibility()
@@ -1048,11 +1060,20 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	table.insert(connections, playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(syncExternalPanelHudVisibility))
 	table.insert(connections, playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(syncExternalPanelHudVisibility))
 	syncExternalPanelHudVisibility()
-	-- Catch duplicate bars created by another renderer copy while a panel is open.
+	-- Keep the candidate index current as other UI systems add/remove compact bars.
 	table.insert(connections, playerGui.DescendantAdded:Connect(function(descendant)
-		if (expanded or playerGui:GetAttribute("UtilityInventoryOpen") == true
-			or playerGui:GetAttribute("TikiTideSettingsOpen") == true) and isCompactClubHud(descendant) then
-			(descendant :: GuiObject).Visible = false
+		if descendant ~= hud and isCompactClubHud(descendant) then
+			table.insert(compactHudCandidates, descendant :: GuiObject)
+			if expanded or playerGui:GetAttribute("UtilityInventoryOpen") == true
+				or playerGui:GetAttribute("TikiTideSettingsOpen") == true then
+				(descendant :: GuiObject).Visible = false
+			end
+		end
+	end))
+	table.insert(connections, playerGui.DescendantRemoving:Connect(function(descendant)
+		if descendant:IsA("GuiObject") then
+			local index = table.find(compactHudCandidates, descendant)
+			if index then table.remove(compactHudCandidates, index) end
 		end
 	end))
 
