@@ -424,3 +424,12 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - Updated all eleven audio/catalog/playlist/queue/validation source URLs to the same immutable branch snapshot (`b8ee084b4dc001b084e4b36c79f02031097cbe76`), verified each file exists at that commit, and removed the stale root-level receipt-hash install entry. The Security Core installer remains the sole installer for `ClubMusicSecurityCore.ReceiptHash` and `ReceiptTransactionService`.
 - Corrected the installer inventory/count and stale playback-sync comment to reflect the local-only queue/playback architecture. Added a stopped-simulation guard and preflight class validation for all existing audio module destinations before any source replacement.
 - Static checks only. The installer has not been executed in Studio; no live place was changed.
+
+
+### Performance compatibility follow-up — ServerStorage RBXMX receipt module cleanup
+
+- Audited `ClubMusic_ServerStorage_Modules.rbxmx` against the active Security Core receipt migration. Its five active catalog/playlist/queue/validation ModuleScripts exactly match their canonical root source files, including the generation-safe bounded `MusicValidationService` cache.
+- Removed the obsolete embedded root-level `ClubMusic_ReceiptHash` ModuleScript from this legacy package. Receipt hashing now belongs only to `ServerStorage/ClubMusicSecurityCore/ReceiptHash`, installed with `ReceiptTransactionService` by the Security Core installer; the old package could otherwise reintroduce a retired duplicate.
+- Verified the remaining package inventory contains exactly `MusicCatalogService`, `MusicPlaylistService`, `MusicQueueManager`, `MusicQueueManagerService`, and `MusicValidationService`. Audio client/server RBXMX ModuleScripts were also checked and exactly match their canonical `.luau` sources.
+- `ClubMusic_Global_Optional_Services.rbxmx` still contains the dormant `MusicGlobalPlaybackAuthority` artifact; it was not removed because package consumers/installation use have not been fully established. Active playback sync remains retired in the controller, global service, renderer, and network layer.
+- Static package/source comparison only. No Roblox model was imported into Studio and no live place was changed.
