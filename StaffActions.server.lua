@@ -94,6 +94,7 @@ local function recordAudit(
 	return ok and recorded == true
 end
 
+local lastActionAt: {[number]: number} = {}
 local lastStatusAt: {[number]: number} = {}
 local function consumeActionCooldown(player: Player): boolean
 	local now = os.clock()
@@ -339,6 +340,7 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 end)
 
 Players.PlayerRemoving:Connect(function(player)
+	lastActionAt[player.UserId] = nil
 	lastStatusAt[player.UserId] = nil
 end)
 
