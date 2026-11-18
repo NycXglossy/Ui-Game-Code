@@ -2961,27 +2961,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 	return true
 end
 
-ControllerFunctions.saveProfile = function(player: Player)
-	-- Studio memory mode intentionally has no durable backend. The in-memory
-	-- profile remains authoritative for this test session; never call UpdateAsync.
-	if USE_STUDIO_MEMORY_PROFILES then
-		return profiles[player.UserId] ~= nil
-	end
-
-	local userId = player.UserId
-	local profile = profiles[userId]
-	if not profile then return false end
-	local writeLockToken = ControllerFunctions.acquireProfileWriteLock(userId)
-	if not writeLockToken then return false end
-	profile = profiles[userId]
-	if not profile then ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken); return false end
-	if not ControllerFunctions.waitForDataStoreBudget(8) then
-		ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken)
-		warn("[ClubMusic] Profile save deferred: server DataStore budget is busy for userId " .. tostring(userId))
-		return false
-	end
-
-	-- String keys keep the slot table a dictionary (safe for sparse slots) in the DataStore.
+local function buildProfileSnapshot(profile: any): {[string]: any}
 	local slotsSnapshot: {[string]: any} = {}
 	for i = 1, TITLE_SLOT_COUNT do
 		local slot = profile.titleSlots[i]
@@ -2993,7 +2973,7 @@ ControllerFunctions.saveProfile = function(player: Player)
 		end
 	end
 
-	local snapshot = {
+	return {
 		tickets = profile.tickets,
 		coins = profile.coins,
 		loginStreak = profile.loginStreak,
@@ -3015,6 +2995,43 @@ ControllerFunctions.saveProfile = function(player: Player)
 		favorites = table.clone(profile.favorites),
 		xp = profile.xp,
 	}
+end
+
+local function profileSnapshotsEqual(left: any, right: any): boolean
+	if typeof(left) ~= "table" or typeof(right) ~= "table" then
+		return left == right
+	end
+	for key, value in pairs(left) do
+		if not profileSnapshotsEqual(value, right[key]) then return false end
+	end
+	for key in pairs(right) do
+		if left[key] == nil then return false end
+	end
+	return true
+end
+
+ControllerFunctions.saveProfile = function(player: Player)
+	-- Studio memory mode intentionally has no durable backend. The in-memory
+	-- profile remains authoritative for this test session; never call UpdateAsync.
+	if USE_STUDIO_MEMORY_PROFILES then
+		return profiles[player.UserId] ~= nil
+	end
+
+	local userId = player.UserId
+	local profile = profiles[userId]
+	if not profile then return false end
+	local writeLockToken = ControllerFunctions.acquireProfileWriteLock(userId)
+	if not writeLockToken then return false end
+	profile = profiles[userId]
+	if not profile then ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken); return false end
+	if not ControllerFunctions.waitForDataStoreBudget(8) then
+		ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken)
+		warn("[ClubMusic] Profile save deferred: server DataStore budget is busy for userId " .. tostring(userId))
+		return false
+	end
+
+	-- Capture a detached snapshot before the yielding UpdateAsync call.
+	local snapshot = buildProfileSnapshot(profile)
 	local ownershipLost = false
 	local ok, result = pcall(function()
 		return store:UpdateAsync(tostring(userId), function(oldData)
@@ -3046,6 +3063,10 @@ ControllerFunctions.saveProfile = function(player: Player)
 			return output
 		end)
 	end)
+	-- Detect mutations that happened while UpdateAsync was yielding, including
+	-- throttled reward/XP paths that do not enqueue on every individual change.
+	local profileChangedDuringSave = profiles[userId] == profile
+		and not profileSnapshotsEqual(buildProfileSnapshot(profile), snapshot)
 	ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken)
 	if not ok or typeof(result) ~= "table" then
 		warn("[ClubMusic] Profile save failed for " .. player.Name .. ": " .. tostring(result or "profile session ownership lost"))
@@ -3055,6 +3076,9 @@ ControllerFunctions.saveProfile = function(player: Player)
 			player:Kick("Your profile session moved to another server. Please rejoin.")
 		end
 		return false
+	end
+	if profileChangedDuringSave and player.Parent == Players and profiles[userId] == profile then
+		ControllerFunctions.scheduleProfileSave(player)
 	end
 	return true
 end
