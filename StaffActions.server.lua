@@ -180,7 +180,7 @@ local function updateConsoleForPlayer(player: Player)
 
 		while player.Parent == Players do
 			local level = getVerifiedLevel(player)
-			console.Enabled = level ~= nil and level >= 1
+			console.Enabled = level ~= nil and level >= 2
 			task.wait(30)
 		end
 		if console.Parent then console.Enabled = false end
@@ -222,7 +222,7 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 
 	if action == "GetStatus" then
 		local level = getVerifiedLevel(player)
-		if level == nil or level < 1 then
+		if level == nil or level < 2 then
 			sendResult(player, action, false, "Staff console access is unavailable.")
 			return
 		end
