@@ -127,3 +127,35 @@ No global Lighting/Terrain watcher, collision-matrix rewrite, automatic environm
 Phase 27 is not complete until the live place and external package writers are inventoried, every legitimate world/environment mutation path is mapped to its existing server authorization owner, entitlement lifecycle tests pass, and Studio plus published-server tests demonstrate no false-positive enforcement or unintended environment changes. Any future drift monitor must remain detection-only until separately reviewed.
 
 **Current Phase 27 status:** initial tracked-source audit complete; implementation of drift monitoring intentionally deferred pending live writer inventory and runtime acceptance. Phase 26 remains separately open for its own runtime movement validation. Phases 28–39 and Phase 40 cleanup are not changed by this document.
+
+## Follow-up review — collision groups, shared physics props, lighting requests, and VIP zone example (2026-11-17)
+
+### Collision-group assignment
+
+- The supplied Players collision-group example is not present as a tracked implementation. The reviewed source paths do not establish a complete collision-group matrix or a first-party server-owned character collision assignment service.
+- No new group registration, collision matrix mutation, or blanket assignment of character descendants was added. A global player/player collision change could affect intended interactions with map barriers, stage fixtures, accessories, tools, mounts, and vehicles.
+- Before implementation, inventory all groups and pairwise collidability from the live place, all scripts assigning BasePart.CollisionGroup, and the intended behavior of character body parts, accessories, tools, mounts, vehicles, doors, and protected map geometry. Then define one server-owned assignment owner with existing-group-safe initialization, existing-player handling, respawn handling, and connection cleanup.
+- Collision groups are not a substitute for protected-geometry auditing or noclip detection. CanCollide/CanQuery, spatial query filters, streaming, moving barriers, and legitimate pass-through mechanics must also be mapped.
+
+### Shared unanchored physics props
+
+- The supplied InteractiveProps / SetNetworkOwner(nil) example is not present as a tracked policy. CharacterPhysicsGuard observes the character root's network owner; that does not establish ownership policy for world props.
+- Do not force server ownership on all unanchored objects. Inventory actual shared props and their scripts first; keep characters, mounts, and vehicles on separately reviewed ownership policies. Server ownership can increase physics workload or reduce responsiveness.
+- Any future prop policy must be scoped to a verified folder/tag and eligible assemblies, handle late descendants and reparenting, record bounded failures, and be tested under server load.
+
+### Stage lighting request boundary
+
+- The supplied arbitrary color-name RemoteEvent and direct StageLights.NeonPart.Color mutation are not adopted. The existing Utility Bar lighting service remains the only reviewed first-party Stage & Club Lighting owner: it requires the server-populated feature-pass attribute, validates a bounded request, enforces a server-wide budget and per-player cooldown, and applies fixed presets only to Light/Beam descendants under StageClubLight tagged roots.
+- Do not add a second pass lookup, arbitrary color remote, or direct fixture writer. Continue auditing for non-UtilityBar writers and test concurrent preset/restore operations, including a fixture changed by another authorized writer after the original snapshot.
+
+### Physical VIP zone boundary
+
+- Phase 6's tracked-source audit found no dedicated physical VIP/VVIP/Tiki Tide zone detector or touch-handler implementation. The current branch's TeleportValidationService includes VIPZone in its accepted origin-name allowlist, but no corresponding first-party caller was established by the tracked source review. An allowed origin string is not proof that a VIP zone exists or that a caller is authorized.
+- Membership remains centralized in EntitlementAuthority; do not add a separate UserOwnsGamePassAsync loop, client-owned VIP flag, or duplicate pass resolver.
+- If a physical protected zone exists in the live place, inventory its actual geometry, query/collision settings, all entrances and alternate routes, and the intended membership tiers. Each server entry path must use the existing entitlement authority and staff authorization policy, validate a live character/root and the actual boundary, and fail safely on unknown entitlement results without treating a Marketplace outage as exploit evidence.
+- Any corrective movement must use the existing server-owned TeleportValidationService ticket flow after authorization, with a validated public destination and character identity checks. Do not directly assign a root CFrame from a zone scan. Do not eject, kick, or ban based on a single overlap or failed lookup.
+- Runtime tests must cover group VIP, paid VIP/VVIP/Tiki Tide, owner-awarded tiers, owner access, non-members, first-time lookup failure, transient failure after verified ownership, respawn, boundary edges, overlapping body parts, multiple zone parts, and bypass routes.
+
+### Implementation decision
+
+No collision matrix, server-owned prop policy, arbitrary lighting remote, VIP-zone detector, separate entitlement checker, or direct-CFrame ejection was added. The live map and packaged scripts are still required to establish whether these systems exist and what safe boundaries they should enforce.
