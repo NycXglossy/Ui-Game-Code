@@ -4653,6 +4653,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local typographyTargets: {TextLabel | TextButton | TextBox} = {}
 	local typographyTargetsInitialized = false
+	local typographyTargetsDirty = true
+	local lastTypographyDevice: string? = nil
+	local lastTypographyViewportWidth: number? = nil
 	local function isTypographyTarget(item: Instance): boolean
 		return item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox")
 	end
@@ -4664,6 +4667,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- A narrow desktop window needs the same typography restraint as a tablet;
 		-- do not let the device label override the actual available width.
 		local textScale = (scaleByDevice[currentDevice] or 1) * (if viewportWidth < 560 then 0.9 elseif viewportWidth < 760 then 0.95 else 1)
+		if not typographyTargetsDirty and lastTypographyDevice == currentDevice and lastTypographyViewportWidth == viewportWidth then
+			return
+		end
+		lastTypographyDevice = currentDevice
+		lastTypographyViewportWidth = viewportWidth
 		if not typographyTargetsInitialized then
 			typographyTargetsInitialized = true
 			for _, descendant in ipairs(panel:GetDescendants()) do
@@ -4674,6 +4682,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			table.insert(connections, panel.DescendantAdded:Connect(function(descendant)
 				if isTypographyTarget(descendant) then
 					table.insert(typographyTargets, descendant :: any)
+					typographyTargetsDirty = true
 				end
 			end))
 			table.insert(connections, panel.DescendantRemoving:Connect(function(descendant)
@@ -4711,6 +4720,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				end
 			end
 		end
+		typographyTargetsDirty = false
 	end
 	local function renderTab()
 		refreshNav()
