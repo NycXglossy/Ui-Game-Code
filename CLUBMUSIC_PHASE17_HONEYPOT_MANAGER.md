@@ -5,7 +5,7 @@
 ## Implementation
 
 - Added `ClubMusicSecurityCore/HoneypotManager.lua`, staged by the SecurityCore installer and pinned to the module release commit.
-- Creates a dedicated `ReplicatedStorage/TikiTideSecurityDecoys` folder containing four isolated decoys:
+- Creates a dedicated `ReplicatedStorage/TikiTideSecurityDecoys` folder containing eight isolated decoys:
   - `TTHP_AdminPrivilegeEvent`
   - `TTHP_PurchaseReceiptFunction`
   - `TTHP_VIPEntitlementEvent`
