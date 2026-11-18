@@ -23,6 +23,33 @@ gui.DisplayOrder = 80
 gui.Enabled = false
 gui.Parent = playerGui
 
+-- Separate launcher remains visible while the console itself is closed.
+local launcherGui = Instance.new("ScreenGui")
+launcherGui.Name = "StaffConsoleLauncher"
+launcherGui.ResetOnSpawn = false
+launcherGui.DisplayOrder = 79
+launcherGui.Enabled = false
+launcherGui.Parent = playerGui
+local launcherButton = Instance.new("TextButton")
+launcherButton.Name = "OpenStaffConsole"
+launcherButton.AnchorPoint = Vector2.new(1, 1)
+launcherButton.Position = UDim2.new(1, -18, 1, -96)
+launcherButton.Size = UDim2.fromOffset(142, 34)
+launcherButton.BackgroundColor3 = Color3.fromRGB(30, 88, 91)
+launcherButton.Text = "STAFF CONSOLE"
+launcherButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+launcherButton.TextSize = 10
+launcherButton.Font = Enum.Font.GothamBold
+launcherButton.Parent = launcherGui
+Instance.new("UICorner", launcherButton).CornerRadius = UDim.new(0, 10)
+launcherButton.Activated:Connect(function()
+	if gui:GetAttribute("StaffAuthorized") == true then
+		gui.Enabled = true
+	else
+		setStatus("Staff authorization is unavailable.", false)
+	end
+end)
+
 local main = Instance.new("Frame")
 main.Name = "MainFrame"
 main.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -487,6 +514,11 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 	end
 	local result = if typeof(message) == "string" then message else "The server returned an unknown result."
 	setStatus(result, succeeded)
+	if action == "GetStatus" then
+		gui:SetAttribute("StaffAuthorized", succeeded)
+		launcherGui.Enabled = succeeded
+		if succeeded then gui.Enabled = true end
+	end
 	if action == "RunClubMusicCommand" or action == "ToggleLockdown" then
 		pendingRequest = false
 		requestToken += 1
