@@ -11,13 +11,13 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "8a028a2e28cfc245263486eb607f52d52183d390"
+local RELEASE_COMMIT = "f14d8fa47cd653ee90f3edc0665ac4b2a3acce52"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
 -- Phase 32 is pinned independently so the previously certified SecurityCore
 -- module snapshot is not silently changed by later commits.
 local PHASE32_COMMIT = "6ae4883c2c260df61bf760b8637dd339bda33d7b"
 local PHASE32_BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. PHASE32_COMMIT .. "/ClubMusicSecurityCore/"
-local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "AnimationIntegrityService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence", "HoneypotManager", "ClientIntegrityTelemetry", "ReceiptAuthority"}
+local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "AnimationIntegrityService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence", "HoneypotManager", "ClientIntegrityTelemetry", "ReceiptAuthority", "ReceiptHash", "ReceiptTransactionService"}
 local PHASE32_MODULE_NAMES = {"ModerationPunishmentService", "AccountRiskSignalService", "ChatAbuseDetectionService", "Phase32ServiceBundle"}
 local FOLDER_NAME = "ClubMusicSecurityCore"
 local BOOTSTRAP_NAME = "TikiTideCharacterPhysicsGuardBootstrap"
