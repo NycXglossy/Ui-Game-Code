@@ -14,6 +14,11 @@ local DECOYS = {
 	{ name = "TTHP_PurchaseReceiptFunction", kind = "RemoteFunction", signal = "honeypot_purchase_receipt_remote" },
 	{ name = "TTHP_VIPEntitlementEvent", kind = "RemoteEvent", signal = "honeypot_vip_entitlement_remote" },
 	{ name = "TTHP_ModerationActionFunction", kind = "RemoteFunction", signal = "honeypot_moderation_action_remote" },
+	-- Additional isolated RemoteEvent decoys proposed for Phase 17 hardening.
+	{ name = "AdminCommandEvent", kind = "RemoteEvent", signal = "honeypot_admin_command_event" },
+	{ name = "UnlockAllGear", kind = "RemoteEvent", signal = "honeypot_unlock_all_gear_event" },
+	{ name = "SetVIPRank", kind = "RemoteEvent", signal = "honeypot_set_vip_rank_event" },
+	{ name = "GiveTipMoney", kind = "RemoteEvent", signal = "honeypot_give_tip_money_event" },
 }
 local COOLDOWN_SECONDS = 5
 local MAX_SUBJECTS = 256
@@ -126,6 +131,8 @@ function Service:GetStatus()
 		scope = "ServerLocal",
 		decoyFolderPresent = self.folder ~= nil and self.folder.Parent == ReplicatedStorage,
 		decoyRemoteCount = if self.started then #DECOYS else 0,
+		decoyRemoteEventCount = if self.started then 6 else 0,
+		decoyRemoteFunctionCount = if self.started then 2 else 0,
 		totalHits = self.totalHits,
 		remoteEventHits = self.eventHits,
 		remoteFunctionHits = self.functionHits,
