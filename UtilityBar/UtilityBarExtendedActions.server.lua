@@ -527,6 +527,7 @@ script.Destroying:Connect(function()
 		playerLifecycleConnections[userId] = nil
 	end
 	for userId in pairs(companionByPlayer) do destroyCompanion(userId) end
+	for userId in pairs(auraByPlayer) do clearAura(userId) end
 end)
 
 print("[UtilityBar] Pass-gated Mount, Clone Companion, scoped Stage/Club Lighting, Size, and Aura actions ready.")
