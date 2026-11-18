@@ -2232,6 +2232,50 @@ do
 	end
 end
 
+-- Phase 32 moderation services share the already initialized SecurityCore authority.
+-- No client remote is created; the Kohl's Admin server bridge is the only staff entry point.
+local phase32Services: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("Phase32ServiceBundle") else nil
+	if module and module:IsA("ModuleScript") and authorizationService then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new, {
+				onNotify = function(target: Player, kind: string, message: string)
+					if target.Parent == Players then
+						noticeRemote:FireClient(target, {text = string.sub(message, 1, 180), kind = kind})
+					end
+				end,
+				onAudit = function(event: {[string]: any})
+					local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+					if replay and replay:IsA("BindableFunction") then
+						pcall(function()
+							replay:Invoke("Record", "moderation_" .. tostring(event.kind),
+								event.targetUserId, event.actorUserId, "Warning", "ModerationPunishment",
+								{caseId = event.caseId, detail = event.detail})
+						end)
+					end
+				end,
+			})
+			if createOk and typeof(instance) == "table"
+				and type(instance.Issue) == "function"
+				and type(instance.Unban) == "function"
+				and type(instance.GetHistory) == "function"
+				and type(instance.GetRiskSignals) == "function"
+				and type(instance.IsRestricted) == "function" then
+				phase32Services = instance
+			else
+				warn("[ClubMusic][Phase32] Service bundle failed validation; punishment actions are unavailable.")
+			end
+		else
+			warn("[ClubMusic][Phase32] Service bundle could not be loaded; punishment actions are unavailable.")
+		end
+	else
+		warn("[ClubMusic][Phase32] Module bundle or SecurityCore Authorization is unavailable; Phase 32 is not active.")
+	end
+end
+
 -- Membership entitlement decisions are centralized separately from staff authorization.
 -- This service reuses Authorization's group cache and keeps bounded, session-only pass results.
 do
