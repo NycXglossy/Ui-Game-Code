@@ -6758,10 +6758,10 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		and message.revision >= 1 and message.revision % 1 == 0 then
 		local revisions = ControllerFunctions.moderationRevisions
 			or (function() ControllerFunctions.moderationRevisions = {}; return ControllerFunctions.moderationRevisions end)()
-		local knownRevision = revisions[message.userId] or 0
-		if message.revision > knownRevision then
+		local target = Players:GetPlayerByUserId(message.userId)
+		local knownRevision = if target then (revisions[message.userId] or 0) else message.revision
+		if target and message.revision > knownRevision then
 			revisions[message.userId] = message.revision
-			local target = Players:GetPlayerByUserId(message.userId)
 			if message.field == "globalBan" and message.value == true then
 				if target then target:Kick("You are globally banned from this experience.") end
 			elseif message.field == "requestBlocked" then
