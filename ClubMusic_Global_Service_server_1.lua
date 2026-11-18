@@ -867,7 +867,17 @@ if diagnosticsModule then
 				return if globalErrorHandler and type(globalErrorHandler.GetStatus) == "function"
 					then globalErrorHandler.GetStatus() else nil
 			end,
-			getMemoryStoreStatus = function() return {sharedRateLimitsEnabled = false, mode = "LocalOnly", detail = "Bounded per-server rate limits are active."} end,
+			getMemoryStoreStatus = function()
+				local playbackLeaseEnabled = globalConfigService ~= nil and globalConfigService:Get("playbackSyncEnabled") == true
+				return {
+					sharedRateLimitsEnabled = false,
+					playbackLeaseEnabled = playbackLeaseEnabled,
+					mode = if playbackLeaseEnabled then "PlaybackOnlyLease" else "LocalOnly",
+					detail = if playbackLeaseEnabled
+						then "MemoryStore is used only for the optional fenced playback leader lease; request queues remain local."
+						else "Bounded per-server rate limits are active; optional playback leadership is disabled.",
+				}
+			end,
 			getAuthorizationStatus = function() return if globalAuthorizationService then globalAuthorizationService:GetStatus() else nil end,
 			getRateLimitStatus = function() return if globalRateLimitService then globalRateLimitService:GetStatus() else nil end,
 			getSecurityPolicyStatus = function() return if globalSecurityPolicyService then globalSecurityPolicyService:GetStatus() else nil end,
