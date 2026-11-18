@@ -64,7 +64,7 @@
 ## Source and installer changes
 
 - Security module: ClubMusicSecurityCore/SecurityThreatIntelligence.lua
-- Installer: ClubMusic_Security_Core_Installer.lua now pins the hardened module snapshot at commit 40816ddb91b29fbde5bab30ccbe3a7972df63262.
+- Installer: ClubMusic_Security_Core_Installer.lua now pins the hardened module snapshot at commit 2b0c8ad144bf3257798c18f149c922d44ad350f1.
 - Staff command/diagnostics: UI_Server_Controller_server (1).lua
 - Deterministic Studio test: ClubMusicSecurityCore/SecurityThreatIntelligence.spec.lua
 - Detailed architecture and acceptance gates: CLUBMUSIC_PHASE15_THREAT_INTELLIGENCE.md
