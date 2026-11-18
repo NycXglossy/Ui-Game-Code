@@ -85,3 +85,16 @@ The previously listed HoneypotManager exclusion was the Phase 16 scope at that t
 ## Phase 18 follow-up — Separate security telemetry from local diagnostics
 
 Phase 16's client FPS/frame-time/memory/ping diagnostics remain client-local and are not transmitted. Phase 18 adds a distinct, bounded security-signal RemoteEvent for fixed dependency-presence observations only. It does not transmit diagnostic metrics or logs, and accepted client reports are untrusted Info-level replay entries only; they are excluded from ThreatIntelligence scoring and all authorization/enforcement decisions. See CLUBMUSIC_PHASE18_CLIENT_INTEGRITY_TELEMETRY.md.
+
+
+## Phase 16 follow-up — periodic server runtime diagnostics
+
+- Extended the existing `ClubMusic_Server_Health_Service.lua`; no second diagnostics script, Heartbeat listener, or independent sampler was introduced.
+- Every 15 seconds, the existing service samples the documented server-local `Stats.InstanceCount`, `Stats.DataSendKbps`, and `Stats.DataReceiveKbps` properties through protected reads and emits one concise `[CLUB DIAGNOSTICS]` output line.
+- The output reports a rolling-window average server FPS estimate derived from the existing 60-second Heartbeat delta-time buckets, rather than treating one `Heartbeat:Wait()` interval as a stable FPS measurement.
+- Total memory continues to use the existing protected `Stats:GetTotalMemoryUsageMb()` sample every 30 seconds and the existing bounded 20-sample trend history. The 15-second diagnostic line reuses the most recent memory sample; it does not add a second memory sampler.
+- Runtime-stat read failures are represented as partial/unavailable fields and do not stop the health service.
+- The proposed fixed 2,500 MB warning was intentionally not enabled. Phase 16 keeps arbitrary hard memory thresholds disabled by default; memory trend, sample freshness, and existing configurable threshold behavior remain authoritative.
+- No kicks, bans, restarts, cleanup actions, throttling, DataStore/MemoryStore/MessagingService writes, remotes, or cross-server reporting were added.
+
+**Runtime acceptance:** verify the three Stats properties return finite values on a dedicated published server, the log cadence is approximately 15 seconds, memory samples remain approximately 30 seconds apart, missing Stats values are reported as partial rather than crashing, and the existing diagnostics snapshot/staff diagnostics output remains compatible. Source changes are not Studio or production runtime certification.
