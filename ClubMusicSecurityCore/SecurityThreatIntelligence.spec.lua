@@ -17,11 +17,13 @@ local service = Service.new({
 })
 expect(service:Start() == true, "service starts")
 
--- One signal repeated three times must not create a review.
+-- One signal repeated three times is capped and cannot create a review.
 for _ = 1, 3 do
 	expect(service:Record("movement_limit_exceeded", 900001, "CharacterPhysicsGuard", "Critical") == true,
 		"known movement signal accepted")
 end
+expect(service.buckets["900001"].score == 8, "category/source contribution cap is enforced")
+expect(service.buckets["900001"].capped == true, "capped contribution is explained")
 expect(#service.incidents == 0, "repeated one-code signal does not create a review")
 
 -- Different codes from one category still do not satisfy category diversity.
@@ -29,10 +31,13 @@ service:Record("unverified_movement_change", 900001, "CharacterPhysicsGuard", "W
 expect(#service.incidents == 0, "same-category evidence does not create a review")
 
 -- Unknown strings containing alarming words are zero-weight and cannot classify by substring.
-local beforeScore = service.buckets["900002"]
 service:Record("movement_exploit_critical", 900002, "UnregisteredAdapter", "Critical")
 expect(service.buckets["900002"].score == 0, "unknown code receives no score")
 expect(service:GetStatus().unknownSignals == 1, "unknown code is counted")
+
+-- Invalid severity is normalized to Info rather than granting a bonus.
+service:Record("movement_limit_exceeded", 900005, "PhysicsAdapter", "Critical-ish")
+expect(service.buckets["900005"].score == 2, "invalid severity receives no Critical bonus")
 
 -- Two exact categories/codes cross Medium; one event ID forwarded twice is deduplicated.
 service:Record("movement_limit_exceeded", 900003, "PhysicsAdapter", "Warning", "dedupe-1")
@@ -64,11 +69,24 @@ expect(#service.raidReviews == 1, "join burst plus three distinct signaled playe
 expect(service.raidReviews[1].confidence == "Medium", "initial cohort threshold is Medium")
 expect(service.raidReviews[1].automaticEnforcement == false, "cohort review is advisory only")
 
--- Rolling cohort evidence expires; session/event state remains bounded.
+-- Cohort join capacity is bounded.
+for userId = 920001, 920140 do service:JoinUserId(userId) end
+expect(service:GetStatus().cohortWindowJoins <= 128, "cohort joiner cap is enforced")
+expect(service:GetStatus().subjectEvictions > 0, "cohort capacity eviction is counted")
+
+-- Rolling cohort evidence expires.
 clock += 61
 service:Record("movement_limit_exceeded", 910001, "PhysicsAdapter", "Warning")
 expect(service:GetStatus().cohortWindowJoins == 0, "join cohort expires after its window")
 expect(service:GetStatus().cohortSignaledPlayers == 0, "cohort evidence expires with joins")
+
+-- Subject window expiry and bounded tracked-subject capacity.
+clock += 601
+service:Record("movement_limit_exceeded", 930001, "PhysicsAdapter", "Warning")
+expect(service.buckets["900001"] == nil, "expired subject bucket is pruned")
+for userId = 940001, 940270 do service:Record("movement_limit_exceeded", userId, "PhysicsAdapter", "Warning") end
+expect(service:GetStatus().trackedSubjects <= 256, "subject bucket cap is enforced")
+expect(service:GetStatus().subjectEvictions > 0, "subject eviction counter is nonzero")
 
 -- Unauthorized queries are rejected; Stop disconnects and clears retained state.
 local allowed = service:Query(nil, nil, 10)
