@@ -220,14 +220,18 @@ function Service:_recordJoin(userId: number, now: number)
 	return true
 end
 
-function Service:PlayerJoined(player: any): boolean
-	if not self.started or typeof(player) ~= "Instance" or not player:IsA("Player") then return false end
-	local userId = player.UserId
-	if not validUserId(userId) then return false end
+function Service:JoinUserId(userId: any): boolean
+	if not self.started or not validUserId(userId) then return false end
 	local now = self.now()
-	self.sessions[tostring(userId)] = {startedAt = now, eventCount = 0}
-	self:_recordJoin(userId, now)
+	local key = tostring(math.floor(userId))
+	if not self.sessions[key] then self.sessions[key] = {startedAt = now, eventCount = 0} end
+	self:_recordJoin(math.floor(userId), now)
 	return true
+end
+
+function Service:PlayerJoined(player: any): boolean
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return false end
+	return self:JoinUserId(player.UserId)
 end
 
 function Service:PlayerRemoving(player: any)
