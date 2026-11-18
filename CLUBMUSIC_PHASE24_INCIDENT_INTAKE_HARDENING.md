@@ -36,6 +36,10 @@ The server validates the reporter, live target, target identity, UTF-8, control 
 
 The Global Service loader and Security Core installer must both use the exact IncidentResponse source release commit `e894e50a9f3d837854049e1bfa5c758502760984`. The installer continues to pin Phase 32 independently. Do not install a different Core folder revision while leaving the Global Service loader pin unchanged.
 
+## Studio isolation note
+
+The Global Service intentionally defaults to `EnableInStudio = false`. In an ordinary isolated Studio session, the incident service and its ServerStorage intake endpoints are therefore unavailable by design. Do not enable the global service in Studio against production DataStore/MemoryStore names. Test the full persisted report and two-server incident path in a dedicated published test place with isolated service keys; use Studio for source inspection and the non-persistent local validation cases that do not require the Global API.
+
 ## Studio installation
 
 1. Update the installed `ClubMusicSecurityCore` folder with the revised installer.
