@@ -232,7 +232,7 @@ function Service:GetStatus()
 	for modeName, duration in pairs(self.modeDurations) do
 		modeDurations[modeName] = duration
 	end
-	local currentModeDuration = math.max(0, os.clock() - self.modeSince)
+	local currentModeDuration = if self.started then math.max(0, os.clock() - self.modeSince) else 0
 	modeDurations[self.mode] = math.min(MAX_COUNTER, (modeDurations[self.mode] or 0) + currentModeDuration)
 	return {
 		state = if self.started then "Observing" else "Stopped",
@@ -266,6 +266,7 @@ end
 
 function Service:Start(): boolean
 	if self.started then return true end
+	self.modeSince = os.clock()
 	self.started = true
 	self.connection = RunService.Heartbeat:Connect(function(deltaTime)
 		self:_onHeartbeat(deltaTime)
@@ -274,6 +275,10 @@ function Service:Start(): boolean
 end
 
 function Service:Stop()
+	if not self.started then return end
+	local nowClock = os.clock()
+	self.modeDurations[self.mode] = math.min(MAX_COUNTER, (self.modeDurations[self.mode] or 0) + math.max(0, nowClock - self.modeSince))
+	self.modeSince = nowClock
 	self.started = false
 	if self.connection then
 		self.connection:Disconnect()
