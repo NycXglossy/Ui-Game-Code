@@ -187,7 +187,7 @@ Validation: confirmed the controller's ModuleScript lookup name, confirmed the p
 
 ## Client map-audit allocation guard
 
-The optional client diagnostics module previously enabled its one-shot Workspace effects inventory by default whenever the module was started. That scan calls `workspace:GetDescendants()`, which allocates a full descendant array before yielding through the inspection loop; on this project's large scene this can create an avoidable startup memory/CPU spike. The map audit now defaults to `DisabledByDefault` and runs only when a caller explicitly constructs the service with `auditWorkspaceEffects = true`. FPS/frame sampling, periodic client memory sampling, and optional modern AudioPlayer observation remain independent. The diagnostics bootstrap remains disabled by default, and all measurements remain client-local/untrusted.
+The optional client diagnostics module previously enabled its one-shot Workspace effects inventory by default whenever the module was started. That scan calls `workspace:GetDescendants()`, which allocates a full descendant array before yielding through the inspection loop; on this project's large scene this can create an avoidable startup memory/CPU spike. The map audit now defaults to `DisabledByDefault` and runs only when a caller explicitly constructs the service with `auditWorkspaceEffects = true`. FPS/frame sampling, periodic client memory sampling, and optional modern AudioPlayer observation remain independent. The bootstrap is enabled by default when installed; all measurements remain client-local/untrusted. The separate installer added below now installs both required instances into their expected Roblox locations.
 
 Validation: source re-fetch confirmed the default is false unless explicitly true; no client runtime test or memory measurement was performed.
 
@@ -232,3 +232,10 @@ Validation: re-fetched the renderer and confirmed there is one initial PlayerGui
 - The 30 FPS visualizer clock continues to accumulate active playback time, but the renderer now skips loudness queries and bar updates when the compact HUD is hidden and no expanded-menu visualizer/title animation needs work.
 - Compact HUD bars update only while the local ScreenGui is enabled and the HUD is visible. Expanded-menu visualizer behavior and title animations remain independently gated by expanded state.
 - This does not change the visualizer cadence or playback clock. Static source checks only; no Studio/runtime or device profiling was performed.
+
+
+## Client diagnostics package installation alignment
+
+The client diagnostics bootstrap previously existed as a source file but had no installer path that placed its required ModuleScript in the exact location it waits for. The bootstrap expects `ReplicatedStorage.ClubMusic_Client_Diagnostics_Service`, while the bootstrap itself belongs under `StarterPlayer/StarterPlayerScripts`. Added `ClubMusic_Client_Diagnostics_Installer.lua`, a dedicated Studio Command Bar installer pinned to the reviewed branch snapshot. It fetches both sources before changing instances, validates existing object classes, stages both instances, and retains the previous pair with `_Previous` suffixes for rollback. It does not add remotes, transmit diagnostics, or enable the Workspace effects inventory.
+
+Validation: source-level review confirms the installer destination names match the bootstrap's direct ReplicatedStorage lookup and StarterPlayerScripts placement. The installer was not executed in Studio; no live place was changed. The diagnostics bootstrap still starts local sampling by default when installed, and the Workspace audit remains disabled unless explicitly requested.
