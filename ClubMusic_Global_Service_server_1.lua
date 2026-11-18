@@ -5,7 +5,7 @@
 --
 -- Uses DataStore for durable global moderation/configuration/receipts and
 -- MessagingService for best-effort cross-server notifications/commands.
--- Playback-only sync is opt-in and shares Now Playing only; request queues remain server-local.
+-- Playback synchronization is retired; each server owns its own Now Playing and request queue.
 -- Rate limiting is bounded and server-local.
 -- Every receiving server validates messages and applies only allowlisted commands.
 -- MessagingService is not a durable queue; periodic reconciliation handles moderation state.
@@ -47,6 +47,13 @@ local CONFIG = {
 	FallbackPlayerCapacity = 20,
 	FallbackPlayerRefillPerSecond = 5,
 	FallbackBucketIdleSeconds = 300,
+	-- Keep global action budgets aligned with the controller's server ingress limits.
+	GlobalActionCapacity = 180,
+	GlobalActionRefillPerSecond = 90,
+	GlobalPlayerCapacity = 18,
+	GlobalPlayerRefillPerSecond = 12,
+	GlobalAudioCapacity = 3,
+	GlobalAudioRefillPerSecond = 0.25,
 	ModerationReconcileSeconds = 180,
 	SubscriptionRetrySeconds = 10,
 	MaxAnnouncementLength = 240,
