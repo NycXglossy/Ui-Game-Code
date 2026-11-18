@@ -159,3 +159,17 @@ Phase 27 is not complete until the live place and external package writers are i
 ### Implementation decision
 
 No collision matrix, server-owned prop policy, arbitrary lighting remote, VIP-zone detector, separate entitlement checker, or direct-CFrame ejection was added. The live map and packaged scripts are still required to establish whether these systems exist and what safe boundaries they should enforce.
+
+ 
+## Follow-up implementation — conflict-aware Stage & Club Lighting restoration (2026-11-17)
+
+Updated `UtilityBar/UtilityBarExtendedActions.server.lua` so the existing scoped preset system no longer blindly restores stale snapshots over a fixture another authorized system changed while a preset was active.
+
+- Each affected Light retains its original state and the last values applied by the preset controller.
+- Each affected Beam retains its original ColorSequence and the last ColorSequence applied by the preset controller.
+- When another preset is applied, a fixture that diverged from the controller's last-applied state gets a refreshed restore baseline before the new preset is applied.
+- When Off is requested, only fixtures that still match the controller's last-applied state are restored. Diverged fixtures are preserved, and the response reports how many were restored versus preserved.
+- Snapshot entries are cleared after Off processing so a later preset captures a fresh baseline.
+- The existing StageClubLight tag scope, fixed preset allowlist, pass gate, ingress budget, and cooldown remain unchanged. No new RemoteEvent or entitlement checker was added.
+
+Static source verification is required after this update; Roblox Studio tests remain outstanding for repeated preset changes, external fixture mutation between presets, Off after external mutation, newly tagged fixtures, and concurrent requests. This is not a substitute for auditing all other fixture writers.
