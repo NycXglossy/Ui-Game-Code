@@ -635,9 +635,9 @@ end
 -- permission, argument, cooldown, and ownership check independently.
 local ALLOWED_ACTIONS: {[string]: boolean} = {
 	ReloadSong = true, ToggleFavorite = true, RequestTrack = true, VoteSkip = true,
-	RequestAudioAsset = true, CatalogAddAudio = true, CatalogRemoveTrack = true, DJSkip = true, DJToggleLock = true, DJClearQueue = true,
-	DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ModBlockUser = true, ModSetPassTier = true,
-	ModPurgeUser = true, ClaimDailyReward = true, EquipTitleTag = true, BuyTitleTag = true,
+	RequestAudioAsset = true, CatalogAddAudio = true, CatalogRemoveTrack = true, DJSkip = true, DJToggleLock = true,
+	DJMoveUp = true, DJRemove = true, DJPause = true, DJRestart = true, ModSetPassTier = true,
+	ClaimDailyReward = true, EquipTitleTag = true, BuyTitleTag = true,
 	SaveTitleSlot = true, SetTitleVisible = true, SelectTitleSlot = true,
 	ClearTitleSlot = true,
 	-- Playlist and DJ playlist actions are server-validated in UI_Server_Controller.
@@ -653,8 +653,8 @@ local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	EquipTitleTag = true, BuyTitleTag = true, RequestAudioAsset = true, SaveTitleSlot = true,
 	SaveCustomTitle = true,
 	-- Wrappers that UI_Network exposes; act() prefers these over raw Network.Send.
-	ReloadSong = true, DJClearQueue = true, DJToggleLock = true, DJToggleGlobalPlaybackSync = true,
-	ModBlockUser = true, ModSetPassTier = true, ModPurgeUser = true,
+	ReloadSong = true, DJToggleLock = true, DJToggleGlobalPlaybackSync = true,
+	ModSetPassTier = true,
 	SelectTitleSlot = true, ClearTitleSlot = true, SetTitleVisible = true,
 }
 local ACTION_MIN_INTERVAL: {[string]: number} = {
