@@ -1363,7 +1363,7 @@ bindFunction("SetGlobalMaintenance", function(enabled: any, message: any, actorU
 	return ok, err
 end)
 bindFunction("ConsumeGlobalRateLimit", function(key: any, capacity: any, refill: any, cost: any)
-	if not SERVICE_ENABLED then return false, false end
+	if not SERVICE_ENABLED then return true, true end
 	if typeof(key) ~= "string" or #key < 1 or #key > 100 then return false, false end
 	-- Compatibility API: preserve the existing call shape while reporting that
 	-- enforcement is local to this server, never cross-server shared.
