@@ -197,3 +197,9 @@ The client diagnostics bootstrap is enabled by default again. The earlier global
 
 Validation: re-fetched the bootstrap and service source; confirmed the bootstrap enables the local sampler and the service constructor defaults `auditWorkspaceEffects` to false / `DisabledByDefault`. No Roblox runtime test or performance measurement was performed.
 
+## Full-menu typography traversal consolidation
+
+In `UI_Renderer (2).lua`, the menu typography pass previously traversed all descendants of the full panel and then traversed the content descendants a second time, even though the content container is already within the panel. Merged the content-specific TextLabel font/wrapping rules into the existing panel traversal. The same base-size capture, device scale/clamps, font choices, TextScaled behavior, and long-description wrapping are retained, while one redundant descendant-array traversal per tab render is removed. No mobile layout, sizing thresholds, controls, or tab content behavior was intentionally changed.
+
+Validation: source-level exact-block replacement, followed by re-fetch and checks for a single typography descendant traversal and preserved device scale/wrapping rules. No Luau compiler or Studio UI regression test was run.
+
