@@ -15,6 +15,7 @@ Service.__index = Service
 
 local CHECK_DELAY = 0.18
 local MAX_MOVEMENT_SAMPLE_GAP_SECONDS = 3.5
+local MOVEMENT_NETWORK_OBSERVATION_INTERVAL = 5
 local SIGNAL_COOLDOWN = 10
 local SCALE_EPSILON = 0.08
 local LIMITS = {
@@ -74,6 +75,7 @@ function Service.new(dependencies)
 		gravityChecks = 0,
 		-- Aggregate-only movement sampling. No positions or per-player histories are retained.
 		movementSamples = 0,
+		movementNetworkObservationSamples = 0,
 		movementSampleGaps = 0,
 		movementSampleInvalid = 0,
 		movementSampleDeferred = 0,
@@ -251,6 +253,7 @@ function Service:_watchCharacter(player: Player, character: Model)
 			task.spawn(function()
 				local previousPosition: Vector3? = nil
 				local previousAt: number? = nil
+				local nextNetworkObservationAt = 0
 				while self.started and player.Parent == Players and player.Character == character
 					and self.playerStates[player.UserId] == state do
 					local sampleInterval = 0.5
@@ -323,18 +326,24 @@ function Service:_watchCharacter(player: Player, character: Model)
 						elseif humanoid.FloorMaterial ~= Enum.Material.Air then context = "grounded" end
 						self.movementContexts[context] += 1
 
-							local ownerBucket = "unknown"
-						local ownerOk, owner = pcall(function() return rootPart:GetNetworkOwner() end)
-						if ownerOk then ownerBucket = if owner == nil then "server" elseif owner == player then "client" else "unknown" end
-						self.movementOwners[ownerBucket] += 1
+							-- Network ownership and ping are lower-frequency context metrics;
+							-- they do not need to be queried on every movement sample.
+							if now >= nextNetworkObservationAt then
+								nextNetworkObservationAt = now + MOVEMENT_NETWORK_OBSERVATION_INTERVAL
+								self.movementNetworkObservationSamples += 1
+								local ownerBucket = "unknown"
+								local ownerOk, owner = pcall(function() return rootPart:GetNetworkOwner() end)
+								if ownerOk then ownerBucket = if owner == nil then "server" elseif owner == player then "client" else "unknown" end
+								self.movementOwners[ownerBucket] += 1
 
-							local latencyBucket = "unknown"
-						local pingOk, ping = pcall(function() return player:GetNetworkPing() end)
-						if pingOk and finite(ping) and ping >= 0 then
-							local milliseconds = ping * 1000
-						latencyBucket = if milliseconds < 50 then "under50ms" elseif milliseconds < 100 then "under100ms" elseif milliseconds < 200 then "under200ms" else "over200ms"
-						end
-						self.movementLatencyBands[latencyBucket] += 1
+								local latencyBucket = "unknown"
+								local pingOk, ping = pcall(function() return player:GetNetworkPing() end)
+								if pingOk and finite(ping) and ping >= 0 then
+									local milliseconds = ping * 1000
+									latencyBucket = if milliseconds < 50 then "under50ms" elseif milliseconds < 100 then "under100ms" elseif milliseconds < 200 then "under200ms" else "over200ms"
+								end
+								self.movementLatencyBands[latencyBucket] += 1
+							end
 						end
 					end
 					previousPosition, previousAt = position, now
@@ -430,6 +439,8 @@ function Service:GetStatus()
 			sampleIntervalSeconds = self.movementSampleIntervalCurrent,
 			maximumAcceptedSampleGapSeconds = MAX_MOVEMENT_SAMPLE_GAP_SECONDS,
 			samples = self.movementSamples,
+			networkObservationSamples = self.movementNetworkObservationSamples,
+			networkObservationIntervalSeconds = MOVEMENT_NETWORK_OBSERVATION_INTERVAL,
 			deferredSamples = self.movementSampleDeferred,
 			gaps = self.movementSampleGaps,
 			invalidSamples = self.movementSampleInvalid,
