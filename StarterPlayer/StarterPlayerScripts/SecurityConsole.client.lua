@@ -523,19 +523,19 @@ local function startClientDiagnostics()
 	end
 	local requireOk, exported = pcall(require, moduleScript)
 	if not requireOk or typeof(exported) ~= "table" or type(exported.new) ~= "function" then
-		diagnosticsReadout.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics module is unavailable."
+		diagnosticsReadoutText.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics module is unavailable."
 		return
 	end
 	local createOk, instance = pcall(exported.new)
 	if not createOk or typeof(instance) ~= "table" or type(instance.Start) ~= "function"
 		or type(instance.GetStatus) ~= "function" or type(instance.Stop) ~= "function" then
-		diagnosticsReadout.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics interface is invalid."
+		diagnosticsReadoutText.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nClient diagnostics interface is invalid."
 		return
 	end
 	local startOk, started = pcall(instance.Start, instance)
 	if not startOk or started ~= true then
 		pcall(instance.Stop, instance)
-		diagnosticsReadout.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nLocal sampling could not start."
+		diagnosticsReadoutText.Text = diagnosticsServerMessage .. "\n\nCLIENT-LOCAL\nLocal sampling could not start."
 		return
 	end
 	clientDiagnostics = instance
@@ -559,7 +559,7 @@ local function renderDiagnosticsReadout()
 	else
 		table.insert(clientLines, "Client-local sampling is not active.")
 	end
-	diagnosticsReadout.Text = string.sub(diagnosticsServerMessage .. "\n\n" .. table.concat(clientLines, "\n"), 1, 7000)
+	diagnosticsReadoutText.Text = string.sub(diagnosticsServerMessage .. "\n\n" .. table.concat(clientLines, "\n"), 1, 7000)
 end
 
 local function renderGroup()
