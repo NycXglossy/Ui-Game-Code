@@ -19,7 +19,7 @@
 ### 15.3 — Balanced contribution limits
 - Repeated identical codes contribute at most three times per player window.
 - Each category and source contributes at most eight points per subject window.
-- Maximum eight distinct sources and twelve distinct codes per subject window.
+- Maximum eight distinct sources and twelve distinct codes per subject window; cohort aggregation is capped at 16 sources and 32 codes.
 - Total subject score remains capped at 100.
 - Only the allowlisted Critical severity receives a one-point bonus. Invalid/missing severity is treated as Info.
 - Unknown codes never score.
@@ -36,7 +36,7 @@
 
 ### 15.6 — Deterministic test coverage
 - Added ClubMusicSecurityCore/SecurityThreatIntelligence.spec.lua with an injectable monotonic clock.
-- The Studio server test covers repeated-code suppression, same-category suppression, unknown-code handling, duplicate event IDs, Medium/High evidence diversity, join-burst-only suppression, multi-player cohort corroboration, cohort expiry, authorization rejection, and Stop cleanup.
+- The Studio server test covers repeated-code suppression, same-category suppression, unknown-code handling, invalid severity, category/source caps, duplicate event IDs, Medium/High evidence diversity, join-burst-only suppression, multi-player cohort corroboration, joiner capacity, cohort expiry, subject expiry/capacity, authorization rejection, and Stop cleanup.
 - The test file is not included in the production installer module list.
 
 ### 15.7–15.8 — Session-aware evidence and scoring
@@ -64,7 +64,7 @@
 ## Source and installer changes
 
 - Security module: ClubMusicSecurityCore/SecurityThreatIntelligence.lua
-- Installer: ClubMusic_Security_Core_Installer.lua now pins the hardened module snapshot at commit 20a5405a88e4c8e14a66b20ac2a705d14954eeea.
+- Installer: ClubMusic_Security_Core_Installer.lua now pins the hardened module snapshot at commit 40816ddb91b29fbde5bab30ccbe3a7972df63262.
 - Staff command/diagnostics: UI_Server_Controller_server (1).lua
 - Deterministic Studio test: ClubMusicSecurityCore/SecurityThreatIntelligence.spec.lua
 - Detailed architecture and acceptance gates: CLUBMUSIC_PHASE15_THREAT_INTELLIGENCE.md
