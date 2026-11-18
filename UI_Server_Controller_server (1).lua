@@ -2334,11 +2334,6 @@ do
 							replay:Invoke("Record", signal, subject, 0, severity, "AnimationIntegrity", metadata)
 						end)
 					end
-					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
-					local recorder = api and api:FindFirstChild("RecordGlobalSecuritySignal")
-					if recorder and recorder:IsA("BindableFunction") then
-						pcall(function() recorder:Invoke(signal, subject) end)
-					end
 				end,
 			})
 			if createOk and typeof(instance) == "table"
