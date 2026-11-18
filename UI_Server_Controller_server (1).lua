@@ -6208,6 +6208,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		OperationalCatalogRefresh = "GlobalConfig",
 		OperationalServices = "GlobalModeration",
 		OperationalDiagnostics = "GlobalConfig",
+		PurchaseDiagnostics = "GlobalConfig",
 		OperationalErrors = "GlobalConfig",
 		OperationalMetrics = "GlobalModeration",
 		OperationalSecurityLog = "IncidentResponse",
