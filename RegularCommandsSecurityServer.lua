@@ -284,6 +284,10 @@ return function(_K: any)
 	}
 
 	local BLOCKED_COMMANDS: {[string]: string} = {
+		-- Native Kohl's ban commands bypass Phase 32 case evidence, review, and reversal.
+		-- Use ;cmtempban, ;cmpermban, ;cmpermban-alts, and ;cmunban instead.
+		ban = "Use the Tiki Tide Phase 32 moderation commands so bans and reversals are recorded.",
+		unban = "Use ;cmunban so the reversal is authorized and retained in moderation history.",
 		-- Disable client-crashing/repeated-kill commands and arbitrary script/global execution.
 		crash = "This command is disabled by Tiki Tide security.",
 		loopkill = "This command is disabled by Tiki Tide security.",
