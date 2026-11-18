@@ -74,7 +74,7 @@ local function restoreLight(light: Light)
 	shadowSnapshots[light] = nil
 end
 
-local function collectRoot(root: Instance, tagName: string, apply: (Instance) -> ())
+local function collectRoot(root: Instance, apply: (Instance) -> ())
 	apply(root)
 	for _, descendant in ipairs(root:GetDescendants()) do apply(descendant) end
 end
@@ -89,13 +89,24 @@ local function applyStageLight(instance: Instance)
 	end
 end
 
+local function hasTaggedAncestor(instance: Instance, tagName: string): boolean
+	local current: Instance? = instance
+	while current and current ~= Workspace do
+		if CollectionService:HasTag(current, tagName) then return true end
+		current = current.Parent
+	end
+	return false
+end
+
 local function restoreClubEffect(instance: Instance)
-	if instance:IsA("ParticleEmitter") then restoreParticle(instance) end
+	if instance:IsA("ParticleEmitter") then
+		if hasTaggedAncestor(instance, "ClubEffect") then applyParticle(instance) else restoreParticle(instance) end
+	end
 end
 
 local function restoreStageLight(instance: Instance)
 	if instance:IsA("PointLight") or instance:IsA("SpotLight") or instance:IsA("SurfaceLight") then
-		restoreLight(instance)
+		if hasTaggedAncestor(instance, "StageClubLight") then applyLight(instance) else restoreLight(instance) end
 	end
 end
 
@@ -107,42 +118,33 @@ local function applyMode()
 	for emitter in pairs(particleSnapshots) do applyParticle(emitter) end
 	for light in pairs(shadowSnapshots) do applyLight(light) end
 	for _, root in ipairs(CollectionService:GetTagged("ClubEffect")) do
-		collectRoot(root, "ClubEffect", applyClubEffect)
+		collectRoot(root, applyClubEffect)
 	end
 	for _, root in ipairs(CollectionService:GetTagged("StageClubLight")) do
-		collectRoot(root, "StageClubLight", applyStageLight)
+		collectRoot(root, applyStageLight)
 	end
-end
-
-local function hasTaggedAncestor(instance: Instance, tagName: string): boolean
-	local current: Instance? = instance
-	while current and current ~= Workspace do
-		if CollectionService:HasTag(current, tagName) then return true end
-		current = current.Parent
-	end
-	return false
 end
 
 for _, root in ipairs(CollectionService:GetTagged("ClubEffect")) do
-	collectRoot(root, "ClubEffect", applyClubEffect)
+	collectRoot(root, applyClubEffect)
 end
 for _, root in ipairs(CollectionService:GetTagged("StageClubLight")) do
-	collectRoot(root, "StageClubLight", applyStageLight)
+	collectRoot(root, applyStageLight)
 end
 
 local connections = {
 	Workspace:GetAttributeChangedSignal("TikiTideAdaptiveLoadMode"):Connect(applyMode),
 	CollectionService:GetInstanceAddedSignal("ClubEffect"):Connect(function(root)
-		collectRoot(root, "ClubEffect", applyClubEffect)
+		collectRoot(root, applyClubEffect)
 	end),
 	CollectionService:GetInstanceRemovedSignal("ClubEffect"):Connect(function(root)
-		collectRoot(root, "ClubEffect", restoreClubEffect)
+		collectRoot(root, restoreClubEffect)
 	end),
 	CollectionService:GetInstanceAddedSignal("StageClubLight"):Connect(function(root)
-		collectRoot(root, "StageClubLight", applyStageLight)
+		collectRoot(root, applyStageLight)
 	end),
 	CollectionService:GetInstanceRemovedSignal("StageClubLight"):Connect(function(root)
-		collectRoot(root, "StageClubLight", restoreStageLight)
+		collectRoot(root, restoreStageLight)
 	end),
 	Workspace.DescendantAdded:Connect(function(instance)
 		if instance:IsA("ParticleEmitter") and hasTaggedAncestor(instance, "ClubEffect") then
