@@ -37,7 +37,7 @@ mainStroke.Color = Color3.fromRGB(54, 80, 105)
 mainStroke.Thickness = 1.2
 
 local sizeConstraint = Instance.new("UISizeConstraint")
-sizeConstraint.MinSize = Vector2.new(320, 420)
+sizeConstraint.MinSize = Vector2.new(320, 520)
 sizeConstraint.MaxSize = Vector2.new(1040, 760)
 sizeConstraint.Parent = main
 
@@ -101,7 +101,7 @@ categoryLayout.Parent = categoryBar
 local actionList = Instance.new("ScrollingFrame")
 actionList.Name = "ActionList"
 actionList.Position = UDim2.fromOffset(14, 106)
-actionList.Size = UDim2.new(1, -28, 0.39, -8)
+actionList.Size = UDim2.new(1, -28, 0.30, -8)
 actionList.BackgroundColor3 = Color3.fromRGB(17, 25, 38)
 actionList.BorderSizePixel = 0
 actionList.ScrollBarThickness = 4
@@ -123,8 +123,8 @@ actionLayout.Parent = actionList
 
 local form = Instance.new("Frame")
 form.Name = "CommandForm"
-form.Position = UDim2.new(0, 14, 0.39, 108)
-form.Size = UDim2.new(1, -28, 0.36, -10)
+form.Position = UDim2.new(0, 14, 0.30, 108)
+form.Size = UDim2.new(1, -28, 0.43, -10)
 form.BackgroundColor3 = Color3.fromRGB(17, 25, 38)
 form.BorderSizePixel = 0
 form.Parent = main
@@ -391,9 +391,6 @@ local function makeCategory(name: string)
 	return button
 end
 
-for groupName in pairs(groups) do makeCategory(groupName) end
--- Rebuild category buttons in a stable, readable order.
-for _, child in ipairs(categoryBar:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
 for _, groupName in ipairs({"Playback","Requests","DJ Sessions","Moderation","Security","Diagnostics"}) do makeCategory(groupName) end
 renderGroup()
 
