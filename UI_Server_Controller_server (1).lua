@@ -2753,10 +2753,22 @@ ControllerFunctions.defaultProfile = function(): Profile
 end
 
 ControllerFunctions.loadProfile = function(player: Player)
+	local userId = player.UserId
+	if player.Parent ~= Players then return false end
 	local profile = ControllerFunctions.defaultProfile()
 	local data = nil
 	local ok = false
 	local lastError = "Profile session is already active on another server."
+	local function abandonDepartedLoad(): boolean
+		filteredTitleTextByUserId[userId] = nil
+		-- The join can finish its yielding DataStore/TextService work after
+		-- PlayerRemoving has already run. Release only this server's lease;
+		-- releaseProfileSession verifies SESSION_TOKEN inside UpdateAsync.
+		if not USE_STUDIO_MEMORY_PROFILES and type(ControllerFunctions.releaseProfileSession) == "function" then
+			ControllerFunctions.releaseProfileSession(userId)
+		end
+		return false
+	end
 
 	if USE_STUDIO_MEMORY_PROFILES then
 		-- Studio test profile: keep all existing gameplay/profile features usable
@@ -2765,12 +2777,13 @@ ControllerFunctions.loadProfile = function(player: Player)
 		ok = true
 	else
 		for attempt = 1, 5 do
+			if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
 			if not ControllerFunctions.waitForDataStoreBudget(20) then
 				lastError = "Server DataStore request budget is busy."
 				break
 			end
 			local callOk, result = pcall(function()
-				return store:UpdateAsync(tostring(player.UserId), function(oldData)
+				return store:UpdateAsync(tostring(userId), function(oldData)
 					local current = if typeof(oldData) == "table" then table.clone(oldData) else {}
 					local lock = current.sessionLock
 					if typeof(lock) == "table" and typeof(lock.owner) == "string"
@@ -2781,20 +2794,24 @@ ControllerFunctions.loadProfile = function(player: Player)
 					return current
 				end)
 			end)
+			if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
 			if callOk and typeof(result) == "table" then
 				data = result
 				ok = true
 				break
 			end
 			if not callOk then lastError = tostring(result) end
-			if attempt < 5 then task.wait(2) end
+			if attempt < 5 then
+				task.wait(2)
+				if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
+			end
 		end
 	end
 	if not ok then
 		warn("[ClubMusic] Profile load/lock failed for " .. player.Name .. ": " .. lastError .. ". Profile remains unavailable; refusing to save defaults.")
 		return false
 	end
-	filteredTitleTextByUserId[player.UserId] = {}
+	filteredTitleTextByUserId[userId] = {}
 	if typeof(data) == "table" then
 		profile.xp = math.clamp(math.floor(tonumber(data.xp) or 0), 0, 9007199254740000)
 		profile.tickets = math.max(0, tonumber(data.tickets) or 0)
@@ -2895,6 +2912,9 @@ ControllerFunctions.loadProfile = function(player: Player)
 		-- lazily when selected, avoiding up to three TextService calls per player.
 		ControllerFunctions.ensureFilteredTitleSlot(player, profile, profile.activeSlot)
 	end
+	-- Text filtering can yield after the DataStore session lock was acquired.
+	-- Do not publish a profile or player attributes for a departed join.
+	if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
 
 	local today = math.floor(os.time() / 86400)
 	if profile.lastClaimDay < today then
@@ -2906,7 +2926,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 		profile.claimedToday = false
 	end
 
-	profiles[player.UserId] = profile
+	profiles[userId] = profile
 	player:SetAttribute("XP", profile.xp)
 	player:SetAttribute("Level", math.floor(profile.xp / CONFIG.XPPerLevel) + 1)
 	player:SetAttribute("XPToNextLevel", CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel))
