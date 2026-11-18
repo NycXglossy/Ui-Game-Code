@@ -22,8 +22,10 @@ local function validPositiveInteger(value: any): boolean
 		and value <= MAX_SAFE_INTEGER
 end
 
-local function receiptKey(userId: number, productId: number, purchaseId: string): string
-	return tostring(userId) .. ":" .. tostring(productId) .. ":" .. purchaseId
+local function receiptKey(userId: number, purchaseId: string): string
+	-- Match the profile journal's per-user PurchaseId identity. ProductId is
+	-- validated separately and is checked again by the durable journal.
+	return tostring(userId) .. ":" .. purchaseId
 end
 
 function Service.new(dependencies: {[string]: any})
@@ -82,7 +84,7 @@ function Service:Process(receiptInfo: any): Enum.ProductPurchaseDecision
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
-	local key = receiptKey(userId, productId, purchaseId)
+	local key = receiptKey(userId, purchaseId)
 	if self.processed[key] then
 		self.duplicates += 1
 		self:_event("ReceiptDuplicate", receiptInfo, "Already acknowledged in this server session.")
