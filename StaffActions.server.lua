@@ -294,10 +294,6 @@ securityAction.OnServerEvent:Connect(function(player: Player, action: any, targe
 			sendResult(player, action, false, "The command details are invalid or too long.")
 			return
 		end
-		if not consumeActionCooldown(player) then
-			sendResult(player, action, false, "Please wait before using another staff action.")
-			return
-		end
 		local bridge = ServerStorage:FindFirstChild("ClubMusicAdminBridge")
 		if not bridge or not bridge:IsA("BindableFunction") or bridge.Parent ~= ServerStorage then
 			sendResult(player, action, false, "ClubMusic admin bridge is unavailable.")
