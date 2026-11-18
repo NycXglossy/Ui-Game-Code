@@ -147,7 +147,7 @@ end
 function Service:_attachCharacter(player: Player, character: Model)
 	local state = self.states[player.UserId]
 	if not state then return end
-	self:_detachCharacter(player, state)
+	self:_detachCharacter(state)
 	state.character = character
 
 	local function attachHumanoid(humanoid: Humanoid)
