@@ -4877,7 +4877,11 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, string.format("That audio is too long (max %d minutes).", math.floor(CONFIG.AudioMaxSeconds / 60)), "warn")
 			return
 		end
-		if not player.Parent then return end
+		if player.Parent ~= Players or not ControllerFunctions.isStaff(player) then return end
+		if djControlModeEnabled and djControlModeUserId ~= player.UserId then
+			notify(player, "DJ Control Mode is active. Only the current DJ controller can submit requests.", "warn")
+			return
+		end
 
 		-- State may have changed while the asset loaded, so re-check before queueing.
 		local recheckNow = os.clock()
