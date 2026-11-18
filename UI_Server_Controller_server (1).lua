@@ -6173,8 +6173,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				local age = if typeof(item.lastAt) == "number" then math.floor(math.max(0, os.clock() - item.lastAt)) else 0
 				local categories = if typeof(item.categories) == "table" then table.concat(item.categories, ",") else "n/a"
 				local signals = if typeof(item.signals) == "table" then table.concat(item.signals, ",") else "n/a"
-				table.insert(lines, string.format("%s | UserId %d | %s confidence | score %d | %d events | %ds ago",
-					tostring(item.id or "?"), typeof(item.subjectUserId) == "number" and item.subjectUserId or 0,
+				local subjectLabel = if item.kind == "ServerReview" then "SERVER"
+					else "UserId " .. tostring(typeof(item.subjectUserId) == "number" and item.subjectUserId or 0)
+				table.insert(lines, string.format("%s | %s | %s confidence | score %d | %d events | %ds ago",
+					tostring(item.id or "?"), subjectLabel,
 					tostring(item.confidence or "Low"), typeof(item.score) == "number" and item.score or 0,
 					typeof(item.eventCount) == "number" and item.eventCount or 0, age))
 				table.insert(lines, "  Categories: " .. string.sub(categories, 1, 180))
