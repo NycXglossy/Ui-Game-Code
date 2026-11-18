@@ -571,3 +571,9 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - Added post-yield Player membership checks after initial and retry IsEnabled/GetModerationState calls and after background reconciliation GetAsync. Departed Player instances are no longer mutated, kicked, revision-cached, or used to emit reconciliation events after those calls return.
 - PlayerRemoving continues to release the join idempotency marker and per-user revision entry. Existing retry/reconciliation timing, DataStore budget reserve, and fail-closed pending behavior for online players remain unchanged.
 - Static source review only; no concurrent leave/rejoin simulation, backend delay/fault injection, Luau compilation, Studio/runtime test, or deployment.
+
+
+### BindableFunction multi-return preservation audit (2026-11-18)
+
+- Corrected the controller's protected Global API invocation helper to preserve the full BindableFunction return tuple instead of truncating it after three values. This restores the GetModerationState revision return used by join and retry ordering checks; failed calls retain the leading false/error contract.
+- Static source review only; no Luau compilation, BindableFunction runtime test, backend fault injection, Studio/runtime test, or deployment.
