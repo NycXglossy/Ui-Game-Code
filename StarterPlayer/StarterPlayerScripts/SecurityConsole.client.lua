@@ -366,7 +366,7 @@ local groups: {[string]: {Command}} = {
 		{key="TrackBlock",label="Block / allow a track",help="Enter track ID, on/off, and an optional reason.",kind="targetOptionReason"},
 		{key="ModerationHistory",label="Request moderation history",help="Review ClubMusic request moderation for a UserId.",kind="target"},
 	},
-	"DJ Sessions" = {
+	["DJ Sessions"] = {
 		{key="DJSessionStatus",label="Session status",help="Show the active DJ session."},
 		{key="DJSessionStart",label="Start my DJ session",help="Start a DJ session for your account."},
 		{key="DJSessionHandoff",label="Hand off DJ session",help="Enter the receiving staff member's UserId.",kind="target"},
@@ -398,7 +398,7 @@ local groups: {[string]: {Command}} = {
 		{key="SecurityPolicy",label="View security policy",help="Show the current security policy."},
 		{key="SecurityPolicySet",label="Update security policy",help="Enter policy key and value.",kind="policy"},
 	},
-	"Club Closure" = {
+	["Club Closure"] = {
 		{key="ClubClose",label="Close club (current server)",help="Prepare and confirm guest evacuation. Verified staff remain."},
 		{key="ClubReopen",label="Reopen club (current server)",help="Prepare and confirm reopening this server."},
 		{key="ClubStatus",label="Club closure status",help="Show whether this server is open or closed."},
