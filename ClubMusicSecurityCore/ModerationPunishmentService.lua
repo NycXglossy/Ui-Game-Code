@@ -58,6 +58,7 @@ function Service.new(options: {[string]: any})
 		onNotify = if type(options.onNotify) == "function" then options.onNotify else function() end,
 		started = false,
 		lastError = nil,
+		restrictionCache = {} :: {[number]: {expiresAt: number, restricted: {[string]: boolean}}},
 	}, Service)
 end
 
@@ -218,6 +219,7 @@ function Service:Issue(actor: Player, targetUserId: number, action: {[string]: a
 		return false, "Punishment was submitted, but final evidence confirmation failed. Escalate this case.", caseId
 	end
 
+	self.restrictionCache[targetUserId] = nil
 	self:_audit("PunishmentIssued", actor.UserId, targetUserId, caseId, kind)
 	local target = Players:GetPlayerByUserId(targetUserId)
 	if kind == "Warn" and target then
@@ -248,17 +250,50 @@ function Service:GetActive(targetUserId: number): (boolean, any)
 end
 
 function Service:IsRestricted(targetUserId: number, restrictionKey: string): (boolean, boolean)
-	if typeof(restrictionKey) ~= "string" or not VALID_RESTRICTIONS[restrictionKey] then return false, false end
+	if not validUserId(targetUserId) or typeof(restrictionKey) ~= "string" or not VALID_RESTRICTIONS[restrictionKey] then
+		return false, false
+	end
+	local now = os.clock()
+	local cached = self.restrictionCache[targetUserId]
+	if cached and cached.expiresAt > now then
+		return true, cached.restricted[restrictionKey] == true
+	end
 	local ok, active = self:GetActive(targetUserId)
 	if not ok then return false, false end
+	local restrictedKeys: {[string]: boolean} = {}
 	for _, item in ipairs(active) do
 		if item.kind == "Restrict" and typeof(item.restrictions) == "table" then
 			for _, key in ipairs(item.restrictions) do
-				if key == restrictionKey then return true, true end
+				if VALID_RESTRICTIONS[key] then restrictedKeys[key] = true end
 			end
 		end
 	end
-	return true, false
+	self.restrictionCache[targetUserId] = {expiresAt = now + 5, restricted = restrictedKeys}
+	return true, restrictedKeys[restrictionKey] == true
+end
+
+function Service:RevokeRestrictions(actor: Player, targetUserId: number, reason: string): (boolean, string)
+	if typeof(actor) ~= "Instance" or not actor:IsA("Player") or actor.Parent ~= Players
+		or not validUserId(targetUserId) then return false, "Invalid actor or target." end
+	local cleanReasonValue = cleanString(reason, MAX_REASON_LENGTH)
+	if not cleanReasonValue then return false, "A bounded reversal reason is required." end
+	if not hasPermission(self.authorization, actor, "GlobalModeration") then
+		return false, "GlobalModeration permission is required."
+	end
+	local writeOk = self:_update(targetUserId, function(record)
+		for caseId, item in pairs(record.active) do
+			if typeof(item) == "table" and item.kind == "Restrict" and item.status == "Active" then
+				record.active[caseId] = nil
+				self:_appendHistory(record, {caseId = caseId, kind = "RestrictionReversed", status = "Reversed",
+					actorUserId = actor.UserId, targetUserId = targetUserId, at = os.time(), reason = cleanReasonValue})
+			end
+		end
+		return record
+	end)
+	if not writeOk then return false, "Restriction reversal could not be saved; restrictions remain in force." end
+	self.restrictionCache[targetUserId] = nil
+	self:_audit("RestrictionsReversed", actor.UserId, targetUserId, "unknown", cleanReasonValue)
+	return true, "Active feature restrictions were reversed."
 end
 
 function Service:Unban(actor: Player, targetUserId: number, reason: string): (boolean, string)
@@ -300,6 +335,7 @@ function Service:Unban(actor: Player, targetUserId: number, reason: string): (bo
 		self:_audit("UnbanPersistenceDegraded", actor.UserId, targetUserId, "unknown", "Roblox unban succeeded but evidence update failed.")
 		return false, "Roblox unban succeeded, but evidence update failed. Escalate for reconciliation."
 	end
+	self.restrictionCache[targetUserId] = nil
 	self:_audit("PunishmentReversed", actor.UserId, targetUserId, "unknown", cleanReasonValue)
 	return true, "Active Roblox ban reversed and moderation history retained."
 end
