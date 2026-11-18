@@ -425,7 +425,8 @@ renderGroup()
 
 local CONFIRM = {
 	QueueClear=true, EmergencyRequestLock=true, PlaybackForceStop=true, Maintenance=true,
-	PermanentBan=true, PermanentBanAlts=true, IncidentOpen=true, IncidentResolve=true,
+	RequestMute=true, ClearUserQueue=true, TrackBlock=true,
+	PermanentBan=true, PermanentBanAlts=true, Unban=true, IncidentOpen=true, IncidentResolve=true,
 	ThreatCaseOpen=true, SecurityPolicySet=true,
 }
 
