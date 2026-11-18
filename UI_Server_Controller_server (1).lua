@@ -4043,15 +4043,19 @@ do
 	end
 end
 
-local receiptAuthorityStatus = ServerStorage:FindFirstChild("GetTikiTideReceiptAuthorityStatus")
-if receiptAuthorityStatus and not receiptAuthorityStatus:IsA("BindableFunction") then
+local receiptAuthorityStatusObject = ServerStorage:FindFirstChild("GetTikiTideReceiptAuthorityStatus")
+local receiptAuthorityStatus: BindableFunction? = nil
+if receiptAuthorityStatusObject and receiptAuthorityStatusObject:IsA("BindableFunction") then
+	receiptAuthorityStatus = receiptAuthorityStatusObject
+elseif receiptAuthorityStatusObject then
 	warn("[ClubMusic][ReceiptAuthority] Status endpoint has the wrong class; leaving it untouched.")
 else
-	if not receiptAuthorityStatus then
-		receiptAuthorityStatus = Instance.new("BindableFunction")
-		receiptAuthorityStatus.Name = "GetTikiTideReceiptAuthorityStatus"
-		receiptAuthorityStatus.Parent = ServerStorage
-	end
+	local createdStatus = Instance.new("BindableFunction")
+	createdStatus.Name = "GetTikiTideReceiptAuthorityStatus"
+	createdStatus.Parent = ServerStorage
+	receiptAuthorityStatus = createdStatus
+end
+if receiptAuthorityStatus then
 	receiptAuthorityStatus.OnInvoke = function()
 		return if receiptAuthority then receiptAuthority:GetStatus()
 			else {state = "Unavailable", scope = "ServerLocalIngress", durableAuthority = "ExistingClubMusicReceiptJournals"}
