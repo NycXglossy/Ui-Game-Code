@@ -109,7 +109,6 @@ end
 -- Door state is stored only in this server's memory. Original values are restored
 -- exactly when lockdown is disabled. Newly added BaseParts are captured as well.
 local lockdownActive = false
-local doorFolder: Instance? = nil
 local originalDoorState: {[BasePart]: {canCollide: boolean, brickColor: BrickColor}} = {}
 local doorAddedConnection: RBXScriptConnection? = nil
 
@@ -132,13 +131,12 @@ local function setLockdown(enabled: boolean): (boolean, string)
 	if enabled then
 		local found = Workspace:FindFirstChild("ClubDoors")
 		if not found then return false, "Workspace.ClubDoors was not found." end
-		local parts = {}
+		local parts: {BasePart} = {}
 		for _, descendant in ipairs(found:GetDescendants()) do
 			if descendant:IsA("BasePart") then table.insert(parts, descendant) end
 		end
 		if #parts == 0 then return false, "No door BaseParts were found under Workspace.ClubDoors." end
 
-		doorFolder = found
 		table.clear(originalDoorState)
 		for _, part in ipairs(parts) do
 			applyLockdownToPart(part)
@@ -164,7 +162,6 @@ local function setLockdown(enabled: boolean): (boolean, string)
 		end)
 	end
 	table.clear(originalDoorState)
-	doorFolder = nil
 	lockdownActive = false
 	return true, "Lockdown disabled; original door settings restored."
 end
