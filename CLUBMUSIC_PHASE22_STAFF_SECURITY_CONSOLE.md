@@ -77,7 +77,8 @@ The console uses action buttons and context-labelled fields rather than requirin
 3. The server records request and completion/rejection events through the existing `TikiTideSecurityReplay` endpoint. If the audit endpoint is unavailable, the GUI command is not executed.
 4. The server invokes the existing server-only `ServerStorage.ClubMusicAdminBridge`.
 5. The controller's existing staff check, per-operation rank/permission checks, validation, service calls, and action scopes remain authoritative. The UI does not grant permissions.
-6. Existing global commands retain their original scopes. The separate door lockdown remains current-server-only and does not use MessagingService, MemoryStore, or DataStore.
+6. The client refreshes console visibility from a server authorization response every 30 seconds; this is presentation only, and every command is still reauthorized by the controller.
+7. Existing global commands retain their original scopes. The separate door lockdown remains current-server-only and does not use MessagingService, MemoryStore, or DataStore.
 
 ### Installation
 
