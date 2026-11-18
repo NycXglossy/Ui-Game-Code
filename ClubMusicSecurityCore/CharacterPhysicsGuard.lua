@@ -14,6 +14,7 @@ local Service = {
 Service.__index = Service
 
 local CHECK_DELAY = 0.18
+local MAX_MOVEMENT_SAMPLE_GAP_SECONDS = 3.5
 local SIGNAL_COOLDOWN = 10
 local SCALE_EPSILON = 0.08
 local LIMITS = {
@@ -255,7 +256,7 @@ function Service:_watchCharacter(player: Player, character: Model)
 					local sampleInterval = 0.5
 					if type(self.d.getMovementSampleInterval) == "function" then
 						local intervalOk, intervalValue = pcall(self.d.getMovementSampleInterval)
-						if intervalOk and finite(intervalValue) then sampleInterval = math.clamp(intervalValue, 0.5, 1.25) end
+						if intervalOk and finite(intervalValue) then sampleInterval = math.clamp(intervalValue, 0.5, 3.0) end
 					end
 					self.movementSampleIntervalCurrent = sampleInterval
 					task.wait(sampleInterval)
@@ -296,7 +297,7 @@ function Service:_watchCharacter(player: Player, character: Model)
 					end
 					if previousPosition and previousAt then
 						local elapsed = now - previousAt
-						if elapsed < 0.2 or elapsed > 1.5 then
+						if elapsed < 0.2 or elapsed > MAX_MOVEMENT_SAMPLE_GAP_SECONDS then
 							self.movementSampleGaps += 1
 						else
 							local displacement = position - previousPosition
@@ -427,7 +428,7 @@ function Service:GetStatus()
 		gravityChecks = self.gravityChecks,
 		movementMeasurement = {
 			sampleIntervalSeconds = self.movementSampleIntervalCurrent,
-			maximumAcceptedSampleGapSeconds = 1.5,
+			maximumAcceptedSampleGapSeconds = MAX_MOVEMENT_SAMPLE_GAP_SECONDS,
 			samples = self.movementSamples,
 			deferredSamples = self.movementSampleDeferred,
 			gaps = self.movementSampleGaps,
