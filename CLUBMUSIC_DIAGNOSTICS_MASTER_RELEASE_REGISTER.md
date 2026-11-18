@@ -356,3 +356,9 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - Keep mobile UI and controls unchanged unless a mobile-specific compatibility issue is measured and explicitly addressed.
 
 **Release boundary:** No Roblox Studio place, published server, live DataStore, live MemoryStore, or production asset was changed by these GitHub commits. Source commits and static checks do not establish a measured FPS/memory improvement. Do not call this complete or production-ready until the profiling and regression matrix is recorded.
+
+### Additional local-playback retirement and installer compatibility updates
+
+- Removed the retired Cross-Server Playback panel and toggle from `UI_Renderer (2).lua`, and removed the action from `UI_Network.lua` allowlists/cooldowns. The controller rejects legacy action submissions without making a global API call.
+- Aligned `ClubMusic_Security_Core_Installer.lua` and `ClubMusic_Global_Service_server_1.lua` to the same SecurityCore release snapshot, `142562f0727f8c3fa748a9bd00dbd1871e5f4fe9`. The pinned snapshot was fetched and confirmed to contain the updated visual client and receipt/adaptive-load modules.
+- Current implementation details and acceptance requirements are recorded in `CLUBMUSIC_PHASE0_33_PERFORMANCE_COMPATIBILITY_CONSOLIDATION.md`.
