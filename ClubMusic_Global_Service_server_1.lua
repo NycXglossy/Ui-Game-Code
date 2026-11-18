@@ -1198,6 +1198,8 @@ end
 if lifecycleJanitor then
 	lifecycleJanitor:Add(function()
 		for _,service in pairs({
+			Config=globalConfigService,
+			Authorization=globalAuthorizationService,
 			Audit=globalAuditService,
 			EventLog=globalEventLogService,
 			SecurityMonitor=globalSecurityMonitorService,
