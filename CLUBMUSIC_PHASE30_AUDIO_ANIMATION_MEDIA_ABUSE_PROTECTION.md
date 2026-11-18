@@ -53,6 +53,18 @@ The controller's `canUseDJBooth` calls the shared SecurityCore Authorization ser
 - The historical `Music Role System` is a separate legacy role/pass helper. It is not part of the current SecurityCore permission path and must not be used as a second authority.
 - Small binary `.rbxm` assets named for old Music Remotes / Music Group were not parsed by the text-only repository reader. Their contents and any live-place descendants remain unverified. Do not delete them by filename or assume they are harmless.
 
+### Catalog artwork inspection hardening — implemented
+
+The active controller's staff-only `CatalogAddAudio` path now applies additional safeguards before accepting optional artwork metadata:
+
+- Artwork IDs continue to use the shared strict positive finite-integer validation.
+- Marketplace metadata inspection is bounded to four concurrent server-wide artwork lookups, with one pending artwork inspection per caller. This is separate from the AudioPlayer preload inspection budget.
+- The lookup must return an Image or Decal asset type. An exact normalized `[ Content Deleted ]` metadata name is rejected as an additional conservative signal; it is not treated as a complete moderation verdict.
+- The caller must still be connected and pass the existing staff authorization check after the yielding lookup, before the action proceeds to the audio inspection and persistent catalog write.
+- Existing action cooldowns, per-player/server action token buckets, audio inspection budgets, catalog storage readiness checks, and the later staff recheck remain in force.
+
+The controller source change is committed on the feature branch. It has not been run in Roblox Studio; Marketplace lookup behavior, concurrency under load, staff-rank changes during inspection, and catalog persistence still require runtime acceptance testing.
+
 ### Proposed club-screen image RemoteEvent review
 
 A supplied example proposes a new `ReplicatedStorage.UpdateScreenEvent` that accepts a client image ID, checks `player:GetAttribute("IsDJ")`, calls `MarketplaceService:GetProductInfo`, then writes to `Workspace.ClubScreen.SurfaceGui.ImageLabel.Image`.
