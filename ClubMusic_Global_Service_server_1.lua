@@ -18,7 +18,18 @@ local DataStoreService = game:GetService("DataStoreService")
 local MessagingService = game:GetService("MessagingService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local ReceiptHash = require(ServerStorage:WaitForChild("ClubMusic_ReceiptHash"))
+local receiptHashModule = ServerStorage:FindFirstChild("ClubMusic_ReceiptHash")
+if not receiptHashModule then
+	local packageFolder = ServerStorage:FindFirstChild("ClubMusic_ServerStorage_Modules")
+	if packageFolder and packageFolder:IsA("Folder") then
+		receiptHashModule = packageFolder:FindFirstChild("ClubMusic_ReceiptHash")
+	end
+end
+if not receiptHashModule then receiptHashModule = ServerStorage:WaitForChild("ClubMusic_ReceiptHash", 20) end
+if not receiptHashModule or not receiptHashModule:IsA("ModuleScript") then
+	error("[ClubMusic Global] Missing canonical ClubMusic_ReceiptHash ModuleScript in ServerStorage.")
+end
+local ReceiptHash = require(receiptHashModule)
 
 local CONFIG = {
 	Enabled = true,
