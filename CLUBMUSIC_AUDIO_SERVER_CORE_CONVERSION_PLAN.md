@@ -1,7 +1,7 @@
 # ClubMusic Audio Server-Core Conversion & Module Consolidation
 
 **Branch:** `fix/security-core-release-and-queue-loop`  
-**Phase 30 status:** Server-first audio, media ingress, optional playback-only sync, and bundle/installer reconciliation are in source integration.  
+**Phase 30 status (2026-11-17):** Tracked-source modern-only playback, server-first media ingress, DJ Control Mode permissions, optional playback-only sync, bundle parity, and pinned installer reconciliation are implemented. Live-place consumer reconciliation and Studio/published two-server certification remain outstanding.  
 **Runtime status:** Static repository audit only. Studio and published two-server certification remain outstanding.
 
 ## Objective
@@ -584,3 +584,17 @@ This is a source-level dependency map, not approval to remove every remaining ma
 - Verify the RateLimit facade dependency mismatch (`consumeShared` versus the supplied `consumeLocalBudget`) before relying on its reported health or deleting its endpoints.
 - Keep queueing, Auto DJ selection/refill, per-server request accounting, and playlist cursors local. The optional playback-only feature uses MemoryStore solely for its fenced leader lease, DataStore for the Now Playing/playhead snapshot, and MessagingService for revision invalidations. With the feature disabled, playback remains fully per-server. The SecurityCore movement-authority ledger remains server-local, bounded, and expiring.
 - No service was removed in this audit commit. The next implementation change should be limited to a consumer-proven retirement or a local-storage conversion with explicit staff/receipt acceptance tests. The remaining security architecture phases are intentionally still open and will be handled as a later, separate sequence.
+
+## Phase 30 current source-of-truth addendum (2026-11-17)
+
+The dedicated security and acceptance record is now maintained in [CLUBMUSIC_PHASE30_AUDIO_ANIMATION_MEDIA_ABUSE_PROTECTION.md](CLUBMUSIC_PHASE30_AUDIO_ANIMATION_MEDIA_ABUSE_PROTECTION.md).
+
+The current branch audit supersedes earlier historical notes in this plan that described a still-active guarded Sound bootstrap fallback: the current tracked controller is modern-only, has no ServerMusicSound/MusicGroup references, creates no legacy Sound playback instance, and does not select a legacy fallback. The active source is the controller-owned AudioPlayer backend; a backend startup/recovery failure remains unavailable rather than switching to Sound. Crossfade is modern-backend-only.
+
+The current DJ Control Mode source also satisfies the specified permission rule: normal catalog requests are open while off; the current controller alone can request while enabled; controller departure clears the mode; Auto DJ remains independent; VoteSkip and read-only state remain player-facing; ReloadSong is self-service under its cooldown/action ingress budget; privileged controls and catalog/playlist/DJ session operations use their existing SecurityCore-backed authorization paths.
+
+Standalone source and embedded RBXMX comparisons were byte-identical for the five audio server modules, six ServerStorage core modules, client preferences, and the global playback authority. The audio installer was repinned so all twelve module URLs reference the same audited snapshot, commit 83f6cf36a55ee09f9447686fdae0c005bda4d856 (installer update commit fedcd345b6e8d1e7809857611c29d3964242570c).
+
+The old Music System / Music Storage Handle / Music Role System and small binary music RBXM artifacts remain historical repository assets, not approved runtime dependencies. Do not install them or delete them based on repository filenames. Inspect the actual live hierarchy and third-party consumers before removing any old object. See Phase 30 record for the active remote/action inventory and test matrix.
+
+This addendum is static source evidence only. It does not certify Studio playback/recovery, permission regressions, two-server leader failover, PC/mobile/console output, or the published place.
