@@ -21,6 +21,8 @@ local COHORT_WINDOW_SECONDS = 60
 local MAX_COHORT_SUBJECTS = 128
 local MAX_RAID_REVIEWS = 32
 local MAX_SESSION_EVENTS = 1000
+local MAX_SESSIONS = 256
+local MAX_SOURCES_PER_SUBJECT = 8
 
 local CATEGORY_WEIGHT = {
 	Movement = 2, Audio = 2, Social = 2, Avatar = 1, Purchase = 3,
@@ -41,7 +43,6 @@ add("Movement", 2, {
 })
 add("Audio", 2, {"audio_asset_invalid_id", "audio_asset_not_allowlisted"})
 add("Avatar", 1, {
-	"tool_inventory_observation_cap", "tool_added_after_appearance", "tool_removed_from_inventory",
 	"avatar_accessory_added_after_appearance", "avatar_accessory_excessive_parts",
 	"avatar_accessory_missing_handle", "avatar_accessory_abnormal_handle_size",
 	"avatar_accessory_collidable_handle", "avatar_accessory_observation_cap",
@@ -50,7 +51,6 @@ add("Avatar", 1, {
 	"avatar_accessory_description_invalid", "avatar_accessory_count_exceeded",
 	"avatar_accessory_invalid_asset_id", "avatar_accessory_duplicate_asset",
 	"avatar_accessory_removed_after_appearance",
-	"animation_track_observation_cap", "animation_asset_observation_cap", "animation_asset_observed",
 })
 add("Remote", 3, {
 	"honeypot_admin_privilege_remote", "honeypot_purchase_receipt_remote",
@@ -63,17 +63,8 @@ add("Authorization", 2, {
 	"admin_moderation_access_denied", "admin_security_access_denied",
 	"admin_operational_access_denied", "admin_security_access_denied",
 })
-add("Diagnostics", 1, {
-	"client_integrity_observer_heartbeat", "client_walkspeed_observed_change",
-	"client_integrity_dependency_missing",
-})
-add("Watchdog", 2, {"watchdog_unhealthy", "watchdog_degraded"})
-add("SafeCall", 2, {"safecall_failure", "safe_call_failure"})
-add("Monitor", 2, {"security_monitor_threshold_crossed", "security_monitor_alert"})
-add("Messaging", 2, {"message_validation_failed", "invalid_message", "validator_unavailable"})
-add("Purchase", 3, {"purchase_receipt_invalid", "purchase_receipt_replay", "purchase_product_unrecognized"})
-add("Remote", 2, {"remote_rate_limit_exceeded", "remote_validation_failed"})
-add("Social", 1, {"player_report_received", "teleport_validation_failed"})
+-- Client integrity heartbeat and observation-only telemetry are deliberately not
+-- risk signals. Add a code here only after its server-side producer is audited.
 
 local ALLOWED_SEVERITY = {Info = true, Warning = true, Critical = true}
 
@@ -216,6 +207,7 @@ function Service:_recordJoin(userId: number, now: number)
 		self.subjectEvictions = math.min(MAX_COUNTER, self.subjectEvictions + 1)
 	end
 	table.insert(self.joinEvents, {userId = userId, at = now})
+	self:_prune(now)
 	self.cohortJoinCount = math.min(MAX_COUNTER, self.cohortJoinCount + 1)
 	return true
 end
@@ -224,7 +216,16 @@ function Service:JoinUserId(userId: any): boolean
 	if not self.started or not validUserId(userId) then return false end
 	local now = self.now()
 	local key = tostring(math.floor(userId))
-	if not self.sessions[key] then self.sessions[key] = {startedAt = now, eventCount = 0} end
+	if not self.sessions[key] then
+		if countKeys(self.sessions) >= MAX_SESSIONS then
+			local oldestKey, oldestAt = nil, math.huge
+			for existingKey, session in pairs(self.sessions) do
+				if session.startedAt < oldestAt then oldestKey, oldestAt = existingKey, session.startedAt end
+			end
+			if oldestKey then self.sessions[oldestKey] = nil end
+		end
+		self.sessions[key] = {startedAt = now, eventCount = 0}
+	end
 	self:_recordJoin(math.floor(userId), now)
 	return true
 end
@@ -446,8 +447,10 @@ function Service:Record(signal: any, userId: any, source: any, severity: any, ev
 			local severityBonus = if safeSeverity == "Critical" then 1 else 0
 			local categoryScore = bucket.categoryScores[category] or 0
 			local sourceScore = bucket.sourceScores[safeSource] or 0
-			local contribution = math.min(weight + severityBonus,
-				math.max(0, 8 - categoryScore), math.max(0, 8 - sourceScore))
+			local knownSources = countKeys(bucket.sources)
+			local sourceAllowed = bucket.sources[safeSource] == true or knownSources < MAX_SOURCES_PER_SUBJECT
+			local contribution = if sourceAllowed then math.min(weight + severityBonus,
+				math.max(0, 8 - categoryScore), math.max(0, 8 - sourceScore)) else 0
 			if contribution <= 0 then
 				bucket.capped = true
 				self.cappedContributions = math.min(MAX_COUNTER, self.cappedContributions + 1)
