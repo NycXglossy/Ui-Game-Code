@@ -311,6 +311,11 @@ local groups: {[string]: {Command}} = {
 		{key="SecurityPolicy",label="View security policy",help="Show the current security policy."},
 		{key="SecurityPolicySet",label="Update security policy",help="Enter policy key and value.",kind="policy"},
 	},
+	"Club Closure" = {
+		{key="ClubClose",label="Close club (current server)",help="Prepare and confirm guest evacuation. Verified staff remain."},
+		{key="ClubReopen",label="Reopen club (current server)",help="Prepare and confirm reopening this server."},
+		{key="ClubStatus",label="Club closure status",help="Show whether this server is open or closed."},
+	},
 	Diagnostics = {
 		{key="Health",label="Audio / service health",help="Show local and cross-server health."},
 		{key="Diagnostics",label="Diagnostic snapshot",help="Show a safe diagnostic snapshot."},
@@ -440,14 +445,14 @@ local function makeCategory(name: string)
 	return button
 end
 
-for _, groupName in ipairs({"Playback","Requests","DJ Sessions","Moderation","Security","Diagnostics"}) do makeCategory(groupName) end
+for _, groupName in ipairs({"Playback","Requests","DJ Sessions","Moderation","Security","Club Closure","Diagnostics"}) do makeCategory(groupName) end
 renderGroup()
 
 local CONFIRM = {
 	QueueClear=true, EmergencyRequestLock=true, PlaybackForceStop=true, Maintenance=true,
 	RequestMute=true, ClearUserQueue=true, TrackBlock=true,
 	PermanentBan=true, PermanentBanAlts=true, Unban=true, IncidentOpen=true, IncidentResolve=true,
-	ThreatCaseOpen=true, SecurityPolicySet=true,
+	ThreatCaseOpen=true, SecurityPolicySet=true, ClubClose=true, ClubReopen=true,
 }
 
 local function buildArgument(command: Command): string
@@ -468,8 +473,30 @@ local function buildArgument(command: Command): string
 	return ""
 end
 
+local closurePreparedMode: string? = nil
 runButton.Activated:Connect(function()
 	if pendingRequest then return end
+	if selected and (selected.key == "ClubClose" or selected.key == "ClubReopen" or selected.key == "ClubStatus") then
+		local key = selected.key
+		local action = if key == "ClubStatus" then "ClubClosureStatus"
+			elseif key == "ClubClose" then (if closurePreparedMode == "Close" then "ClubClosureConfirm" else "ClubClosurePrepare")
+			else (if closurePreparedMode == "Reopen" then "ClubReopenConfirm" else "ClubReopenPrepare")
+		pendingRequest = true
+		requestToken += 1
+		local thisRequest = requestToken
+		runButton.Active = false
+		runButton.Text = "SENDING…"
+		securityAction:FireServer(action)
+		task.delay(8, function()
+			if pendingRequest and requestToken == thisRequest then
+				pendingRequest = false
+				runButton.Active = true
+				runButton.Text = "RUN ACTION"
+				setStatus("No server response was received. Check server health before retrying.", false)
+			end
+		end)
+		return
+	end
 	if not selected then setStatus("Select an action first.", false); return end
 	local argument = buildArgument(selected)
 	if #argument > 320 then setStatus("The details are too long.", false); return end
@@ -565,8 +592,21 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 		end
 		initialStatusHandled = true
 	end
+	if action == "ClubClosurePrepare" and succeeded then
+		closurePreparedMode = "Close"
+		runButton.Text = "CONFIRM CLOSE"
+	elseif action == "ClubReopenPrepare" and succeeded then
+		closurePreparedMode = "Reopen"
+		runButton.Text = "CONFIRM REOPEN"
+	elseif action == "ClubClosureConfirm" or action == "ClubReopenConfirm" then
+		closurePreparedMode = nil
+		runButton.Text = "RUN ACTION"
+	end
 	if action == "RunClubMusicCommand" and succeeded then clearInputs() end
-	if action == "RunClubMusicCommand" or action == "ToggleLockdown" then
+	if action == "RunClubMusicCommand" or action == "ToggleLockdown"
+		or action == "ClubClosurePrepare" or action == "ClubClosureConfirm"
+		or action == "ClubReopenPrepare" or action == "ClubReopenConfirm"
+		or action == "ClubClosureStatus" then
 		pendingRequest = false
 		requestToken += 1
 		runButton.Active = true
@@ -581,4 +621,4 @@ task.spawn(function()
 		task.wait(30)
 	end
 end)
-print("[Tiki Tide][SecurityConsole] Graphical command console connected; server bridge remains authoritative.")
+print("[Tiki Tide][SecurityConsole] Graphical command console and server-local closure controls connected.")
