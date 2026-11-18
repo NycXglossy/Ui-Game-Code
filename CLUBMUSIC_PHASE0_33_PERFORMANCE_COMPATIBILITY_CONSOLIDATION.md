@@ -58,6 +58,17 @@ File: `MusicValidationService.luau`
 
 Commit: `89ea911b64f9337eebed57da86921b4db3d2a722`.
 
+
+### G. Threat-intelligence hot-path work
+
+File: `ClubMusicSecurityCore/SecurityThreatIntelligence.lua`
+
+- Added a server-local incident ID index so an existing review item is found in O(1) instead of scanning the retained incident list for every qualifying signal.
+- Throttled subject/incident expiry sweeps to at most once per five seconds. The retained maps/lists remain capacity-bounded, and expiry may be delayed by no more than the sweep interval.
+- Clears index entries on subject expiry, incident expiry, oldest-item eviction, and service shutdown.
+- Does not add a task loop, remote, persistence, cross-server traffic, or change signal scoring, review thresholds, or enforcement (there is none).
+- Commit: `50289e2525605bb308462465f9cd50253dec054d`; documentation: `c37a624484dec7624e098d49233e843b6d199f22`.
+
 ## 3. Phase 0–33 compatibility map
 
 | Phase range | Preserve while optimizing |
