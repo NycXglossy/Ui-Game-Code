@@ -45,10 +45,6 @@ Instance.new("UICorner", launcherButton).CornerRadius = UDim.new(0, 10)
 launcherButton.Activated:Connect(function()
 	if gui:GetAttribute("StaffAuthorized") == true then
 		gui.Enabled = true
-		if activeGroup == "Diagnostics" and diagnosticsDashboardMode then
-			startClientDiagnostics()
-			renderDiagnosticsReadout()
-		end
 	else
 		warn("[Tiki Tide][SecurityConsole] Staff authorization is unavailable.")
 	end
@@ -112,7 +108,7 @@ close.Font = Enum.Font.GothamBold
 close.Parent = header
 Instance.new("UICorner", close).CornerRadius = UDim.new(0, 10)
 local stopClientDiagnostics: () -> ()
-close.Activated:Connect(function() gui.Enabled = false; stopClientDiagnostics() end)
+close.Activated:Connect(function() gui.Enabled = false end)
 
 local categoryBar = Instance.new("ScrollingFrame")
 categoryBar.Name = "Categories"
@@ -578,6 +574,15 @@ local function renderGroup()
 	selected = commands[1]
 	if selected then updateForm() end
 end
+
+gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+	if not gui.Enabled then
+		stopClientDiagnostics()
+	elseif activeGroup == "Diagnostics" and diagnosticsDashboardMode then
+		startClientDiagnostics()
+		renderDiagnosticsReadout()
+	end
+end)
 
 local function makeCategory(name: string)
 	local button = Instance.new("TextButton")
