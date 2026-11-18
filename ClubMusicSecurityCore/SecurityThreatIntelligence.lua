@@ -47,10 +47,9 @@ add("Audio", 2, {"audio_asset_invalid_id", "audio_asset_not_allowlisted"})
 add("Avatar", 1, {
 	"avatar_accessory_added_after_appearance", "avatar_accessory_excessive_parts",
 	"avatar_accessory_missing_handle", "avatar_accessory_abnormal_handle_size",
-	"avatar_accessory_collidable_handle", "avatar_accessory_observation_cap",
-	"avatar_accessory_handle_size_changed", "avatar_accessory_handle_collision_changed",
-	"avatar_accessory_rapid_insertion", "avatar_description_unavailable",
-	"avatar_accessory_description_invalid", "avatar_accessory_count_exceeded",
+	"avatar_accessory_collidable_handle", "avatar_accessory_handle_size_changed",
+	"avatar_accessory_handle_collision_changed", "avatar_accessory_rapid_insertion",
+	"avatar_accessory_count_exceeded",
 	"avatar_accessory_invalid_asset_id", "avatar_accessory_duplicate_asset",
 	"avatar_accessory_removed_after_appearance",
 })
@@ -328,7 +327,7 @@ function Service:_rememberIncident(bucket, userId: number, now: number)
 		self.nextIncidentId += 1
 		item = {
 			id = "TTI-" .. tostring(self.nextIncidentId),
-			kind = "PlayerReview",
+			kind = if userId == 0 then "ServerReview" else "PlayerReview",
 			subjectUserId = userId,
 			state = "Review",
 			firstAt = bucket.firstAt,
@@ -404,6 +403,7 @@ function Service:Record(signal: any, userId: any, source: any, severity: any, ev
 	end
 
 	local registry = SIGNALS[safeSignal]
+	local scoredSignal = false
 	if not registry then
 		self.unknownSignals = math.min(MAX_COUNTER, self.unknownSignals + 1)
 	end
@@ -467,11 +467,12 @@ function Service:Record(signal: any, userId: any, source: any, severity: any, ev
 				bucket.categoryScores[category] = categoryScore + contribution
 				bucket.sourceScores[safeSource] = sourceScore + contribution
 				bucket.score = math.min(100, bucket.score + contribution)
+				scoredSignal = true
 			end
 		end
 	end
 
-	if registry then
+	if registry and scoredSignal then
 		local joinedInWindow = false
 		for _, event in ipairs(self.joinEvents) do if event.userId == userId then joinedInWindow = true; break end end
 		if joinedInWindow then
