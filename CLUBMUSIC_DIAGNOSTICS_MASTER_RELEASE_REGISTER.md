@@ -382,3 +382,11 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 
 
 - Client diagnostics Workspace descendant inventory is now explicitly opt-in; normal local FPS/memory/audio sampling does not allocate a full `GetDescendants()` array.
+
+### Performance compatibility follow-up — compact HUD lookup
+
+- The full-menu renderer now maintains a bounded-by-live-UI candidate list for duplicate compact HUDs rather than rescanning all PlayerGui descendants on every visibility change.
+- The index is initialized once and updated through DescendantAdded/DescendantRemoving; newly created duplicate HUDs remain suppressed under the same conditions.
+- Consolidation details and validation are recorded in `CLUBMUSIC_PHASE0_33_PERFORMANCE_COMPATIBILITY_CONSOLIDATION.md`.
+- Source-only verification completed; Roblox Studio/device regression testing remains outstanding.
+
