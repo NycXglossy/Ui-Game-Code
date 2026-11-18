@@ -5819,7 +5819,12 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		if typeof(argument) ~= "string" or #argument < 1 or #argument > 320 then
 			return false, "A bounded command argument is required."
 		end
-		local rawUserId, remainder = string.match(argument, "^(%d+)%s+(.+)$")
+		local rawUserId, remainder
+		if operation == "Phase32History" or operation == "Phase32Risk" then
+			rawUserId = string.match(argument, "^%s*(%d+)%s*$")
+		else
+			rawUserId, remainder = string.match(argument, "^(%d+)%s+(.+)$")
+		end
 		local targetUserId = tonumber(rawUserId)
 		if not targetUserId or targetUserId < 1 or targetUserId % 1 ~= 0 or targetUserId > 9007199254740991 then
 			return false, "Provide a valid numeric Roblox UserId."
