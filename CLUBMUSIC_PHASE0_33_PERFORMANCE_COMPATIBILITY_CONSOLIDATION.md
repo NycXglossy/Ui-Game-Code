@@ -408,3 +408,9 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Updated the shared helper to pack and return the complete protected-call tuple, preserving every value and nil position. Error behavior remains protected: failed Invoke calls still return a leading false plus the error value. Existing two-value and shorter BindableFunction contracts remain compatible.
 - This restores delivery of the durable moderation revision to both join-time and retry checks, allowing valid legacy revision-zero records and versioned records to be evaluated against the controller's in-memory revision gate. Background reconciliation remains the recovery path for missed MessagingService notifications.
 - Static source inspection only. No BindableFunction runtime invocation, Luau compilation, DataStore test, Studio/runtime test, or deployment was performed.
+
+
+### Moderation return-tuple alignment follow-up
+
+- Follow-up inspection confirmed GetModerationState intentionally returns a reason between the two enforcement flags and the durable revision. Updated both controller join-time and retry destructuring to retain the reason slot and read the revision from the sixth protected-call return value. The shared invocation helper now preserves all values; no reason field is reinterpreted as a revision.
+- Static source verification confirms both call sites bind the revision from the correct return position. No public BindableFunction return contract was changed.
