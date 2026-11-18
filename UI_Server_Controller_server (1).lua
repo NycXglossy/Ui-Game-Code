@@ -3653,20 +3653,6 @@ ControllerFunctions.applyReceiptToMemory = function(profile: Profile, productDat
 	end
 end
 
--- Bounded per-server fast-path cache only. Durable per-purchase journals remain
--- authoritative, so cache eviction never deletes or weakens receipt history.
-local processedReceipts: {[string]: boolean} = {}
-local processedReceiptOrder: {string?} = table.create(512)
-local processedReceiptCursor = 0
-local function rememberProcessedReceipt(receiptId: string)
-	if processedReceipts[receiptId] then return end
-	processedReceiptCursor = (processedReceiptCursor % 512) + 1
-	local evicted = processedReceiptOrder[processedReceiptCursor]
-	if evicted then processedReceipts[evicted] = nil end
-	processedReceiptOrder[processedReceiptCursor] = receiptId
-	processedReceipts[receiptId] = true
-end
-
 local productReceiptJournalStore = DataStoreService:GetDataStore("ClubMusic_ProductReceipts_v1")
 
 ControllerFunctions.productReceiptKey = function(userId: number, receiptId: string): string
@@ -3896,33 +3882,14 @@ local function recordReceiptReplayEvent(eventType: string, userId: number, produ
 	end
 end
 
-MarketplaceService.ProcessReceipt = function(receiptInfo: any)
-	-- MarketplaceService supplies this server callback. Treat every field as
-	-- untrusted input until its shape and identity are checked.
-	if typeof(receiptInfo) ~= "table" then
-		return Enum.ProductPurchaseDecision.NotProcessedYet
-	end
+local function processValidatedReceipt(receiptInfo: any, productData: ProductData): Enum.ProductPurchaseDecision
 	local userId = receiptInfo.PlayerId
 	local productId = receiptInfo.ProductId
 	local receiptId = receiptInfo.PurchaseId
-	local validUserId = typeof(userId) == "number" and userId == userId
-		and userId > 0 and userId < math.huge and userId % 1 == 0 and userId <= 9007199254740991
-	local validProductId = typeof(productId) == "number" and productId == productId
-		and productId > 0 and productId < math.huge and productId % 1 == 0 and productId <= 9007199254740991
-	local validReceiptId = typeof(receiptId) == "string" and #receiptId >= 1 and #receiptId <= 128
-	if not validUserId or not validProductId or not validReceiptId then
-		warn("[ClubMusic][PurchaseServer] Malformed receipt metadata; leaving receipt unprocessed for retry.")
-		return Enum.ProductPurchaseDecision.NotProcessedYet
-	end
-	print(string.format("[ClubMusic][PurchaseServer] ProcessReceiptReached | UserId=%s | ProductId=%s | PurchaseId=%s | PlaceId=%d | GameId=%d",
-		tostring(userId), tostring(productId), string.sub(receiptId, 1, 32), game.PlaceId, game.GameId))
+	print(string.format("[ClubMusic][PurchaseServer] ProcessReceiptReached | UserId=%s | ProductId=%s | PlaceId=%d | GameId=%d",
+		tostring(userId), tostring(productId), game.PlaceId, game.GameId))
 	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
 	recordReceiptReplayEvent("receipt_received", userId, productId, "Info", "RobloxReceiptCallback")
-	if processedReceipts[receiptId] then
-		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptDuplicate", "Receipt was already granted in this server session")
-		recordReceiptReplayEvent("receipt_duplicate", userId, productId, "Info", "AlreadyGrantedInSession")
-		return Enum.ProductPurchaseDecision.PurchaseGranted
-	end
 	local player = Players:GetPlayerByUserId(userId)
 	local profile = profiles[userId]
 	if not player or not profile then
@@ -3930,14 +3897,6 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 		recordReceiptReplayEvent("receipt_waiting_profile", userId, productId, "Info", "RetryPending")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
-	local productData = PRODUCT_MAP[productId]
-	if not productData then
-		warn(string.format("[ClubMusic] Unregistered Developer Product ID %d (receipt %s).", productId, receiptId))
-		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "RejectedUnregisteredProduct", "Receipt ID is not in PRODUCT_MAP; purchase remains ungranted")
-		recordReceiptReplayEvent("receipt_unknown_product", userId, productId, "Warning", "NotProcessedYet")
-		return Enum.ProductPurchaseDecision.NotProcessedYet
-	end
-
 	if productData.type == "XPBoost" then
 		if RunService:IsStudio() then
 			-- Studio uses session-only boost state because the global service is intentionally disabled.
@@ -3966,7 +3925,6 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	if productData.type == "XPBoost" then
 		-- The global per-PurchaseId journal is authoritative for XP boosts.
 		-- Do not write XP receipts into the legacy profile receipt map.
-		rememberProcessedReceipt(receiptId)
 		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Global XP boost activation completed")
 		recordReceiptReplayEvent("receipt_granted", userId, productId, "Info", "XPBoost")
 		notify(player, string.format("%dx global XP boost activated!", productData.multiplier), "ok")
@@ -3982,10 +3940,9 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	end
 	-- A receipt already in the durable ledger was granted by an earlier callback/server.
 	-- The loaded profile already contains its reward, so never apply it twice in memory.
-	if alreadyProcessed or processedReceipts[receiptId] then
+	if alreadyProcessed then
 		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptDuplicate", "Receipt was already committed in the durable ledger")
 		recordReceiptReplayEvent("receipt_duplicate", userId, productId, "Info", "AlreadyCommittedInDurableLedger")
-		rememberProcessedReceipt(receiptId)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	if profiles[userId] ~= profile then
@@ -3994,7 +3951,6 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	end
 	if USE_STUDIO_MEMORY_PROFILES then ControllerFunctions.applyReceiptToMemory(profile, productData) end
 	receiptMemoryApplied[receiptId] = nil
-	rememberProcessedReceipt(receiptId)
 	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Receipt persistence completed and reward application proceeded")
 	recordReceiptReplayEvent("receipt_granted", userId, productId, "Info", "DurableReceiptCommitted")
 	player:SetAttribute("Tickets", profile.tickets)
@@ -4023,6 +3979,74 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	end
 	publishState(nil)
 	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+
+end
+
+local receiptAuthority: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("ReceiptAuthority") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.new) == "function" then
+			local createOk, instance = pcall(exported.new, {
+				resolveProduct = function(productId: number)
+					return PRODUCT_MAP[productId]
+				end,
+				processValidatedReceipt = processValidatedReceipt,
+				onEvent = function(eventName: string, receiptInfo: any, detail: string?)
+					local userId = if typeof(receiptInfo) == "table" and typeof(receiptInfo.PlayerId) == "number" then receiptInfo.PlayerId else 0
+					local productId = if typeof(receiptInfo) == "table" and typeof(receiptInfo.ProductId) == "number" then receiptInfo.ProductId else 0
+					local outcomes = {
+						MalformedReceipt = "MalformedReceipt",
+						ReceiptDuplicate = "ReceiptDuplicate",
+						ReceiptInFlight = "ReceiptConcurrentRetry",
+						ReceiptCapacity = "ReceiptConcurrencyCapacity",
+						UnknownProduct = "RejectedUnregisteredProduct",
+						TransactionHandlerFailed = "ReceiptHandlerFailed",
+						InvalidDecision = "ReceiptInvalidDecision",
+					}
+					local outcome = outcomes[eventName] or "ReceiptAuthorityEvent"
+					recordPurchaseDiagnostic("ServerReceipt", userId, productId, outcome, detail)
+					recordReceiptReplayEvent("receipt_" .. string.lower(eventName), userId, productId,
+						if eventName == "UnknownProduct" or eventName == "TransactionHandlerFailed" then "Warning" else "Info", outcome)
+				end,
+			})
+			if createOk and typeof(instance) == "table" and type(instance.Process) == "function"
+				and type(instance.GetStatus) == "function" then
+				receiptAuthority = instance
+			else
+				warn("[ClubMusic][ReceiptAuthority] Service construction failed: " .. tostring(instance))
+			end
+		else
+			warn("[ClubMusic][ReceiptAuthority] Module load failed: " .. tostring(exported))
+		end
+	else
+		warn("[ClubMusic][ReceiptAuthority] Security Core module is missing; Developer Product receipts will remain retryable.")
+	end
+end
+
+local receiptAuthorityStatus = ServerStorage:FindFirstChild("GetTikiTideReceiptAuthorityStatus")
+if receiptAuthorityStatus and not receiptAuthorityStatus:IsA("BindableFunction") then
+	warn("[ClubMusic][ReceiptAuthority] Status endpoint has the wrong class; leaving it untouched.")
+else
+	if not receiptAuthorityStatus then
+		receiptAuthorityStatus = Instance.new("BindableFunction")
+		receiptAuthorityStatus.Name = "GetTikiTideReceiptAuthorityStatus"
+		receiptAuthorityStatus.Parent = ServerStorage
+	end
+	if receiptAuthority then
+		receiptAuthorityStatus.OnInvoke = function() return receiptAuthority:GetStatus() end
+	end
+end
+
+-- This controller remains the only MarketplaceService.ProcessReceipt owner.
+-- Security Core validates, serializes and fast-path deduplicates; the existing
+-- durable profile and global XP receipt journals remain the transaction authority.
+MarketplaceService.ProcessReceipt = function(receiptInfo: any)
+	if not receiptAuthority then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	return receiptAuthority:Process(receiptInfo)
 end
 
 ControllerFunctions.isValidString = function(value: any, maxLength: number): boolean
