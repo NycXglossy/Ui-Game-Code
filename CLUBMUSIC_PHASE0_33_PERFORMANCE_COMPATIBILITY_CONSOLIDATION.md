@@ -163,3 +163,6 @@ The standalone `RequestSongEvent` / `songQueue` sample is not installed. The exi
 At branch head `ee80c913ea9943f08fd441adf6bce47199b2ab25`, the global service referenced an undefined `CONFIG.BudgetKeyTtlSeconds` while pruning its server-local fallback token buckets. Added the explicit `FallbackBucketIdleSeconds = 300` setting and wired the prune threshold to it. This prevents the periodic idle-bucket cleanup from comparing a number against nil after the first 15-second prune interval. The cleanup remains local, bounded, and independent of MemoryStore. Also corrected stale source comments that still described retired playback synchronization as opt-in.
 
 Validation: source-level reference check only; no Luau compiler or Roblox runtime test was run.
+
+
+A follow-up static audit also found that the global service referenced six undefined action/player/audio budget settings. Added explicit values aligned with the controller's configured ingress budgets: global actions 180 tokens/refill 90 per second, per-player actions 18/refill 12 per second, and audio 3/refill 0.25 per second. This avoids passing nil budget arguments into the shared limiter path. The retired-playback header comment was corrected at the same time. These are source-level consistency fixes; no live service or runtime test was performed.
