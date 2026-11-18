@@ -6539,6 +6539,9 @@ ControllerFunctions.onJoin = function(player: Player)
 		-- A cross-server invalidation arrived while this yielding lookup was in flight.
 		-- Its newer revision wins; keep the player restricted until a current read succeeds.
 		moderationLookupOk = false
+	elseif moderationCallOk and moderationLookupOk == true then
+		ControllerFunctions.moderationRevisions = ControllerFunctions.moderationRevisions or {}
+		ControllerFunctions.moderationRevisions[player.UserId] = moderationRevision
 	end
 	local moderationVerified = not globalModerationRequired or (moderationCallOk and moderationLookupOk == true)
 	if globalModerationRequired then
