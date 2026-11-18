@@ -4,6 +4,7 @@
 -- Separate settings surface; ClubMusic's existing Title Tag tab remains the title editor.
 
 local Players = game:GetService("Players")
+local TextChatService = game:GetService("TextChatService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local GuiService = game:GetService("GuiService")
@@ -893,30 +894,15 @@ local function showBroadcast(kind: any, senderUserId: any, message: any)
 		rounded(banner, 12)
 		task.delay(8, function() if banner.Parent then banner:Destroy() end end)
 	elseif kind == "Bubble" then
+		-- One-way staff broadcast: render the server-filtered message through
+		-- Roblox's native bubble system, not a custom BillboardGui chat surface.
 		local sender = Players:GetPlayerByUserId(senderUserId)
 		local character = sender and sender.Character
-		local head = character and character:FindFirstChild("Head")
-		if not head or not head:IsA("BasePart") then return end
-		local bubbleGui = make("BillboardGui", {
-			Name = "TikiTideAdminBroadcast",
-			Adornee = head,
-			Size = UDim2.fromOffset(260, 64),
-			StudsOffset = Vector3.new(0, 4.2, 0),
-			AlwaysOnTop = true,
-			MaxDistance = 120,
-		}, head) :: BillboardGui
-		local textLabel = make("TextLabel", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = COLORS.card,
-			BackgroundTransparency = 0.08,
-			Text = string.sub(message, 1, 180),
-			TextColor3 = COLORS.text,
-			TextSize = 13,
-			Font = Enum.Font.GothamBold,
-			TextWrapped = true,
-		}, bubbleGui)
-		rounded(textLabel, 10)
-		task.delay(8, function() if bubbleGui.Parent then bubbleGui:Destroy() end end)
+		if not character or not character.Parent then return end
+		local ok, err = pcall(function()
+			TextChatService:DisplayBubble(character, string.sub(message, 1, 180))
+		end)
+		if not ok then warn("[Tiki Tide] TextChatService could not display the admin broadcast bubble: " .. tostring(err)) end
 	end
 end
 
