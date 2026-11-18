@@ -404,6 +404,7 @@ function Service:GetHistory(actor: Player, targetUserId: number, limit: number):
 				caseId = item.caseId, kind = item.kind, status = item.status,
 				actorUserId = item.actorUserId, targetUserId = item.targetUserId,
 				at = item.at, expiresAt = item.expiresAt, reason = item.reason,
+				category = item.category, evidenceReference = item.evidenceReference,
 				altPropagationRequested = item.altPropagationRequested == true,
 			})
 		end
