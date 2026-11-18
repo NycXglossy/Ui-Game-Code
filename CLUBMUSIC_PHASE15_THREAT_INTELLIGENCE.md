@@ -18,7 +18,7 @@
 - Player review expiry: 30 minutes after the latest correlated signal.
 - Repeated identical registered signal codes contribute at most three times per subject window.
 - Per-category contribution cap: 8 points; per-source contribution cap: 8 points; total score cap: 100.
-- Maximum independent source identifiers per subject window: 8.
+- Maximum independent source identifiers per subject window: 8; aggregate cohort evidence is capped at 16 sources and 32 signal codes.
 - Confidence uses evidence diversity separately from score. Medium requires at least two categories, two distinct registered codes, and score at least four. High requires at least three categories, three codes, two sources, and score at least eight.
 - Confidence is a triage label, not an exploitation probability. Score is an ordering aid, not a punishment threshold.
 - Session start and bounded session event count are retained for up to 256 live subjects. Existing players at service startup receive a session baseline but are not counted as new joins. PlayerRemoving clears session state.
@@ -63,7 +63,7 @@
 - Bounded collections: 256 player buckets, 256 player reviews, 256 event IDs, 256 session records, 128 joiners/cohort subjects, 32 raid reviews, 12 distinct signal codes per subject, and 8 source identifiers per subject.
 - Counters are numeric and capped. Stop disconnects Player lifecycle listeners and clears retained in-memory state.
 - Existing IncidentResponse remains a separate, explicit staff case-management workflow.
-- Installer stages the module from a pinned immutable commit and retains the previous SecurityCore release for rollback.
+- Installer stages the module from pinned immutable source commit 40816ddb91b29fbde5bab30ccbe3a7972df63262 and retains the previous SecurityCore release for rollback.
 
 ## Runtime acceptance still required
 
