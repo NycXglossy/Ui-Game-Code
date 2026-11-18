@@ -7,6 +7,9 @@ local Service={}; Service.__index=Service
 local ALLOWED={SecurityAlert=true,ServiceDegraded=true,AbuseReport=true,ManualReview=true}
 local LOCAL_INDEX_CAP=256
 local READ_CACHE_CAPACITY=32
+local REPORT_COOLDOWN_SECONDS=15
+local SYSTEM_SIGNAL_COOLDOWN_SECONDS=10
+local COOLDOWN_INDEX_CAP=256
 local function cacheRead(self,key,value,now)
 	if self.readCache[key]==nil then
 		local count=0
@@ -48,15 +51,33 @@ local function rememberActive(self,userId,item)
 	self.activeByUser[userId]=item
 end
 
+local function consumeCooldown(index,userId,now,cooldownSeconds)
+	local previous=index[userId]
+	if previous and now-previous<cooldownSeconds then return false end
+	if previous==nil then
+		local count,oldestId,oldestAt=0,nil,math.huge
+		for id,stamp in pairs(index) do
+			count+=1
+			if stamp<oldestAt then oldestAt=stamp; oldestId=id end
+		end
+		if count>=COOLDOWN_INDEX_CAP and oldestId then index[oldestId]=nil end
+	end
+	index[userId]=now
+	return true
+end
+
 function Service.new(d)
 	assert(type(d)=="table" and d.isEnabled and d.memoryStoreService and type(d.authorize)=="function","Incident response dependencies missing")
 	return setmetatable({d=d,map=d.memoryStoreService:GetSortedMap(d.mapName or "ClubMusic_GlobalIncidents_v1"),
-		opened=0,resolved=0,lastError=nil,lastWriteAt=0,activeByUser={},pendingFlags={},readCache={},readCacheAt={}},Service)
+		opened=0,resolved=0,lastError=nil,lastWriteAt=0,activeByUser={},pendingFlags={},readCache={},readCacheAt={},
+		reportCooldowns={},systemCooldowns={},reportsAccepted=0,reportsRejected=0,systemSignalsAccepted=0},Service)
 end
 
-function Service:Open(kind,summary,actorUserId,subjectUserId)
+-- Shared writer. Trusted intake is exposed only through server-side service APIs.
+local function openIncident(self,kind,summary,actorUserId,subjectUserId,trusted)
 	if not self.d.isEnabled() or not ALLOWED[kind] or type(summary)~="string" or #summary<1 or #summary>120 then return false,"Invalid incident." end
-	if self.d.authorize(actorUserId,"IncidentResponse")~=true then return false,"Incident response permission denied." end
+	if not self.d.isEnabled() or not ALLOWED[kind] or type(summary)~="string" or #summary<1 or #summary>120 then return false,"Invalid incident." end
+	if not trusted and self.d.authorize(actorUserId,"IncidentResponse")~=true then return false,"Incident response permission denied." end
 	local userId=if validUserId(subjectUserId) then math.floor(subjectUserId) else math.floor(actorUserId)
 	local key="TT:INC:"..tostring(userId)
 	if #key>64 then return false,"Incident key exceeds 64 characters." end
@@ -106,6 +127,48 @@ function Service:Open(kind,summary,actorUserId,subjectUserId)
 	self.readCache={}; self.readCacheAt={}
 	if type(self.d.onChange)=="function" then pcall(self.d.onChange,"opened",item) end
 	return true,key
+end
+
+-- Public player-report intake. This does not grant IncidentResponse permission;
+-- the only caller is the trusted server-side report adapter.
+function Service:SubmitReport(reporterUserId,subjectUserId,summary)
+	if type(reporterUserId)~="number" or reporterUserId<=0 or reporterUserId%1~=0 or reporterUserId==math.huge
+		or type(subjectUserId)~="number" or subjectUserId<=0 or subjectUserId%1~=0 or subjectUserId==math.huge
+		or reporterUserId==subjectUserId or type(summary)~="string" or #summary<1 or #summary>120
+		or not utf8.len(summary) or string.find(summary,"%c") then
+		self.reportsRejected+=1
+		return false,"Invalid player report."
+	end
+	local now=os.clock()
+	if not consumeCooldown(self.reportCooldowns,reporterUserId,now,REPORT_COOLDOWN_SECONDS) then
+		self.reportsRejected+=1
+		return false,"Report cooldown active."
+	end
+	local ok,id,detail=openIncident(self,"AbuseReport",summary,math.floor(reporterUserId),math.floor(subjectUserId),true)
+	if ok then self.reportsAccepted+=1 end
+	return ok,id,detail
+end
+
+-- Server-generated intake is fixed to the VIP-zone detector. No client can
+-- select this source or incident type through the public report RemoteEvent.
+function Service:SubmitSystemSignal(kind,summary,subjectUserId,source)
+	if kind~="SecurityAlert" or source~="VIPRestrictedZone"
+		or type(subjectUserId)~="number" or subjectUserId<=0 or subjectUserId%1~=0 or subjectUserId==math.huge
+		or type(summary)~="string" or #summary<1 or #summary>120 or not utf8.len(summary)
+		or string.find(summary,"%c") then
+		return false,"Invalid system security signal."
+	end
+	local now=os.clock()
+	if not consumeCooldown(self.systemCooldowns,subjectUserId,now,SYSTEM_SIGNAL_COOLDOWN_SECONDS) then
+		return false,"System signal cooldown active."
+	end
+	local ok,id,detail=openIncident(self,kind,summary,0,math.floor(subjectUserId),true)
+	if ok then self.systemSignalsAccepted+=1 end
+	return ok,id,detail
+end
+
+function Service:Open(kind,summary,actorUserId,subjectUserId)
+	return openIncident(self,kind,summary,actorUserId,subjectUserId,false)
 end
 
 function Service:Resolve(id,actorUserId)
@@ -175,11 +238,14 @@ function Service:GetStatus()
 		lastError=self.lastError,recordBytes={min=1024,max=5120},maxWritesPerSecondPerServer=1,
 		coalescesRapidFlags=true,ttlSeconds={min=900,max=3600,default=1800},
 		keyStrategy="UserId",adminReadCacheSeconds=10,storageGuard=StorageGuard.GetStatus(),
+		publicReportIntake={enabled=true,cooldownSeconds=REPORT_COOLDOWN_SECONDS,accepted=self.reportsAccepted,rejected=self.reportsRejected},
+		systemSignalIntake={enabled=true,cooldownSeconds=SYSTEM_SIGNAL_COOLDOWN_SECONDS,accepted=self.systemSignalsAccepted},
 		resourceGuard=ResourceGuard.GetStatus()}
 end
 function Service:Start() return true end
 function Service:Stop()
 	table.clear(self.readCache); table.clear(self.readCacheAt)
 	table.clear(self.activeByUser); table.clear(self.pendingFlags)
+	table.clear(self.reportCooldowns); table.clear(self.systemCooldowns)
 end
 return Service
