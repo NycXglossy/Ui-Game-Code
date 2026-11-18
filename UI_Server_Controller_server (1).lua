@@ -2001,9 +2001,10 @@ local lastStateInvoke: {[number]: number} = {}
 local lastCatalogInvoke: {[number]: number} = {}
 local lastAudioInspection: {[number]: number} = {}
 local audioInspectionCount = 0
-local profileWriteLocks: {[number]: boolean} = {}
+local profileWriteLocks: {[number]: any} = {}
 local saveQueued: {[number]: boolean} = {}
 local saveAgain: {[number]: boolean} = {}
+local saveQueueTokens: {[number]: any} = {}
 local queueCounter = 0
 
 -- Token buckets are server-authoritative and shared across all requests in this
@@ -2144,21 +2145,26 @@ ControllerFunctions.isValidAudioAssetId = function(value: any): boolean
 		and value % 1 == 0
 end
 
-ControllerFunctions.acquireProfileWriteLock = function(userId: number): boolean
+ControllerFunctions.acquireProfileWriteLock = function(userId: number): any
 	local startedAt = os.clock()
 	while profileWriteLocks[userId] do
 		if os.clock() - startedAt >= CONFIG.ProfileWriteLockTimeoutSeconds then
 			warn("[ClubMusic] Timed out waiting for profile write lock for userId " .. tostring(userId))
-			return false
+			return nil
 		end
 		task.wait(0.05)
 	end
-	profileWriteLocks[userId] = true
-	return true
+	-- Each holder gets an identity token. A delayed completion may release only
+	-- its own lock, never a newer writer's lock for a rapid same-server rejoin.
+	local lockToken = {}
+	profileWriteLocks[userId] = lockToken
+	return lockToken
 end
 
-ControllerFunctions.releaseProfileWriteLock = function(userId: number)
-	profileWriteLocks[userId] = nil
+ControllerFunctions.releaseProfileWriteLock = function(userId: number, lockToken: any?)
+	if lockToken == nil or profileWriteLocks[userId] == lockToken then
+		profileWriteLocks[userId] = nil
+	end
 end
 
 -- Session-only moderation / VIP / vote state.
@@ -2786,6 +2792,14 @@ ControllerFunctions.loadProfile = function(player: Player)
 				lastError = "Server DataStore request budget is busy."
 				break
 			end
+			-- Serialize load-lock acquisition with local saves and receipt commits.
+			-- SESSION_TOKEN is server-scoped, so a rapid same-server rejoin must not
+			-- read the old snapshot while that Player's final/periodic write is active.
+			local loadWriteLockToken = ControllerFunctions.acquireProfileWriteLock(userId)
+			if not loadWriteLockToken then
+				lastError = "Profile is busy with another local write."
+				break
+			end
 			local callOk, result = pcall(function()
 				return store:UpdateAsync(tostring(userId), function(oldData)
 					local current = if typeof(oldData) == "table" then table.clone(oldData) else {}
@@ -2798,6 +2812,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 					return current
 				end)
 			end)
+			ControllerFunctions.releaseProfileWriteLock(userId, loadWriteLockToken)
 			if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
 			if callOk and typeof(result) == "table" then
 				data = result
@@ -2956,11 +2971,12 @@ ControllerFunctions.saveProfile = function(player: Player)
 	local userId = player.UserId
 	local profile = profiles[userId]
 	if not profile then return false end
-	if not ControllerFunctions.acquireProfileWriteLock(userId) then return false end
+	local writeLockToken = ControllerFunctions.acquireProfileWriteLock(userId)
+	if not writeLockToken then return false end
 	profile = profiles[userId]
-	if not profile then ControllerFunctions.releaseProfileWriteLock(userId); return false end
+	if not profile then ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken); return false end
 	if not ControllerFunctions.waitForDataStoreBudget(8) then
-		ControllerFunctions.releaseProfileWriteLock(userId)
+		ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken)
 		warn("[ClubMusic] Profile save deferred: server DataStore budget is busy for userId " .. tostring(userId))
 		return false
 	end
@@ -3030,7 +3046,7 @@ ControllerFunctions.saveProfile = function(player: Player)
 			return output
 		end)
 	end)
-	ControllerFunctions.releaseProfileWriteLock(userId)
+	ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken)
 	if not ok or typeof(result) ~= "table" then
 		warn("[ClubMusic] Profile save failed for " .. player.Name .. ": " .. tostring(result or "profile session ownership lost"))
 		if ownershipLost and player.Parent == Players then
@@ -3043,26 +3059,36 @@ ControllerFunctions.saveProfile = function(player: Player)
 	return true
 end
 
--- Collapse rapid profile mutations into one save. If another mutation happens
--- during a save, schedule one follow-up instead of spawning an unbounded stack.
+-- Collapse rapid profile mutations into one save. Queue identity prevents a
+-- delayed callback from an old Player instance clearing a rejoin's new queue.
 ControllerFunctions.scheduleProfileSave = function(player: Player)
 	local userId = player.UserId
+	local scheduledProfile = profiles[userId]
+	if not scheduledProfile then return end
 	if saveQueued[userId] then
 		saveAgain[userId] = true
 		return
 	end
+	local queueToken = {}
+	saveQueueTokens[userId] = queueToken
 	saveQueued[userId] = true
 	task.delay(CONFIG.ProfileSaveQueueDelaySeconds, function()
-		if player.Parent ~= Players or profiles[userId] == nil then
+		if saveQueueTokens[userId] ~= queueToken then return end
+		if player.Parent ~= Players or profiles[userId] ~= scheduledProfile then
 			saveQueued[userId] = nil
 			saveAgain[userId] = nil
+			saveQueueTokens[userId] = nil
 			return
 		end
 		ControllerFunctions.saveProfile(player)
+		if saveQueueTokens[userId] ~= queueToken then return end
 		saveQueued[userId] = nil
+		saveQueueTokens[userId] = nil
 		if saveAgain[userId] then
 			saveAgain[userId] = nil
-			ControllerFunctions.scheduleProfileSave(player)
+			if player.Parent == Players and profiles[userId] == scheduledProfile then
+				ControllerFunctions.scheduleProfileSave(player)
+			end
 		end
 	end)
 end
@@ -6473,7 +6499,16 @@ ControllerFunctions.releaseProfileSession = function(userId: number)
 	if USE_STUDIO_MEMORY_PROFILES then
 		return
 	end
+	-- Lease release shares the same local writer lock as saves and receipt commits.
+	-- Otherwise a receipt transaction could be interrupted between its durable
+	-- profile marker and journal completion by a concurrent departure release.
+	local writeLockToken = ControllerFunctions.acquireProfileWriteLock(userId)
+	if not writeLockToken then
+		warn("[ClubMusic] Could not acquire profile writer lock for lease release; lease will expire naturally for userId " .. tostring(userId))
+		return
+	end
 	if not ControllerFunctions.waitForDataStoreBudget(3) then
+		ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken)
 		warn("[ClubMusic] Could not release profile lease before shutdown/removal; lease will expire naturally for userId " .. tostring(userId))
 		return
 	end
@@ -6487,6 +6522,7 @@ ControllerFunctions.releaseProfileSession = function(userId: number)
 			return updated
 		end)
 	end)
+	ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken)
 	if not ok then warn("[ClubMusic] Could not release profile session for " .. tostring(userId) .. ": " .. tostring(err)) end
 end
 
@@ -7055,8 +7091,9 @@ Players.PlayerRemoving:Connect(function(player)
 	local departingProfile = profiles[userId]
 	if receiptTransactions then receiptTransactions:ForgetProfile(departingProfile) end
 	profiles[userId] = nil
-	-- Final save/lease handling has completed; discard the local writer lock.
-	profileWriteLocks[userId] = nil
+	-- Do not clear profileWriteLocks here. A timed-out save/receipt operation may
+	-- still be in flight; its owner releases its own token when it actually ends.
+	-- A rapid same-server rejoin must wait rather than overlap that old writer.
 	requestCounts[userId] = nil
 	lastRequestAt[userId] = nil
 	lastActionAt[userId] = nil
@@ -7066,6 +7103,7 @@ Players.PlayerRemoving:Connect(function(player)
 	perPlayerActionBuckets[userId] = nil
 	saveQueued[userId] = nil
 	saveAgain[userId] = nil
+	saveQueueTokens[userId] = nil
 	lastStateInvoke[userId] = nil
 	lastCatalogInvoke[userId] = nil
 	lastPlaylistInvoke[userId] = nil
