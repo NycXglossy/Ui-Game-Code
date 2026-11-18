@@ -1934,41 +1934,6 @@ if typeof(queueManagerRequireResult) ~= "table" or typeof(queueManagerRequireRes
 	error("[ClubMusic] " .. detail)
 end
 local MusicQueueManager = queueManagerRequireResult
-ControllerFunctions.ChildManagerModules = {}
-for _, moduleName in ipairs({
-	"MusicPlaybackManager",
-}) do
-	local moduleScript = ServerStorageForQueue:FindFirstChild(moduleName)
-	if not moduleScript then
-		moduleScript = ServerStorageForQueue:WaitForChild(moduleName, 20)
-	end
-	if not moduleScript or not moduleScript:IsA("ModuleScript") then
-		local detail = "Expected direct child ServerStorage." .. moduleName .. " (ModuleScript); found "
-			.. (if moduleScript then moduleScript.ClassName else "nothing")
-			.. ". Direct children: " .. (if ControllerFunctions.ErrorHandler
-				then ControllerFunctions.ErrorHandler.DescribeChildren(ServerStorageForQueue)
-				else "<diagnostic handler unavailable>")
-		ControllerFunctions.reportStartupError("ModuleLoader", "Locate " .. moduleName, detail, ServerStorageForQueue)
-		error("[ClubMusic] " .. detail)
-	end
-
-	local requireOk, requireResult, requireErrorId
-	if ControllerFunctions.ErrorHandler then
-		requireOk, requireResult, requireErrorId = ControllerFunctions.ErrorHandler.SafeRequire(moduleScript, "ServerStorage." .. moduleName)
-	else
-		requireOk, requireResult = pcall(require, moduleScript)
-	end
-	if not requireOk or typeof(requireResult) ~= "table" then
-		local detail = moduleName .. " failed to load or returned an invalid module table: " .. tostring(requireResult)
-		if requireErrorId then
-			pcall(function() remotes:SetAttribute("StartupError", "[" .. requireErrorId .. "] " .. string.sub(detail, 1, 850)) end)
-		else
-			ControllerFunctions.reportStartupError("ModuleLoader", "Load " .. moduleName, detail, moduleScript)
-		end
-		error("[ClubMusic] " .. detail)
-	end
-	ControllerFunctions.ChildManagerModules[moduleName] = requireResult
-end
 local autoQueueHold = false
 -- Queue mutations have their own revision, independent of playback transitions.
 -- This prevents delayed MessagingService snapshots from restoring an older queue.
@@ -5530,11 +5495,8 @@ localDiagnosticsBindable.OnInvoke = function()
 		if ok and typeof(result) == "table" then audioSnapshot = result end
 	end
 	local playbackQuality = nil
-	local playbackAdapter = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playback
-	if playbackAdapter and type(playbackAdapter.InspectQuality) == "function" then
-		local ok, result = pcall(function() return playbackAdapter:InspectQuality() end)
-		if ok and typeof(result) == "table" then playbackQuality = result end
-	end
+	local qualityOk, qualityResult = pcall(ControllerFunctions.inspectPlaybackQuality)
+	if qualityOk and typeof(qualityResult) == "table" then playbackQuality = qualityResult end
 	return {
 		state = if remotes:GetAttribute("Ready") == true then "Healthy" else "Starting",
 		scope = "ServerLocal",
@@ -6394,31 +6356,32 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	return true, if typeof(message) == "string" then message else "ClubMusic action accepted."
 end
 
--- Construct the child managers only after their controller-owned callbacks and
--- service state exist. These instances are facades; they do not start independent
--- playback loops, sounds, queues, playlist cursors, or vote timers.
+-- Construct the remaining optional child managers only after controller state exists.
+-- Playback quality is now inspected directly from the canonical modern AudioPlayer snapshot.
 ControllerFunctions.ChildManagers = {}
-local childManagerModules = ControllerFunctions.ChildManagerModules
--- The controller's canonical modern-source snapshot is injected directly.
--- Playback inspection remains in this single server adapter.
-local playbackManagerOk, playbackManager = pcall(childManagerModules.MusicPlaybackManager.new, {
-	GetSnapshot = function()
-		return {
-			nowPlaying = table.clone(nowPlaying),
-			playbackPaused = playbackPaused,
-		}
-	end,
-	GetAudioSnapshot = function() return ControllerFunctions.getAudioSnapshot() end,
-	GetElapsedTime = function() return nowPlaying.elapsed end,
-	TogglePause = function(player: Player)
-		return ControllerFunctions.handleAction(player, "DJPause", {}, false)
-	end,
-	RestartTrack = function(player: Player)
-		return ControllerFunctions.handleAction(player, "DJRestart", {}, false)
-	end,
-})
-if not playbackManagerOk then error("[ClubMusic] MusicPlaybackManager initialization failed: " .. tostring(playbackManager)) end
-ControllerFunctions.ChildManagers.Playback = playbackManager
+ControllerFunctions.ChildManagerModules = {}
+ControllerFunctions.inspectPlaybackQuality = function()
+	if nowPlaying.trackId == "" then return {state = "Idle"} end
+	if nowPlaying.soundId == "" then return {state = "SilentCatalogTrack"} end
+	local snapshotOk, snapshot = pcall(ControllerFunctions.getAudioSnapshot)
+	if not snapshotOk or typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
+		return {state = "Unavailable", reason = "AudioInstanceMissing"}
+	end
+	local elapsed = if ControllerFunctions.isFiniteNumber(nowPlaying.elapsed) then math.max(0, nowPlaying.elapsed) else 0
+	local isReady = snapshot.ready == true
+	local isPlaying = snapshot.playing == true
+	local length = if isReady and ControllerFunctions.isFiniteNumber(snapshot.length) then math.max(0, snapshot.length) else 0
+	if isPlaying then
+		return {state = "Playing", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length}
+	end
+	if snapshot.paused == true then
+		return {state = "Paused", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length}
+	end
+	if isReady and length > 0 then
+		return {state = "StoppedAfterLoad", backend = snapshot.kind, elapsed = elapsed, loaded = true, length = length}
+	end
+	return {state = "BufferingOrStopped", backend = snapshot.kind, elapsed = elapsed, loaded = isReady, length = length}
+end
 
 
 ControllerFunctions.castSkipVote = function(player: Player): (boolean, string)
@@ -7218,8 +7181,7 @@ task.spawn(function()
 				or (ControllerFunctions.audioRecoveryAttemptedGeneration == currentGeneration and stoppedFor >= 7)
 				or (not loadedAndKnownLength and nowPlaying.elapsed >= 45) then
 				shouldAdvance = true
-				local playbackAdapter = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Playback
-				local quality = if playbackAdapter then playbackAdapter:InspectQuality() else nil
+				local quality = ControllerFunctions.inspectPlaybackQuality()
 				local reason = if typeof(quality) == "table" then tostring(quality.state or "Unknown") else "WatchdogStoppedTrack"
 				warn("[ClubMusic] Playback watchdog confirmed an ended or unrecoverable track (" .. reason .. "); advancing safely.")
 				if ControllerFunctions.ErrorHandler then
