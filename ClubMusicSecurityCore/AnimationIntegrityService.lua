@@ -9,12 +9,16 @@ Service.__index = Service
 local MAX_ASSET_IDS_PER_CHARACTER = 32
 local MAX_TRACK_STARTS_PER_CHARACTER = 128
 local MAX_INITIAL_TRACKS_TO_INSPECT = 64
+local MAX_HUMANOIDS_PER_CHARACTER = 4
+local MAX_ANIMATORS_PER_CHARACTER = 4
+local MAX_COUNTER = 9007199254740991
 
 type PlayerState = {
 	character: Model?,
 	playerConnections: {RBXScriptConnection},
 	characterConnections: {RBXScriptConnection},
 	animatorConnections: {[Animator]: RBXScriptConnection},
+	humanoidConnections: {[Humanoid]: {RBXScriptConnection}},
 	observedAssetIds: {[number]: boolean},
 	trackStarts: number,
 	uniqueAssets: number,
@@ -62,7 +66,7 @@ function Service:_observeTrack(player: Player, state: PlayerState, track: Animat
 	if state.trackStarts >= MAX_TRACK_STARTS_PER_CHARACTER then
 		if not state.capSignaled then
 			state.capSignaled = true
-			self.cappedCharacters += 1
+			self.cappedCharacters = math.min(self.cappedCharacters + 1, MAX_COUNTER)
 			self:_signal(player, "animation_track_observation_cap", tostring(MAX_TRACK_STARTS_PER_CHARACTER), {
 				cap = MAX_TRACK_STARTS_PER_CHARACTER,
 			})
@@ -70,12 +74,12 @@ function Service:_observeTrack(player: Player, state: PlayerState, track: Animat
 		return
 	end
 	state.trackStarts += 1
-	self.observedTracks += 1
+	self.observedTracks = math.min(self.observedTracks + 1, MAX_COUNTER)
 
 	local animation = track.Animation
 	local assetId = parseAssetId(animation)
 	if not assetId then
-		self.unreadableIds += 1
+		self.unreadableIds = math.min(self.unreadableIds + 1, MAX_COUNTER)
 		return
 	end
 	if state.observedAssetIds[assetId] then return end
@@ -92,7 +96,7 @@ function Service:_observeTrack(player: Player, state: PlayerState, track: Animat
 
 	state.observedAssetIds[assetId] = true
 	state.uniqueAssets += 1
-	self.uniqueAssets += 1
+	self.uniqueAssets = math.min(self.uniqueAssets + 1, MAX_COUNTER)
 	local priorityValue = 0
 	local priorityName = "Unknown"
 	pcall(function()
@@ -116,6 +120,9 @@ end
 
 function Service:_attachAnimator(player: Player, state: PlayerState, animator: Animator)
 	if state.animatorConnections[animator] then return end
+	local animatorCount = 0
+	for _ in pairs(state.animatorConnections) do animatorCount += 1 end
+	if animatorCount >= MAX_ANIMATORS_PER_CHARACTER then return end
 	state.animatorConnections[animator] = animator.AnimationPlayed:Connect(function(track)
 		if typeof(track) == "Instance" and track:IsA("AnimationTrack") then
 			self:_observeTrack(player, state, track)
@@ -137,6 +144,10 @@ function Service:_detachCharacter(state: PlayerState)
 	table.clear(state.characterConnections)
 	for _, connection in pairs(state.animatorConnections) do connection:Disconnect() end
 	table.clear(state.animatorConnections)
+	for _, connections in pairs(state.humanoidConnections) do
+		for _, connection in ipairs(connections) do connection:Disconnect() end
+	end
+	table.clear(state.humanoidConnections)
 	state.character = nil
 	table.clear(state.observedAssetIds)
 	state.trackStarts = 0
@@ -150,14 +161,34 @@ function Service:_attachCharacter(player: Player, character: Model)
 	self:_detachCharacter(state)
 	state.character = character
 
+	local function detachHumanoid(humanoid: Humanoid)
+		local connections = state.humanoidConnections[humanoid]
+		if connections then
+			for _, connection in ipairs(connections) do connection:Disconnect() end
+			state.humanoidConnections[humanoid] = nil
+		end
+		for animator, connection in pairs(state.animatorConnections) do
+			if animator:IsDescendantOf(humanoid) then
+				connection:Disconnect()
+				state.animatorConnections[animator] = nil
+			end
+		end
+	end
+
 	local function attachHumanoid(humanoid: Humanoid)
+		if state.humanoidConnections[humanoid] then return end
+		local humanoidCount = 0
+		for _ in pairs(state.humanoidConnections) do humanoidCount += 1 end
+		if humanoidCount >= MAX_HUMANOIDS_PER_CHARACTER then return end
+		local connections: {RBXScriptConnection} = {}
+		state.humanoidConnections[humanoid] = connections
 		local function attachAnimator(child: Instance)
 			if child:IsA("Animator") then self:_attachAnimator(player, state, child) end
 		end
 		local animator = humanoid:FindFirstChildOfClass("Animator")
 		if animator then self:_attachAnimator(player, state, animator) end
-		table.insert(state.characterConnections, humanoid.ChildAdded:Connect(attachAnimator))
-		table.insert(state.characterConnections, humanoid.ChildRemoved:Connect(function(child)
+		table.insert(connections, humanoid.ChildAdded:Connect(attachAnimator))
+		table.insert(connections, humanoid.ChildRemoved:Connect(function(child)
 			if child:IsA("Animator") then
 				local connection = state.animatorConnections[child]
 				if connection then connection:Disconnect(); state.animatorConnections[child] = nil end
@@ -169,6 +200,9 @@ function Service:_attachCharacter(player: Player, character: Model)
 	if humanoid then attachHumanoid(humanoid) end
 	table.insert(state.characterConnections, character.ChildAdded:Connect(function(child)
 		if child:IsA("Humanoid") then attachHumanoid(child) end
+	end))
+	table.insert(state.characterConnections, character.ChildRemoved:Connect(function(child)
+		if child:IsA("Humanoid") then detachHumanoid(child) end
 	end))
 	table.insert(state.characterConnections, character.AncestryChanged:Connect(function(_, parent)
 		if parent == nil and self.states[player.UserId] == state and state.character == character then
@@ -184,6 +218,7 @@ function Service:_attachPlayer(player: Player)
 		playerConnections = {},
 		characterConnections = {},
 		animatorConnections = {},
+		humanoidConnections = {},
 		observedAssetIds = {},
 		trackStarts = 0,
 		uniqueAssets = 0,
