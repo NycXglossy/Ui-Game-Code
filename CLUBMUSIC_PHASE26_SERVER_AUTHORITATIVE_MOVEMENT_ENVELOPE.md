@@ -150,3 +150,50 @@ Phase 26 is not complete until the live movement sources are inventoried, legiti
 ### Implementation decision
 
 No fixed scale clamp, standalone network-owner loop, or automatic movement correction was added. Existing Utility Bar scale authority, MovementAuthority, and passive CharacterPhysicsGuard observation remain the only tracked first-party paths.
+
+
+## Follow-up source audit and implementation — mount, companion, Tool, and accessory state (2026-11-17)
+
+### Tracked source findings
+
+- The Utility Bar Mount action is server-side and checks the server-populated `HasIslandMountPass` attribute. It only equips/unequips an existing Tool found in the caller's Character or Backpack when `UtilityMount=true` or its name is `Mount` / `MountTool`. It does not grant the Tool and does not verify its original asset source or grant provenance.
+- The companion action clones the caller's current character on the server, removes Script/LocalScript descendants from the clone, disables collision/touch/query on clone BaseParts, makes them massless, anchors the clone root, follows the owner for 12 seconds, and destroys the clone on expiry or PlayerRemoving. This is a temporary visual clone, not a persistent Tool or entitlement grant.
+- Tool Shop remains an empty placeholder: the server RemoteFunction only supports `GetShop` and returns an empty `items` array. There is no tracked purchase/grant/equip implementation in ToolShop.
+- Avatar refresh is server-owned: the server fetches the caller's own HumanoidDescription, rechecks character identity after the asynchronous lookup, and applies the description. It accepts no client target or description.
+- The tracked repository tree contains no separately named vehicle/mount controller script. No first-party vehicle seat/vehicle control or shared-vehicle network-owner policy was established in the inspected Utility Bar, controller, SecurityCore, or Kohl's adapter sources. The live place and third-party package descendants may contain additional systems.
+- CharacterPhysicsGuard's network-owner telemetry is limited to the observed HumanoidRootPart and is aggregate observation only. It does not establish network ownership for a mount, vehicle, or world prop.
+
+### Detection-only inventory observer update
+
+Updated `ClubMusicSecurityCore/AvatarAccessoryValidationService.lua`, which the main controller already requires and starts:
+
+- Tracks server-visible Tool inventory changes in the player's Backpack, Character, and StarterGear.
+- Emits bounded signals for Tools added after appearance initialization and Tools removed from the player's tracked inventory. A Tool moved between Backpack and Character is checked after the parent transition settles, so ordinary equip/unequip transfer is not treated as a removal.
+- Bounds tracked Tool instances per player at 100 and accessory handle observers per character at 50; per-signal cooldown and existing bounded service state remain in place.
+- Signals Accessory additions/removals after appearance initialization and changes to an observed Handle's Size or CanCollide state. Existing description asset-ID, duplicate-ID, accessory count, Handle size/collision, and excessive-descendant checks remain.
+- The observer does not label a Tool as definitively unauthorized: a legitimate server grant may also appear after appearance initialization. It records the change for review; it never strips, destroys, disables, or re-equips a player's Tool or Accessory.
+- The main controller now calls the observer's `Stop()` during script destruction. PlayerRemoving and character teardown continue to disconnect per-player/per-character observers.
+- The Security Core installer release pin now targets the exact commit containing the updated observer. A tree comparison confirmed the other 23 SecurityCore module blobs match the previous installer release; only AvatarAccessoryValidationService changed in that pinned source commit.
+
+### What this does not prove
+
+- Server-visible inventory observation does not prove the origin or approval of a Tool. The current mount action has no provenance registry; Kohl's grant commands remain separate privileged entry paths. No generic grant API or parallel permission authority was introduced.
+- The observer does not inspect every Tool descendant's executable code, verify all Tool asset IDs against an allowlist, or certify third-party scripts. Those require a complete live hierarchy and asset provenance audit.
+- No vehicle or mount network-owner policy was added. Do not call SetNetworkOwner(nil) on all unanchored parts or character assemblies; first identify actual vehicle/mount assemblies, constraints, drivers, and responsiveness requirements.
+- R6 rigs do not expose the same four NumberValue body-scale values used by the existing R15 scale observer. The Utility Bar scale action is R15-only. R6, R15, and custom-rig behavior must be tested separately rather than forcing an R15 scale policy onto R6.
+
+### Runtime acceptance matrix — outstanding
+
+- [ ] Confirm server observer signals for a new Tool granted into Backpack, Character, and StarterGear after appearance initialization.
+- [ ] Confirm ordinary Backpack ↔ Character equip/unequip transfers do not emit false Tool-removal signals.
+- [ ] Test authorized `give`, `startergive`, `starterremove`, `copytools`, `gear`, `btools`, and `insert` commands; correlate actor, target, resulting Tool, and audit entry. Also test denied actors and malformed targets.
+- [ ] Verify Tool persistence and cleanup through death, respawn, Backpack replacement, StarterGear changes, player departure, and controller teardown.
+- [ ] Test legitimate avatar refresh and appearance reload; record expected accessory add/remove signals and ensure no automatic stripping occurs.
+- [ ] Mutate an existing Accessory Handle's Size and CanCollide values; verify one bounded observation per signal cooldown and no automatic correction.
+- [ ] Test accessories and Tools on R6, R15, and custom rigs, including missing/atypical Handles and equipped Tools.
+- [ ] Verify the actual Mount Tool asset, source container, scripts, grant path, pass gate, and server equip/unequip behavior in Studio.
+- [ ] Inventory every actual vehicle/mount, VehicleSeat/Seat, constraint, driver controller, network owner transition, and cleanup path in the live place.
+- [ ] Inspect the complete installed Kohl's Admin and F3X/Building Tools package descendants, including SyncAPI server handlers, ModuleScript provenance, numeric asset requires, and runtime asset insertion. The 7.4 MB tracked Kohl's Admin model export could not be fully inspected through the available repository reader; the presence of a hardening patch script is not proof it was applied.
+- [ ] Confirm the observer's bounded memory/connection cleanup over repeated respawns, Backpack replacement, player churn, and controller teardown.
+
+**Current status:** tracked first-party mount/companion/Tool Shop/avatar-refresh paths reviewed; Tool and Accessory inventory observation extended as detection-only; installer pin and controller teardown updated. Server grant provenance, native third-party package internals, actual vehicles/mount assets, R6/R15/custom runtime behavior, and all Studio/published-server acceptance remain open. No automatic asset removal or movement enforcement was enabled.
