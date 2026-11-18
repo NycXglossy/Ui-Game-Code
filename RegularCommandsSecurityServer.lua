@@ -208,6 +208,26 @@ return function(_K: any)
 		serverlock = {permission = "GlobalConfig", property = "ServerLock", global = true, auditKind = "AdminAction", budget = "World"},
 		unserverlock = {permission = "GlobalConfig", property = "ServerUnlock", global = true, auditKind = "AdminAction", budget = "World"},
 		shutdown = {permission = "GlobalConfig", property = "Shutdown", global = true, auditKind = "AdminAction", budget = "World"},
+
+		-- Remaining player-facing Kohl's commands verified against the supplied package.
+		name = {permission = "GlobalModeration", property = "DisplayNameChange", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		title = {permission = "GlobalModeration", property = "PlayerTitleChange", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		hidename = {permission = "GlobalModeration", property = "HidePlayerName", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		showname = {permission = "GlobalModeration", property = "ShowPlayerName", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		setcoregui = {permission = "GlobalModeration", property = "ClientCoreGuiControl", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		unforcefield = {permission = "GlobalModeration", property = "ForceFieldRemove", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		sit = {permission = "GlobalModeration", property = "PlayerSit", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		unsit = {permission = "GlobalModeration", property = "PlayerUnsit", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		r6 = {permission = "GlobalModeration", property = "CharacterRigChange", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		removearms = {permission = "GlobalModeration", property = "CharacterArmsRemove", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		removelegs = {permission = "GlobalModeration", property = "CharacterLegsRemove", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		buy = {permission = "GlobalModeration", property = "PlayerPurchasePrompt", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
+		promptgroup = {permission = "GlobalModeration", property = "PlayerGroupJoinPrompt", targetArg = 1, auditKind = "AdminAction", budget = "Broadcast"},
+		uncreeper = {permission = "GlobalModeration", property = "CreeperTransformRevert", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		undog = {permission = "GlobalModeration", property = "DogTransformRevert", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		unchar = {permission = "GlobalModeration", property = "CharacterAppearanceRestore", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		unseizure = {permission = "GlobalModeration", property = "CharacterSeizureClear", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		unspin = {permission = "GlobalModeration", property = "CharacterSpinStop", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 	}
 
 	local BLOCKED_COMMANDS: {[string]: string} = {
