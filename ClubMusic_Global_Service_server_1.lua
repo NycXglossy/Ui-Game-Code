@@ -5,7 +5,8 @@
 --
 -- Uses DataStore for durable global moderation/configuration/receipts and
 -- MessagingService for best-effort cross-server notifications/commands.
--- Rate limiting is bounded and server-local; audio playback is server-local too.
+-- Playback-only sync is opt-in and shares Now Playing only; request queues remain server-local.
+-- Rate limiting is bounded and server-local.
 -- Every receiving server validates messages and applies only allowlisted commands.
 -- MessagingService is not a durable queue; periodic reconciliation handles moderation state.
 
@@ -504,12 +505,15 @@ bindFunction("IsEnabled", function()
 	return SERVICE_ENABLED
 end)
 
--- Diagnostics expose the local-only playback architecture without maintaining
--- cross-server playback state or peer heartbeats.
+-- Diagnostics distinguish optional Now Playing sync from queue ownership.
 local function getGlobalSyncStatus(): {[string]: any}
+	local enabled = globalConfigService ~= nil and globalConfigService:Get("playbackSyncEnabled") == true
 	return {
-		state = "LocalOnly",
-		detail = "Each server owns its own playback and request queue.",
+		state = if enabled then "PlaybackOnly" else "LocalOnly",
+		detail = if enabled then "Now Playing is shared by one fenced leader; request queues remain local."
+			else "Each server plays independently and owns its own request queue.",
+		playbackSyncEnabled = enabled,
+		localQueueIsolated = true,
 		peerCount = 0,
 		queueNotificationsReceived = 0,
 	}
