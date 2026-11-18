@@ -6427,6 +6427,11 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local securityComponents = if typeof(securityHealth.components) == "table" then securityHealth.components else {}
 		local observabilityHealth = if typeof(services.observabilityHealth) == "table" then services.observabilityHealth else {}
 		local adaptiveLoad = if typeof(services.adaptiveLoad) == "table" then services.adaptiveLoad else {}
+		local adaptiveTaskStats = if typeof(adaptiveLoad.taskStats) == "table" then adaptiveLoad.taskStats else {}
+		local function adaptiveUsage(name: string): string
+			local item = if typeof(adaptiveTaskStats[name]) == "table" then adaptiveTaskStats[name] else {}
+			return tostring(item.accepted or 0) .. "/" .. tostring(item.deferred or 0)
+		end
 		local securityReplay = if typeof(services.securityReplay) == "table" then services.securityReplay else {}
 		local safeCall = if typeof(services.safeCall) == "table" then services.safeCall else {}
 		local threatIntelligence = if typeof(services.threatIntelligence) == "table" then services.threatIntelligence else {}
@@ -6482,6 +6487,14 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | Adaptive load " .. tostring(adaptiveLoad.mode or adaptiveLoad.state or "NotInstalled")
 				.. " | Replay " .. tostring(securityReplay.state or "NotInstalled")
 				.. " (" .. tostring(securityReplay.retained or 0) .. "/" .. tostring(securityReplay.capacity or 0) .. ")",
+			"Adaptive load trend: mode duration " .. tostring(math.floor((tonumber(adaptiveLoad.currentModeDurationSeconds) or 0) + 0.5)) .. "s"
+				.. " | healthy recovery windows " .. tostring(adaptiveLoad.recoveryHealthyWindowStreak or adaptiveLoad.healthyStreak or 0)
+				.. " | transitions " .. tostring(adaptiveLoad.transitions or 0)
+				.. " | reason " .. string.sub(tostring(adaptiveLoad.lastTransitionReason or "n/a"), 1, 100),
+			"Adaptive accepted/deferred (Analytics/Diagnostics/Replay/Threat/Maintenance): "
+				.. adaptiveUsage("AnalyticsAggregation") .. " / " .. adaptiveUsage("DiagnosticsSampling") .. " / "
+				.. adaptiveUsage("ReplayQueries") .. " / " .. adaptiveUsage("ThreatReviewQueries") .. " / "
+				.. adaptiveUsage("BackgroundMaintenance"),
 			"SafeCall: " .. tostring(safeCall.calls or 0) .. " calls | failures "
 				.. tostring(safeCall.failures or 0) .. " | recovered " .. tostring(safeCall.recovered or 0),
 			"Threat intelligence: " .. tostring(threatIntelligence.state or "NotInstalled")
@@ -6530,6 +6543,10 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Security signals: " .. tostring(securityMonitor.totalSignals or 0)
 				.. " | alerts " .. tostring(securityMonitor.alerts or 0)
 				.. " | physics " .. tostring(characterPhysics.totalSignals or 0),
+			"Movement observation: interval " .. tostring(if typeof(characterPhysics.movementMeasurement) == "table" then characterPhysics.movementMeasurement.sampleIntervalSeconds or "n/a" else "n/a")
+				.. "s | samples " .. tostring(if typeof(characterPhysics.movementMeasurement) == "table" then characterPhysics.movementMeasurement.samples or 0 else 0)
+				.. " | deferred " .. tostring(if typeof(characterPhysics.movementMeasurement) == "table" then characterPhysics.movementMeasurement.deferredSamples or 0 else 0)
+				.. " | detection-only",
 			"Resource guards: write " .. tostring(writeLane.active or 0) .. "/" .. tostring(writeLane.limit or 0)
 				.. " rejected " .. tostring(writeLane.rejected or 0)
 				.. " | read " .. tostring(readLane.active or 0) .. "/" .. tostring(readLane.limit or 0)
