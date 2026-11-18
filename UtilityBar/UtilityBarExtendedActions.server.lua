@@ -310,8 +310,17 @@ end
 
 -- Only explicitly tagged StageClubLight instances are affected. This keeps the
 -- controls away from Workspace-wide Lighting and unrelated island/environment lights.
-local originalLightState: {[Instance]: {enabled: boolean, color: Color3, brightness: number}} = {}
-local originalBeamState: {[Beam]: ColorSequence} = {}
+type LightSnapshot = {
+	enabled: boolean,
+	color: Color3,
+	brightness: number,
+	lastEnabled: boolean,
+	lastColor: Color3,
+	lastBrightness: number,
+}
+local originalLightState: {[Instance]: LightSnapshot} = {}
+type BeamSnapshot = {original: ColorSequence, lastApplied: ColorSequence}
+local originalBeamState: {[Beam]: BeamSnapshot} = {}
 local function collectStageClubLights(): ({Light}, {Beam})
 	local lights: {Light} = {}
 	local beams: {Beam} = {}
@@ -348,17 +357,39 @@ local function setStageClubLighting(player: Player, request: any): (boolean, str
 		return false, "No stage/club lights are tagged yet. Tag the club and stage light objects 'StageClubLight'."
 	end
 	if request.preset == "Off" then
+		local restored, preserved = 0, 0
 		for _, light in ipairs(lights) do
-			local original = originalLightState[light]
-			if original then
-				light.Enabled = original.enabled
-				light.Color = original.color
-				light.Brightness = original.brightness
+			local snapshot = originalLightState[light]
+			if snapshot then
+				-- Do not overwrite a fixture another authorized system changed
+				-- after our last preset application.
+				if light.Enabled == snapshot.lastEnabled
+					and light.Color == snapshot.lastColor
+					and math.abs(light.Brightness - snapshot.lastBrightness) <= 0.001 then
+					light.Enabled = snapshot.enabled
+					light.Color = snapshot.color
+					light.Brightness = snapshot.brightness
+					restored += 1
+				else
+					preserved += 1
+				end
+				originalLightState[light] = nil
 			end
 		end
 		for _, beam in ipairs(beams) do
-			local original = originalBeamState[beam]
-			if original then beam.Color = original end
+			local snapshot = originalBeamState[beam]
+			if snapshot then
+				if beam.Color == snapshot.lastApplied then
+					beam.Color = snapshot.original
+					restored += 1
+				else
+					preserved += 1
+				end
+				originalBeamState[beam] = nil
+			end
+		end
+		if preserved > 0 then
+			return true, string.format("Restored %d fixtures; preserved %d fixtures changed by another system.", restored, preserved)
 		end
 		return true, "Stage and club lighting restored to its original settings."
 	end
@@ -367,16 +398,26 @@ local function setStageClubLighting(player: Player, request: any): (boolean, str
 	local sequence = ColorSequence.new(preset.color)
 	for _, light in ipairs(lights) do
 		if not originalLightState[light] then
-			originalLightState[light] = {enabled = light.Enabled, color = light.Color, brightness = light.Brightness}
+			originalLightState[light] = {
+				enabled = light.Enabled, color = light.Color, brightness = light.Brightness,
+				lastEnabled = light.Enabled, lastColor = light.Color, lastBrightness = light.Brightness,
+			}
 		end
-		local original = originalLightState[light]
+		local snapshot = originalLightState[light]
+		local appliedBrightness = math.clamp(snapshot.brightness * preset.brightness, 0, 10)
 		light.Enabled = true
 		light.Color = preset.color
-		light.Brightness = math.clamp(original.brightness * preset.brightness, 0, 10)
+		light.Brightness = appliedBrightness
+		snapshot.lastEnabled = true
+		snapshot.lastColor = preset.color
+		snapshot.lastBrightness = appliedBrightness
 	end
 	for _, beam in ipairs(beams) do
-		if not originalBeamState[beam] then originalBeamState[beam] = beam.Color end
+		if not originalBeamState[beam] then
+			originalBeamState[beam] = {original = beam.Color, lastApplied = beam.Color}
+		end
 		beam.Color = sequence
+		originalBeamState[beam].lastApplied = sequence
 	end
 	return true, request.preset .. " lighting applied to the tagged club and stage fixtures."
 end
