@@ -229,6 +229,9 @@ function Service:_attachPlayer(player: Player)
 	table.insert(state.playerConnections, player.CharacterAdded:Connect(function(character)
 		self:_attachCharacter(player, character)
 	end))
+	table.insert(state.playerConnections, player.CharacterRemoving:Connect(function(character)
+		if state.character == character then self:_detachCharacter(state) end
+	end))
 	if player.Character then self:_attachCharacter(player, player.Character) end
 end
 
