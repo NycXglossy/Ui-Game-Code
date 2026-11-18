@@ -399,3 +399,8 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 
 - Menu typography now uses a maintained text-object index instead of repeating a full panel descendant scan on every render/layout update. The original typography scaling and wrapping rules are retained.
 - Static source verification only; Studio and device regression testing remain outstanding.
+
+### Performance compatibility follow-up — typography no-op guard
+
+- Menu typography skips property rewrites when its indexed text targets and device/viewport-width inputs are unchanged. New descendants and responsive layout changes invalidate the guard.
+- Existing typography calculations are preserved. Static verification only; Studio/device testing remains outstanding.
