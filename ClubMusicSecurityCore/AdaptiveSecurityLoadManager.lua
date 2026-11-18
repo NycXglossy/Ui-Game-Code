@@ -11,6 +11,7 @@ Service.__index = Service
 
 local SAMPLE_WINDOW_SECONDS = 5
 local MAX_FRAME_DELTA = 2
+local MAX_COUNTER = 1000000000
 local TASK_POLICIES = {
 	DiagnosticsSampling = {
 		Normal = {rate = 2, burst = 4},
@@ -52,11 +53,22 @@ local function finite(value: any): boolean
 		and value > -math.huge and value < math.huge
 end
 
+local function newTaskStats()
+	local stats = {}
+	for taskName in pairs(TASK_POLICIES) do
+		stats[taskName] = {attempted = 0, accepted = 0, deferred = 0}
+	end
+	return stats
+end
+
 function Service.new(dependencies: {[string]: any}?)
 	local d = if typeof(dependencies) == "table" then dependencies else {}
 	return setmetatable({
 		d = d,
 		mode = "Normal",
+		modeSince = os.clock(),
+		modeDurations = {Normal = 0, Reduced = 0, Critical = 0},
+		taskStats = newTaskStats(),
 		started = false,
 		connection = nil,
 		windowElapsed = 0,
@@ -85,8 +97,11 @@ end
 function Service:_transition(nextMode: string, reason: string)
 	if nextMode == self.mode then return end
 	local previous = self.mode
+	local nowClock = os.clock()
+	self.modeDurations[previous] = math.min(MAX_COUNTER, (self.modeDurations[previous] or 0) + math.max(0, nowClock - self.modeSince))
+	self.modeSince = nowClock
 	self.mode = nextMode
-	self.transitions += 1
+	self.transitions = math.min(MAX_COUNTER, self.transitions + 1)
 	self.lastTransitionAt = os.time()
 	self.lastTransitionReason = string.sub(reason, 1, 96)
 	for taskName, bucket in pairs(self.buckets) do
@@ -147,10 +162,16 @@ end
 function Service:TryConsume(taskName: any, amount: any?): boolean
 	if typeof(taskName) ~= "string" or #taskName < 1 or #taskName > 40 then return false end
 	if ESSENTIAL_TASKS[taskName] then return true end
-	local cost = if amount == nil then 1 else amount
-	if not finite(cost) or cost <= 0 or cost > 10 then return false end
+	local stats = self.taskStats[taskName]
 	local policy = self:_policy(taskName)
-	if not policy or policy.rate <= 0 or policy.burst <= 0 then return false end
+	if not stats or not policy then return false end
+	stats.attempted = math.min(MAX_COUNTER, stats.attempted + 1)
+
+	local cost = if amount == nil then 1 else amount
+	if not finite(cost) or cost <= 0 or cost > 10 or policy.rate <= 0 or policy.burst <= 0 then
+		stats.deferred = math.min(MAX_COUNTER, stats.deferred + 1)
+		return false
+	end
 
 	local now = os.clock()
 	local bucket = self.buckets[taskName]
@@ -160,8 +181,12 @@ function Service:TryConsume(taskName: any, amount: any?): boolean
 	end
 	bucket.tokens = math.min(policy.burst, bucket.tokens + math.max(0, now - bucket.updatedAt) * policy.rate)
 	bucket.updatedAt = now
-	if bucket.tokens < cost then return false end
+	if bucket.tokens < cost then
+		stats.deferred = math.min(MAX_COUNTER, stats.deferred + 1)
+		return false
+	end
 	bucket.tokens -= cost
+	stats.accepted = math.min(MAX_COUNTER, stats.accepted + 1)
 	return true
 end
 
@@ -172,23 +197,48 @@ function Service:GetBudget(taskName: any)
 	end
 	local policy = self:_policy(taskName)
 	if not policy then return nil end
-	return {ratePerSecond = policy.rate, burst = policy.burst, throttled = policy.rate <= 0}
+	local bucket = self.buckets[taskName]
+	local stats = self.taskStats[taskName] or {attempted = 0, accepted = 0, deferred = 0}
+	local tokens = if bucket then bucket.tokens else policy.burst
+	return {
+		ratePerSecond = policy.rate,
+		burst = policy.burst,
+		tokens = tokens,
+		throttled = policy.rate <= 0,
+		attempted = stats.attempted,
+		accepted = stats.accepted,
+		deferred = stats.deferred,
+	}
 end
 
 function Service:GetStatus()
 	local budgets = {}
+	local taskStats = {}
+	local modeDurations = {}
+	local deferredTotal = 0
 	for taskName, policies in pairs(TASK_POLICIES) do
 		local policy = policies[self.mode]
 		local bucket = self.buckets[taskName]
+		local stats = self.taskStats[taskName]
 		budgets[taskName] = {
 			ratePerSecond = policy.rate,
 			burst = policy.burst,
 			tokens = if bucket then bucket.tokens else policy.burst,
+			throttled = policy.rate <= 0,
 		}
+		taskStats[taskName] = table.clone(stats)
+		deferredTotal = math.min(MAX_COUNTER, deferredTotal + stats.deferred)
 	end
+	for modeName, duration in pairs(self.modeDurations) do
+		modeDurations[modeName] = duration
+	end
+	local currentModeDuration = math.max(0, os.clock() - self.modeSince)
+	modeDurations[self.mode] = math.min(MAX_COUNTER, (modeDurations[self.mode] or 0) + currentModeDuration)
 	return {
 		state = if self.started then "Observing" else "Stopped",
 		mode = self.mode,
+		currentModeDurationSeconds = currentModeDuration,
+		modeDurationsSeconds = modeDurations,
 		sampleWindowSeconds = SAMPLE_WINDOW_SECONDS,
 		sampleCount = self.sampleCount,
 		lastAverageHeartbeatDelta = self.lastAverageDelta,
@@ -200,12 +250,17 @@ function Service:GetStatus()
 		overloadStreak = self.overloadStreak,
 		criticalStreak = self.criticalStreak,
 		healthyStreak = self.healthyStreak,
+		recoveryHealthyWindowStreak = self.healthyStreak,
 		budgets = budgets,
+		taskStats = taskStats,
+		deferredTotal = deferredTotal,
 		essentialTasksAlwaysAllowed = true,
 		securityEventRecordingThrottled = false,
 		storageWrites = 0,
 		clientRemotes = 0,
 		automaticEnforcement = false,
+		scope = "ServerLocal",
+		persistentStorage = false,
 	}
 end
 
