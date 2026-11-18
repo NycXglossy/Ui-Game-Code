@@ -452,3 +452,10 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 - Re-fetched the changed Global Service and confirmed both services appear in the cleanup list alongside Audit, EventLog, SecurityMonitor, Idempotency, IncidentResponse, Diagnostics, ServerHealth, and Watchdog. No remotes, permissions, DataStore schemas, purchase paths, moderation rules, shared coordination, or playback behavior were changed.
 - The remaining non-looping services (Maintenance, SecurityPolicy, MessageValidation, and EventLog facade) expose no-op Stop methods in the reviewed source; no extra cleanup behavior was necessary. Authorization is obtained through the SecurityCore shared instance and its Stop method disconnects owned player connections.
 - Static source inspection only. No Luau compiler, Studio runtime, live place, or device test was used.
+
+
+## Performance compatibility follow-up — optional startup failure isolation
+
+The Global Service startup path now wraps each optional operational service `Start()` independently. A thrown startup error is bounded in the warning, triggers best-effort `Stop()` cleanup for partially initialized resources, marks that service unavailable in the local registry, and clears its active service reference. Later services and the shutdown janitor can still initialize. The SecurityCore Authorization startup retains its separate protected, fail-closed path. The diagnostics coordinator already uses protected delayed startup. Message validation remains fail-closed: if it cannot start, inbound cross-server envelopes are rejected. No purchase/receipt, moderation enforcement, permission, persistence schema, remote, or cross-server coordination behavior was weakened.
+
+Static source review only; no Luau compiler, Roblox Studio runtime, live place, or device test was available. The change has not been installed or deployed.
