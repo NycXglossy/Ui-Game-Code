@@ -32,6 +32,7 @@ Extend Phase 14/16 observability without replacing the existing diagnostics stac
 - The existing detailed Diagnostics commands remain available from the overview's **Detailed Commands** control or by selecting the Diagnostics category again.
 - Client FPS, ping, and client memory are read from the existing opt-in `ClubMusic_Client_Diagnostics_Service` directly on the staff member's client.
 - Client sampling starts only when an authorized staff member opens the Diagnostics overview, stops when the console closes or another category is selected, and can be restarted when the overview is reopened.
+- The console opts out of the client module's optional workspace-effects scan and AudioPlayer sampling; only FPS/frame-time, memory, and ping sampling are enabled for this lightweight panel.
 - Client readings are labeled untrusted and local-only. They are never transmitted to the server and never influence authorization, enforcement, or server health.
 
 ### 4. Health history and trend detection
