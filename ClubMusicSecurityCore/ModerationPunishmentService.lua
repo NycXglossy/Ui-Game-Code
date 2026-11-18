@@ -13,7 +13,6 @@ Service.__index = Service
 local MAX_HISTORY = 50
 local RETENTION_SECONDS = 180 * 24 * 60 * 60
 local MAX_REASON_LENGTH = 240
-local MAX_DISPLAY_LENGTH = 180
 local MIN_TEMP_BAN_SECONDS = 60
 local MAX_TEMP_BAN_SECONDS = 365 * 24 * 60 * 60
 local MAX_RESTRICTION_KEYS = 12
@@ -56,6 +55,7 @@ function Service.new(options: {[string]: any})
 		authorization = options.authorization,
 		store = DataStoreService:GetDataStore(storeName),
 		onAudit = if type(options.onAudit) == "function" then options.onAudit else function() end,
+		onNotify = if type(options.onNotify) == "function" then options.onNotify else function() end,
 		started = false,
 		lastError = nil,
 	}, Service)
@@ -221,9 +221,10 @@ function Service:Issue(actor: Player, targetUserId: number, action: {[string]: a
 	self:_audit("PunishmentIssued", actor.UserId, targetUserId, caseId, kind)
 	local target = Players:GetPlayerByUserId(targetUserId)
 	if kind == "Warn" and target then
-		target:Kick("A moderator has issued a formal warning. Please review the experience rules before rejoining.")
+		-- Notification is presentation only; the warning remains in durable case history.
+		pcall(self.onNotify, target, "warn", "A moderator has issued a formal warning. Please review the experience rules.")
 	elseif kind == "Restrict" and target then
-		for _, key in ipairs(restriction :: {string}) do target:SetAttribute("TikiTideRestricted_" .. key, true) end
+		pcall(self.onNotify, target, "warn", "One or more experience features have been restricted by moderation.")
 	end
 	return true, "Punishment recorded.", caseId
 end
@@ -303,9 +304,12 @@ function Service:Unban(actor: Player, targetUserId: number, reason: string): (bo
 	return true, "Active Roblox ban reversed and moderation history retained."
 end
 
-function Service:GetHistory(targetUserId: number, limit: number): (boolean, {any}?)
-	if not validUserId(targetUserId) or typeof(limit) ~= "number" or limit % 1 ~= 0
-		or limit < 1 or limit > 20 then return false, nil end
+function Service:GetHistory(actor: Player, targetUserId: number, limit: number): (boolean, {any}?)
+	if typeof(actor) ~= "Instance" or not actor:IsA("Player") or actor.Parent ~= Players
+		or not validUserId(targetUserId) or typeof(limit) ~= "number" or limit % 1 ~= 0
+		or limit < 1 or limit > 20 or not hasPermission(self.authorization, actor, "GlobalModeration") then
+		return false, nil
+	end
 	local ok, result = pcall(function() return self.store:GetAsync(tostring(targetUserId)) end)
 	if not ok or typeof(result) ~= "table" or typeof(result.history) ~= "table" then return false, nil end
 	local output = {}
@@ -318,6 +322,32 @@ function Service:GetHistory(targetUserId: number, limit: number): (boolean, {any
 				at = item.at, expiresAt = item.expiresAt, reason = item.reason,
 				altPropagationRequested = item.altPropagationRequested == true,
 			})
+		end
+	end
+	self:_audit("ModerationHistoryViewed", actor.UserId, targetUserId, "history", "Bounded history query.")
+	return true, output
+end
+
+-- Internal adapter for AccountRiskSignalService. It returns only normalized,
+-- verified server-recorded outcomes and omits reasons and evidence text.
+function Service:GetRiskHistory(targetUserId: number, limit: number): (boolean, {any}?)
+	if not validUserId(targetUserId) or typeof(limit) ~= "number" or limit % 1 ~= 0
+		or limit < 1 or limit > MAX_HISTORY then return false, nil end
+	local ok, result = pcall(function() return self.store:GetAsync(tostring(targetUserId)) end)
+	if not ok or typeof(result) ~= "table" or typeof(result.history) ~= "table" then return false, nil end
+	local output = {}
+	local seenCases: {[string]: boolean} = {}
+	for index = #result.history, 1, -1 do
+		local item = result.history[index]
+		if typeof(item) == "table" and item.status == "Active"
+			and typeof(item.caseId) == "string" and not seenCases[item.caseId]
+			and typeof(item.at) == "number" then
+			seenCases[item.caseId] = true
+			table.insert(output, {
+				caseId = item.caseId, verified = true, category = item.kind,
+				at = item.at, kind = item.kind,
+			})
+			if #output >= limit then break end
 		end
 	end
 	return true, output
