@@ -474,3 +474,11 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - Inbound callbacks now stop before processing once shutdown has begun. Topic supervisors monitor each returned connection's Connected state at a five-second interval and retry a disconnected subscription rather than leaving it reported Active.
 - The existing four topics and all message envelope validation, replay suppression, moderation, announcement, catalog, and XP boost handling remain unchanged. No new cross-server topic or diagnostic traffic was introduced.
 - Static source inspection only; no Luau compiler, Roblox Studio runtime, live place, or device test was performed. The change has not been installed or deployed.
+
+
+### Performance compatibility follow-up — MessagingService publishing limits and delivery semantics
+
+- Added pre-publish JSON encoding and a conservative 900-byte payload ceiling. Inbound validation uses the same effective limit: the lower of the configured shared security-policy byte limit and the 900-byte hard cap. Lower administrator settings remain effective; policy values cannot exceed the Roblox-documented 1 KiB MessagingService payload limit.
+- Encoding/size failures are recorded as publish failures and rejected before `PublishAsync`. No blind automatic retry was added because MessagingService delivery is best-effort and retries can amplify throttling or duplicate side effects.
+- Clarified the meaning of success: it indicates backend acceptance, not delivery to every subscriber. Moderation durable state retains its existing 180-second reconciliation; XP boost state is refreshed by controllers every 45–60 seconds. Catalog and track-moderation publish failures now emit explicit warnings. Track moderation remains durable, but a remote server may retain a cached decision until its existing 300-second cache expires or an authoritative read refreshes it. Announcements remain best-effort.
+- No topic schema, message handler, durable write, receipt behavior, or authorization rule changed. Static source inspection only; no Luau compiler, Roblox runtime, delivery test, or live deployment was performed.
