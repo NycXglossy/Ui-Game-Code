@@ -60,7 +60,7 @@ The existing Phase 21 `SecurityClient.client.lua` remains separate and unchanged
 - Current-server lockdown requires Security Core `SecurityPolicy`.
 - Exact online username removal requires Security Core `GlobalModeration`.
 - The first graphical-console slice does not add mute, freeze, teleport, warn, ban, or global lockdown.
-- Console visibility is enabled for Security Core level 2+ and rechecked every 30 seconds.
+- Console visibility is enabled for Security Core level 2+ and polled every 30 seconds. The Security Core group-rank cache itself refreshes on its existing 120–300 second schedule, so a changed group rank may take up to the remaining cache lifetime to affect visibility and server authorization.
 - The server reauthorizes every state-changing request. GUI visibility is not a security boundary.
 - Target staff status is checked through Security Core; staff targets and unverifiable targets are protected from removal.
 
