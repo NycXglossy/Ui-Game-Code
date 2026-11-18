@@ -287,3 +287,16 @@ No live Roblox place was modified. No diagnostics sharing, persistence, client t
 - [ ] Published test-server acceptance.
 
 No Roblox runtime testing was performed by the source update. Do not install or publish this branch until the release gates pass and the project owner explicitly approves deployment.
+
+
+## Phase 33 — Developer Product receipt migration (source-only)
+
+- `ClubMusicSecurityCore.ReceiptAuthority` remains the single receipt ingress coordinator; the controller retains exactly one `MarketplaceService.ProcessReceipt` adapter.
+- Added `ClubMusicSecurityCore.ReceiptTransactionService` for the durable profile receipt journal, pending-receipt recovery, session-lock checks, and in-memory reconciliation.
+- Added `ClubMusicSecurityCore.ReceiptHash` and migrated both the controller and Global Service to it. The standalone root-level `ClubMusic_ReceiptHash.lua` was deleted after its consumers were moved.
+- Removed controller-owned `persistReceipt` / `recoverPendingProductReceipt` implementations and receipt-memory cache tables. The controller now provides profile/session and reward adapters to Security Core.
+- Preserved `ClubMusic_ProductReceipts_v1`, `ClubMusic_XPBoostReceipts_v1`, journal key formats, full PurchaseId comparisons, Prepared/Completed states, pending markers, profile schema compatibility, legacy XP key reads, product IDs, and reward mappings.
+- The Global Service continues to own the shared XP boost transaction journal because it coordinates the cross-server boost timer. No duplicate global receipt implementation was introduced.
+- Updated installer module inventory and pinned source snapshot for `ReceiptHash` and `ReceiptTransactionService`; added Phase 33 migration documentation.
+
+**Validation boundary:** Source changes only. The disposable Studio purchase matrix, injected DataStore failures, interrupted-receipt recovery, profile-save race, and two-server XP boost regression tests are still mandatory. No production DataStore or live Roblox place was changed. Do not delete historical journal records, legacy profile receipt fields, or legacy XP compatibility reads.
