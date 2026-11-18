@@ -2690,8 +2690,15 @@ ControllerFunctions.filterTitleText = function(player: Player, rawText: string):
 	if trimmed == "" then return "" end
 	local characterLength = utf8.len(trimmed)
 	if not characterLength or characterLength > MAX_CUSTOM_TITLE_LENGTH then return nil end
+	if phase32Services then
+		local filterOk, filtered = phase32Services:FilterBroadcast(player, trimmed)
+		if not filterOk or typeof(filtered) ~= "string" then return nil end
+		return ControllerFunctions.truncateUtf8(filtered, MAX_CUSTOM_TITLE_LENGTH)
+	end
+	-- Compatibility fallback while the Phase 32 module bundle is not installed.
+	-- Still fail closed and never display raw player text.
 	local ok, result = pcall(function()
-		local filtered = TextService:FilterStringAsync(trimmed, player.UserId)
+		local filtered = TextService:FilterStringAsync(trimmed, player.UserId, Enum.TextFilterContext.PublicChat)
 		return filtered:GetNonChatStringForBroadcastAsync()
 	end)
 	if not ok or typeof(result) ~= "string" then return nil end
@@ -4926,6 +4933,11 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "RequestTrack" then
+		if phase32Services then
+			local restrictionOk, restricted = phase32Services:IsRestricted(player.UserId, "MusicRequests")
+			if not restrictionOk then notify(player, "Moderation restrictions could not be verified. Requests are temporarily unavailable.", "warn"); return end
+			if restricted then notify(player, "Your music requests are restricted by moderation.", "warn"); return end
+		end
 		local trackId = payload.trackId
 		if not ControllerFunctions.isValidString(trackId, 24) then return end
 		local track = TRACK_BY_ID[trackId]
@@ -5455,6 +5467,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	-- Legacy single custom title: stored in slot 1 as a fixed-color title.
 	if action == "SaveCustomTitle" then
+		if phase32Services then
+			local restrictionOk, restricted = phase32Services:IsRestricted(player.UserId, "CustomText")
+			if not restrictionOk or restricted then notify(player, "Custom titles are unavailable under your current moderation restrictions.", "warn"); return end
+		end
 		local profile = profiles[player.UserId]
 		if not profile then return end
 
@@ -5497,6 +5513,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	-- Extended title slots ------------------------------------------------------------
 
 	if action == "SaveTitleSlot" then
+		if phase32Services then
+			local restrictionOk, restricted = phase32Services:IsRestricted(player.UserId, "CustomText")
+			if not restrictionOk or restricted then notify(player, "Custom titles are unavailable under your current moderation restrictions.", "warn"); return end
+		end
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		if typeof(payload.text) ~= "string" then return end
