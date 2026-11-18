@@ -26,7 +26,7 @@ The status command is read-only and uses the same SecurityCore permission gate. 
 - No notification is automatically sent to the observed player by this feature.
 - TikiTideSpectatorNoWorldActions is a server-owned attribute for gameplay services to honor; not every gameplay service has yet been proven to consume it. Do not describe this as a universal action lock.
 - Camera following is client presentation only; it cannot authorize observation.
-- No new UI layout or mobile changes were made.
+- The original spectator-command slice introduced no UI changes; the revised graphical console is documented below.
 - Diagnostics, replay, threat review and incident commands retain their existing independent permissions.
 
 ## Test checklist
