@@ -171,3 +171,6 @@ The console uses action buttons and context-labelled fields rather than requirin
 - [ ] Test playback, requests, queue, DJ sessions, moderation, security, diagnostics, and PC/mobile UI in Studio before release.
 
 **Release boundary:** Source-only feature branch. No Studio/runtime test, published multiplayer test, merge, or live deployment has been performed.
+
+
+**Moderation boundary clarification:** The earlier standalone `KickPlayer` console action has been removed from the revised Phase 22 server surface. Staff moderation is routed through the existing Phase 32 warn/restrict/ban/unban operations, preserving their graduated authorization and punishment history. The local door lockdown remains separate.
