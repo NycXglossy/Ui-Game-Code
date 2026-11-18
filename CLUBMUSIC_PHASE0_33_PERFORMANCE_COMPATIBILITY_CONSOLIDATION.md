@@ -440,3 +440,14 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - All 10 distinct controller-referenced endpoints have matching service registrations; no controller call targets a missing endpoint. The service exposes 47 distinct BindableFunction endpoints; the remaining 37 are administrative, security, diagnostics, or compatibility endpoints not directly invoked by the main controller source.
 - The controller resolves the folder and endpoint by name on every invocation, preserves the full return tuple with `table.pack`, and wraps invocation with `pcall`. Event notifications use the separate lifecycle-aware BindableEvent watcher described above.
 - Static source inventory only; no endpoint invocation, authorization, Luau compilation, Roblox Studio/runtime test, or deployment was performed.
+
+
+
+### Global authorization cache lifecycle hardening (2026-11-18)
+
+- Audited the SecurityCore authorization service's group-rank cache and stop/restart behavior. Existing authorization decisions remain bounded by the 120–300 second cache TTL; expired or failed group-rank lookups deny protected actions and schedule a retry rather than retaining a stale positive result indefinitely.
+- Closed a lifecycle race where a yielding `GetRankInGroup` lookup could complete after `Stop()` (or after a replacement lookup had begun) and repopulate or interfere with the authorization cache. Each refresh now owns a unique token and lifecycle generation; completion may publish only while the same service generation and refresh token remain current.
+- `Stop()` now marks the service stopped and advances its generation before disconnecting listeners or clearing cache/in-flight state. Permission checks, rank reads, membership checks, refresh scheduling, and refresh execution all deny/return guest while stopped. Reacquiring the shared singleton restarts its listeners.
+- Changes to group ID, Studio-staff mode, thresholds, or configured staff IDs invalidate cached decisions and in-flight refresh ownership so configuration changes cannot reuse old authorization results.
+- Permission levels, group-rank thresholds, staff IDs, Studio policy, and the 120–300 second cache TTL were not changed. No client-side authorization, remotes, persistence, cross-server state, or diagnostics telemetry was added.
+- Static source inspection only; no Luau compilation, concurrent Stop/restart simulation, Roblox group API fault injection, Roblox Studio/runtime test, or deployment was performed.
