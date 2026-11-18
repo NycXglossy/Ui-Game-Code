@@ -84,6 +84,12 @@ function Service:_update(userId: number, transform: (any) -> any): (boolean, any
 				end
 			end
 			record.history = retained
+			for caseId, item in pairs(record.active) do
+				if typeof(item) == "table" and typeof(item.expiresAt) == "number"
+					and item.expiresAt > 0 and item.expiresAt <= now then
+					record.active[caseId] = nil
+				end
+			end
 			return transform(record)
 		end)
 	end)
@@ -98,6 +104,42 @@ end
 function Service:_appendHistory(record: any, item: {[string]: any})
 	table.insert(record.history, item)
 	while #record.history > MAX_HISTORY do table.remove(record.history, 1) end
+end
+
+function Service:_readRecord(userId: number): (boolean, any)
+	local ok, result = pcall(function() return self.store:GetAsync(tostring(userId)) end)
+	if not ok then
+		self.lastError = string.sub(tostring(result), 1, 180)
+		return false, nil
+	end
+	if typeof(result) ~= "table" then return true, nil end
+	local now = os.time()
+	local needsPrune = false
+	if typeof(result.history) == "table" then
+		for _, item in ipairs(result.history) do
+			if typeof(item) ~= "table" or typeof(item.at) ~= "number"
+				or now - item.at > RETENTION_SECONDS then
+				needsPrune = true
+				break
+			end
+		end
+	end
+	if typeof(result.active) == "table" then
+		for _, item in pairs(result.active) do
+			if typeof(item) == "table" and typeof(item.expiresAt) == "number"
+				and item.expiresAt > 0 and item.expiresAt <= now then
+				needsPrune = true
+				break
+			end
+		end
+	end
+	if needsPrune then
+		local pruneOk, pruned = self:_update(userId, function(record) return record end)
+		if not pruneOk then return false, nil end
+		result = pruned
+	end
+	self.lastError = nil
+	return true, result
 end
 
 function Service:Issue(actor: Player, targetUserId: number, action: {[string]: any}): (boolean, string?, string?)
@@ -165,7 +207,7 @@ function Service:Issue(actor: Player, targetUserId: number, action: {[string]: a
 	}
 	local writeOk = self:_update(targetUserId, function(record)
 		if typeof(record.active) ~= "table" then record.active = {} end
-		record.active[caseId] = sanction
+		if kind ~= "Warn" then record.active[caseId] = sanction end
 		self:_appendHistory(record, table.clone(sanction))
 		return record
 	end)
@@ -187,7 +229,7 @@ function Service:Issue(actor: Player, targetUserId: number, action: {[string]: a
 			UserIds = {targetUserId},
 			Duration = duration,
 			DisplayReason = "You are suspended from FireBeach Tiki Tide Music Festival Club. You may appeal through the experience's published appeal process.",
-			PrivateReason = "Tiki Tide case " .. caseId .. " | " .. reason,
+			PrivateReason = "Tiki Tide moderation case " .. caseId,
 			ExcludeAltAccounts = not propagateAlt,
 			ApplyToUniverse = true,
 		}
@@ -206,7 +248,11 @@ function Service:Issue(actor: Player, targetUserId: number, action: {[string]: a
 
 	local activateOk = self:_update(targetUserId, function(record)
 		local current = record.active and record.active[caseId]
-		if current then current.status = "Active" end
+		if current then
+			current.status = "Active"
+			-- Detailed reasons remain in the bounded 180-day history only.
+			current.reason = nil
+		end
 		self:_appendHistory(record, {caseId = caseId, kind = kind, status = "Active",
 			actorUserId = actor.UserId, targetUserId = targetUserId, at = os.time(),
 			reason = reason, altPropagationRequested = propagateAlt})
@@ -233,8 +279,8 @@ end
 
 function Service:GetActive(targetUserId: number): (boolean, any)
 	if not validUserId(targetUserId) then return false, nil end
-	local ok, result = pcall(function() return self.store:GetAsync(tostring(targetUserId)) end)
-	if not ok or typeof(result) ~= "table" or typeof(result.active) ~= "table" then return false, nil end
+	local readOk, result = self:_readRecord(targetUserId)
+	if not readOk or typeof(result) ~= "table" or typeof(result.active) ~= "table" then return false, nil end
 	local now = os.time()
 	local active = {}
 	for caseId, item in pairs(result.active) do
@@ -304,7 +350,7 @@ function Service:Unban(actor: Player, targetUserId: number, reason: string): (bo
 	if not hasPermission(self.authorization, actor, "GlobalModeration") then
 		return false, "GlobalModeration permission is required."
 	end
-	local fetchOk, existing = pcall(function() return self.store:GetAsync(tostring(targetUserId)) end)
+	local fetchOk, existing = self:_readRecord(targetUserId)
 	if not fetchOk then return false, "Punishment history is unavailable; unban denied." end
 	local requiresSenior = false
 	if typeof(existing) == "table" and typeof(existing.active) == "table" then
@@ -346,8 +392,8 @@ function Service:GetHistory(actor: Player, targetUserId: number, limit: number):
 		or limit < 1 or limit > 20 or not hasPermission(self.authorization, actor, "GlobalModeration") then
 		return false, nil
 	end
-	local ok, result = pcall(function() return self.store:GetAsync(tostring(targetUserId)) end)
-	if not ok or typeof(result) ~= "table" or typeof(result.history) ~= "table" then return false, nil end
+	local readOk, result = self:_readRecord(targetUserId)
+	if not readOk or typeof(result) ~= "table" or typeof(result.history) ~= "table" then return false, nil end
 	local output = {}
 	for index = #result.history, math.max(1, #result.history - limit + 1), -1 do
 		local item = result.history[index]
@@ -389,8 +435,8 @@ end
 function Service:GetRiskHistory(targetUserId: number, limit: number): (boolean, {any}?)
 	if not validUserId(targetUserId) or typeof(limit) ~= "number" or limit % 1 ~= 0
 		or limit < 1 or limit > MAX_HISTORY then return false, nil end
-	local ok, result = pcall(function() return self.store:GetAsync(tostring(targetUserId)) end)
-	if not ok or typeof(result) ~= "table" or typeof(result.history) ~= "table" then return false, nil end
+	local readOk, result = self:_readRecord(targetUserId)
+	if not readOk or typeof(result) ~= "table" or typeof(result.history) ~= "table" then return false, nil end
 	local output = {}
 	local seenCases: {[string]: boolean} = {}
 	for index = #result.history, 1, -1 do
