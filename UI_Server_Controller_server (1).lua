@@ -6419,6 +6419,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 		local memory = if typeof(serverHealth.memory) == "table" then serverHealth.memory else {}
 		local registry = if typeof(services.serviceRegistry) == "table" then services.serviceRegistry else {}
 		local registryCounts = if typeof(registry.counts) == "table" then registry.counts else {}
+		local healthTransitions = if typeof(health.healthHistory) == "table" then health.healthHistory else {}
+		local latestHealthTransition = if #healthTransitions > 0 and typeof(healthTransitions[#healthTransitions]) == "table"
+			then healthTransitions[#healthTransitions] else {}
 		local errorHistory = if typeof(services.errorHistory) == "table" then services.errorHistory else {}
 		local securityHealth = if typeof(services.securityHealth) == "table" then services.securityHealth else {}
 		local securityComponents = if typeof(securityHealth.components) == "table" then securityHealth.components else {}
@@ -6453,6 +6456,14 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			"Health dimensions: cross-server " .. tostring(health.crossServerState or "Unavailable")
 				.. " | performance " .. tostring(health.performanceState or "Unavailable")
 				.. " | watchdog " .. tostring(health.watchdogState or "Unavailable"),
+			"Health trend: state age " .. tostring(health.stateDurationSeconds or 0) .. "s"
+				.. " | degraded duration " .. tostring(health.degradedDurationSeconds or 0) .. "s"
+				.. " | consecutive degraded checks " .. tostring(health.consecutiveDegradedChecks or 0)
+				.. " | transitions retained " .. tostring(#healthTransitions) .. "/" .. tostring(health.healthHistoryCapacity or 20)
+				.. " | last recovery " .. tostring(health.lastRecoveredAt or "none"),
+			"Last health transition: " .. tostring(latestHealthTransition.from or "n/a")
+				.. " -> " .. tostring(latestHealthTransition.to or "n/a")
+				.. " | " .. tostring(latestHealthTransition.detail or "No transition recorded."),
 			"Server runtime: " .. tostring(serverHealth.state or "NotInstalled")
 				.. " | Heartbeat max " .. tostring(math.floor((tonumber(heartbeat.maxDeltaSeconds) or 0) * 1000)) .. "ms"
 				.. " | Memory " .. tostring(memory.usageMb or "n/a") .. " MB (" .. tostring(memory.state or "n/a") .. ")"
@@ -6461,7 +6472,8 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 				.. " | total " .. tostring(registry.serviceCount or 0)
 				.. " | healthy " .. tostring(registryCounts.Healthy or 0)
 				.. " | degraded " .. tostring(registryCounts.Degraded or 0)
-				.. " | unavailable " .. tostring(registryCounts.Unavailable or 0),
+				.. " | unavailable " .. tostring(registryCounts.Unavailable or 0)
+				.. " | verified dependencies " .. tostring(registry.dependencyCount or 0),
 			"Recovery: " .. tostring(recovery.state or "Unavailable"),
 			"Watchdog: " .. tostring(watchdog.state or "Unavailable"),
 			"Observability: " .. tostring(observabilityHealth.state or "Unavailable")
