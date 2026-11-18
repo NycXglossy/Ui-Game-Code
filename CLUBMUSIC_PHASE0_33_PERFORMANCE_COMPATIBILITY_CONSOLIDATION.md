@@ -432,3 +432,11 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - The service now tracks the exact BindableFunction instances and callback functions it binds. On Script destruction it clears an endpoint only if the same instance is still in the owned API folder and its current `OnInvoke` is still the callback owned by the shutting-down Script. This prevents stale service closures while avoiding clearing a replacement service's newer callback.
 - No API names/signatures, authorization, moderation semantics, persistence, remotes, cross-server state, or diagnostics telemetry changed. Missing endpoints continue to fail closed through the controller's existing protected invocation path.
 - Static source review only; no Luau compilation, BindableFunction lifecycle simulation, Roblox Studio/runtime test, or deployment was performed.
+
+
+### Global API endpoint contract inventory (2026-11-18)
+
+- Compared every literal `globalInvoke` endpoint referenced by the controller against the Global Service's `bindFunction` registrations.
+- All 10 distinct controller-referenced endpoints have matching service registrations; no controller call targets a missing endpoint. The service exposes 47 distinct BindableFunction endpoints; the remaining 37 are administrative, security, diagnostics, or compatibility endpoints not directly invoked by the main controller source.
+- The controller resolves the folder and endpoint by name on every invocation, preserves the full return tuple with `table.pack`, and wraps invocation with `pcall`. Event notifications use the separate lifecycle-aware BindableEvent watcher described above.
+- Static source inventory only; no endpoint invocation, authorization, Luau compilation, Roblox Studio/runtime test, or deployment was performed.
