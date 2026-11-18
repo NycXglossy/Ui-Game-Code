@@ -424,3 +424,11 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Static source review only; no Luau compilation, BindableEvent lifecycle simulation, Roblox Studio/runtime test, or deployment was performed.
 
 - Follow-up cleanup: removed the obsolete one-time `globalEventObject` capture; all event attachment now flows through the lifecycle-aware watcher. No additional top-level local was introduced.
+
+
+### Global API BindableFunction shutdown invalidation (2026-11-18)
+
+- Audited the Global Service's BindableFunction bridge during service restart/removal. The controller now reattaches its GlobalEvent listener when the API folder/event is recreated, but the service previously left its old BindableFunction `OnInvoke` callbacks installed when its Script was destroyed. Those closures could remain callable until a replacement service rebound them.
+- The service now tracks the exact BindableFunction instances and callback functions it binds. On Script destruction it clears an endpoint only if the same instance is still in the owned API folder and its current `OnInvoke` is still the callback owned by the shutting-down Script. This prevents stale service closures while avoiding clearing a replacement service's newer callback.
+- No API names/signatures, authorization, moderation semantics, persistence, remotes, cross-server state, or diagnostics telemetry changed. Missing endpoints continue to fail closed through the controller's existing protected invocation path.
+- Static source review only; no Luau compilation, BindableFunction lifecycle simulation, Roblox Studio/runtime test, or deployment was performed.
