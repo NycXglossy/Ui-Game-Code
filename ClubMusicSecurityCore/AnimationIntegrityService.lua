@@ -12,7 +12,8 @@ local MAX_INITIAL_TRACKS_TO_INSPECT = 64
 
 type PlayerState = {
 	character: Model?,
-	connections: {RBXScriptConnection},
+	playerConnections: {RBXScriptConnection},
+	characterConnections: {RBXScriptConnection},
 	animatorConnections: {[Animator]: RBXScriptConnection},
 	observedAssetIds: {[number]: boolean},
 	trackStarts: number,
@@ -131,9 +132,9 @@ function Service:_attachAnimator(player: Player, state: PlayerState, animator: A
 	end
 end
 
-function Service:_detachCharacter(player: Player, state: PlayerState)
-	for _, connection in ipairs(state.connections) do connection:Disconnect() end
-	table.clear(state.connections)
+function Service:_detachCharacter(state: PlayerState)
+	for _, connection in ipairs(state.characterConnections) do connection:Disconnect() end
+	table.clear(state.characterConnections)
 	for _, connection in pairs(state.animatorConnections) do connection:Disconnect() end
 	table.clear(state.animatorConnections)
 	state.character = nil
@@ -155,8 +156,8 @@ function Service:_attachCharacter(player: Player, character: Model)
 		end
 		local animator = humanoid:FindFirstChildOfClass("Animator")
 		if animator then self:_attachAnimator(player, state, animator) end
-		table.insert(state.connections, humanoid.ChildAdded:Connect(attachAnimator))
-		table.insert(state.connections, humanoid.ChildRemoved:Connect(function(child)
+		table.insert(state.characterConnections, humanoid.ChildAdded:Connect(attachAnimator))
+		table.insert(state.characterConnections, humanoid.ChildRemoved:Connect(function(child)
 			if child:IsA("Animator") then
 				local connection = state.animatorConnections[child]
 				if connection then connection:Disconnect(); state.animatorConnections[child] = nil end
@@ -166,10 +167,10 @@ function Service:_attachCharacter(player: Player, character: Model)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then attachHumanoid(humanoid) end
-	table.insert(state.connections, character.ChildAdded:Connect(function(child)
+	table.insert(state.characterConnections, character.ChildAdded:Connect(function(child)
 		if child:IsA("Humanoid") then attachHumanoid(child) end
 	end))
-	table.insert(state.connections, character.AncestryChanged:Connect(function(_, parent)
+	table.insert(state.characterConnections, character.AncestryChanged:Connect(function(_, parent)
 		if parent == nil and self.states[player.UserId] == state and state.character == character then
 			self:_detachCharacter(player, state)
 		end
@@ -180,7 +181,8 @@ function Service:_attachPlayer(player: Player)
 	if self.states[player.UserId] then return end
 	local state: PlayerState = {
 		character = nil,
-		connections = {},
+		playerConnections = {},
+		characterConnections = {},
 		animatorConnections = {},
 		observedAssetIds = {},
 		trackStarts = 0,
@@ -188,7 +190,7 @@ function Service:_attachPlayer(player: Player)
 		capSignaled = false,
 	}
 	self.states[player.UserId] = state
-	table.insert(state.connections, player.CharacterAdded:Connect(function(character)
+	table.insert(state.playerConnections, player.CharacterAdded:Connect(function(character)
 		self:_attachCharacter(player, character)
 	end))
 	if player.Character then self:_attachCharacter(player, player.Character) end
@@ -202,7 +204,12 @@ function Service:Start(): boolean
 	end))
 	table.insert(self.connections, Players.PlayerRemoving:Connect(function(player)
 		local state = self.states[player.UserId]
-		if state then self:_detachCharacter(player, state); self.states[player.UserId] = nil end
+		if state then
+			self:_detachCharacter(state)
+			for _, connection in ipairs(state.playerConnections) do connection:Disconnect() end
+			table.clear(state.playerConnections)
+			self.states[player.UserId] = nil
+		end
 	end))
 	for _, player in ipairs(Players:GetPlayers()) do self:_attachPlayer(player) end
 	return true
@@ -232,7 +239,11 @@ end
 function Service:Stop()
 	for _, connection in ipairs(self.connections) do connection:Disconnect() end
 	table.clear(self.connections)
-	for _, state in pairs(self.states) do self:_detachCharacter(nil :: any, state) end
+	for _, state in pairs(self.states) do
+		self:_detachCharacter(state)
+		for _, connection in ipairs(state.playerConnections) do connection:Disconnect() end
+		table.clear(state.playerConnections)
+	end
 	table.clear(self.states)
 	self.started = false
 end
