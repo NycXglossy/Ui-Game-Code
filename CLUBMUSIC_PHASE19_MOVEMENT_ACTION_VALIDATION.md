@@ -43,6 +43,13 @@ The audit reviewed `CharacterPhysicsGuard`, `MovementAuthority`, `TeleportValida
 - CharacterPhysicsGuard currently consumes markers for WalkSpeed, JumpPower, BodyScale, WorldGravity, and the special Fling presence check. It does not consume Flight, Frozen, Teleport, JumpImpulse, or StarterWalkSpeed markers. Flight/freeze/teleport command entries therefore must not be described as verified physics-observer coverage.
 - This audit does not inspect Kohl's Admin's internal implementation of each movement handler, so it cannot certify exact flight, freeze, fling, teleport, or target replication behavior. It also does not establish complete validation for vehicles, custom knockback, or all third-party movement commands.
 
+### Club action remote audit boundary
+
+- The supplied example `ClubActionValidator.server.luau` was compared against the tracked branch. The tracked source tree does not contain `ClubActionRemote`, `OrderDrink`, `UseDJBooth`, or `PlayEmote` handlers/callers.
+- No new RemoteEvent or parallel action system is created by this Phase 19 update. Without the real client callers, server handlers, drink catalog/tool source, approved emote identifiers, and DJ booth authorization path, a standalone validator would be disconnected from the actual gameplay and could create an unused or competing security surface.
+- When those systems are supplied, validate at their existing server-owned handlers: strict action and payload schemas, live character/Humanoid/root checks, server-observed proximity, per-player/per-action rate limits, and server-side execution. DJ booth authorization must use Security Core and the existing ClubMusic admin bridge where applicable; entitlement checks must reuse EntitlementAuthority. Do not trust client-supplied role flags, target instances, positions, or emote IDs.
+- This is a tracked-source finding only. The live Roblox place and untracked packages may contain these systems; their absence from this repository snapshot is not proof they do not exist.
+
 ## Source changes in Phase 19
 
 - [x] Keep the existing MovementAuthority and CharacterPhysicsGuard architecture; do not add a second physics authority.
@@ -59,13 +66,10 @@ The audit reviewed `CharacterPhysicsGuard`, `MovementAuthority`, `TeleportValida
 4. **Gravity:** authorized GlobalConfig changes at bounds, unauthorized requests, simultaneous changes, and server startup ordering.
 5. **Teleport:** consent on/off, staff exception, recipient departure, actor departure, respawn during action, cooldown races, expired/replayed tickets, destination mismatch, and service unavailable.
 6. **Physics/network:** latency, packet jitter, client network ownership, high-speed legitimate launch/knockback, angular impulses, collision impacts, and seated/vehicle states.
-7. **Special movement:** the supplied Kohl's adapter must be tested alias-by-alias for gravity, starter speed, speed, jump power, jump, size, fly/unfly, freeze/thaw, bring, fling, tp, and to. Confirm the SecurityCore filter denies before native handlers execute. The current wrapper records a marker after the native handler returns but does not inspect the handler's result tuple, so a failed native command may still leave a short-lived observational marker; verify this behavior and treat the marker as non-authoritative. Inspect each actual mount/vehicle, staff teleport, freeze/unfreeze, and knockback implementation individually. Add explicit registration origins only after the real server-side caller and its authorization checks are verified.
-8. **Delayed character assembly:** test a custom rig where Humanoid and HumanoidRootPart appear after CharacterAdded; confirm both observers attach within the bounded wait, and confirm respawn/player departure/service shutdown during either wait leaves no stale connections.
-9. **Compatibility:** PC, mobile, and console; no UI changes are part of this phase.
-10. **Regression:** ClubMusic playback/crossfade, local queues, playback-only global sync, purchases/receipts, moderation, Settings, Utility Bar, mounts, spectator, diagnostics, and installer rollback.
-8. **Adversarial cases:** attempt client-side WalkSpeed/jump changes, remote payload tampering, forged teleport requests, replayed requests, and extreme physics. Confirm the server-side action checks remain authoritative and telemetry alone never changes gameplay.
-9. **Compatibility:** PC, mobile, and console; no UI changes are part of this phase.
-10. **Regression:** ClubMusic playback/crossfade, local queues, playback-only global sync, purchases/receipts, moderation, Settings, Utility Bar, mounts, spectator, diagnostics, and installer rollback.
+7. **Special movement:** test the Kohl's adapter alias-by-alias for gravity, starter speed, speed, jump power, jump, size, fly/unfly, freeze/thaw, bring, fling, tp, and to. Confirm the SecurityCore filter denies before native handlers execute. The wrapper records MovementAuthority markers after the native handler returns without inspecting the handler result tuple; verify this behavior and treat markers as non-authoritative. Inspect each actual mount/vehicle, staff teleport, freeze/unfreeze, and knockback implementation individually. Add explicit registration origins only after the real server-side caller and its authorization checks are verified.
+8. **Delayed character assembly and lifecycle:** test a custom rig where Humanoid and HumanoidRootPart appear after CharacterAdded; confirm observers attach within the bounded waits. Confirm respawn, player departure, and service shutdown during either wait leave no stale connections or active sampling loop.
+9. **Adversarial requests:** attempt client-side WalkSpeed/jump changes, remote payload tampering, forged teleport requests, replayed requests, and extreme physics. Confirm server-side action checks remain authoritative and telemetry alone never changes gameplay. When ClubAction handlers are present, include malformed action names/payloads, cooldown bypass attempts, distant drink orders, and unauthorized DJ booth requests.
+10. **Compatibility and regression:** PC, mobile, and console; no UI changes are part of this phase. Regress ClubMusic playback/crossfade, local queues, playback-only global sync, purchases/receipts, moderation, Settings, Utility Bar, mounts, spectator, diagnostics, and installer rollback.
 
 ## Release boundary
 
