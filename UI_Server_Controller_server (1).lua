@@ -3389,8 +3389,21 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 		and typeof(current.soundId) == "string" and ControllerFunctions.isFiniteNumber(current.duration)
 		and current.duration >= 1 and current.duration <= 86400 then
 		local catalogTrack = TRACK_BY_ID[current.trackId]
-		if not catalogTrack or not isPlayableTrack(catalogTrack)
-			or ControllerFunctions.isTrackBlocked(current.trackId) then
+		if ControllerFunctions.isTrackBlocked(current.trackId) then
+			if nowPlaying.trackId == current.trackId then
+				ControllerFunctions.cancelAudioTransition("global-playback-track-blocked")
+				ControllerFunctions.stopServerMusic()
+				ControllerFunctions.setAudioAsset("")
+				nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
+				nowPlaying.soundId = ""; nowPlaying.elapsed = 0
+				playbackPaused = true
+				ControllerFunctions.publishPlaybackState()
+			end
+			state.lastAppliedRevision = snapshot.revision
+			state.lastSyncAppliedAt = os.clock()
+			return false
+		end
+		if not catalogTrack or not isPlayableTrack(catalogTrack) then
 			task.defer(ControllerFunctions.refreshCatalogWhenReady)
 			return false
 		end
@@ -5535,6 +5548,12 @@ localDiagnosticsBindable.OnInvoke = function()
 			qualityLoaded = typeof(playbackQuality) == "table" and playbackQuality.loaded == true,
 			qualityLength = if typeof(playbackQuality) == "table" and ControllerFunctions.isFiniteNumber(playbackQuality.length) then math.max(0, playbackQuality.length) else 0,
 			queueDepth = #queue,
+			globalPlaybackSync = {
+				enabled = ControllerFunctions.globalPlaybackSyncState.enabled == true,
+				isLeader = ControllerFunctions.globalPlaybackSyncState.isLeader == true,
+				authorityReady = ControllerFunctions.globalPlaybackSyncState.authorityReady == true,
+				localQueueIsolated = true,
+			},
 			modernBackendConfigured = CONFIG.UseModernAudioBackend == true,
 			modernBackendStartSucceeded = modernBackendStartSucceeded,
 			modernBackendStartFailureCount = modernBackendStartFailureCount,
@@ -6867,7 +6886,10 @@ task.spawn(function()
 		elseif enabledOk and enabledStatus == true and typeof(status) == "table" and status.syncEnabled ~= true then
 			syncState.enabled = false
 			syncState.isLeader = false
+			syncState.wasLeader = false
 			syncState.leaderJobId = nil
+			syncState.lastAppliedRevision = -1
+			syncState.lastSyncAppliedAt = 0
 			syncState.authorityReady = status.enabled == true and status.error == nil
 			syncState.statusError = if typeof(status.error) == "string" then string.sub(status.error, 1, 120) else nil
 			publishState(nil)
