@@ -6594,6 +6594,9 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 	if operation == "OperationalMetrics" then
 		local ok, metrics = ControllerFunctions.adminBridgeGlobalCall("GetGlobalMetrics")
 		if not ok or typeof(metrics) ~= "table" then return false, tostring(metrics or "Metrics are unavailable or disabled.") end
+		if metrics.state == "Deferred" or metrics.deferred == true then
+			return true, "ClubMusic Metrics (Deferred): Optional analytics aggregation is temporarily paused by the current server-load budget. Health monitoring and security services remain active."
+		end
 		local aggregate = if typeof(metrics.aggregate) == "table" then metrics.aggregate else {}
 		local counters = if typeof(aggregate.counters) == "table" then aggregate.counters else {}
 		local structuredCounters = if typeof(metrics.counters) == "table" then metrics.counters else {}
