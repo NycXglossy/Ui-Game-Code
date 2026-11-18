@@ -113,6 +113,58 @@ return function(_K: any)
 		exposure = {permission = "GlobalConfig", property = "LightingExposure", auditKind = "AdminAction", budget = "World"},
 		disco = {permission = "GlobalConfig", property = "DiscoLighting", auditKind = "AdminAction", budget = "World"},
 
+		-- Additional player-control commands verified against the supplied command handlers.
+		setgravity = {permission = "GlobalModeration", property = "PlayerGravity", valueArg = 2, targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		noclip = {permission = "GlobalModeration", property = "NoClip", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		clip = {permission = "GlobalModeration", property = "NoClipClear", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		jail = {permission = "GlobalModeration", property = "Jail", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		unjail = {permission = "GlobalModeration", property = "Unjail", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		lock = {permission = "GlobalModeration", property = "CharacterLock", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		unlock = {permission = "GlobalModeration", property = "CharacterUnlock", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		cameraoffset = {permission = "GlobalModeration", property = "CameraOffset", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		fov = {permission = "GlobalModeration", property = "FieldOfView", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		vehiclespeed = {permission = "GlobalModeration", property = "VehicleSpeed", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		vehicletorque = {permission = "GlobalModeration", property = "VehicleTorque", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		slopeangle = {permission = "GlobalModeration", property = "MaxSlopeAngle", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		starterjumppower = {permission = "GlobalConfig", property = "StarterJumpPower", valueArg = 1, auditKind = "AdminAction", budget = "World"},
+		starterslopeangle = {permission = "GlobalConfig", property = "StarterSlopeAngle", valueArg = 1, auditKind = "AdminAction", budget = "World"},
+
+		-- Targeted disruptive Fun commands are still native Kohl's handlers, but require SecurityCore moderation authority.
+		explode = {permission = "GlobalModeration", property = "Explode", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		nuke = {permission = "GlobalModeration", property = "Nuke", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		smite = {permission = "GlobalModeration", property = "Smite", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		poison = {permission = "GlobalModeration", property = "Poison", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		infect = {permission = "GlobalModeration", property = "Infect", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+		confuse = {permission = "GlobalModeration", property = "Confuse", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
+
+		-- Environment and Terrain mutations are owner/co-owner operations.
+		fix = {permission = "GlobalConfig", property = "EnvironmentReset", auditKind = "AdminAction", budget = "World"},
+		ambient = {permission = "GlobalConfig", property = "LightingAmbient", auditKind = "AdminAction", budget = "World"},
+		outdoorambient = {permission = "GlobalConfig", property = "LightingOutdoorAmbient", auditKind = "AdminAction", budget = "World"},
+		atmosphere = {permission = "GlobalConfig", property = "LightingAtmosphere", auditKind = "AdminAction", budget = "World"},
+		fogcolor = {permission = "GlobalConfig", property = "LightingFogColor", auditKind = "AdminAction", budget = "World"},
+		fogstart = {permission = "GlobalConfig", property = "LightingFogStart", auditKind = "AdminAction", budget = "World"},
+		fogend = {permission = "GlobalConfig", property = "LightingFogEnd", auditKind = "AdminAction", budget = "World"},
+		shadows = {permission = "GlobalConfig", property = "LightingShadows", auditKind = "AdminAction", budget = "World"},
+		skybox = {permission = "GlobalConfig", property = "LightingSkybox", auditKind = "AdminAction", budget = "World"},
+		airdensity = {permission = "GlobalConfig", property = "WorldAirDensity", auditKind = "AdminAction", budget = "World"},
+		winddir = {permission = "GlobalConfig", property = "WorldWindDirection", auditKind = "AdminAction", budget = "World"},
+		windspeed = {permission = "GlobalConfig", property = "WorldWindSpeed", auditKind = "AdminAction", budget = "World"},
+		watercolor = {permission = "GlobalConfig", property = "TerrainWaterColor", auditKind = "AdminAction", budget = "World"},
+		waterreflectance = {permission = "GlobalConfig", property = "TerrainWaterReflectance", auditKind = "AdminAction", budget = "World"},
+		watertransparency = {permission = "GlobalConfig", property = "TerrainWaterTransparency", auditKind = "AdminAction", budget = "World"},
+		watersize = {permission = "GlobalConfig", property = "TerrainWaterSize", auditKind = "AdminAction", budget = "World"},
+		waterspeed = {permission = "GlobalConfig", property = "TerrainWaterSpeed", auditKind = "AdminAction", budget = "World"},
+
+		-- Reserved-server records, badge awards, and team definitions are privileged operations.
+		reserve = {permission = "GlobalConfig", property = "ReservedServerCreate", auditKind = "AdminAction", budget = "Privilege"},
+		unreserve = {permission = "GlobalConfig", property = "ReservedServerRemove", auditKind = "AdminAction", budget = "Privilege"},
+		badge = {permission = "GlobalConfig", property = "BadgeAward", targetArg = 1, auditKind = "AdminAction", budget = "Privilege"},
+		createteam = {permission = "GlobalConfig", property = "TeamCreate", auditKind = "AdminAction", budget = "Privilege"},
+		editteam = {permission = "GlobalConfig", property = "TeamEdit", auditKind = "AdminAction", budget = "Privilege"},
+		removeteam = {permission = "GlobalConfig", property = "TeamRemove", auditKind = "AdminAction", budget = "Privilege"},
+		clearteams = {permission = "GlobalConfig", property = "TeamsClear", auditKind = "AdminAction", budget = "Privilege"},
+
 		-- Server-wide disruptive commands require the highest Tiki Tide permission.
 		serverlock = {permission = "GlobalConfig", property = "ServerLock", global = true, auditKind = "AdminAction", budget = "World"},
 		unserverlock = {permission = "GlobalConfig", property = "ServerUnlock", global = true, auditKind = "AdminAction", budget = "World"},
@@ -127,6 +179,14 @@ return function(_K: any)
 		script = "Arbitrary server script execution is disabled by Tiki Tide security.",
 		localscript = "Arbitrary client script execution is disabled by Tiki Tide security.",
 		global = "Native global command strings are disabled; use dedicated Tiki Tide global controls.",
+
+		-- Kohl's legacy Sound commands conflict with the game's AudioPlayer-only backend.
+		play = "Kohl's legacy Sound playback is disabled; use the Tiki Tide music controls.",
+		pause = "Kohl's legacy Sound playback is disabled; use the Tiki Tide music controls.",
+		resume = "Kohl's legacy Sound playback is disabled; use the Tiki Tide music controls.",
+		stop = "Kohl's legacy Sound playback is disabled; use the Tiki Tide music controls.",
+		pitch = "Kohl's legacy Sound playback is disabled; use the Tiki Tide music controls.",
+		volume = "Kohl's legacy Sound playback is disabled; use the Tiki Tide music controls.",
 	}
 
 	-- Kohl's passes the invoked alias through command.alias. Resolve aliases before
@@ -145,6 +205,7 @@ return function(_K: any)
 		n = "notify",
 		pm = "privatemessage",
 		pmsg = "privatemessage",
+		stopmusic = "stop",
 	}
 
 	local function canonicalCommandName(value: any): string
