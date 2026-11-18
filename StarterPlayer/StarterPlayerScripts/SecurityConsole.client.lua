@@ -503,8 +503,22 @@ lockdownButton.Activated:Connect(function()
 		return
 	end
 	lockdownConfirm = false
+	pendingRequest = true
+	requestToken += 1
+	local thisRequest = requestToken
+	lockdownButton.Active = false
 	lockdownButton.Text = "SENDING…"
+	runButton.Active = false
 	securityAction:FireServer("ToggleLockdown")
+	task.delay(8, function()
+		if pendingRequest and requestToken == thisRequest then
+			pendingRequest = false
+			runButton.Active = true
+			lockdownButton.Active = true
+			lockdownButton.Text = if lockdownActive then "DISABLE LOCAL LOCK" else "LOCAL LOCKDOWN"
+			setStatus("No server response was received. Check server health before retrying.", false)
+		end
+	end)
 end)
 
 actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message: any, serverLockdownState: any)
