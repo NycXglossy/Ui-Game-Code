@@ -2139,6 +2139,7 @@ local ACTION_COOLDOWNS: {[string]: number} = {
 	PlaylistCreate = 2, PlaylistDelete = 1, PlaylistAddTrack = 0.5, PlaylistRemoveTrack = 0.5, PlaylistMoveTrack = 0.5,
 	DJPlayPlaylist = 2, DJStopPlaylist = 1,
 	DJMoveUp = 0.2, DJRemove = 0.2, DJSkip = 0.5, DJPause = 0.5, DJRestart = 1, DJClearQueue = 1, DJToggleLock = 1,
+	DJToggleGlobalPlaybackSync = 1.5,
 	ModBlockUser = 0.5, ModSetPassTier = 0.5, ModPurgeUser = 0.5,
 	ClaimDailyReward = 1, EquipTitleTag = 0.5, BuyTitleTag = 1, SaveCustomTitle = CONFIG.SaveTitleCooldownSeconds,
 	SaveTitleSlot = CONFIG.SaveTitleCooldownSeconds, SelectTitleSlot = 0.3,
@@ -4834,6 +4835,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	if action == "RequestAudioAsset" then
 		if not ControllerFunctions.isStaff(player) then
 			notify(player, "Audio asset IDs are staff only.", "warn")
+			return
+		end
+		if djControlModeEnabled and djControlModeUserId ~= player.UserId then
+			notify(player, "DJ Control Mode is active. Only the current DJ controller can submit requests.", "warn")
 			return
 		end
 		local assetId = payload.assetId
