@@ -203,3 +203,9 @@ In `UI_Renderer (2).lua`, the menu typography pass previously traversed all desc
 
 Validation: source-level exact-block replacement, followed by re-fetch and checks for a single typography descendant traversal and preserved device scale/wrapping rules. No Luau compiler or Studio UI regression test was run.
 
+## Compact HUD visibility candidate index
+
+The full-menu renderer previously called `PlayerGui:GetDescendants()` on menu/panel visibility changes to locate duplicate compact HUDs. Replaced repeated whole-PlayerGui scans with a maintained list of matching GuiObjects: one initial discovery scan, incremental `DescendantAdded`/ `DescendantRemoving` maintenance, and iteration only over matching candidates when hiding duplicates. Newly added duplicate HUDs are still hidden immediately when a blocking panel is open; removed instances are removed from the index. This does not change mobile layout or the visibility rules.
+
+Validation: re-fetched the renderer and confirmed there is one initial PlayerGui discovery scan, incremental add/remove tracking, and no PlayerGui descendant scans inside visibility-sync callbacks. No Luau compiler or Studio runtime UI test was run.
+
