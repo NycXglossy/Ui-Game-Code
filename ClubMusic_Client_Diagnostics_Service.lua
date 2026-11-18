@@ -25,9 +25,12 @@ local function finite(value: any): boolean
 	return type(value) == "number" and value == value and value >= 0 and value < math.huge
 end
 
-function Service.new()
+function Service.new(options: {[string]: any}?)
+	options = if typeof(options) == "table" then options else {}
 	assert(RunService:IsClient(), "ClientDiagnostics can only run on a client.")
 	return setmetatable({
+		auditWorkspaceEffects = options.auditWorkspaceEffects ~= false,
+		sampleAudio = options.sampleAudio ~= false,
 		running = false,
 		connection = nil,
 		samplerThread = nil,
@@ -237,7 +240,7 @@ function Service:Start(): boolean
 	if self.running then return false end
 	self.running = true
 	self.startedAt = os.clock()
-	self:_auditWorkspaceEffects()
+	if self.auditWorkspaceEffects then self:_auditWorkspaceEffects() end
 	self.connection = RunService.RenderStepped:Connect(function(deltaTime)
 		self:_recordFrame(deltaTime)
 	end)
@@ -255,7 +258,7 @@ function Service:Start(): boolean
 				self:_samplePing()
 				nextPing = now + PING_SAMPLE_SECONDS
 			end
-			if now >= nextAudio then
+			if self.sampleAudio and now >= nextAudio then
 				self:_sampleAudio()
 				nextAudio = now + AUDIO_SAMPLE_SECONDS
 			end
