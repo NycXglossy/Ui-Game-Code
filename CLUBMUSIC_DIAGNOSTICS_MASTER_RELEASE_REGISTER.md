@@ -409,3 +409,10 @@ No Roblox runtime testing was performed by the source update. Do not install or 
 
 - Compact HUD visualizer bar writes and loudness sampling are skipped while its UI is hidden, unless the expanded menu still requires animation work. The active-playback visualizer clock continues to advance.
 - Expanded-menu animation remains separate. Static verification only; Studio/device testing remains outstanding.
+
+
+### Performance compatibility follow-up — client diagnostics installer
+
+- Added `ClubMusic_Client_Diagnostics_Installer.lua` to install the client diagnostics ModuleScript at `ReplicatedStorage/ClubMusic_Client_Diagnostics_Service` and its LocalScript bootstrap under `StarterPlayer/StarterPlayerScripts`, matching the bootstrap's runtime lookup.
+- Both source files are fetched and staged before promotion; previous instances are retained with `_Previous` suffixes. The installer is pinned to the reviewed branch snapshot.
+- Source and destination alignment was statically reviewed. The installer has not been executed in Roblox Studio, and no live place was changed.
