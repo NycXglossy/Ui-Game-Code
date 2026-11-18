@@ -3574,8 +3574,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				elseif typeof(sync.leaderJobId) == "string" then "Following the elected playback leader."
 				else "Waiting for playback leader election."
 			label(syncCard, roleText, UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 18), C.White, 10, false)
-			label(syncCard, if syncReady then "Playback authority is ready."
-				else nz(sync.error, "Playback authority status is unavailable."),
+			local syncErrorText = if typeof(sync.error) == "string" and sync.error ~= ""
+				then sync.error else "Playback authority status is unavailable."
+			label(syncCard, if syncReady then "Playback authority is ready." else syncErrorText,
 				UDim2.fromOffset(12, 52), UDim2.new(1, -24, 0, 16), if syncReady then C.Muted else C.Orange, 9, false)
 			actionButton(syncCard, if syncEnabled then "DISABLE GLOBAL SYNC" else "ENABLE GLOBAL SYNC",
 				UDim2.new(1, -166, 0, 76), UDim2.fromOffset(154, 28), function()
