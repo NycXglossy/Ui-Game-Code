@@ -6,11 +6,12 @@
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
 local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "5b9d772d6320e8c0c3605bd49d1ff3e6da0c6dcf"
+local RELEASE_COMMIT = "21a9b11e256a69d949f5fead07e0b3c51e0e1d89"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
 -- Phase 32 is pinned independently so the previously certified SecurityCore
 -- module snapshot is not silently changed by later commits.
@@ -30,6 +31,9 @@ local CAMERA_STAGE_NAME = CAMERA_NAME .. "_Staging"
 local INTEGRITY_NAME = "TikiTideClientIntegrityTelemetry"
 local INTEGRITY_BACKUP_NAME = INTEGRITY_NAME .. "_Previous"
 local INTEGRITY_STAGE_NAME = INTEGRITY_NAME .. "_Staging"
+local VISUAL_NAME = "TikiTideAdaptiveVisualQuality"
+local VISUAL_BACKUP_NAME = VISUAL_NAME .. "_Previous"
+local VISUAL_STAGE_NAME = VISUAL_NAME .. "_Staging"
 
 if RunService:IsRunning() then
  error("Installation blocked: stop Play/Run simulation before replacing server modules.")
@@ -53,6 +57,9 @@ local oldCameraStage = getTyped(StarterPlayerScripts, CAMERA_STAGE_NAME, "LocalS
 local activeIntegrity = getTyped(StarterPlayerScripts, INTEGRITY_NAME, "LocalScript")
 local integrityBackup = getTyped(StarterPlayerScripts, INTEGRITY_BACKUP_NAME, "LocalScript")
 local oldIntegrityStage = getTyped(StarterPlayerScripts, INTEGRITY_STAGE_NAME, "LocalScript")
+local activeVisual = getTyped(StarterPlayerScripts, VISUAL_NAME, "LocalScript")
+local visualBackup = getTyped(StarterPlayerScripts, VISUAL_BACKUP_NAME, "LocalScript")
+local oldVisualStage = getTyped(StarterPlayerScripts, VISUAL_STAGE_NAME, "LocalScript")
 
 local cameraUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/StaffSpectatorCamera.client.lua"
 local cameraOk, cameraSource = pcall(function() return HttpService:GetAsync(cameraUrl, true) end)
@@ -63,6 +70,11 @@ local integrityUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/
 local integrityOk, integritySource = pcall(function() return HttpService:GetAsync(integrityUrl, true) end)
 if not integrityOk or type(integritySource) ~= "string" or #integritySource < 100 then
  error("Could not stage ClientIntegrityTelemetry.client.lua; active installation was not changed.")
+end
+local visualUrl = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/TikiTideAdaptiveVisualQuality.client.lua"
+local visualOk, visualSource = pcall(function() return HttpService:GetAsync(visualUrl, true) end)
+if not visualOk or type(visualSource) ~= "string" or #visualSource < 100 then
+ error("Could not stage TikiTideAdaptiveVisualQuality.client.lua; active installation was not changed.")
 end
 
 local stagedSources = {}
@@ -87,6 +99,7 @@ if oldStage then oldStage:Destroy() end
 if oldBootstrapStage then oldBootstrapStage:Destroy() end
 if oldCameraStage then oldCameraStage:Destroy() end
 if oldIntegrityStage then oldIntegrityStage:Destroy() end
+if oldVisualStage then oldVisualStage:Destroy() end
 local stage = Instance.new("Folder")
 stage.Name = STAGE_NAME
 stage.Parent = ServerStorage
@@ -109,7 +122,7 @@ for _, name in ipairs(ALL_MODULE_NAMES) do
 end
 local manifest = Instance.new("StringValue")
 manifest.Name = "InstallManifest"
-manifest.Value = "securityCoreRelease=" .. RELEASE_COMMIT .. ";phase32Release=" .. PHASE32_COMMIT .. ";modules=" .. table.concat(ALL_MODULE_NAMES, ",") .. ";installedAt=" .. DateTime.now():ToIsoDate()
+manifest.Value = "securityCoreRelease=" .. RELEASE_COMMIT .. ";phase32Release=" .. PHASE32_COMMIT .. ";modules=" .. table.concat(ALL_MODULE_NAMES, ",") .. ";visualClient=" .. VISUAL_NAME .. ";installedAt=" .. DateTime.now():ToIsoDate()
 manifest.Parent = stage
 
 local bootstrapSource = [=[
@@ -117,6 +130,8 @@ local bootstrapSource = [=[
 -- Server-local, detection-only CharacterPhysicsGuard bootstrap.
 local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 local core = ServerStorage:WaitForChild("ClubMusicSecurityCore")
 local movementModule = core:WaitForChild("MovementAuthority")
 local movementOk, movementExport = pcall(require, movementModule)
@@ -127,10 +142,26 @@ local authority = ServerStorage:FindFirstChild("TikiTideMovementAuthority")
 if authority and not authority:IsA("BindableFunction") then warn("[Tiki Tide][MovementAuthority] Wrong authority class."); return end
 if not authority then authority = Instance.new("BindableFunction"); authority.Name = "TikiTideMovementAuthority"; authority.Parent = ServerStorage end
 authority.OnInvoke = function(...) return movementExport.Invoke(...) end
+local loadControl = ServerStorage:FindFirstChild("TikiTideSecurityLoadManager")
+local function getMovementSampleInterval()
+ local mode = Workspace:GetAttribute("TikiTideAdaptiveLoadMode")
+ if mode == "Critical" then return 1.25 end
+ if mode == "Reduced" then return 1.0 end
+ return 0.5
+end
+local function allowMovementSample()
+ if not loadControl or not loadControl:IsA("BindableFunction") or type(loadControl.OnInvoke) ~= "function" then return true end
+ local playerCount = math.max(1, #Players:GetPlayers())
+ local ok, allowed = pcall(function()
+  return loadControl:Invoke("TryConsume", "DiagnosticsSampling", 1 / playerCount)
+ end)
+ -- Sampling is optional; if the governor is unavailable, retain the normal passive sample.
+ return not ok or allowed == true
+end
 local guardModule = core:WaitForChild("CharacterPhysicsGuard")
 local ok, exported = pcall(require, guardModule)
 if not ok or typeof(exported) ~= "table" or type(exported.new) ~= "function" then warn("[Tiki Tide][CharacterPhysicsGuard] Module failed to load: " .. tostring(exported)); return end
-local guard = exported.new({onSignal = function(signal, subject, detail)
+local guard = exported.new({getMovementSampleInterval = getMovementSampleInterval, allowMovementSample = allowMovementSample, onSignal = function(signal, subject, detail)
  local replayEndpoint = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
  local subjectId = tonumber(subject) or 0
  if replayEndpoint and replayEndpoint:IsA("BindableFunction") then
@@ -238,6 +269,7 @@ if loadModule and loadModule:IsA("ModuleScript") then
  if loadOk and typeof(loadExport) == "table" and type(loadExport.new) == "function" then
   loadManager = loadExport.new({
    onModeChanged = function(previousMode, nextMode, averageDelta, maximumDelta, reason)
+    pcall(function() Workspace:SetAttribute("TikiTideAdaptiveLoadMode", nextMode) end)
     pcall(function()
      replayEndpoint:Invoke("Record", "security_load_mode_changed", 0, 0,
       if nextMode == "Critical" then "Warning" else "Info",
@@ -251,6 +283,8 @@ if loadModule and loadModule:IsA("ModuleScript") then
   if not loadStarted or loadResult ~= true then
    warn("[Tiki Tide][AdaptiveLoad] Startup failed: " .. tostring(loadResult))
    loadManager = nil
+  else
+   Workspace:SetAttribute("TikiTideAdaptiveLoadMode", loadManager:GetStatus().mode)
   end
  else
   warn("[Tiki Tide][AdaptiveLoad] Module failed to load: " .. tostring(loadExport))
@@ -466,7 +500,10 @@ script.Destroying:Connect(function()
  if threatService then threatService:Stop() end
  if honeypotService then honeypotService:Stop() end
  if clientIntegrityService then clientIntegrityService:Stop() end
- if loadManager then loadManager:Stop() end
+ if loadManager then
+  loadManager:Stop()
+  if Workspace:GetAttribute("TikiTideAdaptiveLoadMode") ~= nil then Workspace:SetAttribute("TikiTideAdaptiveLoadMode", nil) end
+ end
 end)
 print("[Tiki Tide][SecurityReplay] Bounded server-local event history ready; persistent writes=0; frame capture=false.")
 if loadManager then print("[Tiki Tide][AdaptiveLoad] Adaptive optional-work budgets started; essential security paths remain unrestricted.") end
@@ -491,16 +528,23 @@ stagedIntegrity.Name = INTEGRITY_STAGE_NAME
 stagedIntegrity.Source = integritySource
 stagedIntegrity.Disabled = true
 stagedIntegrity.Parent = StarterPlayerScripts
+local stagedVisual = Instance.new("LocalScript")
+stagedVisual.Name = VISUAL_STAGE_NAME
+stagedVisual.Source = visualSource
+stagedVisual.Disabled = true
+stagedVisual.Parent = StarterPlayerScripts
 
 -- Keep the last known-good generation as a rollback copy. Promote only after staging succeeds.
 if oldBackup then oldBackup:Destroy() end
 if bootstrapBackup then bootstrapBackup:Destroy() end
 if cameraBackup then cameraBackup:Destroy() end
 if integrityBackup then integrityBackup:Destroy() end
+if visualBackup then visualBackup:Destroy() end
 local activeBootstrapWasDisabled = activeBootstrap and activeBootstrap.Disabled
 local activeCameraWasDisabled = activeCamera and activeCamera.Disabled
 local activeIntegrityWasDisabled = activeIntegrity and activeIntegrity.Disabled
-local promotedFolder, promotedBootstrap, promotedCamera, promotedIntegrity = false, false, false, false
+local activeVisualWasDisabled = activeVisual and activeVisual.Disabled
+local promotedFolder, promotedBootstrap, promotedCamera, promotedIntegrity, promotedVisual = false, false, false, false, false
 local ok, installError = pcall(function()
  if active then active.Name = BACKUP_NAME end
  stage.Name = FOLDER_NAME
@@ -517,6 +561,10 @@ local ok, installError = pcall(function()
  stagedIntegrity.Name = INTEGRITY_NAME
  promotedIntegrity = true
  stagedIntegrity.Disabled = false
+ if activeVisual then activeVisual.Name = VISUAL_BACKUP_NAME; activeVisual.Disabled = true end
+ stagedVisual.Name = VISUAL_NAME
+ promotedVisual = true
+ stagedVisual.Disabled = false
 end)
 if not ok then
  pcall(function()
@@ -536,6 +584,11 @@ if not ok then
   if activeIntegrity and activeIntegrity.Parent then activeIntegrity.Name = INTEGRITY_NAME; activeIntegrity.Disabled = activeIntegrityWasDisabled end
   local failedIntegrityStage = StarterPlayerScripts:FindFirstChild(INTEGRITY_STAGE_NAME)
   if failedIntegrityStage then failedIntegrityStage:Destroy() end
+  local failedVisual = StarterPlayerScripts:FindFirstChild(VISUAL_NAME)
+  if failedVisual and failedVisual ~= activeVisual then failedVisual:Destroy() end
+  if activeVisual and activeVisual.Parent then activeVisual.Name = VISUAL_NAME; activeVisual.Disabled = activeVisualWasDisabled end
+  local failedVisualStage = StarterPlayerScripts:FindFirstChild(VISUAL_STAGE_NAME)
+  if failedVisualStage then failedVisualStage:Destroy() end
   local failedStage = ServerStorage:FindFirstChild(STAGE_NAME)
   if failedStage then failedStage:Destroy() end
   local failedBootstrapStage = ServerScriptService:FindFirstChild(BOOTSTRAP_STAGE_NAME)
@@ -561,4 +614,5 @@ print("[Tiki Tide Security] Manifest: ServerStorage/" .. FOLDER_NAME .. "/Instal
 print("[Tiki Tide Security] Previous release retained under ServerStorage/" .. BACKUP_NAME)
 print("[Tiki Tide Security] Staff spectator camera installed under StarterPlayer/StarterPlayerScripts/" .. CAMERA_NAME)
 print("[Tiki Tide Security] Untrusted client integrity observer installed under StarterPlayer/StarterPlayerScripts/" .. INTEGRITY_NAME)
+print("[Tiki Tide Security] Adaptive visual quality client installed under StarterPlayer/StarterPlayerScripts/" .. VISUAL_NAME)
 print("[Tiki Tide Security] CharacterPhysicsGuard remains detection-only.")
