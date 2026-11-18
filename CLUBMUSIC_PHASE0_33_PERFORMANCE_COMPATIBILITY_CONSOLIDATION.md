@@ -414,3 +414,11 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 
 - Follow-up inspection confirmed GetModerationState intentionally returns a reason between the two enforcement flags and the durable revision. Updated both controller join-time and retry destructuring to retain the reason slot and read the revision from the sixth protected-call return value. The shared invocation helper now preserves all values; no reason field is reinterpreted as a revision.
 - Static source verification confirms both call sites bind the revision from the correct return position. No public BindableFunction return contract was changed.
+
+
+### Global API BindableEvent lifecycle recovery (2026-11-18)
+
+- Audited the controller's optional `ServerStorage/ClubMusicGlobalAPI` bridge. Function calls already re-resolve the API folder and BindableFunction on demand, but the event path previously retained event/folder connections without disconnecting them when the API folder or `GlobalEvent` BindableEvent was removed or replaced.
+- Updated the controller-local bridge registry to watch ServerStorage child additions/removals and API-folder child additions/removals. It now attaches exactly one current `GlobalEvent` connection, disconnects a replaced/removed event, switches cleanly to a replacement API folder, and ignores callbacks from stale folder/event generations.
+- Added controller Script-destruction cleanup for the event, folder, and ServerStorage watcher connections. No polling loop, remote, persistence, cross-server state, or diagnostics telemetry was added. Existing BindableFunction invocation and fail-closed moderation behavior remain unchanged.
+- Static source review only; no Luau compilation, BindableEvent lifecycle simulation, Roblox Studio/runtime test, or deployment was performed.
