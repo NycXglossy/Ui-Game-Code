@@ -183,8 +183,17 @@ function Service:_prune(now: number)
 	-- by the join-event cap, so no long-lived identity history accumulates.
 	local joined = {}
 	for _, event in ipairs(self.joinEvents) do joined[event.userId] = true end
-	for userId in pairs(self.cohortSignals) do
-		if not joined[userId] then self.cohortSignals[userId] = nil end
+	table.clear(self.cohortCategories)
+	table.clear(self.cohortSources)
+	table.clear(self.cohortCodes)
+	for userId, evidence in pairs(self.cohortSignals) do
+		if not joined[userId] then
+			self.cohortSignals[userId] = nil
+		else
+			for category in pairs(evidence.categories) do self.cohortCategories[category] = true end
+			for source in pairs(evidence.sources) do self.cohortSources[source] = true end
+			for code in pairs(evidence.codes) do self.cohortCodes[code] = true end
+		end
 	end
 end
 
@@ -454,7 +463,15 @@ function Service:Record(signal: any, userId: any, source: any, severity: any, ev
 		local joinedInWindow = false
 		for _, event in ipairs(self.joinEvents) do if event.userId == userId then joinedInWindow = true; break end end
 		if joinedInWindow then
-			self.cohortSignals[userId] = math.min(3, (self.cohortSignals[userId] or 0) + 1)
+			local evidence = self.cohortSignals[userId]
+			if not evidence then
+				evidence = {count = 0, categories = {}, sources = {}, codes = {}}
+				self.cohortSignals[userId] = evidence
+			end
+			evidence.count = math.min(3, evidence.count + 1)
+			evidence.categories[registry.category] = true
+			evidence.sources[safeSource] = true
+			evidence.codes[safeSignal] = true
 			self.cohortCategories[registry.category] = true
 			self.cohortSources[safeSource] = true
 			self.cohortCodes[safeSignal] = true
