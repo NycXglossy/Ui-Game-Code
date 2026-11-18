@@ -84,10 +84,13 @@ The feature branch now includes source-level wiring:
 - Existing custom title filtering uses `ChatAbuseDetectionService:FilterBroadcast`; no raw text is displayed if filtering fails.
 - `RegularCommandsSecurityServer.lua` blocks Kohl's native `ban` and `unban` commands so they cannot bypass Phase 32 evidence and reversal handling. The existing `kick` action remains separately permissioned/audited and is not a persistent ban.
 
-## Remaining installation and release requirements
+## Installer integration and remaining release requirements
 
-1. Install all four Phase 32 ModuleScripts under `ServerStorage.ClubMusicSecurityCore`: `ModerationPunishmentService`, `AccountRiskSignalService`, `ChatAbuseDetectionService`, and `Phase32ServiceBundle`.
-2. Ensure the updated controller and Kohl's Admin addon/security adapter sources are the versions installed in Studio. Do not install a stale copy of any of these files.
+The existing `ClubMusic_Security_Core_Installer.lua` now installs the complete existing SecurityCore module set plus all four Phase 32 modules. It stages the downloads before promotion, preserves unknown children, and retains the previous module folder for rollback. The existing SecurityCore modules remain pinned to `67bfde5823d81d2b4d55ca372127b026403e1f5a`; the four Phase 32 modules are pinned to `6ae4883c2c260df61bf760b8637dd339bda33d7b`. The installer manifest records both snapshots.
+
+1. Run the updated `ClubMusic_Security_Core_Installer.lua` in Roblox Studio Command Bar with HTTP Requests enabled and simulation stopped. Confirm `ServerStorage.ClubMusicSecurityCore` contains all 30 modules and its `InstallManifest` records both source commits.
+2. Separately install the matching `UI_Server_Controller_server (1).lua`, `KohlsAdmin_ClubMusic_Addon.lua`, and `RegularCommandsSecurityServer.lua` from this branch. The Security Core installer intentionally does not guess or overwrite the existing controller or Kohl's Admin package locations.
+3. Do not run a stale controller/addon with the new Phase 32 modules; without the matching sources, the staff commands and server-side restriction wiring are not active.
 3. Route any other custom broadcast-text inputs (for example future custom chat/announcement inputs) through `FilterBroadcast`; this phase does not replace Roblox's default chat filtering.
 4. Before each additional restricted feature is used, wire a server-side `IsRestricted` check. `MusicRequests` and `CustomText` are already wired; `Chat`, `DJFeatures`, `Announcements`, and `Trading` require checks in their respective feature owners before those restrictions are advertised as active.
 5. Publish the experience rules and an appeal route accessible to players. Roblox's BanAsync guidance expects creators to explain rules and provide a way to appeal.
@@ -103,7 +106,6 @@ The feature branch now includes source-level wiring:
 - `;cmpermban-alts <UserId> <reason>` — permanent ban with Roblox suspected-alt propagation; requires `IncidentResponse` in addition to `GlobalModeration`.
 - `;cmunban <UserId> <reason>` — reverse an active native ban.
 - `;cmunrestrict <UserId> <reason>` — remove all active feature restrictions.
-- `;cmunrestrict <UserId> <reason>` — reverse all active feature restrictions.
 - `;cmpunishmenthistory <UserId>` — bounded history; requires `GlobalModeration`.
 - `;cmrisk <UserId>` — advisory risk review; requires `IncidentResponse`.
 
@@ -136,4 +138,4 @@ The feature branch now includes source-level wiring:
 
 ## Certification boundary
 
-The four source modules and source-level controller/Kohl's integration are committed to the feature branch. This does not certify that the modules are installed in the live place, that Roblox BanAsync/DataStore behavior works in Studio, or that the updated sources are active in the published experience. No Studio runtime or published two-server test was performed. Do not describe Phase 32 as runtime-certified until the acceptance matrix passes.
+The four source modules, Security Core installer integration, and source-level controller/Kohl's integration are committed to the feature branch. This does not certify that the modules are installed in the live place, that Roblox BanAsync/DataStore behavior works in Studio, or that the updated sources are active in the published experience. No Studio runtime or published two-server test was performed. Do not describe Phase 32 as runtime-certified until the acceptance matrix passes.
