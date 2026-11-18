@@ -146,3 +146,16 @@ Daily claim and title-tag purchase state changes are synchronous against the one
 - No production DataStore records or player profiles were read or modified.
 - The feature branch is not merged or published; the live Roblox place is unchanged.
 
+
+## Phase 29 implementation record
+
+- `ReceiptAuthority.lua` added in commit `24a26719f36a63fd5efeaf73420eaf78491f521c`.
+- The controller's sole ProcessReceipt callback delegates to Security Core in commit `59e7bdf1ad58aca8e5b61c6c61754246f1d1f5f1`; callback structure/logging refinements followed in `cbaf57a6c4b8a7685e090ed548ca334c20e080ec`.
+- Receipt diagnostics and malformed-ID sanitization were refined in `6df1539279ec288af61063df2e016b391f74d356`, `7260c9e18b26d2b57bc8f1d97ad026b3b5d2bb7e`, and `94000c0d85e9530b33b8c60ec9f231d688c657e8`.
+- Startup Marketplace metadata diagnostics now include all seven donation products in `62df424d5189d2a6a653dac330f4ee7f453d7e43`.
+- Security Core installer includes the module and pins its source release in `08db637fbeb9cea0502afd5288af38472d325aad`.
+- Phase 5 receipt documentation cross-reference: `30458b8f0a20c46792f8d1ebaf3bddcddb9a81b8`.
+
+Static source checks confirmed the expected 20 configured group/pass/product identifiers are present, the donation IDs are included in startup metadata checks, the controller contains one ProcessReceipt assignment, the callback delegates to ReceiptAuthority, the old controller-local 512-entry cache is removed, and the existing profile/global durable journals and legacy XP receipt compatibility paths remain in place.
+
+**Migration boundary:** ReceiptAuthority now owns validation, server product resolution, in-flight exclusion, bounded successful-receipt caching, and dispatch into the existing transaction handlers. The durable profile journal implementation still resides in the controller, while global XP receipt persistence remains in the cross-server service. Those storage backends were intentionally not rewritten in this first integration slice; their journal names, keys, recovery protocol, and existing production data compatibility remain unchanged.
