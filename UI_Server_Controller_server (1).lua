@@ -5808,7 +5808,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			local ok, message = phase32Services:Issue(caller, targetUserId, {kind = "Warn", reason = remainder})
 			return ok, message or "Warning could not be recorded."
 		elseif operation == "Phase32Restrict" then
-			local featureText, reason = if remainder then string.match(remainder, "^([%w,]+)%s+(.+)$") else nil, nil
+			local featureText, reason
 			if remainder then featureText, reason = string.match(remainder, "^([%w,]+)%s+(.+)$") end
 			if not featureText or not reason then return false, "Use: ;cmrestrict UserId Feature[,Feature] reason" end
 			local restrictions = {}
@@ -5816,7 +5816,7 @@ adminBridge.OnInvoke = function(caller: any, operation: any, argument: any): (bo
 			local ok, message = phase32Services:Issue(caller, targetUserId, {kind = "Restrict", restrictions = restrictions, reason = reason})
 			return ok, message or "Restriction could not be recorded."
 		elseif operation == "Phase32TempBan" then
-			local secondsText, reason = if remainder then string.match(remainder, "^(%d+)%s+(.+)$") else nil, nil
+			local secondsText, reason
 			if remainder then secondsText, reason = string.match(remainder, "^(%d+)%s+(.+)$") end
 			local seconds = tonumber(secondsText)
 			if not seconds or not reason then return false, "Use: ;cmtempban UserId Seconds reason" end
