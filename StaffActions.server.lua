@@ -164,36 +164,6 @@ local function setLockdown(enabled: boolean): (boolean, string)
 	return true, "Lockdown disabled; original door settings restored."
 end
 
-local function updateConsoleForPlayer(player: Player)
-	task.spawn(function()
-		local playerGui = player:WaitForChild("PlayerGui", 15)
-		if not playerGui or player.Parent ~= Players then return end
-		local console = playerGui:WaitForChild("StaffConsoleGui", 15)
-		if not console or not console:IsA("ScreenGui") then
-			warn("[Tiki Tide][StaffActions] StaffConsoleGui is missing or is not a ScreenGui for " .. player.Name)
-			return
-		end
-
-		while player.Parent == Players do
-			local level = getVerifiedLevel(player)
-			local authorized = level ~= nil and level >= 1
-			console:SetAttribute("StaffAuthorized", authorized)
-			if not authorized then console.Enabled = false end
-			local launcher = playerGui:FindFirstChild("StaffConsoleLauncher")
-			if launcher and launcher:IsA("ScreenGui") then launcher.Enabled = authorized end
-			task.wait(30)
-		end
-		if console.Parent then console.Enabled = false end
-		local launcher = playerGui:FindFirstChild("StaffConsoleLauncher")
-		if launcher and launcher:IsA("ScreenGui") then launcher.Enabled = false end
-	end)
-end
-
-Players.PlayerAdded:Connect(updateConsoleForPlayer)
-for _, player in ipairs(Players:GetPlayers()) do
-	updateConsoleForPlayer(player)
-end
-
 local function sendResult(player: Player, action: string, ok: boolean, message: string)
 	if player.Parent == Players and actionResult.Parent then
 		pcall(function()
