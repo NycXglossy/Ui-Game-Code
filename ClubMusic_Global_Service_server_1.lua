@@ -18,18 +18,17 @@ local DataStoreService = game:GetService("DataStoreService")
 local MessagingService = game:GetService("MessagingService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local receiptHashModule = ServerStorage:FindFirstChild("ClubMusic_ReceiptHash")
-if not receiptHashModule then
-	local packageFolder = ServerStorage:FindFirstChild("ClubMusic_ServerStorage_Modules")
-	if packageFolder and packageFolder:IsA("Folder") then
-		receiptHashModule = packageFolder:FindFirstChild("ClubMusic_ReceiptHash")
-	end
-end
-if not receiptHashModule then receiptHashModule = ServerStorage:WaitForChild("ClubMusic_ReceiptHash", 20) end
+local receiptSecurityCore = ServerStorage:WaitForChild("ClubMusicSecurityCore", 20)
+local receiptHashModule = if receiptSecurityCore and receiptSecurityCore:IsA("Folder")
+	then receiptSecurityCore:FindFirstChild("ReceiptHash") else nil
 if not receiptHashModule or not receiptHashModule:IsA("ModuleScript") then
-	error("[ClubMusic Global] Missing canonical ClubMusic_ReceiptHash ModuleScript in ServerStorage.")
+	error("[ClubMusic Global] Missing ServerStorage.ClubMusicSecurityCore.ReceiptHash ModuleScript.")
 end
-local ReceiptHash = require(receiptHashModule)
+local receiptHashOk, receiptHashResult = pcall(require, receiptHashModule)
+if not receiptHashOk or typeof(receiptHashResult) ~= "table" or type(receiptHashResult.KeySuffix) ~= "function" then
+	error("[ClubMusic Global] Security Core ReceiptHash failed to load: " .. tostring(receiptHashResult))
+end
+local ReceiptHash = receiptHashResult
 
 local CONFIG = {
 	Enabled = true,
