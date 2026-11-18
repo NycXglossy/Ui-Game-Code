@@ -588,3 +588,6 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - **2026-11-18 — Global API event bridge recovery:** controller event subscriptions now detach and reattach across API folder / GlobalEvent removal and replacement, ignore stale callbacks, and clean up on controller destruction. Static source review only; no Luau or Studio runtime test. Source commit: `022bee1a1bdcf53d4db470383d8e39ac81974642` (controller source change: `28f76ceabde2862c729061eb7cd3f538e16fc6cd`).
 
 - **Global API bridge cleanup follow-up:** removed the obsolete one-shot event capture; watcher remains the sole attachment path. Source commit: `14eaebc5249110a742d4c3f617f16c37291affc5`.
+
+
+- **2026-11-18 — Global API BindableFunction shutdown invalidation:** Global Service now tracks its own bound endpoint instances/callbacks and clears only callbacks still owned by the shutting-down Script, preventing stale closures while protecting callbacks rebound by a replacement service. Static source review only; no Luau or Studio runtime test. Source commit: `0e2932ffd12e7f76b370e2c240e5ea814680eb61`.
