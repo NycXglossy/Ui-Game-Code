@@ -22,6 +22,7 @@ type PlayerState = {
 	knownTools: {[Tool]: boolean},
 	presentTools: {[Tool]: boolean},
 	knownAccessories: {[Accessory]: boolean},
+	observedAccessoryHandles: {[Accessory]: BasePart},
 	toolCapSignaled: boolean,
 	appearanceReady: boolean,
 	additions: {number},
@@ -161,6 +162,19 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 	if handle.CanCollide then
 		self:_signal(player, "avatar_accessory_collidable_handle", accessory.Name)
 	end
+	if state.observedAccessoryHandles[accessory] ~= handle then
+		state.observedAccessoryHandles[accessory] = handle
+		table.insert(state.characterConnections, handle:GetPropertyChangedSignal("Size"):Connect(function()
+			if self.states[player.UserId] == state and accessory.Parent == state.character then
+				self:_signal(player, "avatar_accessory_handle_size_changed", accessory.Name)
+			end
+		end))
+		table.insert(state.characterConnections, handle:GetPropertyChangedSignal("CanCollide"):Connect(function()
+			if self.states[player.UserId] == state and accessory.Parent == state.character then
+				self:_signal(player, "avatar_accessory_handle_collision_changed", accessory.Name)
+			end
+		end))
+	end
 
 	if runtimeAdded and state.appearanceReady then
 		local now = os.clock()
@@ -218,6 +232,7 @@ function Service:_attachCharacter(player: Player, character: Model)
 	state.character = character
 	state.appearanceReady = false
 	table.clear(state.knownAccessories)
+	table.clear(state.observedAccessoryHandles)
 	table.clear(state.additions)
 	table.clear(state.lastSignalAt)
 
@@ -266,6 +281,7 @@ function Service:_attachCharacter(player: Player, character: Model)
 			table.clear(state.characterConnections)
 			state.inventoryContainers[character] = nil
 			table.clear(state.knownAccessories)
+			table.clear(state.observedAccessoryHandles)
 			state.character = nil
 			state.appearanceReady = false
 		end
@@ -295,6 +311,7 @@ function Service:_attachPlayer(player: Player)
 		knownTools = {},
 		presentTools = {},
 		knownAccessories = {},
+		observedAccessoryHandles = {},
 		toolCapSignaled = false,
 		appearanceReady = false,
 		additions = {},
@@ -302,14 +319,16 @@ function Service:_attachPlayer(player: Player)
 		signals = 0,
 	}
 	self.states[player.UserId] = state
-	local function attachBackpack(backpack: Instance)
-		if backpack:IsA("Backpack") then
-			self:_attachToolContainer(player, backpack, state.playerConnections)
+	local function attachInventoryContainer(container: Instance)
+		if container:IsA("Backpack") or container.Name == "StarterGear" then
+			self:_attachToolContainer(player, container, state.playerConnections)
 		end
 	end
 	local backpack = player:FindFirstChildOfClass("Backpack")
-	if backpack then attachBackpack(backpack) end
-	table.insert(state.playerConnections, player.ChildAdded:Connect(attachBackpack))
+	if backpack then attachInventoryContainer(backpack) end
+	local starterGear = player:FindFirstChild("StarterGear")
+	if starterGear then attachInventoryContainer(starterGear) end
+	table.insert(state.playerConnections, player.ChildAdded:Connect(attachInventoryContainer))
 	table.insert(state.playerConnections, player.CharacterAdded:Connect(function(character)
 		self:_attachCharacter(player, character)
 	end))
