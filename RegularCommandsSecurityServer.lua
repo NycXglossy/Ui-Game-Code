@@ -279,6 +279,7 @@ return function(_K: any)
 		xray = {permission = "GlobalModeration", property = "ClientXray", auditKind = "Moderation", budget = "Moderation"},
 		viewtools = {permission = "GlobalModeration", property = "PlayerToolInspection", targetArg = 1, auditKind = "Moderation", budget = "Moderation"},
 		clearlogs = {permission = "GlobalConfig", property = "AdminLogClear", global = true, auditKind = "AdminAction", budget = "Privilege"},
+		customcommand = {permission = "GlobalAnnouncement", property = "AddonBroadcast", auditKind = "AdminAction", budget = "Broadcast"},
 	}
 
 	local BLOCKED_COMMANDS: {[string]: string} = {
