@@ -503,3 +503,13 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - Existing per-server DataStore token-bucket protection remains in place (20-token burst, 5-token/second refill, further shared with this server's other DataStore operations). Reconciliation is paced at 1.1 seconds per player; no new shared budget, MemoryStore, DataStore, MessagingService topic, remote, or diagnostics telemetry was added.
 - No changes to moderation authorization, write semantics, ban enforcement, request-block enforcement, player profile persistence, or client trust boundaries.
 - Static source inspection only. DataStore fault injection, MessagingService delivery, multi-server propagation, Luau compilation, Studio/runtime behavior, and deployment were not tested.
+
+
+## Durable moderation write integrity and concurrency audit (2026-11-18)
+
+- Audited the per-user moderation `UpdateAsync` transform and confirmed it modifies only the requested enforcement field on the latest record supplied to the transform. Concurrent changes to `globalBan` and `requestBlocked` therefore merge against the latest stored value rather than a stale pre-read snapshot; same-field concurrent changes retain normal last-successful-write semantics.
+- Confirmed that authorization and reason validation occur before the durable write, and replay logging, MessagingService publishing, and local event dispatch occur only after `UpdateAsync` succeeds. No external side effects occur inside the retryable transform callback.
+- Found and fixed a corruption edge case: a non-table record or non-boolean enforcement flag now aborts the update instead of being replaced by an empty record, which could otherwise clear the other moderation flag. A cancelled/failed update returns failure and does not publish a success notification.
+- Moderation history is rebuilt as a compact array of at most 20 validated entries. Malformed history members and non-array keys are ignored; accepted entries retain only the allowlisted field, boolean value, positive integer actor ID, bounded reason text, and finite timestamp. The new entry is prepended, preserving the existing newest-first history behavior and cap.
+- Internal update arguments now independently require an allowlisted field, boolean value, and positive integer actor ID. Existing BindableFunction authorization and admin-only `GetModerationHistory` access remain unchanged.
+- Static source checks only. No Luau compilation, DataStore concurrency/fault-injection tests, Roblox Studio/runtime test, or deployment was performed.
