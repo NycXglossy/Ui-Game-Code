@@ -32,7 +32,7 @@ New module: `ClubMusicSecurityCore/ReceiptAuthority.lua`.
 
 The controller remains the sole Roblox callback owner. It passes the server product resolver and existing transaction handler to ReceiptAuthority. The durable profile transaction and the separate global XP transaction remain in their existing storage adapters. This preserves the established recovery implementation while moving the trust boundary and in-server receipt coordination into Security Core.
 
-Installer update: `ClubMusic_Security_Core_Installer.lua` includes `ReceiptAuthority` and pins the Security Core release to commit `24a26719f36a63fd5efeaf73420eaf78491f521c`, which contains the module. Install the matching Security Core release and controller source together. If the module is unavailable, the controller leaves receipts retryable rather than granting outside Security Core.
+Installer update: `ClubMusic_Security_Core_Installer.lua` includes `ReceiptAuthority` and pins the Security Core release to commit `d5a38b3740e7c2e1e03d4115db2d46cb3e813ec4`, which contains the module. Install the matching Security Core release and controller source together. If the module is unavailable, the controller leaves receipts retryable rather than granting outside Security Core.
 
 ## Existing durable receipt guarantees preserved
 
@@ -149,11 +149,11 @@ Daily claim and title-tag purchase state changes are synchronous against the one
 
 ## Phase 29 implementation record
 
-- `ReceiptAuthority.lua` added in commit `24a26719f36a63fd5efeaf73420eaf78491f521c`.
+- `ReceiptAuthority.lua` added in commit `24a26719f36a63fd5efeaf73420eaf78491f521c`; its in-flight identity was aligned with the durable per-user PurchaseId key in `d5a38b3740e7c2e1e03d4115db2d46cb3e813ec4`.
 - The controller's sole ProcessReceipt callback delegates to Security Core in commit `59e7bdf1ad58aca8e5b61c6c61754246f1d1f5f1`; callback structure/logging refinements followed in `cbaf57a6c4b8a7685e090ed548ca334c20e080ec`.
 - Receipt diagnostics and malformed-ID sanitization were refined in `6df1539279ec288af61063df2e016b391f74d356`, `7260c9e18b26d2b57bc8f1d97ad026b3b5d2bb7e`, and `94000c0d85e9530b33b8c60ec9f231d688c657e8`.
 - Startup Marketplace metadata diagnostics now include all seven donation products in `62df424d5189d2a6a653dac330f4ee7f453d7e43`.
-- Security Core installer includes the module and pins its source release in `08db637fbeb9cea0502afd5288af38472d325aad`.
+- Security Core installer first included the module in `08db637fbeb9cea0502afd5288af38472d325aad`; it now pins the refined module source in `f87a15fb7a155adbbee9caa8a541d48dc3e06b27`.
 - Phase 5 receipt documentation cross-reference: `30458b8f0a20c46792f8d1ebaf3bddcddb9a81b8`.
 
 Static source checks confirmed the expected 20 configured group/pass/product identifiers are present, the donation IDs are included in startup metadata checks, the controller contains one ProcessReceipt assignment, the callback delegates to ReceiptAuthority, the old controller-local 512-entry cache is removed, and the existing profile/global durable journals and legacy XP receipt compatibility paths remain in place.
