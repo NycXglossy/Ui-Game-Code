@@ -116,3 +116,14 @@ The initial source scan found these periodic / potentially expensive paths, whic
 
 Static source changes are not proof of FPS, memory, or latency improvement. The current pass has not run a Luau parser/compiler, Roblox Studio multiplayer tests, published test-server tests, or controlled device profiling. The live place hierarchy and embedded/binary assets still need reconciliation. Do not merge, install, or publish this branch as production-ready until the acceptance matrix is recorded in a dedicated test place.
 
+
+### D. Installer / Global Service release alignment
+
+- The Security Core installer and Global Service now both pin the same reviewed module/client source snapshot: `142562f0727f8c3fa748a9bd00dbd1871e5f4fe9`.
+- Verified that this pinned snapshot contains the updated adaptive visual client, receipt transaction service, receipt hash module, and adaptive load manager.
+- The separate Phase 32 module pin remains independent.
+- Commits: installer `e2ed24a13f8998ee52edb6451c0e022938ef2396`; Global Service `7960f321acd030703057251f5f4a6064825a2450`.
+
+### E. Request-song architecture compatibility
+
+The standalone `RequestSongEvent` / `songQueue` sample is not installed. The existing ClubMusic `RequestAction` / `RequestTrack` path remains the only request ingress and queue owner. It already applies server-side validation, request cooldowns and budgets, entitlement checks where required, duplicate/current-track checks, queue capacity, and catalog validation. Do not add a parallel queue, pass lookup, or asset metadata request path.
