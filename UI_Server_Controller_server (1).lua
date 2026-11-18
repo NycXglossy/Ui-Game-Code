@@ -2595,6 +2595,8 @@ end
 -- Profile text is preserved if TextService is temporarily unavailable, but is never
 -- replicated until the current value has been filtered successfully.
 local filteredTitleTextByUserId: {[number]: {[number]: string}} = {}
+local lastCustomTitleTextAt: {[number]: number} = {}
+local CUSTOM_TITLE_TEXT_COOLDOWN_SECONDS = 60
 
 -- Mirrors the active slot onto player attributes for the overhead title script.
 -- Legacy attributes (CustomTitle/TitleColor/TitleStyle/ShowCustomTitle) are kept up to date as well.
@@ -4586,6 +4588,13 @@ ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number,
 		notify(player, "That title isn't valid. Titles are 1-24 characters.", "warn")
 		return false
 	end
+	local textNow = os.clock()
+	local previousTextAt = lastCustomTitleTextAt[player.UserId] or 0
+	if previousTextAt > 0 and textNow - previousTextAt < CUSTOM_TITLE_TEXT_COOLDOWN_SECONDS then
+		local remaining = math.ceil(CUSTOM_TITLE_TEXT_COOLDOWN_SECONDS - (textNow - previousTextAt))
+		notify(player, "Custom title text can only be changed once every 60 seconds. Wait " .. tostring(remaining) .. " seconds.", "warn")
+		return false
+	end
 	local filtered = ControllerFunctions.filterTitleText(player, clean.text)
 	if filtered == nil then
 		notify(player, "Roblox text filtering is unavailable. Please try again.", "warn")
@@ -4599,9 +4608,15 @@ ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number,
 
 	-- Filtering yields. Revalidate profile ownership, live caller, entitlement,
 	-- and slot access immediately before committing the filtered text.
+	local commitNow = os.clock()
+	local latestTextAt = lastCustomTitleTextAt[player.UserId] or 0
 	if profiles[player.UserId] ~= profile or player.Parent ~= Players
 		or not ControllerFunctions.hasTikiTideAccess(player)
-		or slotNumber > profile.unlockedSlots then return false end
+		or slotNumber > profile.unlockedSlots
+		or (latestTextAt > 0 and commitNow - latestTextAt < CUSTOM_TITLE_TEXT_COOLDOWN_SECONDS) then
+		return false
+	end
+	lastCustomTitleTextAt[player.UserId] = commitNow
 	ControllerFunctions.recordTextReplayEvent(player, "custom_title_filtered")
 	local safeTexts = filteredTitleTextByUserId[player.UserId]
 	if not safeTexts then safeTexts = {}; filteredTitleTextByUserId[player.UserId] = safeTexts end
@@ -7119,6 +7134,7 @@ Players.PlayerRemoving:Connect(function(player)
 		publishState(nil)
 	end
 	filteredTitleTextByUserId[userId] = nil
+	lastCustomTitleTextAt[userId] = nil
 	local djSessionManager = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.DJSession
 	if djSessionManager then
 		local endedSession = djSessionManager:EndForDeparture(userId)
