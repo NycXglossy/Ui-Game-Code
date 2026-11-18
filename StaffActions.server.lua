@@ -178,10 +178,16 @@ local function updateConsoleForPlayer(player: Player)
 
 		while player.Parent == Players do
 			local level = getVerifiedLevel(player)
-			console.Enabled = level ~= nil and level >= 1
+			local authorized = level ~= nil and level >= 1
+			console:SetAttribute("StaffAuthorized", authorized)
+			if not authorized then console.Enabled = false end
+			local launcher = playerGui:FindFirstChild("StaffConsoleLauncher")
+			if launcher and launcher:IsA("ScreenGui") then launcher.Enabled = authorized end
 			task.wait(30)
 		end
 		if console.Parent then console.Enabled = false end
+		local launcher = playerGui:FindFirstChild("StaffConsoleLauncher")
+		if launcher and launcher:IsA("ScreenGui") then launcher.Enabled = false end
 	end)
 end
 
