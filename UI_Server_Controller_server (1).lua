@@ -6810,32 +6810,89 @@ end
 
 local connectedGlobalEvents: {[any]: any} = {}
 
--- Store late-lifecycle callbacks on the existing connection registry instead of
--- allocating more top-level locals. The controller chunk is close to Luau's
--- 200-local register ceiling, and these callbacks only need script-lifetime state.
-connectedGlobalEvents.attachGlobalEvent = function(eventObject: Instance?)
-	if eventObject and eventObject:IsA("BindableEvent") then
-		local event = eventObject :: BindableEvent
-		-- Connection ownership belongs to this Script's lifetime. A restarted
-		-- controller receives a fresh table and can reconnect to this persistent event.
-		if connectedGlobalEvents[event] then return end
-		connectedGlobalEvents[event] = true
-		event.Event:Connect(ControllerFunctions.handleGlobalMessage)
-	end
+-- Keep bridge connections owned by this controller and reconnect when the
+-- optional Global Service recreates its API folder or GlobalEvent BindableEvent.
+-- This registry avoids extra top-level locals in the controller's large chunk.
+connectedGlobalEvents.detachEvent = function()
+	local connection = connectedGlobalEvents.eventConnection
+	connectedGlobalEvents.eventConnection = nil
+	connectedGlobalEvents.currentEvent = nil
+	if connection then pcall(function() connection:Disconnect() end) end
 end
 
-connectedGlobalEvents.watchGlobalApi = function(folder: Instance)
-	if not folder:IsA("Folder") then return end
-	connectedGlobalEvents.attachGlobalEvent(folder:FindFirstChild("GlobalEvent"))
-	folder.ChildAdded:Connect(function(child)
-		if child.Name == "GlobalEvent" then connectedGlobalEvents.attachGlobalEvent(child) end
+connectedGlobalEvents.attachGlobalEvent = function(folder: Folder, eventObject: Instance?)
+	if connectedGlobalEvents.currentFolder ~= folder then return end
+	if not eventObject or not eventObject:IsA("BindableEvent") then
+		connectedGlobalEvents.detachEvent()
+		return
+	end
+	local event = eventObject :: BindableEvent
+	if connectedGlobalEvents.currentEvent == event then return end
+	connectedGlobalEvents.detachEvent()
+	connectedGlobalEvents.currentEvent = event
+	connectedGlobalEvents.eventConnection = event.Event:Connect(function(...)
+		-- Ignore callbacks from a removed/replaced API generation.
+		if connectedGlobalEvents.currentFolder == folder
+			and connectedGlobalEvents.currentEvent == event
+			and folder.Parent == ServerStorage and event.Parent == folder then
+			ControllerFunctions.handleGlobalMessage(...)
+		end
 	end)
 end
 
-connectedGlobalEvents.attachGlobalEvent(globalEventObject)
-if globalApi and globalApi:IsA("Folder") then connectedGlobalEvents.watchGlobalApi(globalApi) end
-ServerStorage.ChildAdded:Connect(function(child)
-	if child.Name == "ClubMusicGlobalAPI" and child:IsA("Folder") then connectedGlobalEvents.watchGlobalApi(child) end
+connectedGlobalEvents.unwatchGlobalApi = function(folder: Instance)
+	if connectedGlobalEvents.currentFolder ~= folder then return end
+	connectedGlobalEvents.detachEvent()
+	local childConnection = connectedGlobalEvents.folderChildAdded
+	local removedConnection = connectedGlobalEvents.folderChildRemoved
+	connectedGlobalEvents.folderChildAdded = nil
+	connectedGlobalEvents.folderChildRemoved = nil
+	if childConnection then pcall(function() childConnection:Disconnect() end) end
+	if removedConnection then pcall(function() removedConnection:Disconnect() end) end
+	connectedGlobalEvents.currentFolder = nil
+	if globalApi == folder then globalApi = nil end
+end
+
+connectedGlobalEvents.watchGlobalApi = function(folder: Instance)
+	if not folder:IsA("Folder") or folder.Parent ~= ServerStorage then return end
+	if connectedGlobalEvents.currentFolder == folder then
+		connectedGlobalEvents.attachGlobalEvent(folder, folder:FindFirstChild("GlobalEvent"))
+		return
+	end
+	local previousFolder = connectedGlobalEvents.currentFolder
+	if previousFolder then connectedGlobalEvents.unwatchGlobalApi(previousFolder) end
+	globalApi = folder
+	connectedGlobalEvents.currentFolder = folder
+	connectedGlobalEvents.attachGlobalEvent(folder, folder:FindFirstChild("GlobalEvent"))
+	connectedGlobalEvents.folderChildAdded = folder.ChildAdded:Connect(function(child)
+		if child.Name == "GlobalEvent" then connectedGlobalEvents.attachGlobalEvent(folder, child) end
+	end)
+	connectedGlobalEvents.folderChildRemoved = folder.ChildRemoved:Connect(function(child)
+		if child == connectedGlobalEvents.currentEvent then connectedGlobalEvents.detachEvent() end
+	end)
+end
+
+connectedGlobalEvents.serverChildAdded = ServerStorage.ChildAdded:Connect(function(child)
+	if child.Name == "ClubMusicGlobalAPI" and child:IsA("Folder") then
+		connectedGlobalEvents.watchGlobalApi(child)
+	end
+end)
+connectedGlobalEvents.serverChildRemoved = ServerStorage.ChildRemoved:Connect(function(child)
+	if child == connectedGlobalEvents.currentFolder then connectedGlobalEvents.unwatchGlobalApi(child) end
+end)
+
+if globalApi and globalApi:IsA("Folder") and globalApi.Parent == ServerStorage then
+	connectedGlobalEvents.watchGlobalApi(globalApi)
+end
+
+script.Destroying:Connect(function()
+	local folder = connectedGlobalEvents.currentFolder
+	if folder then connectedGlobalEvents.unwatchGlobalApi(folder) end
+	for _, key in ipairs({"serverChildAdded", "serverChildRemoved"}) do
+		local connection = connectedGlobalEvents[key]
+		connectedGlobalEvents[key] = nil
+		if connection then pcall(function() connection:Disconnect() end) end
+	end
 end)
 
 -- MessagingService invalidations are best-effort. A low-frequency, jittered
