@@ -400,6 +400,7 @@ local function makeActionButton(command: Command, order: number)
 	button.Activated:Connect(function()
 		selected = command
 		pendingConfirmation = false
+		closurePreparedMode = nil
 		clearInputs()
 		updateForm()
 		for _, child in ipairs(actionList:GetChildren()) do
@@ -610,7 +611,8 @@ actionResult.OnClientEvent:Connect(function(action: any, succeeded: any, message
 		pendingRequest = false
 		requestToken += 1
 		runButton.Active = true
-		runButton.Text = "RUN ACTION"
+		runButton.Text = if action == "ClubClosurePrepare" then "CONFIRM CLOSE"
+			elseif action == "ClubReopenPrepare" then "CONFIRM REOPEN" else "RUN ACTION"
 		lockdownButton.Active = true
 	end
 end)
