@@ -6516,7 +6516,13 @@ ControllerFunctions.checkNativeBanHistory = function(player: Player)
 	end
 end
 
+-- PlayerAdded and the startup GetPlayers sweep can overlap. Make join
+-- initialization idempotent for the lifetime of this Player instance.
+local onJoinStarted: {[Player]: boolean} = {}
+
 ControllerFunctions.onJoin = function(player: Player)
+	if player.Parent ~= Players or onJoinStarted[player] then return end
+	onJoinStarted[player] = true
 	task.spawn(ControllerFunctions.checkNativeBanHistory, player)
 	local enabledCallOk, globalServiceEnabled = ControllerFunctions.globalInvoke("IsEnabled")
 	local globalModerationRequired = not RunService:IsStudio()
@@ -6553,12 +6559,16 @@ ControllerFunctions.onJoin = function(player: Player)
 			local serviceResolved = globalServiceReady
 			local moderationResolved = not retryModeration
 			local attempt = 0
+			-- Stable per-user staggering prevents simultaneous joins from retrying
+			-- the shared DataStore bucket on identical backoff boundaries.
+			local retryJitter = 0.85 + ((player.UserId % 31) / 100)
 			while player.Parent == Players and not (serviceResolved and moderationResolved) do
 				attempt += 1
 				-- The initial join checks already ran immediately. If a backend was still
 				-- loading, retry quickly instead of imposing a five-second blind lock;
 				-- increase the interval only when the service continues to fail.
-				local retryDelay = if attempt == 1 then 1 else math.min(15, 2 ^ math.min(attempt - 1, 4))
+				local retryBaseDelay = if attempt == 1 then 1 else math.min(15, 2 ^ math.min(attempt - 1, 4))
+				local retryDelay = math.min(15, retryBaseDelay * retryJitter)
 				task.wait(retryDelay)
 				if player.Parent ~= Players then return end
 				if not serviceResolved then
@@ -6857,6 +6867,7 @@ ControllerFunctions.startDanceFloorRewards()
 
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
+	onJoinStarted[player] = nil
 	if djControlModeEnabled and djControlModeUserId == userId then
 		djControlModeEnabled = false
 		djControlModeUserId = nil
