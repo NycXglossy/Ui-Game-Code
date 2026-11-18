@@ -79,6 +79,12 @@ The audio modules are pinned to package snapshot `f47410ac9a9674d3df0b24eb1714b3
 
 The installer stages all source downloads and preflights destination types before replacing same-named ModuleScripts. It does not modify the controller, renderer, global service scripts, existing legacy objects, or the optional global-service RBXMX package.
 
+## Security Core and Phase 32 installer
+
+Install the security stack separately with `ClubMusic_Security_Core_Installer.lua`. It installs the existing SecurityCore modules plus the four Phase 32 account-risk, chat-abuse, punishment, and composition modules into `ServerStorage.ClubMusicSecurityCore`. The installer pins the existing SecurityCore snapshot and Phase 32 snapshot independently, stages all downloads before promotion, and retains the previous module folder for rollback.
+
+The security installer does not overwrite `UI_Server_Controller_server (1).lua`, `KohlsAdmin_ClubMusic_Addon.lua`, or `RegularCommandsSecurityServer.lua`. Install those matching branch sources into their existing Studio locations as a separate step; otherwise Phase 32 punishment commands and feature restrictions will not be active. The audio installer above remains dedicated to audio support modules and does not replace this security installation.
+
 ## Legacy compatibility and cleanup
 
 The current controller and watchdog no longer use a legacy Sound playback fallback. The controller-local quality inspector preserves the established states: `Idle`, `SilentCatalogTrack`, `Unavailable`, `Playing`, `Paused`, `StoppedAfterLoad`, and `BufferingOrStopped`.
