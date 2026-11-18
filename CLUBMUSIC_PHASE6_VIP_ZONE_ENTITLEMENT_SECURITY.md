@@ -99,3 +99,13 @@ The installer has not been executed in Roblox Studio.
 - Physical VIP-zone enforcement: pending identification/integration of the actual zone scripts and parts.
 
 No live DataStore records or production player profiles were read or modified by this phase.
+
+## Follow-up boundary review — physical VIP zone (2026-11-17)
+
+A sample polling detector using GetPartsInPart does not establish the live VIP-room geometry or authorize a new enforcement path. The existing membership resolver remains ClubMusicSecurityCore/EntitlementAuthority.lua; it is the only membership-tier resolver and should be reused by any future physical-zone entry path.
+
+The current Phase 26 teleport ticket service lists VIPZone as an accepted origin label, but the tracked source review did not establish a matching VIP-zone caller. Do not treat that allowlist entry as proof of a working detector or permission check.
+
+Before adding a zone service, inspect the live place for the actual detector part(s), query/collision settings, protected room entrances, alternate routes, spawn/respawn paths, and any teleport/door scripts. Then implement server-side boundary checks using the existing entitlement and SecurityCore authorities. Unknown Marketplace results must not be treated as proof of unauthorized access or exploitation. Any corrective teleport must use the existing TeleportValidationService ticket flow and a validated public destination; no direct CFrame ejection, automatic kick, or ban from a single overlap is approved.
+
+Required Studio tests include all membership tiers and owner-awarded access, group-member VIP, non-members, first-time and transient Marketplace lookup failures, boundary edges, multi-part characters, overlapping zones, respawns, and alternate entry routes. Live-place geometry and runtime acceptance remain outstanding.
