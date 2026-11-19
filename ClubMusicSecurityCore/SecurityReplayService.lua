@@ -10,6 +10,7 @@ local SERVER_CAPACITY = 2048
 local MAX_EVENT_TYPE = 48
 local MAX_SOURCE = 32
 local MAX_METADATA_KEYS = 12
+local MAX_METADATA_INSPECTED = 24
 local MAX_METADATA_STRING = 96
 local MAX_QUERY = 100
 local MAX_USER_ID = 9007199254740991
@@ -24,7 +25,8 @@ local function validUserId(value: any, allowZero: boolean?): boolean
 end
 
 local function cleanString(value: any, limit: number): string
-	local result = string.sub(tostring(value or ""), 1, limit)
+	if typeof(value) ~= "string" then return "" end
+	local result = string.sub(value, 1, limit)
 	result = result:gsub("[%c]", " ")
 	return (string.gsub(result, "^%s*(.-)%s*$", "%1"))
 end
@@ -39,7 +41,8 @@ local function normalizeEventType(value: any): string?
 end
 
 local function normalizeSeverity(value: any): string
-	local normalized = string.lower(cleanString(value or "Info", 12))
+	if typeof(value) ~= "string" then return "Info" end
+	local normalized = string.lower(cleanString(value, 12))
 	if normalized == "warning" then return "Warning" end
 	if normalized == "error" then return "Error" end
 	if normalized == "critical" then return "Critical" end
@@ -49,22 +52,26 @@ end
 local function sanitizeMetadata(value: any): {[string]: any}
 	local clean = {}
 	if typeof(value) ~= "table" then return clean end
-	local count = 0
+	local accepted = 0
+	local inspected = 0
+	-- Bound both accepted fields and inspected input entries. A malformed or
+	-- unexpectedly large metadata table cannot turn one event into an unbounded scan.
 	for key, item in pairs(value) do
-		if count >= MAX_METADATA_KEYS then break end
+		inspected += 1
+		if inspected > MAX_METADATA_INSPECTED or accepted >= MAX_METADATA_KEYS then break end
 		if typeof(key) == "string" then
 			local safeKey = cleanString(key, 24)
 			if safeKey ~= "" and string.match(safeKey, "^[%w_%-]+$") and clean[safeKey] == nil then
 				local kind = typeof(item)
 				if kind == "string" then
 					clean[safeKey] = cleanString(item, MAX_METADATA_STRING)
-					count += 1
+					accepted += 1
 				elseif kind == "boolean" then
 					clean[safeKey] = item
-					count += 1
+					accepted += 1
 				elseif kind == "number" and finiteNumber(item) then
 					clean[safeKey] = math.clamp(item, -1000000000, 1000000000)
-					count += 1
+					accepted += 1
 				end
 			end
 		end
@@ -120,7 +127,7 @@ function Service:Record(eventType: any, userId: any, targetUserId: any, severity
 		targetUserId = if targetUserId ~= nil then math.floor(targetUserId) else 0,
 		type = normalizedType,
 		severity = normalizeSeverity(severity),
-		source = cleanString(source or "Server", MAX_SOURCE),
+		source = if typeof(source) == "string" then cleanString(source, MAX_SOURCE) else "Server",
 		metadata = sanitizeMetadata(metadata),
 	}
 	self.nextId = event.id
@@ -177,14 +184,14 @@ function Service:Query(actor: any, targetUserId: any, limit: any, beforeTimestam
 		if not filterType then return false, {}, "Invalid event-type filter." end
 	end
 
-	local result = {}
+	local result = table.create(math.min(queryLimit, self.count))
 	for offset = 0, self.count - 1 do
 		local index = ((self.head + self.count - offset - 2) % SERVER_CAPACITY) + 1
 		local item = self.events[index]
 		if item and item.at >= after and item.at <= before
 			and (targetUserId == nil or item.userId == targetUserId or item.targetUserId == targetUserId)
 			and (filterType == nil or item.type == filterType) then
-			table.insert(result, copyEvent(item))
+			result[#result + 1] = copyEvent(item)
 			if #result >= queryLimit then break end
 		end
 	end
@@ -197,6 +204,10 @@ function Service:GetStatus()
 		recorded = self.recorded,
 		retained = self.count,
 		capacity = SERVER_CAPACITY,
+		maxQueryScan = SERVER_CAPACITY,
+		maxQueryResults = MAX_QUERY,
+		maxMetadataKeys = MAX_METADATA_KEYS,
+		maxMetadataEntriesInspected = MAX_METADATA_INSPECTED,
 		dropped = self.dropped,
 		deniedQueries = self.denied,
 		scope = "PerServerMemoryOnly",
