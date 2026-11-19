@@ -130,6 +130,11 @@ local function hasValidStoredCatalogShape(stored: any): boolean
 	if typeof(stored) ~= "table" or typeof(stored.tracks) ~= "table" then
 		return false
 	end
+	-- Accept legacy unversioned records and the two persisted formats already
+	-- used by this service. Refuse unknown future versions rather than rewriting them.
+	if stored.schemaVersion ~= nil and stored.schemaVersion ~= 1 and stored.schemaVersion ~= 2 then
+		return false
+	end
 
 	-- DataStore tracks must be a bounded, dense 1-based array. ipairs alone
 	-- would silently ignore dictionary keys and holes, then replace good data.
@@ -309,7 +314,10 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 				return old
 			end
 			table.insert(list, {assetId=assetId, genreId=genreId, title=title, artist=artist, duration=duration, genre=genreName, artworkAssetId=artworkAssetId})
-			return {schemaVersion=2, tracks=list}
+			local output = if typeof(old) == "table" then table.clone(old) else {}
+			output.schemaVersion = 2
+			output.tracks = list
+			return output
 		end)
 	end)
 	storageWriteBusy = false
@@ -355,7 +363,10 @@ function MusicCatalogService:RemoveCustomTrack(trackId: string): (boolean, strin
 			for _, raw in ipairs(list) do
 				if not (typeof(raw) == "table" and tonumber(raw.assetId) == assetId) then table.insert(filtered, raw) end
 			end
-			return {schemaVersion=2, tracks=filtered}
+			local output = if typeof(old) == "table" then table.clone(old) else {}
+			output.schemaVersion = 2
+			output.tracks = filtered
+			return output
 		end)
 	end)
 	storageWriteBusy = false
@@ -528,6 +539,34 @@ local function sanitize(raw: any): {Playlist}
  return result
 end
 
+local function hasValidStoredPlaylistRecords(raw: any): boolean
+ if raw == nil then return true end
+ if typeof(raw) ~= "table" or typeof(raw.playlists) ~= "table" then return false end
+ -- Accept the original unversioned shape and the current v1 record only.
+ -- Unknown future versions must not be interpreted as an empty list and overwritten.
+ if raw.schemaVersion ~= nil and raw.schemaVersion ~= 1 then return false end
+ local count, highest = 0, 0
+ for key in pairs(raw.playlists) do
+  if typeof(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > MAX_PLAYLISTS then return false end
+  count += 1
+  if key > highest then highest = key end
+ end
+ if count ~= highest then return false end
+ local cleaned = sanitize(raw)
+ if #cleaned ~= count then return false end
+ for index, item in ipairs(raw.playlists) do
+  if typeof(item.trackIds) ~= "table" then return false end
+  local trackCount, trackHighest = 0, 0
+  for key in pairs(item.trackIds) do
+   if typeof(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > MAX_TRACKS then return false end
+   trackCount += 1
+   if key > trackHighest then trackHighest = key end
+  end
+  if trackCount ~= trackHighest or #cleaned[index].trackIds ~= trackCount then return false end
+ end
+ return true
+end
+
 local function pack(list: {Playlist})
  local data = {schemaVersion=1, playlists={}}
  for _, p in ipairs(list) do table.insert(data.playlists, clonePlaylist(p)) end
@@ -541,6 +580,10 @@ function MusicPlaylistService:Initialize(studioUseDataStore: boolean?, budgetCal
  if budgetCallback and not budgetCallback() then return false end
  local ok, data = pcall(function() return store:GetAsync(KEY) end)
  if not ok then warn("[ClubMusic Playlists] Initial load failed: " .. tostring(data)); return false end
+ if not hasValidStoredPlaylistRecords(data) then
+  warn("[ClubMusic Playlists] Initialization refused malformed or unsupported stored data; no defaults were substituted.")
+  return false
+ end
  playlists = sanitize(data); ready = true
  return true
 end
@@ -577,6 +620,11 @@ function MusicPlaylistService:Refresh(budgetCallback: (() -> boolean)?): boolean
   warn("[ClubMusic Playlists] Refresh failed: " .. tostring(data))
   return false
  end
+ if not hasValidStoredPlaylistRecords(data) then
+  busy = false
+  warn("[ClubMusic Playlists] Refresh refused malformed or unsupported stored data; last-known-good cache preserved.")
+  return false
+ end
  playlists = sanitize(data)
  busy = false
  return true
@@ -594,17 +642,30 @@ local function applyMutation(self, mutate: ({Playlist}) -> (boolean, string)): (
  end
  busy = true
  local accepted, response = false, "Playlist save failed."
+ local invalidStoredData = false
  local ok, result = pcall(function()
   return store:UpdateAsync(KEY, function(old)
+   invalidStoredData = false
+   if not hasValidStoredPlaylistRecords(old) then
+    invalidStoredData = true
+    return old
+   end
    local candidate = sanitize(old)
    local changed, message = mutate(candidate)
    accepted, response = changed, message
    if not changed then return old end
-   return pack(candidate)
+   local output = if typeof(old) == "table" then table.clone(old) else {}
+   output.schemaVersion = 1
+   output.playlists = pack(candidate).playlists
+   return output
   end)
  end)
  busy = false
  if not ok then warn("[ClubMusic Playlists] Mutation failed: " .. tostring(result)); return false, "Playlist save failed; no change was applied." end
+ if invalidStoredData then
+  warn("[ClubMusic Playlists] Mutation refused malformed or unsupported stored data; persisted record was not overwritten.")
+  return false, "Playlist data needs recovery; no change was saved."
+ end
  if not accepted then return false, response end
  playlists = sanitize(result)
  return true, response
