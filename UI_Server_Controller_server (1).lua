@@ -4791,6 +4791,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			local restrictionOk, restricted = phase32Services:IsRestricted(player.UserId, "MusicRequests")
 			if not restrictionOk then notify(player, "Moderation restrictions could not be verified. Requests are temporarily unavailable.", "warn"); return end
 			if restricted then notify(player, "Your music requests are restricted by moderation.", "warn"); return end
+			-- Moderation lookup may yield. Revalidate the player session before
+			-- allowing the request to mutate this server's queue.
+			if not ControllerFunctions.isLiveRemotePlayer(player) then return end
 		end
 		local trackId = payload.trackId
 		if not ControllerFunctions.isValidString(trackId, 24) then return end
