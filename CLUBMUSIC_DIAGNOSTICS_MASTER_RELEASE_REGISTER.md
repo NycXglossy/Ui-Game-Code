@@ -624,4 +624,4 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - Receipt journal preparation initializes only absent keys. Malformed existing journal values are preserved for validation failure instead of being replaced by a fresh Prepared journal.
 - Existing recovery remains: receipt retry resumes Prepared journals, reconciles durable pending markers, completes journals, and clears markers; completed journals prevent duplicate grants. Existing 180-second session lease and writer ownership checks remain unchanged.
 - Static checks only; no Luau compilation, live DataStore fault injection, Studio/runtime test, or deployment.
-- Source commits: `e83df44427f41567dc4da837cdab34bce31af50a`, `055898f9f668eb0334af1b4488f88acfe3c460ef`.
+- Source commits: `e83df44427f41567dc4da837cdab34bce31af50a`, `055898f9f668eb0334af1b4488f88acfe3c460ef`, `0742d7f18b762673d16fe2c2b425c7b17672855b`.
