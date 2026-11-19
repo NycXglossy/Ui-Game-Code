@@ -14,6 +14,7 @@
 - The service resolves targets through the server's live Players list, rejects invalid IDs and self-targeting, and requires a living target Humanoid.
 - The server publishes only the staff observer's own spectator attributes. The client LocalScript uses those attributes only to select a camera subject; it cannot enter, switch, or authorize observation.
 - During observation, the server saves the staff Humanoid's current WalkSpeed, JumpPower, JumpHeight, AutoRotate, UseJumpPower, and Jumping-enabled state, then suspends movement. Exit restores the captured values. Re-entering an active session is rejected; use SwitchTarget.
+- Optional stealth is server-applied and off by default. `Enter` accepts a third boolean argument; when true, the server snapshots each character BasePart's Transparency, CanCollide, CanTouch, and CanQuery plus Decal/Texture Transparency, then hides/disables collision and interaction. Descendants added during the same character session are also captured. Disabling stealth or exiting restores the exact captured values. The HumanoidRootPart is not anchored.
 - The service automatically exits when the observer's character is removed, clears observer state if a target leaves, and cleans up on player departure or service shutdown.
 - Enter, switch, exit, target departure, and staff departure are sent to the existing global audit endpoint when it is available. If unavailable, the bootstrap emits a bounded warning rather than claiming a durable audit succeeded.
 - The local observer-control attribute `TikiTideSpectatorNoWorldActions` is available for other server gameplay services to honor. This phase does not claim every existing gameplay remote already checks that attribute.
@@ -34,8 +35,8 @@ Do not expose this BindableFunction through a client RemoteFunction/RemoteEvent 
 
 ## Explicit limitations
 
-- This phase supplies the server service and camera presentation, but does not add a Kohl's Admin command, staff GUI button, or chat command. A trusted server command/UI adapter must call the BindableFunction.
-- The staff character remains in the world and visible to other players. This is not invisibility, noclip, or an untraceable mode; the target receives no explicit spectator notification from this service.
+- This phase supplies the server service and camera presentation, but does not add a Kohl's Admin command, staff GUI button, or chat command. A trusted server command/UI adapter must call the BindableFunction. The Phase 22 staff command bridge exposes `SpectateEnter`, `SpectateSwitch`, `SpectateExit`, `SpectateState`, and `SpectateStealth`. Enter accepts `<UserId> [stealth|visible]` (visible is the default); the stealth action accepts `on`/`off` or `stealth`/`visible`.
+- Stealth mode hides the staff character from other players while the observation session is active; it is not an untraceable mode. Original part visibility and interaction properties are restored on exit. Stealth is opt-in and does not anchor the character. The target receives no explicit spectator notification from this service.
 - Client control disabling is presentation/UX only. Server-side movement suspension is authoritative, but every other gameplay action/remote must separately honor the `TikiTideSpectatorNoWorldActions` state before claiming total interaction lockdown.
 - No automatic kick, ban, moderation restriction, or target manipulation is performed.
 - No Roblox runtime test is claimed by this source change.
@@ -49,4 +50,5 @@ Do not expose this BindableFunction through a client RemoteFunction/RemoteEvent 
 5. Switch targets repeatedly; ensure the original movement snapshot is not overwritten.
 6. Exit and verify original movement/jump/rotation settings and camera controls are restored.
 7. Verify observer character respawn, target departure, staff departure, and server shutdown cleanup.
-8. Verify audit records and fallback warnings, then regression-test Kohl's Admin, Utility Bar, Tiki Tide Settings, and desktop/mobile/console behavior.
+8. Verify stealth on/off preserves original transparency and collision/touch/query values, including accessories added during observation.
+9. Verify audit records and fallback warnings, then regression-test Kohl's Admin, Utility Bar, Tiki Tide Settings, and desktop/mobile/console behavior.
