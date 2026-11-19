@@ -1,6 +1,6 @@
 # Phase 12 — Replay & Behavioral Analytics
 
-**Status:** The bounded server-local security timeline, staff authorization, installer wiring, source-audited event adapters, privacy-safe metadata handling, strict query validation, time-window filtering, and bounded staff summaries are implemented in repository source. Roblox Studio and published-server verification remain outstanding.
+**Status:** Phase 12 functionality and applicable Phase 23 performance/compatibility hardening are implemented in repository source. The replay path has bounded event storage, bounded per-event metadata inspection, bounded query scanning/results, optional query budget gating, and no background capture loop. Roblox Studio profiling and device/server regression verification remain outstanding.
 
 ## Phase 12 objectives
 
@@ -111,11 +111,26 @@ Implemented source hardening:
 
 The service does not store raw chat, raw filtered text, passwords, credentials, receipt PurchaseIds, arbitrary client payloads, Instance references, or nested metadata tables.
 
-## 12.6 — Verification and Exit Criteria
+## 12.6 — Phase 23 Performance and Compatibility Application
+
+The Phase 23 performance/compatibility requirements applicable to this event timeline are implemented:
+
+- **Bounded recording cost:** one Record call performs bounded field normalization and inspects at most 24 metadata entries, retaining at most 12 scalar metadata fields. Raw chat, arbitrary nested tables, Instances, and unbounded payloads are not retained.
+- **Bounded memory:** the per-server ring buffer remains capped at 2,048 events. No persistent storage, cross-server replication, or secondary evidence cache is created.
+- **Bounded query work:** each query scans at most the 2,048 retained ring entries and returns at most 100 events. The staff command caps the result at 30 and the rendered response at 1,900 characters. Result allocation is sized to the requested bounded result count.
+- **Optional workload budget:** the installer routes Query through the existing AdaptiveSecurityLoadManager `ReplayQueries` token bucket. Under load, an investigation query can be deferred with an explicit message. The service's Record operation is not routed through that budget and remains available in Normal, Reduced, and Critical modes.
+- **No polling/capture loop:** the replay service creates no Heartbeat connection, task loop, periodic scan, movement sampler, or frame capture. It records only when an existing server-side event adapter invokes Record.
+- **No extra network or persistence cost:** no client remotes, telemetry uploads, DataStore/MemoryStore writes, MessagingService calls, or cross-server diagnostics aggregation are added by Phase 12.
+- **Compatibility preserved:** this is server-side SecurityCore work only. It does not alter PC, mobile, or console UI/input, UtilityBar behavior, AudioPlayer ownership, crossfade, or independent per-server playback queues.
+- **Security priority preserved:** authorization, validation, rate limiting, receipt processing, moderation enforcement, and security-event recording are not throttled by the adaptive workload manager. Only optional staff replay queries may be deferred.
+
+The implementation is bounded by source-level contracts; actual CPU, memory, and latency improvements must be measured in Studio and on representative devices/servers. No performance gain is claimed without profiling.
+
+## 12.7 — Verification and Exit Criteria
 
 The following Studio verification remains outstanding; repository source changes do not imply runtime verification.
 
-1. With simulation stopped, install the staged SecurityCore release and verify SecurityReplayService is present under ServerStorage/ClubMusicSecurityCore.
+1. With simulation stopped, install the staged SecurityCore release and verify SecurityReplayService is present under ServerStorage/ClubMusicSecurityCore and the installer pin matches the documented hardened commit.
 2. Verify the two replay BindableFunctions are under ServerStorage and no replay RemoteEvent/RemoteFunction is replicated.
 3. Trigger controlled CharacterPhysicsGuard, teleport-validation, and avatar/accessory signals and verify sanitized events are retained.
 4. Exercise receipt callback retry, failure, success, and duplicate paths in a controlled environment; verify ProductId/outcome only and confirm PurchaseId is absent.
@@ -127,7 +142,10 @@ The following Studio verification remains outstanding; repository source changes
 10. Verify ordinary players and non-Player actors cannot query. Test invalid target IDs, fractional/out-of-range limits, invalid timestamps, reversed time windows, malformed event types, and valid inclusive bounds.
 11. Modify a returned event and its metadata in a controlled test harness; verify retained history is unchanged.
 12. Fill beyond 2,048 events and verify the ring remains bounded and newest events remain queryable.
-13. Verify PlayerRemoving/server shutdown behavior and confirm no new persistence writes, background loops, or capture tasks were introduced.
-14. Regression-test CharacterPhysicsGuard, staff spectator, Kohl's Admin, Tiki Tide Settings, Utility Bar, ClubMusic playback/queue, and PC/mobile/console behavior.
+13. Burst Record with normal and oversized metadata tables; verify each event inspects no more than 24 input entries, stores no more than 12 scalar fields, and recording remains available in Normal/Reduced/Critical load modes.
+14. Burst authorized Query calls in Normal/Reduced/Critical modes; verify the ReplayQueries budget can defer optional review work with an explicit result, while Record, validation, authorization, receipt processing, and moderation remain unaffected.
+15. Verify query scanning never exceeds the 2,048 retained-event capacity, returned events never exceed the requested limit (maximum 100), command output never exceeds 1,900 characters, and no unbounded allocation or background polling is introduced.
+16. Verify PlayerRemoving/server shutdown behavior and confirm no new persistence writes, client remotes, telemetry uploads, background loops, or capture tasks were introduced.
+17. Regression-test CharacterPhysicsGuard, staff spectator, Kohl's Admin, Tiki Tide Settings, Utility Bar, ClubMusic playback/queue, and PC/mobile/console behavior. Profile low-end mobile, desktop, and console separately; confirm Phase 12 introduces no UI/input changes.
 
 **Exit criteria:** bounded memory, server-only record access, permission-checked and validated staff queries, detached query results, correct selected event adapters, privacy safeguards, and successful Studio/published-server tests. Source review alone is not runtime verification.
