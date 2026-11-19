@@ -635,3 +635,13 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 
 
 - **2026-11-18 — Custom catalog removal/re-add identity and queue invalidation:** custom track IDs remain asset-ID-derived and their global moderation records intentionally survive catalog removal, so re-adding the same audio does not silently erase a block. Persistent re-add now trusts the atomic DataStore duplicate check instead of a possibly stale local overlay; built-in IDs remain reserved. Remote catalog refresh purges removed track IDs from local queues with request-slot release, preserves surviving entries, reconciles active playlist rotation and refills automatic entries when needed. Saved playlist IDs/order remain unchanged; if the currently playing playlist track was removed, rotation continues after its former position. Existing playing audio may finish. Embedded catalog module matches canonical source. Static checks only; no Luau compilation, DataStore/MessagingService runtime tests, Studio test, or deployment. Commits: catalog `38ca3eeed8f304593280f32e57b3d9536d651bbb`; controller `f0acaa5530ec0a2d6ee87569e2567154cef1313b`; package `713bfe5dc1715ee3a14398f16d951c73aa69009a`.
+
+
+## Prepared crossfade invalidation on catalog and moderation changes
+- Audited the controller-to-modern-AudioPlayer handoff after custom catalog removal/re-add and global track moderation.
+- Found that removing or blocking the *prepared next* track removed its queue entry, so the eventual crossfade commit would fail its queue-head identity check, but the incoming AudioPlayer could remain loaded and continue toward the audible fade window until that late rejection.
+- Added a controller-owned `cancelPreparedCrossfadeForTrack(trackId, reason)` seam. It compares the pending crossfade entry's immutable track ID and immediately cancels the coordinator when that exact prepared track is invalidated.
+- Wired immediate cancellation into local staff track-block operations, both supported inbound moderation message shapes, and catalog refresh when the prepared track no longer exists in the refreshed catalog. Queue removal and request-slot release remain unchanged.
+- Cancellation invalidates the crossfade generation before stopping/retiring the incoming deck; stale workers therefore cannot later commit even if teardown reports a cleanup failure. Existing active-track removal policy, local queue ownership, catalog persistence, and playback recovery behavior are unchanged.
+- Source commit: `9aa018ab4968882e16178227c5c7f8e63787123c`.
+- Static source checks: pending final verification in this turn. No Luau compilation, AudioPlayer simulation, MessagingService multi-server test, Roblox Studio/runtime test, or deployment was performed.
