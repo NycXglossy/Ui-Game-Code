@@ -606,3 +606,13 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - **2026-11-18 — Profile save concurrency and same-server rejoin:** profile saves now use identity-owned writer locks; profile loading and lease release serialize with saves/receipt commits; old queued callbacks cannot clear a rejoin's save queue; departure no longer clears an active writer lock. Existing receipt compatibility, DataStore schema, and server-scoped session token retained. Static assertions only; no Luau or Roblox runtime test. Source commit: `0cf0ca2b0d5d50279d268f9b1e69fbd2cb050aca`; consolidation documentation: `c70f3b35dc2d20cc690b3e0f3c59e733bbc979b6`.
 
 - **2026-11-18 — Mutation-during-save snapshot reconciliation:** successful profile writes now compare the live persisted-field snapshot with the snapshot submitted before yielding; mutations during UpdateAsync enqueue one coalesced follow-up save when the same profile remains active. Existing schema, receipt journal, and save cadence unchanged. Static source checks only; no Luau or Roblox runtime test. Source commit: `3368697febb4514f9f84cf7dce3a0f63091a7dcd`; consolidation documentation: `0b5b6692a478a5cf56bbde219db02b4c6c445ff8`.
+
+
+## Shutdown persistence / receipt coordination (2026-11-18)
+
+- `UI_Server_Controller_server (1).lua` now enters a server-local shutdown state, stops new receipt ingress and mutation requests, invalidates delayed save queues, and bounds the wait for active receipt callbacks.
+- Final profile saves run concurrently with per-user writer-lock and DataStore-budget wait limits under a 27-second coordinator deadline. The same writer lock still serializes saves with receipt commits and lease operations.
+- During shutdown, PlayerRemoving uses bounded save waits and skips lease release. BindToClose does not clear session leases; they expire under the existing 180-second lease policy. This avoids releasing a lease when a final save or receipt transaction is incomplete.
+- Durable receipt recovery semantics are unchanged: an interrupted Prepared transaction / pending marker remains recoverable, and unacknowledged receipts are returned as `NotProcessedYet` for Roblox retry.
+- Static checks only. No Luau compilation, Roblox Studio/runtime, live DataStore/receipt fault injection, or deployment.
+- Source commits: `297ab6352d0cf13c05a24c72ad14f3e25973caaa`, `0254c83f938f253546f0646338a5638d6b58400c`.
