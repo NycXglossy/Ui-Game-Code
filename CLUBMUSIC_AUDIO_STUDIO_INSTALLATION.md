@@ -1,6 +1,6 @@
 # ClubMusic Audio & Server-Core Installation
 
-Branch: `fix/security-core-release-and-queue-loop`
+Branch: `phase0-33-performance-compatibility`
 
 This document describes the current Phase 30 source layout. Use the controller, renderer, server modules, and embedded packages from the same branch snapshot.
 
@@ -8,8 +8,7 @@ This document describes the current Phase 30 source layout. Use the controller, 
 
 - The modern server-owned `AudioPlayer` is the only playback source. The controller owns asset selection, playback state, playhead, queue transitions, pause/restart, reload/recovery, watchdog decisions, and crossfade commits.
 - Every server owns its own request queue, playlist cursor, Auto DJ refill, request accounting, and skip votes.
-- Optional global playback sync is disabled by default. When explicitly enabled by an Owner/Co-Owner through the SecurityCore-backed global setting, a fenced server leader shares only Now Playing metadata, pause state, and a time-anchored playhead. No queue, playlist, request count, or Auto DJ state is shared.
-- If global sync is disabled, each server plays independently. Do not install a global shared-queue service or the standalone legacy Music System.
+- Playback and request queues are server-local in this branch. The retired playback-sync action is rejected for old clients; the current controller and global-service status report local-only playback. Do not install or enable a legacy global playback authority or shared-queue implementation.
 - Client audio modules own only per-listener output routing and preferences. They cannot select assets, mutate queues, persist playlists, change server playback, or authorize DJ actions.
 - Global moderation, announcements, catalog invalidation, boost controls, receipt protection, and security services remain separate from the audio controller.
 
@@ -25,21 +24,18 @@ This document describes the current Phase 30 source layout. Use the controller, 
 **ServerStorage direct children — controller-required core**
 - `MusicCatalogService`
 - `MusicPlaylistService`
-- `ClubMusic_ReceiptHash`
-- `MusicQueueManager` — thin adapter over the shared queue service
-- `MusicQueueManagerService` — canonical bounded queue operations over the controller-owned queue
-- `MusicValidationService` — canonical bounded audio metadata cache; no permission or cooldown authority
+- `MusicQueueManager` — thin adapter over the queue service
+- `MusicQueueManagerService` — bounded queue operations over the controller-owned local queue
+- `MusicValidationService` — bounded audio metadata cache; no permission or cooldown authority
 
-The controller resolves these six modules either as direct ServerStorage children or inside the `ServerStorage.ClubMusic_ServerStorage_Modules` folder. The matching `ClubMusic_ServerStorage_Modules.rbxmx` package contains the same six canonical standalone sources.
+The audio installer provisions these five modules as direct ServerStorage children. The matching `ClubMusic_ServerStorage_Modules.rbxmx` package contains the five canonical sources. `ClubMusic_ReceiptHash` and receipt transaction authority belong to the separate SecurityCore installation, not this five-module audio installer.
 
 **ServerStorage / ClubMusic_Global_Optional_Services**
 - `ClubMusic_Global_Event_Log_Service`
 - `ClubMusic_Global_RateLimit_Service`
 - `ClubMusic_Global_Authorization_Service`
 - `ClubMusic_Global_SafeCall_Service`
-- `MusicGlobalPlaybackAuthority` — optional playback-only leader lease and snapshot authority; no queue implementation
-
-The Global Service resolves optional modules recursively under ServerStorage or as direct children. The matching `ClubMusic_Global_Optional_Services.rbxmx` bundle contains the canonical `MusicGlobalPlaybackAuthority.lua` source.
+The Global Service resolves its installed optional modules recursively under ServerStorage or as direct children. This branch does not use a cross-server playback leader or shared queue. Do not install a playback-authority module from an older package snapshot.
 
 **ReplicatedStorage / ClubMusicClientAudioModules**
 - `ClubMusicPlayerPreferences`
@@ -64,15 +60,15 @@ The server remains authoritative for asset selection, playback commands, readine
 - Six controller-required core ModuleScripts directly under `ServerStorage`.
 - One client preferences ModuleScript in `ReplicatedStorage/ClubMusicClientAudioModules`.
 
-The audio modules are pinned to package snapshot `f47410ac9a9674d3df0b24eb1714b31d1a4ef816`; the six core modules are pinned to `4857fd9c5b763a2a685b37bccf812a6f85425524`. The installer no longer downloads or installs `MusicPlaybackManager`; existing copies are left untouched.
+All eleven audio/core downloads are pinned to the immutable source snapshot `4a13d16c849b401febf9df1fb46719f30c7ad0ec`. The installer downloads five audio support modules, five direct ServerStorage core modules, and one client preferences module. It no longer downloads or installs `MusicPlaybackManager`; existing copies are left untouched.
 
 1. Back up the place and stop all running test servers.
 2. In Studio, open **Game Settings → Security** and enable **Allow HTTP Requests**.
 3. Open **View → Command Bar**.
 4. Copy the complete current-branch `ClubMusic_Studio_CommandBar_Installer.lua` into the Command Bar and run it once.
-5. Confirm the five audio modules, six direct ServerStorage core modules, and one client module appear under the exact names and parents above.
+5. Confirm the five audio modules, five direct ServerStorage core modules, and one client module appear under the exact names and parents above.
 6. If using the RBXMX packages instead, import `ClubMusic_ServerStorage_Modules.rbxmx` under ServerStorage as a folder named `ClubMusic_ServerStorage_Modules`; the controller supports that layout. Keep the standalone files and embedded module sources byte-identical.
-7. For optional cross-server playback sync, import `ClubMusic_Global_Optional_Services.rbxmx` under ServerStorage as `ClubMusic_Global_Optional_Services`, and install the matching `ClubMusic_Global_Service_server_1.lua` and `ClubMusic_Global_Config_Service.lua`. The global setting `playbackSyncEnabled` defaults to false.
+7. Install the current Global Service and its required optional service modules only if your place uses those non-playback global features. Do not install a cross-server playback authority or configure shared playback sync in this branch.
 8. Keep `EnableInStudio = false` in normal Studio use. For an intentional two-server Studio test copy only, enable it temporarily; restore the isolation setting afterward. Published servers use the configured global service.
 9. Install the matching `UI_Server_Controller_server (1).lua` and `UI_Renderer (2).lua` from this branch. Do not mix controller, renderer, global service, and module revisions.
 10. Save the place before starting tests.
@@ -91,19 +87,18 @@ The current controller and watchdog no longer use a legacy Sound playback fallba
 
 Do not delete existing `ServerMusicSound`, `MusicGroup`, `ServerMusicAudioHandler`, or legacy module instances solely because the current controller no longer requires them. First audit the actual live-place hierarchy, every Script/LocalScript/ModuleScript consumer, client volume compatibility, plugins, and third-party packages. Keep rollback assets until that audit and the relevant Studio tests pass.
 
-## Phase 30 regression checks
+## Phase 33 regression checks
 
 1. Confirm modern AudioPlayer startup and readiness; no Sound fallback is selected.
 2. Test pause/resume, restart, self-service `ReloadSong`, same-track recovery, watchdog stop detection, normal track advance, and crossfade cancellation/commit.
 3. Test all watchdog quality states against real modern AudioPlayer states and confirm server-local diagnostics report the same classifications.
-4. With global sync disabled, run two servers with different Now Playing tracks and independently changing request queues.
-5. Enable optional playback-only sync as Owner/Co-Owner. Confirm both servers show the same Now Playing/playhead while each queue remains independent and Auto DJ refill continues locally.
-6. Test leader departure, lease expiry, failover, temporary DataStore/MemoryStore/MessagingService outages, recovery, and disabling sync. No server may upload or adopt another server's queue.
+4. Run two servers with different Now Playing tracks and independently changing request queues. Confirm neither server adopts the other's playback state or queue.
+5. Verify global moderation, announcements, catalog invalidation, rate limits, and other enabled non-playback global services independently; a global-service outage must not merge queues or start a legacy playback source.
 7. With DJ Control Mode off, all players can submit allowed catalog requests. With it on, only the controller can submit normal requests; other players are blocked. Auto DJ refill remains active.
 8. While DJ Control Mode is on, verify every player can still see Now Playing and their local queue, cast skip votes, and use self-service `ReloadSong` subject to cooldown. Unauthorized players cannot pause, restart, skip via privileged controls, or perform other restricted playback actions.
 9. Verify controller departure clears DJ Control Mode and reopens normal requests.
 10. Test playlist CRUD, catalog add/remove, skip voting, artwork image/decal validation, DJ session permissions, and moderation/catalog invalidation.
 11. Test PC, mobile, and console with at least two clients per server; verify per-client volume and mute remain independent.
-12. Repeat the critical tests in published two-server sessions. Phase 30 is not certified until both Studio and published-server acceptance matrices pass.
+12. Repeat the critical tests in published two-server sessions. Phase 33 source compatibility is not production-certified until both Studio and published-server acceptance matrices pass.
 
 This repository work is static source and bundle reconciliation only. It does not substitute for Roblox Studio Luau compilation, multiplayer runtime tests, live-place consumer inspection, or published two-server verification.
