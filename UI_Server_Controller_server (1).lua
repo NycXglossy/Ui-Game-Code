@@ -1653,15 +1653,19 @@ local function rebuildModernAudioBackend(source: any, asset: string, position: n
 		until candidate:IsPlaying() or os.clock() >= startDeadline
 		if not candidate:IsPlaying() then return abandon("Replacement AudioPlayer did not enter the playing state.") end
 	end
-	local gainSet, gainError = candidate:SetGain(math.clamp(outgoingGain, 0, 1))
-	if gainSet ~= true then return abandon(tostring(gainError or "Replacement AudioPlayer could not restore output gain.")) end
-
+	-- Keep the replacement deck muted throughout every yielding preparation
+	-- step. Revalidate ownership immediately before restoring audible gain; the
+	-- gain setter is synchronous, so no stale candidate can become audible between
+	-- this final compare and the controller ownership transfer.
 	if activeAudioSource ~= source or audioSourceRevision ~= expectedRevision
 		or tostring(nowPlaying.trackId or "") ~= expectedTrackId
 		or audioTransitionTrackToken ~= expectedTransitionToken
 		or playbackPaused ~= wasPaused then
 		return abandon("Playback changed while modern audio recovery was preparing.")
 	end
+
+	local gainSet, gainError = candidate:SetGain(math.clamp(outgoingGain, 0, 1))
+	if gainSet ~= true then return abandon(tostring(gainError or "Replacement AudioPlayer could not restore output gain.")) end
 
 	activeAudioSource = { kind = "Backend", backend = candidate }
 	ControllerFunctions.bindActiveAudioPlayingSignal()
