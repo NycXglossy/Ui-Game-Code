@@ -281,7 +281,14 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 	if artworkAssetId ~= nil and (typeof(artworkAssetId) ~= "number" or artworkAssetId ~= artworkAssetId or artworkAssetId % 1 ~= 0 or artworkAssetId <= 0 or artworkAssetId > 9007199254740991) then return false, "Invalid artwork image asset ID." end
 	if storageWriteBusy then return false, "Catalog is busy. Try again shortly." end
 	local id = "custom-" .. tostring(assetId)
-	if TRACK_BY_ID[id] or customTracks[id] then return false, "That audio is already in the catalog." end
+	-- The persisted UpdateAsync record is authoritative in live servers. A
+	-- different server may have removed this asset while our local overlay is
+	-- waiting for its next invalidation/periodic refresh; do not let that stale
+	-- cache prevent a legitimate re-add. Built-in catalog IDs remain reserved.
+	if TRACK_BY_ID[id] then return false, "That audio is already in the catalog." end
+	if not storagePersistent and customTracks[id] then
+		return false, "That audio is already in the catalog."
+	end
 	local genreName = "Club Exclusives"
 	for _, genre in ipairs(GENRES) do if genre.id == genreId then genreName = genre.name break end end
 	local candidate: Track = {id=id, genreId=genreId, title=title, artist=artist, duration=duration,
