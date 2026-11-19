@@ -953,11 +953,10 @@ local function readServerStorageStatus(endpointName: string, action: string?)
 	if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= ServerStorage then
 		return {state = "NotInstalled", available = false}
 	end
-	-- BindableFunction:Invoke() yields indefinitely if OnInvoke has not been
-	-- assigned. Optional diagnostics providers can be created before their
-	-- owning service finishes bootstrapping, so never invoke an unbound endpoint.
-	if type(endpoint.OnInvoke) ~= "function" then
-		return {state = "Starting", available = false, detail = "Status callback is not bound yet."}
+	-- OnInvoke is write-only in Roblox; readiness is advertised explicitly by
+	-- providers after assigning their callback.
+	if endpoint:GetAttribute("CallbackBound") ~= true then
+		return {state = "Starting", available = false, detail = "Status callback is not advertised as bound yet."}
 	end
 	local ok, result = pcall(function()
 		if action then return endpoint:Invoke(action) end
@@ -1034,7 +1033,7 @@ if diagnosticsModule then
 			getIncidentResponseStatus = function() return if globalIncidentResponseService then globalIncidentResponseService:GetStatus() else nil end,
 			allowAnalyticsAggregation = function()
 				local endpoint = ServerStorage:FindFirstChild("TikiTideSecurityLoadManager")
-				if not endpoint or not endpoint:IsA("BindableFunction") or type(endpoint.OnInvoke) ~= "function" then return true end
+				if not endpoint or not endpoint:IsA("BindableFunction") or endpoint:GetAttribute("CallbackBound") ~= true then return true end
 				local ok, allowed = pcall(function() return endpoint:Invoke("TryConsume", "AnalyticsAggregation") end)
 				-- Analytics are optional; an unavailable governor must not break diagnostics reads.
 				return not ok or allowed == true
@@ -1351,7 +1350,8 @@ script.Destroying:Connect(function()
 	for name, binding in pairs(boundFunctionCallbacks) do
 		boundFunctionCallbacks[name] = nil
 		local object = binding.object
-		if object and object.Parent == apiFolder and object.OnInvoke == binding.callback then
+		if object and object.Parent == apiFolder then
+			-- OnInvoke cannot be read back; this table is the ownership record.
 			object.OnInvoke = nil
 		end
 	end
