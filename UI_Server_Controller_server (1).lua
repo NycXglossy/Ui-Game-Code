@@ -2002,6 +2002,8 @@ local lastCatalogInvoke: {[number]: number} = {}
 local lastAudioInspection: {[number]: number} = {}
 local audioInspectionCount = 0
 local profileWriteLocks: {[number]: any} = {}
+local serverShuttingDown = false
+local activeReceiptCallbacks = 0
 local saveQueued: {[number]: boolean} = {}
 local saveAgain: {[number]: boolean} = {}
 local saveQueueTokens: {[number]: any} = {}
@@ -2145,10 +2147,13 @@ ControllerFunctions.isValidAudioAssetId = function(value: any): boolean
 		and value % 1 == 0
 end
 
-ControllerFunctions.acquireProfileWriteLock = function(userId: number): any
+ControllerFunctions.acquireProfileWriteLock = function(userId: number, timeoutSeconds: number?): any
 	local startedAt = os.clock()
+	local timeout = if typeof(timeoutSeconds) == "number"
+		then math.clamp(timeoutSeconds, 0, CONFIG.ProfileWriteLockTimeoutSeconds)
+		else CONFIG.ProfileWriteLockTimeoutSeconds
 	while profileWriteLocks[userId] do
-		if os.clock() - startedAt >= CONFIG.ProfileWriteLockTimeoutSeconds then
+		if os.clock() - startedAt >= timeout then
 			warn("[ClubMusic] Timed out waiting for profile write lock for userId " .. tostring(userId))
 			return nil
 		end
@@ -3010,7 +3015,7 @@ local function profileSnapshotsEqual(left: any, right: any): boolean
 	return true
 end
 
-ControllerFunctions.saveProfile = function(player: Player)
+ControllerFunctions.saveProfile = function(player: Player, lockTimeoutSeconds: number?, budgetTimeoutSeconds: number?)
 	-- Studio memory mode intentionally has no durable backend. The in-memory
 	-- profile remains authoritative for this test session; never call UpdateAsync.
 	if USE_STUDIO_MEMORY_PROFILES then
@@ -3020,11 +3025,11 @@ ControllerFunctions.saveProfile = function(player: Player)
 	local userId = player.UserId
 	local profile = profiles[userId]
 	if not profile then return false end
-	local writeLockToken = ControllerFunctions.acquireProfileWriteLock(userId)
+	local writeLockToken = ControllerFunctions.acquireProfileWriteLock(userId, lockTimeoutSeconds)
 	if not writeLockToken then return false end
 	profile = profiles[userId]
 	if not profile then ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken); return false end
-	if not ControllerFunctions.waitForDataStoreBudget(8) then
+	if not ControllerFunctions.waitForDataStoreBudget(budgetTimeoutSeconds or 8) then
 		ControllerFunctions.releaseProfileWriteLock(userId, writeLockToken)
 		warn("[ClubMusic] Profile save deferred: server DataStore budget is busy for userId " .. tostring(userId))
 		return false
@@ -3086,6 +3091,7 @@ end
 -- Collapse rapid profile mutations into one save. Queue identity prevents a
 -- delayed callback from an old Player instance clearing a rejoin's new queue.
 ControllerFunctions.scheduleProfileSave = function(player: Player)
+	if serverShuttingDown then return end
 	local userId = player.UserId
 	local scheduledProfile = profiles[userId]
 	if not scheduledProfile then return end
@@ -3098,7 +3104,7 @@ ControllerFunctions.scheduleProfileSave = function(player: Player)
 	saveQueued[userId] = true
 	task.delay(CONFIG.ProfileSaveQueueDelaySeconds, function()
 		if saveQueueTokens[userId] ~= queueToken then return end
-		if player.Parent ~= Players or profiles[userId] ~= scheduledProfile then
+		if serverShuttingDown or player.Parent ~= Players or profiles[userId] ~= scheduledProfile then
 			saveQueued[userId] = nil
 			saveAgain[userId] = nil
 			saveQueueTokens[userId] = nil
@@ -4192,8 +4198,19 @@ end
 -- Security Core owns validation, serialization, profile receipt journaling, and
 -- recovery. The Global Service retains the existing cross-server XP boost journal.
 MarketplaceService.ProcessReceipt = function(receiptInfo: any)
-	if not receiptAuthority then return Enum.ProductPurchaseDecision.NotProcessedYet end
-	return receiptAuthority:Process(receiptInfo)
+	-- Stop accepting new callbacks once shutdown starts. Roblox will retry any
+	-- unacknowledged receipt on another server; active callbacks remain tracked.
+	if serverShuttingDown or not receiptAuthority then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	activeReceiptCallbacks += 1
+	local callOk, decision = pcall(receiptAuthority.Process, receiptAuthority, receiptInfo)
+	activeReceiptCallbacks = math.max(0, activeReceiptCallbacks - 1)
+	if not callOk then
+		warn("[ClubMusic][ReceiptAuthority] ProcessReceipt adapter failed; Roblox will retry: " .. tostring(decision))
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+	return decision
 end
 
 ControllerFunctions.isValidString = function(value: any, maxLength: number): boolean
@@ -7198,9 +7215,11 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-	while true do
+	while not serverShuttingDown do
 		task.wait(CONFIG.SaveIntervalSeconds)
+		if serverShuttingDown then break end
 		for _, player in ipairs(Players:GetPlayers()) do
+			if serverShuttingDown then break end
 			ControllerFunctions.saveProfile(player)
 		end
 	end
@@ -7380,6 +7399,32 @@ task.spawn(function()
 end)
 
 game:BindToClose(function()
+	-- Freeze new profile-save scheduling and receipt ingress before taking the
+	-- final snapshot. Existing receipt callbacks retain their shared writer lock.
+	serverShuttingDown = true
+	local shutdownDeadline = os.clock() + 27
+
+	-- Cancel delayed/coalesced saves; the shutdown pass below writes the latest
+	-- profile snapshots directly and does not depend on task.delay callbacks.
+	for _, player in ipairs(Players:GetPlayers()) do
+		local userId = player.UserId
+		saveQueueTokens[userId] = nil
+		saveQueued[userId] = nil
+		saveAgain[userId] = nil
+	end
+
+	-- Give authoritative receipt transactions a short opportunity to finish
+	-- their profile+journal sequence. If one remains active, its writer lock
+	-- prevents a conflicting final save; the durable pending marker/journal
+	-- remains recoverable by Roblox's receipt retry on another server.
+	local receiptDrainDeadline = math.min(shutdownDeadline - 16, os.clock() + 5)
+	while activeReceiptCallbacks > 0 and os.clock() < receiptDrainDeadline do
+		task.wait(0.05)
+	end
+	if activeReceiptCallbacks > 0 then
+		warn("[ClubMusic][ReceiptAuthority] Shutdown deadline reached while receipt callbacks remained active; unacknowledged receipts will be retried.")
+	end
+
 	-- Cancel first so an interrupted fade restores the controller-owned outgoing
 	-- source before the active backend is stopped and retired.
 	ControllerFunctions.destroyAudioCrossfadeManager("server-shutdown")
@@ -7400,13 +7445,35 @@ game:BindToClose(function()
 		return
 	end
 
-	for _, player in ipairs(Players:GetPlayers()) do
-		local finalSaveOk = ControllerFunctions.saveProfile(player)
-		if finalSaveOk then
-			ControllerFunctions.releaseProfileSession(player.UserId)
-		else
-			-- Do not clear a lease when the final snapshot was not persisted.
-			warn("[ClubMusic] Shutdown save failed; retaining profile lease until expiry for userId " .. tostring(player.UserId))
-		end
+	local playersToSave = Players:GetPlayers()
+	local completed = 0
+	local results: {[number]: boolean} = {}
+	for _, player in ipairs(playersToSave) do
+		local userId = player.UserId
+		task.spawn(function()
+			local remaining = math.max(0, shutdownDeadline - os.clock())
+			local lockTimeout = math.min(8, math.max(0, remaining - 7))
+			local budgetTimeout = math.min(6, math.max(0, remaining - lockTimeout - 1))
+			local saved = false
+			if profiles[userId] ~= nil then
+				saved = ControllerFunctions.saveProfile(player, lockTimeout, budgetTimeout) == true
+			end
+			results[userId] = saved
+			if not saved and profiles[userId] ~= nil then
+				warn("[ClubMusic] Shutdown save failed or exceeded its bounded wait; retaining profile lease until expiry for userId " .. tostring(userId))
+			end
+			completed += 1
+		end)
 	end
+
+	while completed < #playersToSave and os.clock() < shutdownDeadline do
+		task.wait(0.05)
+	end
+	if completed < #playersToSave then
+		warn(string.format("[ClubMusic] Shutdown save deadline reached; completed %d/%d profile saves. Unreleased leases will expire naturally.",
+			completed, #playersToSave))
+	end
+	-- Do not release session leases from BindToClose. PlayerRemoving may be
+	-- concurrently saving/releasing the same user, and an interrupted shutdown
+	-- save must never make an unconfirmed snapshot available to another server.
 end)
