@@ -120,6 +120,30 @@ function Service:_setStealth(actor: Player, enabled: boolean): boolean
 	return true
 end
 
+function Service:_registerMovement(actor: Player, humanoid: Humanoid)
+	local authority = game:GetService("ServerStorage"):FindFirstChild("TikiTideMovementAuthority")
+	if not authority or not authority:IsA("BindableFunction") or authority.Parent ~= game:GetService("ServerStorage") then
+		warn("[Tiki Tide][StaffSpectator] Movement authority unavailable; character guard may report spectator movement changes.")
+		return false
+	end
+	local values = {
+		WalkSpeed = humanoid.WalkSpeed,
+		JumpPower = humanoid.JumpPower,
+		JumpHeight = humanoid.JumpHeight,
+	}
+	local allRegistered = true
+	for property, value in pairs(values) do
+		local ok, accepted = pcall(function()
+			return authority:Invoke("Register", actor.UserId, actor.UserId, property, value, "StaffSpectator", 120)
+		end)
+		if not ok or accepted ~= true then
+			allRegistered = false
+			warn("[Tiki Tide][StaffSpectator] Movement authorization registration failed for " .. property .. ".")
+		end
+	end
+	return allRegistered
+end
+
 function Service:_freezeActor(actor: Player)
 	local character = actor.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -138,6 +162,7 @@ function Service:_freezeActor(actor: Player)
 	humanoid.JumpHeight = 0
 	humanoid.AutoRotate = false
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+	self:_registerMovement(actor, humanoid)
 	actor:SetAttribute("TikiTideSpectatorNoWorldActions", true)
 	return true
 end
@@ -157,6 +182,7 @@ function Service:_restoreActor(actor: Player)
 				humanoid.AutoRotate = snapshot.autoRotate
 				humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, snapshot.jumpingEnabled)
 			end)
+			self:_registerMovement(actor, humanoid)
 		end
 	end
 	if livePlayer(actor) then actor:SetAttribute("TikiTideSpectatorNoWorldActions", false) end
