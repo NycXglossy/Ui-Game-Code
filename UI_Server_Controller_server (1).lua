@@ -6503,6 +6503,7 @@ end
 
 remotes:SetAttribute("StartupStage", "BindingHandlers")
 actionRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
+	if serverShuttingDown then return end
 	if typeof(action) ~= "string" or #action < 1 or #action > 32 then
 		local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
 		if replay and replay:IsA("BindableFunction") then
@@ -7121,8 +7122,10 @@ Players.PlayerRemoving:Connect(function(player)
 	xpLastAwardAt[userId] = nil
 	xpFractional[userId] = nil
 	xpLastSaveAt[userId] = nil
-	local finalSaveOk = ControllerFunctions.saveProfile(player)
-	if finalSaveOk then
+	local finalSaveOk = if serverShuttingDown
+		then ControllerFunctions.saveProfile(player, 8, 6)
+		else ControllerFunctions.saveProfile(player)
+	if finalSaveOk and not serverShuttingDown then
 		ControllerFunctions.releaseProfileSession(userId)
 	else
 		-- Keep the lease until it expires naturally. Clearing it after a failed
@@ -7402,6 +7405,7 @@ game:BindToClose(function()
 	-- Freeze new profile-save scheduling and receipt ingress before taking the
 	-- final snapshot. Existing receipt callbacks retain their shared writer lock.
 	serverShuttingDown = true
+	adminBridgeShuttingDown = true
 	local shutdownDeadline = os.clock() + 27
 
 	-- Cancel delayed/coalesced saves; the shutdown pass below writes the latest
