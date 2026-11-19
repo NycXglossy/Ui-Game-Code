@@ -3478,9 +3478,21 @@ ControllerFunctions.reloadActivePlaylist = function(): boolean
 				activePlaylistCursor = 1
 				return false
 			end
+			-- Rebuild the catalog-resolved view without changing the saved ID list.
+			-- When the current song belongs to this rotation, continue after it rather
+			-- than restarting at the first entry after a catalog/playlist refresh.
+			local nextCursor = 1
+			if nowPlaying.source == "playlist" then
+				for index, track in ipairs(validTracks) do
+					if track.id == nowPlaying.trackId then
+						nextCursor = if index >= #validTracks then 1 else index + 1
+						break
+					end
+				end
+			end
 			activePlaylistName = playlist.name
 			activePlaylistTracks = validTracks
-			activePlaylistCursor = 1
+			activePlaylistCursor = nextCursor
 			return true
 		end
 	end
@@ -5367,6 +5379,29 @@ playlistFunction.OnServerInvoke = function(player: Player)
 	if os.clock() - playlistRefreshAt >= 5 then
 		if ControllerFunctions.waitForDataStoreBudget(2) and MusicPlaylistService:Refresh() then
 			playlistRefreshAt = os.clock()
+			-- Another server may have edited or deleted the active playlist. Reconcile
+			-- this server's playback view from the refreshed saved record. Compare the
+			-- resolved sequence first so ordinary UI polling does not reset the queue.
+			if activePlaylistId then
+				local previousId = activePlaylistId
+				local previousName = activePlaylistName
+				local previousTrackIds = {}
+				for _, track in ipairs(activePlaylistTracks) do
+					table.insert(previousTrackIds, track.id)
+				end
+				ControllerFunctions.reloadActivePlaylist()
+				local changed = previousId ~= activePlaylistId or previousName ~= activePlaylistName
+					or #previousTrackIds ~= #activePlaylistTracks
+				if not changed then
+					for index, track in ipairs(activePlaylistTracks) do
+						if previousTrackIds[index] ~= track.id then changed = true; break end
+					end
+				end
+				if changed then
+					ControllerFunctions.clearAutomaticQueue()
+					ControllerFunctions.topUpAuto()
+				end
+			end
 		end
 	end
 	return MusicPlaylistService:GetAll()
