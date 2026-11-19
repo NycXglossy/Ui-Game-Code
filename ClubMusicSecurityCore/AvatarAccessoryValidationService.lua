@@ -12,7 +12,7 @@ local MAX_TRACKED_TOOLS = 100
 local MAX_PARTS_PER_ACCESSORY = 32
 local MAX_HANDLE_AXIS = 30
 local APPEARANCE_CHANGE_GRACE_SECONDS = 3
-local COLLISION_PERSISTENCE_SECONDS = 1
+local COLLISION_PERSISTENCE_SECONDS = 4
 
 type PlayerState = {
 	character: Model?,
@@ -209,9 +209,18 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 		else
 			state.observedAccessoryHandles[accessory] = handle
 			table.insert(state.characterConnections, handle:GetPropertyChangedSignal("Size"):Connect(function()
-				if self.states[player.UserId] == state and accessory.Parent == state.character then
-					self:_signal(player, "avatar_accessory_handle_size_changed", accessory.Name)
-				end
+				-- Ordinary avatar scaling/refresh changes are not signals. Recheck
+				-- only a persistent out-of-bounds handle after the outfit settles.
+				task.delay(COLLISION_PERSISTENCE_SECONDS, function()
+					if self.states[player.UserId] ~= state or accessory.Parent ~= state.character then return end
+					if os.clock() - state.lastAppearanceAppliedAt < APPEARANCE_CHANGE_GRACE_SECONDS then return end
+					local size = handle.Size
+					if not (isFinite(size.X) and isFinite(size.Y) and isFinite(size.Z))
+						or size.X <= 0 or size.Y <= 0 or size.Z <= 0
+						or size.X > MAX_HANDLE_AXIS or size.Y > MAX_HANDLE_AXIS or size.Z > MAX_HANDLE_AXIS then
+						self:_signal(player, "avatar_accessory_abnormal_handle_size", accessory.Name)
+					end
+				end)
 			end))
 			table.insert(state.characterConnections, handle:GetPropertyChangedSignal("CanCollide"):Connect(function()
 				-- Ignore false transitions and transient changes during outfit application.
