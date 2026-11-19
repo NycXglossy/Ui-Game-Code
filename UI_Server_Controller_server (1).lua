@@ -3483,10 +3483,33 @@ ControllerFunctions.reloadActivePlaylist = function(): boolean
 			-- than restarting at the first entry after a catalog/playlist refresh.
 			local nextCursor = 1
 			if nowPlaying.source == "playlist" then
+				local currentIndex: number? = nil
 				for index, track in ipairs(validTracks) do
-					if track.id == nowPlaying.trackId then
-						nextCursor = if index >= #validTracks then 1 else index + 1
-						break
+					if track.id == nowPlaying.trackId then currentIndex = index; break end
+				end
+				if currentIndex then
+					nextCursor = if currentIndex >= #validTracks then 1 else currentIndex + 1
+				else
+					-- The current track may have been removed remotely. Continue after
+					-- its former position in the previous resolved rotation.
+					local oldIndex: number? = nil
+					for index, track in ipairs(activePlaylistTracks) do
+						if track.id == nowPlaying.trackId then oldIndex = index; break end
+					end
+					if oldIndex then
+						local foundNext = false
+						for offset = 1, #activePlaylistTracks do
+							if not foundNext then
+								local oldTrack = activePlaylistTracks[((oldIndex + offset - 1) % #activePlaylistTracks) + 1]
+								for index, track in ipairs(validTracks) do
+									if track.id == oldTrack.id then
+										nextCursor = index
+										foundNext = true
+										break
+									end
+								end
+							end
+						end
 					end
 				end
 			end
@@ -6854,17 +6877,44 @@ refreshLocalCatalog = function(): boolean
 			table.insert(nextIds, track.id)
 		end
 		table.sort(nextIds)
+		-- A remote catalog removal must invalidate every local queue reference too.
+		-- Release request slots for removed tracks; surviving player requests retain
+		-- their existing order and the per-server queue remains authoritative.
+		local removedQueuedTrack = false
+		for index = #queue, 1, -1 do
+			local entry = queue[index]
+			if typeof(entry) == "table" and typeof(entry.trackId) == "string"
+				and nextTracks[entry.trackId] == nil then
+				queueManager:RemoveAt(index, true)
+				removedQueuedTrack = true
+			end
+		end
+
 		table.clear(TRACK_BY_ID)
 		for id, track in pairs(nextTracks) do TRACK_BY_ID[id] = track end
 		table.clear(ALL_TRACK_IDS)
 		for _, id in ipairs(nextIds) do table.insert(ALL_TRACK_IDS, id) end
 
 		-- Catalog invalidation can remove tracks referenced by an active playlist.
-		-- Rebuild the in-memory playable view without mutating the saved playlist:
-		-- stale IDs remain available if a track is restored in a later catalog sync.
+		-- Rebuild only this server's playable view; saved IDs/order remain untouched.
+		local activePlaylistChanged = false
 		if activePlaylistId then
+			local previousPlaylistId = activePlaylistId
+			local previousPlaylistName = activePlaylistName
+			local previousTrackIds = {}
+			for _, track in ipairs(activePlaylistTracks) do table.insert(previousTrackIds, track.id) end
 			ControllerFunctions.reloadActivePlaylist()
+			activePlaylistChanged = previousPlaylistId ~= activePlaylistId
+				or previousPlaylistName ~= activePlaylistName
+				or #previousTrackIds ~= #activePlaylistTracks
+			if not activePlaylistChanged then
+				for index, track in ipairs(activePlaylistTracks) do
+					if previousTrackIds[index] ~= track.id then activePlaylistChanged = true; break end
+				end
+			end
 		end
+		if activePlaylistChanged then ControllerFunctions.clearAutomaticQueue() end
+		if activePlaylistChanged or removedQueuedTrack then ControllerFunctions.topUpAuto() end
 
 		refreshed = true
 	end)
