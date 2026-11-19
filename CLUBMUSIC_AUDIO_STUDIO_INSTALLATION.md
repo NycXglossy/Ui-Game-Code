@@ -28,7 +28,7 @@ This document describes the current Phase 30 source layout. Use the controller, 
 - `MusicQueueManagerService` — bounded queue operations over the controller-owned local queue
 - `MusicValidationService` — bounded audio metadata cache; no permission or cooldown authority
 
-The audio installer provisions `MusicCoreService` and `MusicPlaylistService` as direct ServerStorage children. The matching `ClubMusic_ServerStorage_Modules.rbxmx` package contains those two canonical sources. `ClubMusic_ReceiptHash` and receipt transaction authority belong to the separate SecurityCore installation, not this five-module audio installer.
+The audio installer provisions `MusicCoreService` and `MusicPlaylistService` as direct ServerStorage children. The matching `ClubMusic_ServerStorage_Modules.rbxmx` package contains those two canonical sources. `ClubMusic_ReceiptHash` and receipt transaction authority belong to the separate SecurityCore installation, not this two-module core installer.
 
 **ServerStorage / ClubMusic_Global_Optional_Services**
 - `ClubMusic_Global_Event_Log_Service`
@@ -60,13 +60,13 @@ The server remains authoritative for asset selection, playback commands, readine
 - Six controller-required core ModuleScripts directly under `ServerStorage`.
 - One client preferences ModuleScript in `ReplicatedStorage/ClubMusicClientAudioModules`.
 
-All eleven audio/core downloads are pinned to the immutable source snapshot `4a13d16c849b401febf9df1fb46719f30c7ad0ec`. The installer downloads five audio support modules, two direct ServerStorage core modules, and one client preferences module. It no longer downloads or installs `MusicPlaybackManager`; existing copies are left untouched.
+All eight audio/core downloads are pinned to the immutable source snapshot `4a13d16c849b401febf9df1fb46719f30c7ad0ec`. The installer downloads five server audio support modules, two direct ServerStorage core modules, and one client preferences module. It no longer downloads or installs `MusicPlaybackManager`; existing copies are left untouched.
 
 1. Back up the place and stop all running test servers.
 2. In Studio, open **Game Settings → Security** and enable **Allow HTTP Requests**.
 3. Open **View → Command Bar**.
 4. Copy the complete current-branch `ClubMusic_Studio_CommandBar_Installer.lua` into the Command Bar and run it once.
-5. Confirm the five audio modules, five direct ServerStorage core modules, and one client module appear under the exact names and parents above.
+5. Confirm the five audio modules, two direct ServerStorage core modules, and one client module appear under the exact names and parents above.
 6. If using the RBXMX packages instead, import `ClubMusic_ServerStorage_Modules.rbxmx` under ServerStorage as a folder named `ClubMusic_ServerStorage_Modules`; the controller supports that layout. Keep the standalone files and embedded module sources byte-identical.
 7. Install the current Global Service and its required optional service modules only if your place uses those non-playback global features. Do not install a cross-server playback authority or configure shared playback sync in this branch.
 8. Keep `EnableInStudio = false` in normal Studio use. For an intentional two-server Studio test copy only, enable it temporarily; restore the isolation setting afterward. Published servers use the configured global service.
