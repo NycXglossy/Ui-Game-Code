@@ -719,8 +719,15 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local selectedPlaylistId: string? = nil
 	local selectedPlaylistName: string? = nil
 	local requestCatalogPage: (number) -> ()
-	local volume = 0.8
-	local lastVolume = 0.8
+	-- Persist audio preference across renderer remounts for this client session.
+	-- Player attributes are set locally; they are not sent to server playback.
+	local savedVolume = player:GetAttribute("ClubMusicLocalVolume")
+	local savedLastVolume = player:GetAttribute("ClubMusicLocalLastVolume")
+	local volume = if typeof(savedVolume) == "number" and savedVolume == savedVolume
+		and math.abs(savedVolume) < math.huge then math.clamp(savedVolume, 0, 1) else 0.8
+	local lastVolume = if typeof(savedLastVolume) == "number" and savedLastVolume == savedLastVolume
+		and math.abs(savedLastVolume) < math.huge and savedLastVolume > 0
+		then math.clamp(savedLastVolume, 0.01, 1) else (if volume > 0 then volume else 0.8)
 	local sliderDragging = false
 	local lastReload = 0
 	local audioInput = ""
@@ -1742,6 +1749,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local function applyVolume(value: number)
 		volume = math.clamp(value, 0, 1)
 		if volume > 0 then lastVolume = volume end
+		player:SetAttribute("ClubMusicLocalVolume", volume)
+		player:SetAttribute("ClubMusicLocalLastVolume", lastVolume)
 		gui:SetAttribute("Volume", volume)
 		if playerAudioPreferences then
 			local ok, accepted = pcall(function() return playerAudioPreferences:SetVolume(volume) end)
