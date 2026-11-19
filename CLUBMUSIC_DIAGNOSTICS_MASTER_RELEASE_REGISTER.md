@@ -654,3 +654,10 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - The original backend remains authoritative until the candidate passes validation. Queue, playhead, pause semantics, gain profile, and modern-only/no-legacy-fallback policy are unchanged.
 - Source commit: `f21d3a228bad3f64a82477f783b301bc3c49f977`.
 - Static source checks: pending final verification in this turn. No Luau compilation, AudioPlayer runtime simulation, Roblox Studio/runtime test, or deployment was performed.
+
+## Modern playback-control serialization during audio reload
+
+- Audited overlapping pause/resume, seek, restart, watchdog recovery, and manual decoder reload operations. Found that manual reload yields while the backend reselects the asset and waits for decoder readiness; a concurrent pause or restart could mutate that same backend, then be overwritten when the in-flight reload resumed playback from its earlier captured state.
+- Manual DJ pause and restart actions now return a clear retry message while reload is active. The normalized controller seek/play/pause/resume seams also reject mutations during reload, protecting non-UI callers. Track advance/new-track startup remains available and can supersede the reload; the reload's final ownership check now also requires the original audio source revision, in addition to source identity, track ID, transition token, and pause state.
+- Watchdog recovery remains independent: its periodic playback worker already suppresses recovery and crossfade work while manual reload is active; replacement-deck recovery continues to use its existing source/revision/track/transition/pause ownership fence.
+- Static source assertions and GitHub re-fetch only. No Luau compilation, concurrent scheduler simulation, AudioPlayer runtime test, Roblox Studio/runtime test, or deployment. Controller source commit: `5e41247498f39591f00a26b92c7b17a3452368be`.
