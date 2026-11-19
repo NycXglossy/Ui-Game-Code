@@ -178,7 +178,10 @@ function Service:Commit(userId: number, purchaseId: string, productData: {[strin
 		end
 		local prepareOk, prepared = pcall(function()
 			return self.journalStore:UpdateAsync(journalKey, function(old)
-				if typeof(old) == "table" then return old end
+				-- Only a genuinely absent key may be initialized. Preserve any existing
+				-- value, including malformed values, so validation below fails closed
+				-- rather than replacing uncertain receipt history.
+				if old ~= nil then return old end
 				return {
 					status = "Prepared", purchaseId = purchaseId, userId = userId,
 					productId = productData.productId, productType = productData.type, createdAt = os.time(),
