@@ -999,6 +999,7 @@ ControllerFunctions.setAudioAsset = function(asset: string)
 	return false, "No active audio source is available."
 end
 ControllerFunctions.seekAudio = function(position: number)
+	if audioReloadInProgress then return false, "Audio controls are temporarily locked while the current track reloads." end
 	if not cancelCrossfadeBeforeAudioMutation("seek-audio") then
 		return false, "Active crossfade could not be safely cancelled before seeking."
 	end
@@ -1008,6 +1009,7 @@ ControllerFunctions.seekAudio = function(position: number)
 	return false, "No active audio source is available."
 end
 ControllerFunctions.playAudio = function()
+	if audioReloadInProgress then return false, "Audio controls are temporarily locked while the current track reloads." end
 	if not cancelCrossfadeBeforeAudioMutation("play-audio") then
 		return false, "Active crossfade could not be safely cancelled before playback restart."
 	end
@@ -1026,6 +1028,7 @@ ControllerFunctions.stopAudio = function()
 	return true, nil
 end
 ControllerFunctions.pauseAudio = function()
+	if audioReloadInProgress then return false, "Audio controls are temporarily locked while the current track reloads." end
 	if not cancelCrossfadeBeforeAudioMutation("pause-audio") then
 		return false, "Active crossfade could not be safely cancelled before pausing playback."
 	end
@@ -1035,6 +1038,7 @@ ControllerFunctions.pauseAudio = function()
 	return false, "No active audio source is available."
 end
 ControllerFunctions.resumeAudio = function()
+	if audioReloadInProgress then return false, "Audio controls are temporarily locked while the current track reloads." end
 	if not cancelCrossfadeBeforeAudioMutation("resume-audio") then
 		return false, "Active crossfade could not be safely cancelled before resuming playback."
 	end
@@ -1728,6 +1732,7 @@ local function performReloadServerMusic(): (boolean, string?)
 	if typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
 		return false, "The active modern AudioPlayer is unavailable."
 	end
+	local expectedSourceRevision = audioSourceRevision
 	local position = if ControllerFunctions.isFiniteNumber(snapshot.position)
 		then snapshot.position else math.max(0, tonumber(nowPlaying.elapsed) or 0)
 	position = math.clamp(position, 0, math.max(0, duration - 0.5))
@@ -1754,7 +1759,8 @@ local function performReloadServerMusic(): (boolean, string?)
 	local resumeDeadline = os.clock() + 3
 	repeat
 		task.wait(0.1)
-		if activeAudioSource ~= source or tostring(nowPlaying.trackId or "") ~= expectedTrackId
+		if activeAudioSource ~= source or audioSourceRevision ~= expectedSourceRevision
+			or tostring(nowPlaying.trackId or "") ~= expectedTrackId
 			or audioTransitionTrackToken ~= expectedTransitionToken or playbackPaused then
 			return false, "The current track changed during reload; no stale playback state was committed."
 		end
@@ -5022,6 +5028,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJPause" then
 		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
+		if audioReloadInProgress then
+			notify(player, "Please wait for the current audio reload to finish before changing playback controls.", "warn")
+			return false, "Audio reload is in progress."
+		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		local desiredPaused = not playbackPaused
 		playbackControlRequestId += 1
@@ -5052,6 +5062,10 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "DJRestart" then
 		if not ControllerFunctions.canUseDJBooth(player) then return false, "DJ Booth access is required." end
+		if audioReloadInProgress then
+			notify(player, "Please wait for the current audio reload to finish before restarting the track.", "warn")
+			return false, "Audio reload is in progress."
+		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
 		playbackControlRequestId += 1
 		local restartAsset = nowPlaying.soundId
