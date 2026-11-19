@@ -25,6 +25,7 @@ function Service.new(dependencies: {[string]: any})
 		d = dependencies,
 		active = {},
 		movementSnapshots = {},
+		stealthSnapshots = {},
 		started = false,
 		connections = {},
 		entered = 0,
@@ -44,6 +45,79 @@ function Service:_authorized(actor: Player): boolean
 	if not livePlayer(actor) then return false end
 	local ok, allowed = pcall(self.d.authorize, actor.UserId, "GlobalModeration")
 	return ok and allowed == true and livePlayer(actor)
+end
+
+function Service:_setStealth(actor: Player, enabled: boolean): boolean
+	local userId = actor.UserId
+	if not enabled then
+		local snapshot = self.stealthSnapshots[userId]
+		self.stealthSnapshots[userId] = nil
+		if snapshot then
+			if snapshot.connection then snapshot.connection:Disconnect() end
+			for instance, values in pairs(snapshot.properties) do
+				if typeof(instance) == "Instance" and instance.Parent
+					and instance:IsDescendantOf(snapshot.character) then
+					pcall(function()
+						if values.kind == "BasePart" then
+							instance.Transparency = values.transparency
+							instance.CanCollide = values.canCollide
+							instance.CanTouch = values.canTouch
+							instance.CanQuery = values.canQuery
+						else
+							instance.Transparency = values.transparency
+						end
+					end)
+				end
+			end
+		end
+		if livePlayer(actor) then actor:SetAttribute("TikiTideSpectatorStealth", false) end
+		return true
+	end
+
+	local character = actor.Character
+	if not character or not character.Parent then return false end
+	local existing = self.stealthSnapshots[userId]
+	if existing and existing.character == character then
+		if livePlayer(actor) then actor:SetAttribute("TikiTideSpectatorStealth", true) end
+		return true
+	end
+	self:_setStealth(actor, false)
+	local snapshot = {
+		character = character,
+		properties = {},
+		connection = nil,
+	}
+	local function hide(instance: Instance)
+		if snapshot.properties[instance] then return end
+		if instance:IsA("BasePart") then
+			snapshot.properties[instance] = {
+				kind = "BasePart",
+				transparency = instance.Transparency,
+				canCollide = instance.CanCollide,
+				canTouch = instance.CanTouch,
+				canQuery = instance.CanQuery,
+			}
+			instance.Transparency = 1
+			instance.CanCollide = false
+			instance.CanTouch = false
+			instance.CanQuery = false
+		elseif instance:IsA("Decal") then
+			snapshot.properties[instance] = {
+				kind = "Decal",
+				transparency = instance.Transparency,
+			}
+			instance.Transparency = 1
+		end
+	end
+	for _, descendant in ipairs(character:GetDescendants()) do hide(descendant) end
+	snapshot.connection = character.DescendantAdded:Connect(function(descendant)
+		if self.stealthSnapshots[userId] == snapshot and actor.Character == character then
+			hide(descendant)
+		end
+	end)
+	self.stealthSnapshots[userId] = snapshot
+	actor:SetAttribute("TikiTideSpectatorStealth", true)
+	return true
 end
 
 function Service:_freezeActor(actor: Player)
@@ -69,6 +143,7 @@ function Service:_freezeActor(actor: Player)
 end
 
 function Service:_restoreActor(actor: Player)
+	self:_setStealth(actor, false)
 	local snapshot = self.movementSnapshots[actor.UserId]
 	self.movementSnapshots[actor.UserId] = nil
 	if snapshot then
@@ -98,7 +173,8 @@ function Service:_setTarget(actor: Player, target: Player): boolean
 	return true
 end
 
-function Service:Enter(actor: Player, targetUserId: any): (boolean, string)
+function Service:Enter(actor: Player, targetUserId: any, stealth: any?): (boolean, string)
+	if stealth ~= nil and typeof(stealth) ~= "boolean" then return false, "Invalid stealth setting." end
 	if not self:_authorized(actor) then self.denied += 1; return false, "Staff observation permission denied." end
 	if self.active[actor.UserId] ~= nil then return false, "You are already observing; use SwitchTarget instead." end
 	if not validUserId(targetUserId) then self.denied += 1; return false, "Invalid observation target." end
@@ -116,9 +192,16 @@ function Service:Enter(actor: Player, targetUserId: any): (boolean, string)
 		actor:SetAttribute("TikiTideSpectatorTargetUserId", 0)
 		return false, "Your character is not ready for observation mode."
 	end
+	if stealth == true and not self:_setStealth(actor, true) then
+		self.active[actor.UserId] = nil
+		self:_restoreActor(actor)
+		actor:SetAttribute("TikiTideSpectatorActive", false)
+		actor:SetAttribute("TikiTideSpectatorTargetUserId", 0)
+		return false, "Stealth mode could not be applied; observation was not started."
+	end
 	self.entered += 1
-	self:_audit(actor, target, "spectator-enter")
-	return true, "Staff observation enabled."
+	self:_audit(actor, target, if stealth == true then "spectator-enter-stealth" else "spectator-enter")
+	return true, if stealth == true then "Staff observation enabled in stealth mode." else "Staff observation enabled."
 end
 
 function Service:SwitchTarget(actor: Player, targetUserId: any): (boolean, string)
@@ -131,6 +214,18 @@ function Service:SwitchTarget(actor: Player, targetUserId: any): (boolean, strin
 	self.switched += 1
 	self:_audit(actor, target, "spectator-switch")
 	return true, "Observation target changed."
+end
+
+function Service:SetStealth(actor: Player, enabled: any): (boolean, string)
+	if not self:_authorized(actor) then self.denied += 1; return false, "Staff observation permission denied." end
+	if self.active[actor.UserId] == nil then return false, "Enter staff observation before changing stealth mode." end
+	if typeof(enabled) ~= "boolean" then return false, "Stealth must be enabled or disabled explicitly." end
+	if not self:_setStealth(actor, enabled) then return false, "Your character is not ready for stealth mode." end
+	local targetId = self.active[actor.UserId]
+	local target = Players:GetPlayerByUserId(targetId)
+	local action = if enabled then "spectator-stealth-enabled" else "spectator-stealth-disabled"
+	self:_audit(actor, target, action)
+	return true, if enabled then "Stealth mode enabled." else "Stealth mode disabled."
 end
 
 function Service:Exit(actor: Player, reason: string?): (boolean, string)
@@ -157,15 +252,19 @@ function Service:GetState(actor: Player)
 	if not targetId then return true, {active = false, targetUserId = 0} end
 	local target = Players:GetPlayerByUserId(targetId)
 	if not livePlayer(target) then self:Exit(actor, "target-left"); return true, {active = false, targetUserId = 0} end
-	return true, {active = true, targetUserId = targetId, targetName = target.Name}
+	return true, {active = true, targetUserId = targetId, targetName = target.Name,
+		stealth = self.stealthSnapshots[actor.UserId] ~= nil}
 end
 
 function Service:GetStatus()
 	local activeCount = 0
+	local stealthCount = 0
 	for _ in pairs(self.active) do activeCount += 1 end
+	for _ in pairs(self.stealthSnapshots) do stealthCount += 1 end
 	return {
 		state = if self.started then "Ready" else "Stopped",
 		activeObservers = activeCount,
+		stealthObservers = stealthCount,
 		capacity = MAX_ACTIVE,
 		entered = self.entered,
 		switched = self.switched,
@@ -221,6 +320,7 @@ function Service:Stop()
 	end
 	table.clear(self.active)
 	table.clear(self.movementSnapshots)
+	table.clear(self.stealthSnapshots)
 	self.started = false
 end
 
