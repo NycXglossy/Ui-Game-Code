@@ -1144,6 +1144,16 @@ ControllerFunctions.cancelAudioTransition = function(reason: string?)
 	return true
 end
 
+-- A prepared incoming deck is a real playback resource, not just queue metadata.
+-- Invalidate it immediately when its catalog/moderation identity is withdrawn;
+-- waiting for OnCommit to notice a changed queue head would allow an obsolete
+-- asset to become audible during the fade window.
+ControllerFunctions.cancelPreparedCrossfadeForTrack = function(trackId: string, reason: string): boolean
+	local prepared = pendingCrossfadeEntry
+	if typeof(prepared) ~= "table" or prepared.trackId ~= trackId then return true end
+	return ControllerFunctions.cancelAudioTransition(reason)
+end
+
 -- Destroy the optional coordinator explicitly during teardown. Cleanup invalidates
 -- any waiting transition, destroys its incoming deck, and restores outgoing gain.
 ControllerFunctions.destroyAudioCrossfadeManager = function(reason: string?): (boolean, string?)
@@ -5807,6 +5817,7 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
 		ControllerFunctions.blockedTrackCache[trackId] = {blocked = mode == "on", checkedAt = os.clock()}
 		if mode == "on" then
+			ControllerFunctions.cancelPreparedCrossfadeForTrack(trackId, "track-blocked-local")
 			for index = #queue, 1, -1 do
 				if queue[index].trackId == trackId then queueManager:RemoveAt(index, true) end
 			end
@@ -6881,6 +6892,11 @@ refreshLocalCatalog = function(): boolean
 		-- Release request slots for removed tracks; surviving player requests retain
 		-- their existing order and the per-server queue remains authoritative.
 		local removedQueuedTrack = false
+		if typeof(pendingCrossfadeEntry) == "table"
+			and typeof(pendingCrossfadeEntry.trackId) == "string"
+			and nextTracks[pendingCrossfadeEntry.trackId] == nil then
+			ControllerFunctions.cancelPreparedCrossfadeForTrack(pendingCrossfadeEntry.trackId, "catalog-track-removed")
+		end
 		for index = #queue, 1, -1 do
 			local entry = queue[index]
 			if typeof(entry) == "table" and typeof(entry.trackId) == "string"
@@ -6935,6 +6951,7 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		ControllerFunctions.blockedTrackCache = ControllerFunctions.blockedTrackCache or {}
 		ControllerFunctions.blockedTrackCache[message.trackId] = {blocked = message.blocked, checkedAt = os.clock()}
 		if message.blocked ~= true then return end
+		ControllerFunctions.cancelPreparedCrossfadeForTrack(message.trackId, "track-blocked-global")
 		for index = #queue, 1, -1 do
 			if queue[index].trackId == message.trackId then queueManager:RemoveAt(index, true) end
 		end
@@ -6961,6 +6978,7 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 				checkedAt = os.clock(),
 			}
 			if message.blocked == true then
+				ControllerFunctions.cancelPreparedCrossfadeForTrack(message.trackId, "track-blocked-global")
 				for index = #queue, 1, -1 do
 					if queue[index].trackId == message.trackId then queueManager:RemoveAt(index, true) end
 				end
