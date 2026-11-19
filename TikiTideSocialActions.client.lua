@@ -35,7 +35,7 @@ end
 
 local panel = Instance.new("Frame")
 panel.Name = "SocialPanel"
-panel.Size = UDim2.fromOffset(210, 178)
+panel.Size = UDim2.fromOffset(210, 214)
 panel.Position = UDim2.new(1, -224, 0.5, -89)
 panel.BackgroundColor3 = Color3.fromRGB(13, 16, 24)
 panel.Parent = gui
@@ -83,10 +83,13 @@ makeButton(panel, "Hug a nearby player", UDim2.fromOffset(10, 110), UDim2.new(1,
 		if status and status:IsA("TextLabel") then status.Text = "No player close enough." end
 	end
 end)
+makeButton(panel, "Cancel my pending invite", UDim2.fromOffset(10, 146), UDim2.new(1, -20, 0, 28), function()
+	request:FireServer("Cancel", {})
+end)
 local status = Instance.new("TextLabel")
 status.Name = "Status"
 status.BackgroundTransparency = 1
-status.Position = UDim2.fromOffset(10, 145)
+status.Position = UDim2.fromOffset(10, 178)
 status.Size = UDim2.new(1, -20, 0, 24)
 status.Text = "Choose an action"
 status.TextColor3 = Color3.fromRGB(157, 164, 177)
@@ -114,6 +117,7 @@ event.OnClientEvent:Connect(function(kind: any, ...)
 		prompt.Size = UDim2.fromOffset(300, 126)
 		prompt.BackgroundColor3 = Color3.fromRGB(13, 16, 24)
 		prompt.Parent = gui
+		prompt:SetAttribute("InviteId", id)
 		local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 14); c.Parent = prompt
 		local s = Instance.new("UIStroke"); s.Color = Color3.fromRGB(226, 194, 132); s.Parent = prompt
 		local textLabel = Instance.new("TextLabel")
