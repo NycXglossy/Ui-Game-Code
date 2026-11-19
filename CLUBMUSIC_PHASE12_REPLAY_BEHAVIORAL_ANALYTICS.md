@@ -82,7 +82,7 @@ Syntax:
 - Limit is optional and must be an integer from 1 to 30.
 - AfterUnix and BeforeUnix are optional inclusive Unix timestamps; use `0` as a placeholder when omitting a bound.
 - EventType is an optional exact event-type filter containing letters, numbers, underscores, or hyphens (maximum 48 characters).
-- The original ` ;cmreplay UserId Limit` form remains supported.
+- The original `;cmreplay UserId Limit` form remains supported.
 - The displayed summary includes timestamp, severity, event type, actor, optional target, source, and bounded sanitized scalar metadata.
 - Output remains bounded to 1,900 characters. Metadata is sorted by key for stable presentation and truncated per value.
 - The command is registered in Kohl's Admin's Administration group; the server bridge independently requires a live staff player and SecurityCore permission.
