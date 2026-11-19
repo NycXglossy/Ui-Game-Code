@@ -410,42 +410,42 @@ ControllerFunctions.findServerStorageModule = function(moduleName: string): Inst
 	return nil
 end
 
-remotes:SetAttribute("StartupStage", "LoadingMusicCatalogService")
-local catalogModule = ControllerFunctions.findServerStorageModule("MusicCatalogService")
+remotes:SetAttribute("StartupStage", "LoadingMusicCoreService")
+local coreModule = ControllerFunctions.findServerStorageModule("MusicCoreService")
 remotes:SetAttribute("StartupStage", "LoadingMusicPlaylistService")
 local playlistModule = ControllerFunctions.findServerStorageModule("MusicPlaylistService")
-if not catalogModule or not catalogModule:IsA("ModuleScript") then
-	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicCatalogService ModuleScript.")
-	error("[ClubMusic] Missing ServerStorage.MusicCatalogService ModuleScript.")
+if not coreModule or not coreModule:IsA("ModuleScript") then
+	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicCoreService ModuleScript.")
+	error("[ClubMusic] Missing ServerStorage.MusicCoreService ModuleScript.")
 end
 if not playlistModule or not playlistModule:IsA("ModuleScript") then
 	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicPlaylistService ModuleScript.")
 	error("[ClubMusic] Missing ServerStorage.MusicPlaylistService ModuleScript.")
 end
-local catalogRequireOk, catalogRequireResult = pcall(require, catalogModule)
-if not catalogRequireOk then
-	remotes:SetAttribute("StartupError", "MusicCatalogService require failed: " .. string.sub(tostring(catalogRequireResult), 1, 180))
-	error("[ClubMusic] MusicCatalogService failed to load: " .. tostring(catalogRequireResult))
+local coreRequireOk, coreRequireResult = pcall(require, coreModule)
+if not coreRequireOk then
+	remotes:SetAttribute("StartupError", "MusicCoreService require failed: " .. string.sub(tostring(coreRequireResult), 1, 180))
+	error("[ClubMusic] MusicCoreService failed to load: " .. tostring(coreRequireResult))
 end
 local playlistRequireOk, playlistRequireResult = pcall(require, playlistModule)
 if not playlistRequireOk then
 	remotes:SetAttribute("StartupError", "MusicPlaylistService require failed: " .. string.sub(tostring(playlistRequireResult), 1, 180))
 	error("[ClubMusic] MusicPlaylistService failed to load: " .. tostring(playlistRequireResult))
 end
-local validationModule = ControllerFunctions.findServerStorageModule("MusicValidationService")
-if not validationModule or not validationModule:IsA("ModuleScript") then
-	remotes:SetAttribute("StartupError", "Missing ServerStorage.MusicValidationService ModuleScript.")
-	error("[ClubMusic] Missing ServerStorage.MusicValidationService ModuleScript.")
+if typeof(coreRequireResult) ~= "table"
+	or typeof(coreRequireResult.Catalog) ~= "table"
+	or typeof(coreRequireResult.Validation) ~= "table"
+	or typeof(coreRequireResult.Queue) ~= "table"
+	or typeof(coreRequireResult.Validation.new) ~= "function"
+	or typeof(coreRequireResult.Queue.new) ~= "function" then
+	remotes:SetAttribute("StartupError", "MusicCoreService returned an invalid interface.")
+	error("[ClubMusic] MusicCoreService returned an invalid interface.")
 end
-local validationRequireOk, validationRequireResult = pcall(require, validationModule)
-if not validationRequireOk then
-	remotes:SetAttribute("StartupError", "MusicValidationService require failed: " .. string.sub(tostring(validationRequireResult), 1, 180))
-	error("[ClubMusic] MusicValidationService failed to load: " .. tostring(validationRequireResult))
-end
-
-local MusicCatalogService = catalogRequireResult
+local MusicCoreService = coreRequireResult
+local MusicCatalogService = MusicCoreService.Catalog
+local MusicValidationService = MusicCoreService.Validation
+local MusicQueueManager = MusicCoreService.Queue
 local MusicPlaylistService = playlistRequireResult
-local MusicValidationService = validationRequireResult
 local musicValidation = MusicValidationService.new({
 	CacheTTLSeconds = 300,
 	MaxCacheEntries = 128,
@@ -1941,50 +1941,12 @@ local profiles: {[number]: Profile} = {}
 local receiptTransactions: any = nil
 queue = {}
 local ServerStorageForQueue = serverStorage
-remotes:SetAttribute("StartupStage", "LoadingMusicQueueManager")
-
--- WaitForChild only searches direct children. Report both the direct-child inventory
--- and any nested matches so incorrect placement is distinguishable from absence.
-local queueManagerModule = ControllerFunctions.findServerStorageModule("MusicQueueManager")
-if not queueManagerModule or not queueManagerModule:IsA("ModuleScript") then
-	local directChildren = if ControllerFunctions.ErrorHandler
-		then ControllerFunctions.ErrorHandler.DescribeChildren(ServerStorageForQueue)
-		else "<diagnostic handler unavailable>"
-	local nestedMatches = {}
-	for _, descendant in ipairs(ServerStorageForQueue:GetDescendants()) do
-		if string.lower(descendant.Name) == "musicqueuemanager" then
-			table.insert(nestedMatches, descendant:GetFullName() .. " [" .. descendant.ClassName .. "]")
-		end
-	end
-	local nestedDescription = if #nestedMatches > 0 then table.concat(nestedMatches, ", ") else "<no nested matches>"
-	local reason = if queueManagerModule then "Found direct child with wrong class: " .. queueManagerModule.ClassName else "Direct child not found"
-	local detail = reason .. ". Expected ServerStorage.MusicQueueManager (ModuleScript). ServerStorage direct children: "
-		.. directChildren .. ". Descendant matches: " .. nestedDescription
-	ControllerFunctions.reportStartupError("ModuleLoader", "Locate MusicQueueManager", detail, ServerStorageForQueue)
-	error("[ClubMusic] MusicQueueManager startup blocked. " .. detail)
-end
-
-local queueManagerRequireOk, queueManagerRequireResult, queueManagerErrorId
-if ControllerFunctions.ErrorHandler then
-	queueManagerRequireOk, queueManagerRequireResult, queueManagerErrorId = ControllerFunctions.ErrorHandler.SafeRequire(queueManagerModule, "ServerStorage.MusicQueueManager")
-else
-	queueManagerRequireOk, queueManagerRequireResult = pcall(require, queueManagerModule)
-end
-if not queueManagerRequireOk then
-	local detail = "MusicQueueManager failed to load: " .. tostring(queueManagerRequireResult)
-	if queueManagerErrorId then
-		pcall(function() remotes:SetAttribute("StartupError", "[" .. queueManagerErrorId .. "] " .. string.sub(detail, 1, 850)) end)
-	else
-		ControllerFunctions.reportStartupError("ModuleLoader", "Require MusicQueueManager", detail, queueManagerModule)
-	end
+remotes:SetAttribute("StartupStage", "UsingMusicCoreQueue")
+if typeof(MusicQueueManager) ~= "table" or typeof(MusicQueueManager.new) ~= "function" then
+	local detail = "MusicCoreService.Queue must return a table with a .new() constructor."
+	ControllerFunctions.reportStartupError("ModuleLoader", "Validate MusicCoreService queue", detail, coreModule)
 	error("[ClubMusic] " .. detail)
 end
-if typeof(queueManagerRequireResult) ~= "table" or typeof(queueManagerRequireResult.new) ~= "function" then
-	local detail = "MusicQueueManager must return a table with a .new() constructor."
-	ControllerFunctions.reportStartupError("ModuleLoader", "Validate MusicQueueManager", detail, queueManagerModule)
-	error("[ClubMusic] " .. detail)
-end
-local MusicQueueManager = queueManagerRequireResult
 local autoQueueHold = false
 -- Queue mutations have their own revision, independent of playback transitions.
 -- This prevents delayed MessagingService snapshots from restoring an older queue.

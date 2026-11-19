@@ -4,10 +4,21 @@
     <Properties>
       <string name="Name">ClubMusic_ServerStorage_Modules</string>
     </Properties>
-    <Item class="ModuleScript" referent="RBX1">
+    
+    
+    
+    
+    
+    
+    <Item class="ModuleScript" referent="RBX100">
       <Properties>
-        <string name="Name">MusicCatalogService</string>
+        <string name="Name">MusicCoreService</string>
         <ProtectedString name="Source"><![CDATA[--!strict
+-- Consolidated ClubMusic server core.
+-- Keeps catalog persistence, metadata validation, and controller-owned queue operations
+-- as isolated interfaces within one ModuleScript. No playback or permission authority.
+
+--!strict
 -- MusicCatalogService
 -- Place as ModuleScript: ServerStorage/MusicCatalogService
 --
@@ -474,11 +485,352 @@ function MusicCatalogService:GetCatalog(query: any, genreId: any, offset: any, l
 	}
 end
 
-return MusicCatalogService
+local Catalog = MusicCatalogService
+
+
+--!strict
+-- Bounded metadata cache for ClubMusic's existing server-side audio inspection.
+-- This module does not own player permissions, cooldowns, spam limits, or audio playback.
+-- The controller remains responsible for loading each Sound and verifying playability.
+
+export type AssetInfo = {
+	AssetTypeId: number?,
+	Name: string?,
+	Creator: { Name: string? }?,
+}
+
+export type MetadataProvider = (assetId: number) -> any
+
+type CacheEntry = {
+	valid: boolean,
+	info: AssetInfo?,
+	error: string?,
+	expiresAt: number,
+	generation: number,
+}
+
+type CacheQueueItem = {
+	assetId: number,
+	generation: number,
+}
+
+local MusicValidationService = {}
+MusicValidationService.__index = MusicValidationService
+
+function MusicValidationService.new(config: any, metadataProvider: MetadataProvider)
+	assert(type(config) == "table", "MusicValidationService requires a configuration table")
+	assert(type(metadataProvider) == "function", "MusicValidationService requires an injected metadata provider")
+
+	local ttl = tonumber(config.CacheTTLSeconds) or 300
+	local failureTtl = tonumber(config.FailureCacheTTLSeconds) or 5
+	local maxEntries = tonumber(config.MaxCacheEntries) or 128
+	assert(ttl >= 1 and ttl <= 3600, "CacheTTLSeconds must be between 1 and 3600")
+	assert(failureTtl >= 1 and failureTtl <= 30, "FailureCacheTTLSeconds must be between 1 and 30")
+	assert(maxEntries >= 1 and maxEntries <= 512 and maxEntries % 1 == 0, "MaxCacheEntries must be an integer between 1 and 512")
+
+	local self = setmetatable({}, MusicValidationService)
+	self.cacheTTLSeconds = ttl
+	self.failureCacheTTLSeconds = failureTtl
+	self.maxCacheEntries = maxEntries
+	self.metadataProvider = metadataProvider
+	self.cache = {} :: {[number]: CacheEntry}
+	self.cacheOrder = {
+		items = {} :: {[number]: CacheQueueItem},
+		head = 1,
+		count = 0,
+	}
+	self.cacheSequence = 0
+	return self
+end
+
+local function normalizeAssetInfo(rawInfo: any): AssetInfo?
+	if typeof(rawInfo) ~= "table" then return nil end
+
+	local assetTypeId = tonumber(rawInfo.AssetTypeId)
+	if not assetTypeId or assetTypeId % 1 ~= 0 then return nil end
+
+	local creatorName = "Unknown"
+	if typeof(rawInfo.Creator) == "table" and type(rawInfo.Creator.Name) == "string" then
+		creatorName = string.sub(rawInfo.Creator.Name, 1, 80)
+	end
+
+	local name = if type(rawInfo.Name) == "string" then string.sub(rawInfo.Name, 1, 120) else "Untitled audio"
+	return {
+		AssetTypeId = assetTypeId,
+		Name = name,
+		Creator = { Name = creatorName },
+	}
+end
+
+-- Circular FIFO insertion is O(1). A generation token prevents an old queue
+-- slot from evicting a newer entry for the same asset after expiry/reinsertion.
+local function setCache(self: any, assetId: number, entry: CacheEntry)
+	self.cacheSequence += 1
+	local existing = self.cache[assetId]
+	if existing then
+		entry.generation = existing.generation
+	else
+		local order = self.cacheOrder
+		local nextItem: CacheQueueItem = {
+			assetId = assetId,
+			generation = self.cacheSequence,
+		}
+		if order.count >= self.maxCacheEntries then
+			local oldest = order.items[order.head]
+			order.items[order.head] = nextItem
+			order.head = (order.head % self.maxCacheEntries) + 1
+			if oldest then
+				local oldEntry = self.cache[oldest.assetId]
+				if oldEntry and oldEntry.generation == oldest.generation then
+					self.cache[oldest.assetId] = nil
+				end
+			end
+		else
+			local tail = ((order.head + order.count - 1) % self.maxCacheEntries) + 1
+			order.items[tail] = nextItem
+			order.count += 1
+		end
+		entry.generation = self.cacheSequence
+	end
+	self.cache[assetId] = entry
+end
+
+function MusicValidationService:GetAudioAssetInfo(assetId: number): (boolean, AssetInfo | string, boolean)
+	if type(assetId) ~= "number" or assetId ~= assetId or assetId % 1 ~= 0
+		or assetId <= 0 or assetId > 9007199254740991 then
+		return false, "Invalid audio asset ID.", false
+	end
+
+	local now = os.clock()
+	local cached = self.cache[assetId]
+	if cached then
+		if cached.expiresAt > now then
+			local cachedValue: AssetInfo | string = if cached.valid then cached.info :: AssetInfo else cached.error :: string
+			return cached.valid, cachedValue, true
+		end
+		self.cache[assetId] = nil
+	end
+
+	local providerOk, rawInfo = pcall(self.metadataProvider, assetId)
+	if not providerOk then
+		local message = "Audio asset metadata is temporarily unavailable."
+		setCache(self, assetId, {
+			valid = false,
+			error = message,
+			expiresAt = now + self.failureCacheTTLSeconds,
+			generation = 0,
+		})
+		return false, message, false
+	end
+
+	local info = normalizeAssetInfo(rawInfo)
+	if not info then
+		local message = "Audio asset metadata is invalid or unavailable."
+		setCache(self, assetId, {
+			valid = false,
+			error = message,
+			expiresAt = now + self.failureCacheTTLSeconds,
+			generation = 0,
+		})
+		return false, message, false
+	end
+
+	setCache(self, assetId, {
+		valid = true,
+		info = info,
+		expiresAt = now + self.cacheTTLSeconds,
+		generation = 0,
+	})
+	return true, info, false
+end
+
+-- Marketplace metadata alone never proves experience permission or playability.
+-- The controller performs the separate AudioPlayer preload before accepting a track.
+function MusicValidationService:NormalizeAudioMetadata(assetId: number, info: any, duration: number): {[string]: any}?
+	if type(assetId) ~= "number" or assetId ~= assetId or assetId % 1 ~= 0
+		or assetId <= 0 or assetId > 9007199254740991 or typeof(info) ~= "table" then
+		return nil
+	end
+	if type(duration) ~= "number" or duration ~= duration or duration % 1 ~= 0
+		or duration < 1 or duration > 3600 then
+		return nil
+	end
+
+	local rawCreator = info.Creator
+	local creator = if typeof(rawCreator) == "table" then rawCreator.Name else nil
+	if type(creator) ~= "string" or creator == "" then creator = "Unknown" end
+	local title = if type(info.Name) == "string" then info.Name else "Untitled audio"
+
+	return {
+		assetId = assetId,
+		soundId = "rbxassetid://" .. tostring(assetId),
+		title = string.sub(title, 1, 60),
+		artist = string.sub(creator, 1, 40),
+		genre = "Creator Hub Audio",
+		duration = duration,
+		metadataSource = "MarketplaceService",
+	}
+end
+
+function MusicValidationService:ClearCache()
+	table.clear(self.cache)
+	self.cacheOrder = {
+		items = {} :: {[number]: CacheQueueItem},
+		head = 1,
+		count = 0,
+	}
+	self.cacheSequence = 0
+end
+
+function MusicValidationService:GetCacheStats(): { total: number, max: number, valid: number, invalid: number }
+	local now = os.clock()
+	local total = 0
+	local valid = 0
+	local invalid = 0
+	for assetId, entry in pairs(self.cache) do
+		if entry.expiresAt <= now then
+			self.cache[assetId] = nil
+		else
+			total += 1
+			if entry.valid then valid += 1 else invalid += 1 end
+		end
+	end
+	return { total = total, max = self.maxCacheEntries, valid = valid, invalid = invalid }
+end
+
+local Validation = MusicValidationService
+
+
+--!strict
+-- Authoritative in-memory queue operations for ClubMusic.
+-- The controller supplies the one shared queue and its slot-release callback.
+-- This service deliberately does not create a second queue or own playback state.
+
+local MusicQueueManagerService = {}
+MusicQueueManagerService.__index = MusicQueueManagerService
+
+export type QueueManagerService = {
+	queue: {any},
+	releaseSlot: ((any) -> ())?,
+	GetQueue: (self: QueueManagerService) -> {any},
+	GetSize: (self: QueueManagerService) -> number,
+	IsEmpty: (self: QueueManagerService) -> boolean,
+	Insert: (self: QueueManagerService, index: number, entry: any) -> boolean,
+	PopNext: (self: QueueManagerService) -> any?,
+	RemoveAt: (self: QueueManagerService, index: number, release: boolean?) -> any?,
+	RemoveUserSongs: (self: QueueManagerService, userId: number) -> number,
+	Clear: (self: QueueManagerService, release: boolean?) -> number,
+	ClearAutomatic: (self: QueueManagerService) -> number,
+}
+
+function MusicQueueManagerService.new(sharedQueue: {any}, releaseSlot: ((any) -> ())?): QueueManagerService
+	assert(type(sharedQueue) == "table", "MusicQueueManagerService requires the controller-owned queue table")
+	assert(releaseSlot == nil or type(releaseSlot) == "function", "MusicQueueManagerService releaseSlot must be a function")
+	local self = setmetatable({}, MusicQueueManagerService)
+	self.queue = sharedQueue
+	self.releaseSlot = releaseSlot
+	return self
+end
+
+function MusicQueueManagerService:GetQueue(): {any}
+	return self.queue
+end
+
+function MusicQueueManagerService:GetSize(): number
+	return #self.queue
+end
+
+function MusicQueueManagerService:IsEmpty(): boolean
+	return #self.queue == 0
+end
+
+function MusicQueueManagerService:Insert(index: number, entry: any): boolean
+	if type(index) ~= "number"
+		or index % 1 ~= 0
+		or index < 1
+		or index > #self.queue + 1
+		or type(entry) ~= "table"
+	then
+		return false
+	end
+	table.insert(self.queue, index, entry)
+	return true
+end
+
+function MusicQueueManagerService:PopNext(): any?
+	if #self.queue == 0 then
+		return nil
+	end
+	local entry = table.remove(self.queue, 1)
+	if self.releaseSlot then
+		self.releaseSlot(entry)
+	end
+	return entry
+end
+
+function MusicQueueManagerService:RemoveAt(index: number, release: boolean?): any?
+	if type(index) ~= "number"
+		or index % 1 ~= 0
+		or index < 1
+		or index > #self.queue
+	then
+		return nil
+	end
+
+	local entry = table.remove(self.queue, index)
+	if release ~= false and self.releaseSlot then
+		self.releaseSlot(entry)
+	end
+	return entry
+end
+
+function MusicQueueManagerService:RemoveUserSongs(userId: number): number
+	if type(userId) ~= "number" or userId <= 0 or userId % 1 ~= 0 then
+		return 0
+	end
+
+	local removed = 0
+	for index = #self.queue, 1, -1 do
+		local entry = self.queue[index]
+		if type(entry) == "table" and entry.source == "player" and entry.userId == userId then
+			self:RemoveAt(index, true)
+			removed += 1
+		end
+	end
+	return removed
+end
+
+function MusicQueueManagerService:Clear(release: boolean?): number
+	local removed = #self.queue
+	if release ~= false and self.releaseSlot then
+		for _, entry in ipairs(self.queue) do
+			self.releaseSlot(entry)
+		end
+	end
+	table.clear(self.queue)
+	return removed
+end
+
+function MusicQueueManagerService:ClearAutomatic(): number
+	local removed = 0
+	for index = #self.queue, 1, -1 do
+		local entry = self.queue[index]
+		if type(entry) == "table" and entry.source ~= "player" then
+			self:RemoveAt(index, false)
+			removed += 1
+		end
+	end
+	return removed
+end
+
+local Queue = MusicQueueManagerService
+
+
+return { Catalog = Catalog, Validation = Validation, Queue = Queue }
 ]]></ProtectedString>
       </Properties>
     </Item>
-    <Item class="ModuleScript" referent="RBX2">
+<Item class="ModuleScript" referent="RBX2">
       <Properties>
         <string name="Name">MusicPlaylistService</string>
         <ProtectedString name="Source"><![CDATA[--!strict
@@ -760,397 +1112,6 @@ function MusicPlaylistService:MoveTrack(id: any, trackId: any, position: any): (
 end
 
 return MusicPlaylistService
-]]></ProtectedString>
-      </Properties>
-    </Item>
-    
-    <Item class="ModuleScript" referent="RBX7">
-      <Properties>
-        <string name="Name">MusicQueueManager</string>
-        <ProtectedString name="Source"><![CDATA[--!strict
--- Compatibility adapter for the ClubMusic controller.
--- Queue behavior lives in MusicQueueManagerService; this module owns no queue
--- table, counters, playback state, or duplicate service implementation.
-
-local ServerStorage = game:GetService("ServerStorage")
-local MusicQueueManager = {}
-
--- Support both direct ServerStorage installation and the canonical
--- ClubMusic_ServerStorage_Modules RBXMX folder layout.
-local serviceModule = script.Parent:FindFirstChild("MusicQueueManagerService")
-if not serviceModule then serviceModule = ServerStorage:FindFirstChild("MusicQueueManagerService") end
-if not serviceModule then
-	local packageFolder = ServerStorage:FindFirstChild("ClubMusic_ServerStorage_Modules")
-	if packageFolder and packageFolder:IsA("Folder") then
-		serviceModule = packageFolder:FindFirstChild("MusicQueueManagerService")
-	end
-end
-if not serviceModule then serviceModule = ServerStorage:WaitForChild("MusicQueueManagerService", 20) end
-if not serviceModule or not serviceModule:IsA("ModuleScript") then
-	error("[ClubMusic] Missing MusicQueueManagerService ModuleScript in the controller's ServerStorage package.")
-end
-
-local serviceRequireOk, serviceRequireResult = pcall(require, serviceModule)
-if not serviceRequireOk then
-	error("[ClubMusic] MusicQueueManagerService failed to load: " .. tostring(serviceRequireResult))
-end
-
-local MusicQueueManagerService = serviceRequireResult
-if type(MusicQueueManagerService) ~= "table" or type(MusicQueueManagerService.new) ~= "function" then
-	error("[ClubMusic] MusicQueueManagerService must return a table with a .new() constructor.")
-end
-
-function MusicQueueManager.new(sharedQueue: {any}, releaseSlot: ((any) -> ())?): any
-	return MusicQueueManagerService.new(sharedQueue, releaseSlot)
-end
-
-return MusicQueueManager
-]]></ProtectedString>
-      </Properties>
-    </Item>
-    <Item class="ModuleScript" referent="RBX8">
-      <Properties>
-        <string name="Name">MusicQueueManagerService</string>
-        <ProtectedString name="Source"><![CDATA[--!strict
--- Authoritative in-memory queue operations for ClubMusic.
--- The controller supplies the one shared queue and its slot-release callback.
--- This service deliberately does not create a second queue or own playback state.
-
-local MusicQueueManagerService = {}
-MusicQueueManagerService.__index = MusicQueueManagerService
-
-export type QueueManagerService = {
-	queue: {any},
-	releaseSlot: ((any) -> ())?,
-	GetQueue: (self: QueueManagerService) -> {any},
-	GetSize: (self: QueueManagerService) -> number,
-	IsEmpty: (self: QueueManagerService) -> boolean,
-	Insert: (self: QueueManagerService, index: number, entry: any) -> boolean,
-	PopNext: (self: QueueManagerService) -> any?,
-	RemoveAt: (self: QueueManagerService, index: number, release: boolean?) -> any?,
-	RemoveUserSongs: (self: QueueManagerService, userId: number) -> number,
-	Clear: (self: QueueManagerService, release: boolean?) -> number,
-	ClearAutomatic: (self: QueueManagerService) -> number,
-}
-
-function MusicQueueManagerService.new(sharedQueue: {any}, releaseSlot: ((any) -> ())?): QueueManagerService
-	assert(type(sharedQueue) == "table", "MusicQueueManagerService requires the controller-owned queue table")
-	assert(releaseSlot == nil or type(releaseSlot) == "function", "MusicQueueManagerService releaseSlot must be a function")
-	local self = setmetatable({}, MusicQueueManagerService)
-	self.queue = sharedQueue
-	self.releaseSlot = releaseSlot
-	return self
-end
-
-function MusicQueueManagerService:GetQueue(): {any}
-	return self.queue
-end
-
-function MusicQueueManagerService:GetSize(): number
-	return #self.queue
-end
-
-function MusicQueueManagerService:IsEmpty(): boolean
-	return #self.queue == 0
-end
-
-function MusicQueueManagerService:Insert(index: number, entry: any): boolean
-	if type(index) ~= "number"
-		or index % 1 ~= 0
-		or index < 1
-		or index > #self.queue + 1
-		or type(entry) ~= "table"
-	then
-		return false
-	end
-	table.insert(self.queue, index, entry)
-	return true
-end
-
-function MusicQueueManagerService:PopNext(): any?
-	if #self.queue == 0 then
-		return nil
-	end
-	local entry = table.remove(self.queue, 1)
-	if self.releaseSlot then
-		self.releaseSlot(entry)
-	end
-	return entry
-end
-
-function MusicQueueManagerService:RemoveAt(index: number, release: boolean?): any?
-	if type(index) ~= "number"
-		or index % 1 ~= 0
-		or index < 1
-		or index > #self.queue
-	then
-		return nil
-	end
-
-	local entry = table.remove(self.queue, index)
-	if release ~= false and self.releaseSlot then
-		self.releaseSlot(entry)
-	end
-	return entry
-end
-
-function MusicQueueManagerService:RemoveUserSongs(userId: number): number
-	if type(userId) ~= "number" or userId <= 0 or userId % 1 ~= 0 then
-		return 0
-	end
-
-	local removed = 0
-	for index = #self.queue, 1, -1 do
-		local entry = self.queue[index]
-		if type(entry) == "table" and entry.source == "player" and entry.userId == userId then
-			self:RemoveAt(index, true)
-			removed += 1
-		end
-	end
-	return removed
-end
-
-function MusicQueueManagerService:Clear(release: boolean?): number
-	local removed = #self.queue
-	if release ~= false and self.releaseSlot then
-		for _, entry in ipairs(self.queue) do
-			self.releaseSlot(entry)
-		end
-	end
-	table.clear(self.queue)
-	return removed
-end
-
-function MusicQueueManagerService:ClearAutomatic(): number
-	local removed = 0
-	for index = #self.queue, 1, -1 do
-		local entry = self.queue[index]
-		if type(entry) == "table" and entry.source ~= "player" then
-			self:RemoveAt(index, false)
-			removed += 1
-		end
-	end
-	return removed
-end
-
-return MusicQueueManagerService
-]]></ProtectedString>
-      </Properties>
-    </Item>
-    <Item class="ModuleScript" referent="RBX9">
-      <Properties>
-        <string name="Name">MusicValidationService</string>
-        <ProtectedString name="Source"><![CDATA[--!strict
--- Bounded metadata cache for ClubMusic's existing server-side audio inspection.
--- This module does not own player permissions, cooldowns, spam limits, or audio playback.
--- The controller remains responsible for loading each Sound and verifying playability.
-
-export type AssetInfo = {
-	AssetTypeId: number?,
-	Name: string?,
-	Creator: { Name: string? }?,
-}
-
-export type MetadataProvider = (assetId: number) -> any
-
-type CacheEntry = {
-	valid: boolean,
-	info: AssetInfo?,
-	error: string?,
-	expiresAt: number,
-	generation: number,
-}
-
-type CacheQueueItem = {
-	assetId: number,
-	generation: number,
-}
-
-local MusicValidationService = {}
-MusicValidationService.__index = MusicValidationService
-
-function MusicValidationService.new(config: any, metadataProvider: MetadataProvider)
-	assert(type(config) == "table", "MusicValidationService requires a configuration table")
-	assert(type(metadataProvider) == "function", "MusicValidationService requires an injected metadata provider")
-
-	local ttl = tonumber(config.CacheTTLSeconds) or 300
-	local failureTtl = tonumber(config.FailureCacheTTLSeconds) or 5
-	local maxEntries = tonumber(config.MaxCacheEntries) or 128
-	assert(ttl >= 1 and ttl <= 3600, "CacheTTLSeconds must be between 1 and 3600")
-	assert(failureTtl >= 1 and failureTtl <= 30, "FailureCacheTTLSeconds must be between 1 and 30")
-	assert(maxEntries >= 1 and maxEntries <= 512 and maxEntries % 1 == 0, "MaxCacheEntries must be an integer between 1 and 512")
-
-	local self = setmetatable({}, MusicValidationService)
-	self.cacheTTLSeconds = ttl
-	self.failureCacheTTLSeconds = failureTtl
-	self.maxCacheEntries = maxEntries
-	self.metadataProvider = metadataProvider
-	self.cache = {} :: {[number]: CacheEntry}
-	self.cacheOrder = {
-		items = {} :: {[number]: CacheQueueItem},
-		head = 1,
-		count = 0,
-	}
-	self.cacheSequence = 0
-	return self
-end
-
-local function normalizeAssetInfo(rawInfo: any): AssetInfo?
-	if typeof(rawInfo) ~= "table" then return nil end
-
-	local assetTypeId = tonumber(rawInfo.AssetTypeId)
-	if not assetTypeId or assetTypeId % 1 ~= 0 then return nil end
-
-	local creatorName = "Unknown"
-	if typeof(rawInfo.Creator) == "table" and type(rawInfo.Creator.Name) == "string" then
-		creatorName = string.sub(rawInfo.Creator.Name, 1, 80)
-	end
-
-	local name = if type(rawInfo.Name) == "string" then string.sub(rawInfo.Name, 1, 120) else "Untitled audio"
-	return {
-		AssetTypeId = assetTypeId,
-		Name = name,
-		Creator = { Name = creatorName },
-	}
-end
-
--- Circular FIFO insertion is O(1). A generation token prevents an old queue
--- slot from evicting a newer entry for the same asset after expiry/reinsertion.
-local function setCache(self: any, assetId: number, entry: CacheEntry)
-	self.cacheSequence += 1
-	local existing = self.cache[assetId]
-	if existing then
-		entry.generation = existing.generation
-	else
-		local order = self.cacheOrder
-		local nextItem: CacheQueueItem = {
-			assetId = assetId,
-			generation = self.cacheSequence,
-		}
-		if order.count >= self.maxCacheEntries then
-			local oldest = order.items[order.head]
-			order.items[order.head] = nextItem
-			order.head = (order.head % self.maxCacheEntries) + 1
-			if oldest then
-				local oldEntry = self.cache[oldest.assetId]
-				if oldEntry and oldEntry.generation == oldest.generation then
-					self.cache[oldest.assetId] = nil
-				end
-			end
-		else
-			local tail = ((order.head + order.count - 1) % self.maxCacheEntries) + 1
-			order.items[tail] = nextItem
-			order.count += 1
-		end
-		entry.generation = self.cacheSequence
-	end
-	self.cache[assetId] = entry
-end
-
-function MusicValidationService:GetAudioAssetInfo(assetId: number): (boolean, AssetInfo | string, boolean)
-	if type(assetId) ~= "number" or assetId ~= assetId or assetId % 1 ~= 0
-		or assetId <= 0 or assetId > 9007199254740991 then
-		return false, "Invalid audio asset ID.", false
-	end
-
-	local now = os.clock()
-	local cached = self.cache[assetId]
-	if cached then
-		if cached.expiresAt > now then
-			local cachedValue: AssetInfo | string = if cached.valid then cached.info :: AssetInfo else cached.error :: string
-			return cached.valid, cachedValue, true
-		end
-		self.cache[assetId] = nil
-	end
-
-	local providerOk, rawInfo = pcall(self.metadataProvider, assetId)
-	if not providerOk then
-		local message = "Audio asset metadata is temporarily unavailable."
-		setCache(self, assetId, {
-			valid = false,
-			error = message,
-			expiresAt = now + self.failureCacheTTLSeconds,
-			generation = 0,
-		})
-		return false, message, false
-	end
-
-	local info = normalizeAssetInfo(rawInfo)
-	if not info then
-		local message = "Audio asset metadata is invalid or unavailable."
-		setCache(self, assetId, {
-			valid = false,
-			error = message,
-			expiresAt = now + self.failureCacheTTLSeconds,
-			generation = 0,
-		})
-		return false, message, false
-	end
-
-	setCache(self, assetId, {
-		valid = true,
-		info = info,
-		expiresAt = now + self.cacheTTLSeconds,
-		generation = 0,
-	})
-	return true, info, false
-end
-
--- Marketplace metadata alone never proves experience permission or playability.
--- The controller performs the separate AudioPlayer preload before accepting a track.
-function MusicValidationService:NormalizeAudioMetadata(assetId: number, info: any, duration: number): {[string]: any}?
-	if type(assetId) ~= "number" or assetId ~= assetId or assetId % 1 ~= 0
-		or assetId <= 0 or assetId > 9007199254740991 or typeof(info) ~= "table" then
-		return nil
-	end
-	if type(duration) ~= "number" or duration ~= duration or duration % 1 ~= 0
-		or duration < 1 or duration > 3600 then
-		return nil
-	end
-
-	local rawCreator = info.Creator
-	local creator = if typeof(rawCreator) == "table" then rawCreator.Name else nil
-	if type(creator) ~= "string" or creator == "" then creator = "Unknown" end
-	local title = if type(info.Name) == "string" then info.Name else "Untitled audio"
-
-	return {
-		assetId = assetId,
-		soundId = "rbxassetid://" .. tostring(assetId),
-		title = string.sub(title, 1, 60),
-		artist = string.sub(creator, 1, 40),
-		genre = "Creator Hub Audio",
-		duration = duration,
-		metadataSource = "MarketplaceService",
-	}
-end
-
-function MusicValidationService:ClearCache()
-	table.clear(self.cache)
-	self.cacheOrder = {
-		items = {} :: {[number]: CacheQueueItem},
-		head = 1,
-		count = 0,
-	}
-	self.cacheSequence = 0
-end
-
-function MusicValidationService:GetCacheStats(): { total: number, max: number, valid: number, invalid: number }
-	local now = os.clock()
-	local total = 0
-	local valid = 0
-	local invalid = 0
-	for assetId, entry in pairs(self.cache) do
-		if entry.expiresAt <= now then
-			self.cache[assetId] = nil
-		else
-			total += 1
-			if entry.valid then valid += 1 else invalid += 1 end
-		end
-	end
-	return { total = total, max = self.maxCacheEntries, valid = valid, invalid = invalid }
-end
-
-return MusicValidationService
 ]]></ProtectedString>
       </Properties>
     </Item>
