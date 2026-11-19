@@ -102,3 +102,45 @@ Do not delete existing `ServerMusicSound`, `MusicGroup`, `ServerMusicAudioHandle
 12. Repeat the critical tests in published two-server sessions. Phase 33 source compatibility is not production-certified until both Studio and published-server acceptance matrices pass.
 
 This repository work is static source and bundle reconciliation only. It does not substitute for Roblox Studio Luau compilation, multiplayer runtime tests, live-place consumer inspection, or published two-server verification.
+
+## Phase 33 Studio acceptance checklist
+
+Run this checklist in a separate unpublished test place copied from the target place. Back up the place first. Keep the live place and published servers untouched until every applicable item passes.
+
+### 1. Installation and source integrity
+- [ ] Stop Play/Run simulation and enable HTTP Requests only for the installation step.
+- [ ] Run the current audio Command Bar installer once. Confirm it reports 5 audio support modules, 5 direct ServerStorage core modules, and 1 ReplicatedStorage client preferences module.
+- [ ] Confirm each instance has the expected class, exact name, and parent. Check that no unexpected duplicate module names exist in alternate folders.
+- [ ] Install the separately versioned SecurityCore only if this place uses it. Confirm its manifest lists the intended independent SecurityCore and Phase 32 release hashes; do not replace those pins just to match the audio installer commit.
+- [ ] If client diagnostics are required, run the diagnostics installer separately and confirm its module and StarterPlayerScripts bootstrap are present. Its pinned sources were checked against the current branch and match exactly.
+- [ ] Install the controller, renderer, and any required Global Service scripts from the same reviewed branch snapshot. Do not mix unrelated branch revisions.
+- [ ] Open every changed Script, LocalScript, and ModuleScript in Studio and confirm there are no syntax or type-analysis errors. Review Output during a clean server and client startup.
+
+### 2. Startup, teardown, and network contracts
+- [ ] Start a server with one client, then two clients. Confirm the UI bootstrap mounts once per player and cleans up after respawn/player departure without duplicate listeners or GUI instances.
+- [ ] Confirm RequestAction and the GetState, GetMusicCatalog, and GetMusicPlaylists RemoteFunction contracts are present with the expected classes and return shapes.
+- [ ] Exercise catalog and playlist reads while the server is shutting down or a client leaves; no stale client result should be applied after teardown.
+- [ ] Confirm rate limits reject excess requests without blocking normal controls; verify unauthorized staff actions remain denied after any yielding moderation or DataStore operation.
+
+### 3. Modern audio and queue regression
+- [ ] Confirm the controller creates and owns the modern AudioPlayer graph. No Sound-based fallback becomes the active track source when modern startup or recovery fails.
+- [ ] Test initial asset load, decoder readiness, play, pause/resume, restart, seek/reload, track end, normal advance, and unavailable/invalid assets.
+- [ ] Test crossfade start, successful commit, cancellation, rapid next/previous requests, source replacement, and cleanup of outgoing/incoming graphs.
+- [ ] Force a recoverable playback failure and confirm replacement AudioPlayer recovery preserves the intended track, playhead, pause state, and gain. Confirm unrecoverable failure remains unavailable rather than starting legacy playback.
+- [ ] Test watchdog classifications and recovery after stopped, buffering, silent, and unavailable states. Confirm diagnostics remain server-local.
+- [ ] Test requests, queue ordering, skip votes, DJ Control Mode, Auto DJ refill, playlists, catalog add/remove, and DJ session ownership. Confirm queues and Now Playing are independent between servers.
+
+### 4. Profile, purchase, and security acceptance
+- [ ] Test profile load, save, leave/rejoin, rapid rejoin from another server, concurrent save attempts, and shutdown with pending saves. Confirm active session locks are not released after an unconfirmed save.
+- [ ] Simulate DataStore budget exhaustion and transient failures in a controlled test environment. Confirm retries are bounded and stale sessions cannot overwrite a newer owner.
+- [ ] Test each applicable developer product and game pass with Roblox test purchase flows. Confirm ProcessReceipt is idempotent, grants once, and recovers from interrupted profile persistence.
+- [ ] Test title filtering, moderation restrictions, staff authorization, teleport/spectator features, and account-risk/chat-abuse handling where installed.
+
+### 5. UI, device, and published-server acceptance
+- [ ] Test at least two clients on desktop and mobile, plus console if supported. Check independent local volume/mute, GUI scaling, input focus, safe areas, joystick/jump controls, and inventory overlap. Do not change mobile layout while fixing desktop-only issues.
+- [ ] Confirm utility-bar and full-menu visibility rules during inventory and tab transitions; verify no duplicate menus or flicker during respawn and repeated open/close cycles.
+- [ ] Repeat the critical playback, queue, permission, purchase, and profile tests in published two-server sessions with the intended DataStore, MemoryStore, MessagingService, and HTTP settings.
+- [ ] Inspect the actual target-place hierarchy and search all scripts/packages/plugins for legacy Sound, MusicGroup, old controller, and old module consumers before removing any rollback assets.
+- [ ] Record device, place version, test account roles, test results, Output errors, and unresolved failures. Only promote after all release-blocking checks pass and a rollback copy is verified.
+
+Passing source review or Studio single-server tests alone is not production certification. Published two-server, purchase, persistence, and device acceptance remain required.
