@@ -5890,47 +5890,107 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 			ControllerFunctions.adminBridgeReportSignal(caller, "admin_security_access_denied", operation)
 			return false, "ClubMusic administrator permission is required."
 		end
+		-- Positional filters preserve the original syntax:
+		-- ;cmreplay [UserId] [Limit] [AfterUnix] [BeforeUnix] [EventType]
+		-- Use 0 for an omitted UserId/timestamp when supplying later filters.
 		local targetUserId: number? = nil
 		local queryLimit = 15
+		local afterTimestamp: number? = nil
+		local beforeTimestamp: number? = nil
+		local eventType: string? = nil
 		local rawArgument = if typeof(argument) == "string" then string.gsub(argument, "^%s*(.-)%s*$", "%1") else ""
-		if rawArgument ~= "" then
-			local userPart, limitPart = string.match(rawArgument, "^(%d+)%s*(%d*)$")
-			if not userPart then return false, "Use ;cmreplay [UserId] [Limit]." end
-			local parsedUserId = tonumber(userPart)
-			if not parsedUserId or parsedUserId < 1 or parsedUserId > 9007199254740991
+		local tokens = {}
+		for token in string.gmatch(rawArgument, "%S+") do
+			table.insert(tokens, token)
+			if #tokens > 5 then return false, "Use ;cmreplay [UserId] [Limit] [AfterUnix] [BeforeUnix] [EventType]." end
+		end
+		if #tokens >= 1 then
+			local parsedUserId = tonumber(tokens[1])
+			if not parsedUserId or parsedUserId < 0 or parsedUserId > 9007199254740991
 				or parsedUserId % 1 ~= 0 then return false, "Replay target UserId is invalid." end
-			targetUserId = parsedUserId
-			if limitPart ~= "" then
-				local parsedLimit = tonumber(limitPart)
-				if not parsedLimit or parsedLimit < 1 or parsedLimit > 30 or parsedLimit % 1 ~= 0 then
-					return false, "Replay limit must be an integer from 1 to 30."
-				end
-				queryLimit = parsedLimit
+			if parsedUserId > 0 then targetUserId = parsedUserId end
+		end
+		if #tokens >= 2 then
+			local parsedLimit = tonumber(tokens[2])
+			if not parsedLimit or parsedLimit < 1 or parsedLimit > 30 or parsedLimit % 1 ~= 0 then
+				return false, "Replay limit must be an integer from 1 to 30."
 			end
+			queryLimit = parsedLimit
+		end
+		if #tokens >= 3 then
+			local parsedAfter = tonumber(tokens[3])
+			if not parsedAfter or parsedAfter < 0 or parsedAfter > 9007199254740991 or parsedAfter % 1 ~= 0 then
+				return false, "Replay lower timestamp must be a non-negative Unix timestamp."
+			end
+			if parsedAfter > 0 then afterTimestamp = parsedAfter end
+		end
+		if #tokens >= 4 then
+			local parsedBefore = tonumber(tokens[4])
+			if not parsedBefore or parsedBefore < 0 or parsedBefore > 9007199254740991 or parsedBefore % 1 ~= 0 then
+				return false, "Replay upper timestamp must be a non-negative Unix timestamp."
+			end
+			if parsedBefore > 0 then beforeTimestamp = parsedBefore end
+		end
+		if #tokens >= 5 then
+			eventType = tokens[5]
+			if #eventType < 1 or #eventType > 48 or not string.match(eventType, "^[%w_%-]+$") then
+				return false, "Replay event type must contain only letters, numbers, underscores, or hyphens (max 48 characters)."
+			end
+		end
+		if afterTimestamp and beforeTimestamp and afterTimestamp > beforeTimestamp then
+			return false, "Replay lower timestamp must not exceed upper timestamp."
 		end
 		local endpoint = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
 		if not endpoint or not endpoint:IsA("BindableFunction") or endpoint.Parent ~= ServerStorage then
 			return false, "Security replay is unavailable on this server."
 		end
 		local queryOk, allowed, events, queryError = pcall(function()
-			return endpoint:Invoke("Query", caller, targetUserId, queryLimit, nil, nil)
+			return endpoint:Invoke("Query", caller, targetUserId, queryLimit, beforeTimestamp, eventType, afterTimestamp)
 		end)
 		if not queryOk or allowed ~= true or typeof(events) ~= "table" then
 			return false, if typeof(queryError) == "string" then queryError else "Security replay query failed."
 		end
 		if #events == 0 then
-			return true, if targetUserId then "No retained replay events for UserId " .. tostring(targetUserId) .. "." else "No replay events are currently retained on this server."
+			return true, if targetUserId then "No retained replay events for UserId " .. tostring(targetUserId) .. "."
+				else "No replay events match the filters on this server."
 		end
 		local lines = {"Tiki Tide Security Replay (newest first):"}
+		local outputLength = #lines[1]
 		for index, item in ipairs(events) do
 			if index > queryLimit then break end
 			if typeof(item) == "table" then
 				local at = if typeof(item.at) == "number" then os.date("!%H:%M:%S UTC", item.at) else "time?"
-				table.insert(lines, string.format("%s | %s | %s | UserId %d | %s",
+				local actorId = typeof(item.userId) == "number" and item.userId or 0
+				local targetId = typeof(item.targetUserId) == "number" and item.targetUserId or 0
+				local summary = string.format("%s | %s | %s | Actor %d%s | %s",
 					at, string.sub(tostring(item.severity or "Info"), 1, 12),
 					string.sub(tostring(item.type or "unknown"), 1, 48),
-					typeof(item.userId) == "number" and item.userId or 0,
-					string.sub(tostring(item.source or "Server"), 1, 24)))
+					actorId, if targetId > 0 then " -> " .. tostring(targetId) else "",
+					string.sub(tostring(item.source or "Server"), 1, 24))
+				if outputLength + #summary + 1 > 1800 then break end
+				table.insert(lines, summary)
+				outputLength += #summary + 1
+				local metadata = if typeof(item.metadata) == "table" then item.metadata else {}
+				local keys = {}
+				for key, value in pairs(metadata) do
+					if typeof(key) == "string" and (typeof(value) == "string" or typeof(value) == "number" or typeof(value) == "boolean") then
+						table.insert(keys, key)
+					end
+				end
+				table.sort(keys)
+				local details = {}
+				for _, key in ipairs(keys) do
+					local value = metadata[key]
+					local rendered = string.sub(tostring(value), 1, 48)
+					table.insert(details, key .. "=" .. rendered)
+				end
+				if #details > 0 then
+					local detailLine = "  " .. table.concat(details, " | ")
+					if outputLength + #detailLine + 1 <= 1800 then
+						table.insert(lines, detailLine)
+						outputLength += #detailLine + 1
+					end
+				end
 			end
 		end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1900)
