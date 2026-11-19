@@ -7459,8 +7459,12 @@ end)
 -- before it can enter the queue.
 task.spawn(function()
 	local ticks = 0
-	while true do
+	-- Studio disconnect and production shutdown both set this shared flag in
+	-- BindToClose. Stop the playback worker before it can inspect a destroyed
+	-- AudioPlayer or interpret shutdown as a failed track.
+	while not serverShuttingDown do
 		task.wait(1)
+		if serverShuttingDown then break end
 		if not playbackPaused and not audioReloadInProgress then
 			nowPlaying.elapsed += 1
 		end
@@ -7488,6 +7492,7 @@ task.spawn(function()
 		-- Require a short stable stop, then attempt one in-place resume from the
 		-- captured playhead before allowing the queue watchdog to advance.
 		local audio = ControllerFunctions.getAudioSnapshot()
+		if serverShuttingDown then break end
 		if playbackPaused or audioReloadInProgress or nowPlaying.trackId == "" or nowPlaying.soundId == ""
 			or audio.playing == true then
 			ControllerFunctions.stoppedAudioGeneration = -1
@@ -7583,6 +7588,7 @@ task.spawn(function()
 			end
 		end
 
+		if serverShuttingDown then break end
 		if shouldAdvance then
 			if ControllerFunctions.advance(currentGeneration) then
 				ticks = 0
