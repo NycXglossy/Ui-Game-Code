@@ -10,7 +10,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "5b9d772d6320e8c0c3605bd49d1ff3e6da0c6dcf"
+local RELEASE_COMMIT = "d57d6329b58dc03d1e0b098ab1d9e63180d18f91"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
 -- Phase 32 is pinned independently so the previously certified SecurityCore
 -- module snapshot is not silently changed by later commits.
@@ -190,12 +190,13 @@ if not spectator:Start() then warn("[Tiki Tide][StaffSpectator] Startup failed."
 local control = ServerStorage:FindFirstChild("TikiTideStaffSpectatorControl")
 if control and not control:IsA("BindableFunction") then warn("[Tiki Tide][StaffSpectator] Control endpoint has wrong class."); spectator:Stop(); return end
 if not control then control = Instance.new("BindableFunction"); control.Name = "TikiTideStaffSpectatorControl"; control.Parent = ServerStorage end
-control.OnInvoke = function(action, actorUserId, targetUserId)
+control.OnInvoke = function(action, actorUserId, targetUserId, stealthEnabled)
 	if type(actorUserId) ~= "number" or actorUserId % 1 ~= 0 then return false, "Invalid staff actor." end
 	local actor = game:GetService("Players"):GetPlayerByUserId(actorUserId)
 	if not actor then return false, "A live staff player is required." end
-	if action == "Enter" then return spectator:Enter(actor, targetUserId) end
+	if action == "Enter" then return spectator:Enter(actor, targetUserId, stealthEnabled) end
 	if action == "SwitchTarget" then return spectator:SwitchTarget(actor, targetUserId) end
+	if action == "SetStealth" then return spectator:SetStealth(actor, stealthEnabled) end
 	if action == "Exit" then return spectator:Exit(actor) end
 	if action == "GetState" then return spectator:GetState(actor) end
 	return false, "Unsupported spectator action."
