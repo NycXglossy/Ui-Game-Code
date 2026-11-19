@@ -104,6 +104,10 @@ function MusicPlaylistService:Initialize(studioUseDataStore: boolean?, budgetCal
  if budgetCallback and not budgetCallback() then return false end
  local ok, data = pcall(function() return store:GetAsync(KEY) end)
  if not ok then warn("[ClubMusic Playlists] Initial load failed: " .. tostring(data)); return false end
+ if not hasValidStoredPlaylistRecords(data) then
+  warn("[ClubMusic Playlists] Initialization refused malformed or unsupported stored data; no defaults were substituted.")
+  return false
+ end
  playlists = sanitize(data); ready = true
  return true
 end
@@ -140,6 +144,11 @@ function MusicPlaylistService:Refresh(budgetCallback: (() -> boolean)?): boolean
   warn("[ClubMusic Playlists] Refresh failed: " .. tostring(data))
   return false
  end
+ if not hasValidStoredPlaylistRecords(data) then
+  busy = false
+  warn("[ClubMusic Playlists] Refresh refused malformed or unsupported stored data; last-known-good cache preserved.")
+  return false
+ end
  playlists = sanitize(data)
  busy = false
  return true
@@ -157,17 +166,30 @@ local function applyMutation(self, mutate: ({Playlist}) -> (boolean, string)): (
  end
  busy = true
  local accepted, response = false, "Playlist save failed."
+ local invalidStoredData = false
  local ok, result = pcall(function()
   return store:UpdateAsync(KEY, function(old)
+   invalidStoredData = false
+   if not hasValidStoredPlaylistRecords(old) then
+    invalidStoredData = true
+    return old
+   end
    local candidate = sanitize(old)
    local changed, message = mutate(candidate)
    accepted, response = changed, message
    if not changed then return old end
-   return pack(candidate)
+   local output = if typeof(old) == "table" then table.clone(old) else {}
+   output.schemaVersion = 1
+   output.playlists = pack(candidate).playlists
+   return output
   end)
  end)
  busy = false
  if not ok then warn("[ClubMusic Playlists] Mutation failed: " .. tostring(result)); return false, "Playlist save failed; no change was applied." end
+ if invalidStoredData then
+  warn("[ClubMusic Playlists] Mutation refused malformed or unsupported stored data; persisted record was not overwritten.")
+  return false, "Playlist data needs recovery; no change was saved."
+ end
  if not accepted then return false, response end
  playlists = sanitize(result)
  return true, response
