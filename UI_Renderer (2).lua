@@ -701,7 +701,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		activeMounts[player] = nil
 	end
 
-	local playerGui = player:WaitForChild("PlayerGui")
+	-- Renderer.Mount can also be called outside the bootstrap. Bound this wait
+	-- so a player teardown or missing PlayerGui cannot suspend a caller forever.
+	if player.Parent ~= Players then
+		return nil
+	end
+	local playerGuiInstance = player:WaitForChild("PlayerGui", 15)
+	if player.Parent ~= Players or not playerGuiInstance or not playerGuiInstance:IsA("PlayerGui") then
+		warn("[ClubMusic UI] PlayerGui did not become available; renderer mount aborted.")
+		return nil
+	end
+	local playerGui = playerGuiInstance :: PlayerGui
 	local connections: {RBXScriptConnection} = {}
 	local destroyed = false
 	local expanded = false
