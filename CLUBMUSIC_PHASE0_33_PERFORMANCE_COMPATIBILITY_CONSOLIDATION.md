@@ -516,3 +516,13 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Shutdown coordinator has a 27-second internal deadline, leaving margin under Roblox's 30-second `BindToClose` ceiling. Individual DataStore API calls can still yield beyond local budget-wait bounds; Roblox's outer shutdown ceiling remains the ultimate limit. Failed or incomplete saves retain their lease until expiry.
 - Static source checks passed for shutdown gating, callback counting, lock sharing, bounded parallel final saves, queue invalidation, and lease-retention behavior. No Luau compiler, Roblox Studio runtime, live DataStore/receipt fault injection, or deployment was performed.
 - Source commits: `297ab6352d0cf13c05a24c72ad14f3e25973caaa`, `0254c83f938f253546f0646338a5638d6b58400c`.
+
+
+## Crash recovery and malformed durable-record audit
+
+- Profile session acquisition now creates a new profile record only when the DataStore key is genuinely absent (`nil`). A non-table existing value is treated as corruption and is not replaced with defaults.
+- Existing `sessionLock` metadata is validated before takeover: it must be a table with a non-empty string owner and finite positive numeric expiry. Malformed lease metadata fails closed; a well-formed expired lease remains eligible for normal takeover, while a live foreign owner remains protected.
+- Receipt journal preparation now initializes only a genuinely absent journal key. Existing values, including malformed non-table values, are returned unchanged by the UpdateAsync transform and rejected by the existing identity/status validation rather than overwritten with a new `Prepared` record.
+- Crash recovery behavior remains unchanged for valid records: an interrupted `Prepared` journal can resume on receipt retry; a profile update with a durable pending marker is reconciled and the journal completed/marker cleared on retry; a completed journal prevents a duplicate grant. Session leases continue to expire under the existing 180-second policy, and stale writers still verify ownership before committing.
+- Static checks verified both fail-closed transforms, lease validation, receipt identity/status checks, and preserved recovery paths. No Luau compilation, DataStore fault injection, Roblox Studio/runtime test, or deployment.
+- Source commits: `e83df44427f41567dc4da837cdab34bce31af50a`, `055898f9f668eb0334af1b4488f88acfe3c460ef`.
