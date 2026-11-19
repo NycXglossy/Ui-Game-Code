@@ -578,3 +578,12 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Cancellation invalidates the crossfade generation before stopping/retiring the incoming deck; stale workers therefore cannot later commit even if teardown reports a cleanup failure. Existing active-track removal policy, local queue ownership, catalog persistence, and playback recovery behavior are unchanged.
 - Source commit: `9aa018ab4968882e16178227c5c7f8e63787123c`.
 - Static source checks: pending final verification in this turn. No Luau compilation, AudioPlayer simulation, MessagingService multi-server test, Roblox Studio/runtime test, or deployment was performed.
+
+
+## Modern AudioPlayer recovery candidate mute/ownership fence
+- Audited watchdog backend rebuild and manual reload recovery for delayed candidate startup after a track transition.
+- Found that the replacement AudioPlayer was correctly created with zero gain, but its outgoing gain was restored *before* the final source/revision/track/transition/pause ownership comparison. If playback changed during decoder readiness or play verification, the obsolete candidate could briefly become audible before the subsequent check abandoned it.
+- Reordered the final handoff: keep the replacement deck muted through all yielding preparation and playback verification; compare active source identity, audio source revision, current track ID, transition token, and pause state; only then restore gain and immediately transfer controller ownership. The gain setter is synchronous in the canonical backend, so no yield is introduced between the final compare, gain restore, and ownership assignment.
+- The original backend remains authoritative until the candidate passes validation. Queue, playhead, pause semantics, gain profile, and modern-only/no-legacy-fallback policy are unchanged.
+- Source commit: `f21d3a228bad3f64a82477f783b301bc3c49f977`.
+- Static source checks: pending final verification in this turn. No Luau compilation, AudioPlayer runtime simulation, Roblox Studio/runtime test, or deployment was performed.
