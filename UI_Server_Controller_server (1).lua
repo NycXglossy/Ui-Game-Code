@@ -2808,11 +2808,23 @@ ControllerFunctions.loadProfile = function(player: Player)
 			local invalidStoredRecord = false
 			local callOk, result = pcall(function()
 				return store:UpdateAsync(tostring(userId), function(oldData)
+					if oldData ~= nil and typeof(oldData) ~= "table" then
+						invalidStoredRecord = true
+						return nil -- Never replace a corrupt/non-profile value with a default record.
+					end
 					local current = if typeof(oldData) == "table" then table.clone(oldData) else {}
 					local lock = current.sessionLock
-					if typeof(lock) == "table" and typeof(lock.owner) == "string"
-						and lock.owner ~= SESSION_TOKEN and (tonumber(lock.expiresAt) or 0) > os.time() then
-						return nil -- Another live server owns this profile.
+					if lock ~= nil then
+						local expiresAt = if typeof(lock) == "table" then lock.expiresAt else nil
+						if typeof(lock) ~= "table" or typeof(lock.owner) ~= "string" or lock.owner == ""
+							or typeof(expiresAt) ~= "number" or expiresAt ~= expiresAt
+							or expiresAt <= 0 or expiresAt >= math.huge then
+							invalidStoredRecord = true
+							return nil -- A malformed lease is ambiguous; fail closed.
+						end
+						if lock.owner ~= SESSION_TOKEN and expiresAt > os.time() then
+							return nil -- Another live server owns this profile.
+						end
 					end
 					current.sessionLock = { owner = SESSION_TOKEN, expiresAt = os.time() + SESSION_LOCK_SECONDS }
 					return current
