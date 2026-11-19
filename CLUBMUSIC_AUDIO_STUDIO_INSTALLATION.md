@@ -60,7 +60,7 @@ The server remains authoritative for asset selection, playback commands, readine
 - Six controller-required core ModuleScripts directly under `ServerStorage`.
 - One client preferences ModuleScript in `ReplicatedStorage/ClubMusicClientAudioModules`.
 
-All eight audio/core downloads are pinned to the immutable source snapshot `4a13d16c849b401febf9df1fb46719f30c7ad0ec`. The installer downloads five server audio support modules, two direct ServerStorage core modules, and one client preferences module. It no longer downloads or installs `MusicPlaybackManager`; existing copies are left untouched.
+All eight audio/core downloads are pinned to the immutable source snapshot `6ec3766ef48f38eb2893f3385e4b4370ec0b7112`. The installer downloads five server audio support modules, two direct ServerStorage core modules, and one client preferences module. It no longer downloads or installs `MusicPlaybackManager`; existing copies are left untouched.
 
 1. Back up the place and stop all running test servers.
 2. In Studio, open **Game Settings → Security** and enable **Allow HTTP Requests**.
