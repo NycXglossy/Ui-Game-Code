@@ -121,6 +121,11 @@ local function hasValidStoredCatalogShape(stored: any): boolean
 	if typeof(stored) ~= "table" or typeof(stored.tracks) ~= "table" then
 		return false
 	end
+	-- Accept legacy unversioned records and the two persisted formats already
+	-- used by this service. Refuse unknown future versions rather than rewriting them.
+	if stored.schemaVersion ~= nil and stored.schemaVersion ~= 1 and stored.schemaVersion ~= 2 then
+		return false
+	end
 
 	-- DataStore tracks must be a bounded, dense 1-based array. ipairs alone
 	-- would silently ignore dictionary keys and holes, then replace good data.
@@ -300,7 +305,10 @@ function MusicCatalogService:AddCustomTrack(assetId: number, title: string, arti
 				return old
 			end
 			table.insert(list, {assetId=assetId, genreId=genreId, title=title, artist=artist, duration=duration, genre=genreName, artworkAssetId=artworkAssetId})
-			return {schemaVersion=2, tracks=list}
+			local output = if typeof(old) == "table" then table.clone(old) else {}
+			output.schemaVersion = 2
+			output.tracks = list
+			return output
 		end)
 	end)
 	storageWriteBusy = false
@@ -346,7 +354,10 @@ function MusicCatalogService:RemoveCustomTrack(trackId: string): (boolean, strin
 			for _, raw in ipairs(list) do
 				if not (typeof(raw) == "table" and tonumber(raw.assetId) == assetId) then table.insert(filtered, raw) end
 			end
-			return {schemaVersion=2, tracks=filtered}
+			local output = if typeof(old) == "table" then table.clone(old) else {}
+			output.schemaVersion = 2
+			output.tracks = filtered
+			return output
 		end)
 	end)
 	storageWriteBusy = false
