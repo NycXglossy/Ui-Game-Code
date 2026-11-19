@@ -30,9 +30,9 @@ local function cleanString(value: any, limit: number): string
 end
 
 local function normalizeEventType(value: any): string?
-	if typeof(value) ~= "string" then return nil end
+	if typeof(value) ~= "string" or #value < 1 or #value > MAX_EVENT_TYPE then return nil end
 	local normalized = cleanString(value, MAX_EVENT_TYPE)
-	if normalized == "" or #normalized > MAX_EVENT_TYPE or not string.match(normalized, "^[%w_%-]+$") then
+	if normalized == "" or not string.match(normalized, "^[%w_%-]+$") then
 		return nil
 	end
 	return normalized
