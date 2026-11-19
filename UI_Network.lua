@@ -275,6 +275,12 @@ function Network.Init(): boolean
 		local musicCatalogFunction = waitForRemote(foundFolder, "GetMusicCatalog", "RemoteFunction") :: RemoteFunction
 		local musicPlaylistFunction = waitForRemote(foundFolder, "GetMusicPlaylists", "RemoteFunction") :: RemoteFunction
 
+		-- Init yields while waiting for replicated remotes. Destroy may run during
+		-- that wait, so never attach listeners or publish a ready state afterward.
+		if destroyed then
+			error("Network was destroyed while initialization was waiting for remotes.")
+		end
+
 		-- Subscribe before the initial snapshot request so no push update is missed.
 		actionRemote = action
 		catalogFunction = musicCatalogFunction
