@@ -53,35 +53,54 @@ function Preferences.new(context)
 		if not route or route.fader or self.destroyed then return end
 		if not sourceFader:IsA("AudioFader") or sourceFader.Name ~= "MusicFader" then return end
 
-		local graph = Instance.new("Folder")
-		graph.Name = "ClubMusicLocalAudioRoute"
-		graph:SetAttribute("ManagedByClubMusicPlayerPreferences", true)
+		-- Build the private output graph transactionally. If any Instance or Wire
+		-- setup fails, destroy every object allocated so far and leave the route
+		-- un-attached so a later retry can safely try again.
+		local created = {}
+		local function own(instance)
+			table.insert(created, instance)
+			return instance
+		end
+		local ok, result = pcall(function()
+			local graph = own(Instance.new("Folder"))
+			graph.Name = "ClubMusicLocalAudioRoute"
+			graph:SetAttribute("ManagedByClubMusicPlayerPreferences", true)
 
-		local localFader = Instance.new("AudioFader")
-		localFader.Name = "PlayerMusicGain"
-		localFader.Volume = if self.muted then 0 else self.volume
-		localFader.Parent = graph
+			local localFader = own(Instance.new("AudioFader"))
+			localFader.Name = "PlayerMusicGain"
+			localFader.Volume = if self.muted then 0 else self.volume
+			localFader.Parent = graph
 
-		local output = Instance.new("AudioDeviceOutput")
-		output.Name = "PlayerMusicOutput"
-		output.Player = player
-		output.Parent = graph
+			local output = own(Instance.new("AudioDeviceOutput"))
+			output.Name = "PlayerMusicOutput"
+			output.Player = player
+			output.Parent = graph
 
-		local inputWire = Instance.new("Wire")
-		inputWire.Name = "PlayerMusicInput"
-		inputWire.SourceInstance = sourceFader
-		inputWire.TargetInstance = localFader
-		inputWire.Parent = graph
+			local inputWire = own(Instance.new("Wire"))
+			inputWire.Name = "PlayerMusicInput"
+			inputWire.SourceInstance = sourceFader
+			inputWire.TargetInstance = localFader
+			inputWire.Parent = graph
 
-		local outputWire = Instance.new("Wire")
-		outputWire.Name = "PlayerMusicOutputWire"
-		outputWire.SourceInstance = localFader
-		outputWire.TargetInstance = output
-		outputWire.Parent = graph
+			local outputWire = own(Instance.new("Wire"))
+			outputWire.Name = "PlayerMusicOutputWire"
+			outputWire.SourceInstance = localFader
+			outputWire.TargetInstance = output
+			outputWire.Parent = graph
 
-		route.fader = localFader
-		route.graph = graph
-		graph.Parent = SoundService
+			graph.Parent = SoundService
+			return {graph = graph, fader = localFader}
+		end)
+		if not ok then
+			for index = #created, 1, -1 do
+				pcall(function() created[index]:Destroy() end)
+			end
+			warn("[ClubMusic Audio Preferences] Local route construction failed: " .. string.sub(tostring(result), 1, 180))
+			return
+		end
+
+		route.graph = result.graph
+		route.fader = result.fader
 	end
 
 	local function inspectRoot(root)
