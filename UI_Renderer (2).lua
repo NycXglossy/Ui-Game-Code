@@ -3386,43 +3386,68 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			return
 		end
 		stopPreview()
-		local graph = Instance.new("Folder")
-		graph.Name = "ClubMusicAudioPreview"
-		local audioPlayer = Instance.new("AudioPlayer")
-		audioPlayer.Name = "AudioPreview"
-		audioPlayer.AutoLoad = true
-		audioPlayer.Asset = "rbxassetid://" .. tostring(id)
-		audioPlayer.Parent = graph
-		local fader = Instance.new("AudioFader")
-		fader.Name = "PreviewVolume"
-		fader.Volume = volume
-		fader.Parent = graph
-		local output = Instance.new("AudioDeviceOutput")
-		output.Name = "PreviewOutput"
-		output.Player = player
-		output.Parent = graph
-		local inputWire = Instance.new("Wire")
-		inputWire.SourceInstance = audioPlayer
-		inputWire.TargetInstance = fader
-		inputWire.Parent = graph
-		local outputWire = Instance.new("Wire")
-		outputWire.SourceInstance = fader
-		outputWire.TargetInstance = output
-		outputWire.Parent = graph
-		graph.Parent = SoundService
-		previewGraph = graph
-		previewAudio = audioPlayer
-		previewFader = fader
+
+		local created = {}
+		local function own(instance: Instance): Instance
+			table.insert(created, instance)
+			return instance
+		end
+		local ok, result = pcall(function()
+			local graph = own(Instance.new("Folder"))
+			graph.Name = "ClubMusicAudioPreview"
+
+			local audioPlayer = own(Instance.new("AudioPlayer"))
+			audioPlayer.Name = "AudioPreview"
+			audioPlayer.AutoLoad = true
+			audioPlayer.Asset = "rbxassetid://" .. tostring(id)
+			audioPlayer.Parent = graph
+
+			local fader = own(Instance.new("AudioFader"))
+			fader.Name = "PreviewVolume"
+			fader.Volume = volume
+			fader.Parent = graph
+
+			local output = own(Instance.new("AudioDeviceOutput"))
+			output.Name = "PreviewOutput"
+			output.Player = player
+			output.Parent = graph
+
+			local inputWire = own(Instance.new("Wire"))
+			inputWire.SourceInstance = audioPlayer
+			inputWire.TargetInstance = fader
+			inputWire.Parent = graph
+
+			local outputWire = own(Instance.new("Wire"))
+			outputWire.SourceInstance = fader
+			outputWire.TargetInstance = output
+			outputWire.Parent = graph
+
+			graph.Parent = SoundService
+			return {graph = graph, audio = audioPlayer, fader = fader}
+		end)
+		if not ok then
+			for index = #created, 1, -1 do
+				pcall(function() created[index]:Destroy() end)
+			end
+			notify("Audio preview could not be initialized.", C.Red)
+			warn("[ClubMusic UI] Preview graph construction failed: " .. string.sub(tostring(result), 1, 180))
+			refreshAudioTab()
+			return
+		end
+
+		previewGraph = result.graph
+		previewAudio = result.audio
+		previewFader = result.fader
 		previewId = id
-		audioPlayer.Ended:Connect(function()
-			if previewAudio == audioPlayer then
+		result.audio.Ended:Connect(function()
+			if previewAudio == result.audio then
 				stopPreview()
 				refreshAudioTab()
 			end
 		end)
-		audioPlayer:Play()
+		result.audio:Play()
 		task.delay(10, function()
-			if previewAudio == audioPlayer and not audioPlayer.IsReady then
+			if previewAudio == result.audio and not result.audio.IsReady then
 				stopPreview()
 				notify("Audio could not be loaded. It may be private or restricted.", C.Red)
 				refreshAudioTab()
