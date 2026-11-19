@@ -25,7 +25,25 @@ end
 
 local function cleanString(value: any, limit: number): string
 	local result = string.sub(tostring(value or ""), 1, limit)
-	return (result:gsub("[%c]", " "))
+	result = result:gsub("[%c]", " ")
+	return (string.gsub(result, "^%s*(.-)%s*$", "%1"))
+end
+
+local function normalizeEventType(value: any): string?
+	if typeof(value) ~= "string" then return nil end
+	local normalized = cleanString(value, MAX_EVENT_TYPE)
+	if normalized == "" or #normalized > MAX_EVENT_TYPE or not string.match(normalized, "^[%w_%-]+$") then
+		return nil
+	end
+	return normalized
+end
+
+local function normalizeSeverity(value: any): string
+	local normalized = string.lower(cleanString(value or "Info", 12))
+	if normalized == "warning" then return "Warning" end
+	if normalized == "error" then return "Error" end
+	if normalized == "critical" then return "Critical" end
+	return "Info"
 end
 
 local function sanitizeMetadata(value: any): {[string]: any}
@@ -36,7 +54,7 @@ local function sanitizeMetadata(value: any): {[string]: any}
 		if count >= MAX_METADATA_KEYS then break end
 		if typeof(key) == "string" then
 			local safeKey = cleanString(key, 24)
-			if safeKey ~= "" then
+			if safeKey ~= "" and string.match(safeKey, "^[%w_%-]+$") and clean[safeKey] == nil then
 				local kind = typeof(item)
 				if kind == "string" then
 					clean[safeKey] = cleanString(item, MAX_METADATA_STRING)
@@ -52,6 +70,18 @@ local function sanitizeMetadata(value: any): {[string]: any}
 		end
 	end
 	return clean
+end
+
+local function copyEvent(item: {[string]: any}): {[string]: any}
+	local copied = table.clone(item)
+	-- Metadata is scalar-only after sanitization; clone it separately so callers
+	-- cannot mutate the retained event through a returned query result.
+	copied.metadata = if typeof(item.metadata) == "table" then table.clone(item.metadata) else {}
+	return copied
+end
+
+local function validTimestamp(value: any): boolean
+	return finiteNumber(value) and value >= 0
 end
 
 function Service.new(dependencies: {[string]: any})
@@ -72,8 +102,8 @@ end
 
 function Service:Record(eventType: any, userId: any, targetUserId: any, severity: any, source: any, metadata: any)
 	if not self.started then return false, "Replay service is not started." end
-	if typeof(eventType) ~= "string" or #eventType < 1 or #eventType > MAX_EVENT_TYPE
-		or not validUserId(userId, true) then
+	local normalizedType = normalizeEventType(eventType)
+	if not normalizedType or not validUserId(userId, true) then
 		self.dropped += 1
 		return false, "Invalid replay event."
 	end
@@ -81,7 +111,6 @@ function Service:Record(eventType: any, userId: any, targetUserId: any, severity
 		self.dropped += 1
 		return false, "Invalid replay target."
 	end
-	local normalizedSeverity = cleanString(severity or "Info", 12)
 	local event = {
 		id = self.nextId + 1,
 		at = os.time(),
@@ -89,8 +118,8 @@ function Service:Record(eventType: any, userId: any, targetUserId: any, severity
 		jobId = cleanString(game.JobId, 40),
 		userId = math.floor(userId),
 		targetUserId = if targetUserId ~= nil then math.floor(targetUserId) else 0,
-		type = eventType,
-		severity = normalizedSeverity,
+		type = normalizedType,
+		severity = normalizeSeverity(severity),
 		source = cleanString(source or "Server", MAX_SOURCE),
 		metadata = sanitizeMetadata(metadata),
 	}
@@ -116,23 +145,46 @@ function Service:_authorized(actor: any): boolean
 	return ok and allowed == true and actor.Parent == Players
 end
 
-function Service:Query(actor: any, targetUserId: any, limit: any, beforeTimestamp: any, eventType: any)
+-- Query accepts an inclusive upper timestamp, exact event type, and optional
+-- inclusive lower timestamp. Results are newest-first and detached from storage.
+function Service:Query(actor: any, targetUserId: any, limit: any, beforeTimestamp: any, eventType: any, afterTimestamp: any)
 	if not self:_authorized(actor) then
 		self.denied += 1
 		return false, {}, "Security replay permission denied."
 	end
-	if targetUserId ~= nil and not validUserId(targetUserId, true) then return false, {}, "Invalid target UserId." end
-	local queryLimit = if finiteNumber(limit) then math.clamp(math.floor(limit), 1, MAX_QUERY) else 50
-	local before = if finiteNumber(beforeTimestamp) and beforeTimestamp > 0 then beforeTimestamp else math.huge
-	local filterType = if typeof(eventType) == "string" and #eventType <= MAX_EVENT_TYPE then eventType else nil
+	if targetUserId ~= nil and not validUserId(targetUserId, true) then
+		return false, {}, "Invalid target UserId."
+	end
+	local queryLimit = 50
+	if limit ~= nil then
+		if not finiteNumber(limit) or limit % 1 ~= 0 or limit < 1 or limit > MAX_QUERY then
+			return false, {}, "Query limit must be an integer from 1 to 100."
+		end
+		queryLimit = limit
+	end
+	if beforeTimestamp ~= nil and not validTimestamp(beforeTimestamp) then
+		return false, {}, "Invalid upper timestamp."
+	end
+	if afterTimestamp ~= nil and not validTimestamp(afterTimestamp) then
+		return false, {}, "Invalid lower timestamp."
+	end
+	local before = beforeTimestamp or math.huge
+	local after = afterTimestamp or 0
+	if after > before then return false, {}, "Lower timestamp must not exceed upper timestamp." end
+	local filterType: string? = nil
+	if eventType ~= nil then
+		filterType = normalizeEventType(eventType)
+		if not filterType then return false, {}, "Invalid event-type filter." end
+	end
+
 	local result = {}
 	for offset = 0, self.count - 1 do
 		local index = ((self.head + self.count - offset - 2) % SERVER_CAPACITY) + 1
 		local item = self.events[index]
-		if item and item.at <= before
+		if item and item.at >= after and item.at <= before
 			and (targetUserId == nil or item.userId == targetUserId or item.targetUserId == targetUserId)
 			and (filterType == nil or item.type == filterType) then
-			table.insert(result, table.clone(item))
+			table.insert(result, copyEvent(item))
 			if #result >= queryLimit then break end
 		end
 	end
