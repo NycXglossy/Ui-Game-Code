@@ -622,15 +622,20 @@ return function(_K: any)
 								local character = target.Character
 								local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 								if humanoid and finiteNumber(humanoid.WalkSpeed) then
-									local speedOk, speedRegistered = pcall(function()
-										return (authority :: BindableFunction):Invoke(
-											"Register", actorId, target.UserId, "WalkSpeed",
-											humanoid.WalkSpeed, "KohlsAdminSizeSideEffect", 120
-										)
-									end)
-									if (not speedOk or speedRegistered ~= true) and not authorityRegistrationWarned then
-										authorityRegistrationWarned = true
-										warn("[Tiki Tide Security][Kohl's] Size WalkSpeed side-effect registration failed; movement audit remains active.")
+									for _, property in ipairs({"WalkSpeed", "JumpPower", "JumpHeight"}) do
+										local propertyValue = humanoid[property]
+										if finiteNumber(propertyValue) then
+											local registerOk, registered = pcall(function()
+												return (authority :: BindableFunction):Invoke(
+													"Register", actorId, target.UserId, property,
+													propertyValue, "KohlsAdminSizeSideEffect", 120
+												)
+										end)
+											if (not registerOk or registered ~= true) and not authorityRegistrationWarned then
+												authorityRegistrationWarned = true
+												warn("[Tiki Tide Security][Kohl's] Size movement side-effect registration failed; movement audit remains active.")
+											end
+										end
 									end
 								end
 							end
