@@ -1,5 +1,5 @@
 -- ClubMusic audio ModuleScript installer
--- Five server audio modules, five controller-required ServerStorage core modules, and one client preferences module are pinned snapshots.
+-- Five server audio modules, two controller-required ServerStorage core modules, and one client preferences module are pinned snapshots.
 -- Playback and request queues remain controller-owned and server-local; cross-server playback synchronization is retired.
 -- Run this entire script once in Roblox Studio's Command Bar (View > Command Bar).
 -- Requires Game Settings > Security > Allow HTTP Requests.
@@ -20,20 +20,17 @@ if RunService:IsRunning() then
 end
 
 local modules = {
-    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicAudioBackend.luau"},
-    {name = "ClubMusicAudioCrossfadeManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicAudioCrossfadeManager.luau"},
-    {name = "ClubMusicAudioQualityProfiles", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicAudioQualityProfiles.luau"},
-    {name = "ClubMusicDJSessionManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicDJSessionManager.luau"},
-    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicPlayerPreferences.luau"},
-    {name = "ClubMusicSpatialAudioGraph", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicSpatialAudioGraph.luau"},
+    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/6ec3766ef48f38eb2893f3385e4b4370ec0b7112/ClubMusicAudioBackend.luau"},
+    {name = "ClubMusicAudioCrossfadeManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/6ec3766ef48f38eb2893f3385e4b4370ec0b7112/ClubMusicAudioCrossfadeManager.luau"},
+    {name = "ClubMusicAudioQualityProfiles", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/6ec3766ef48f38eb2893f3385e4b4370ec0b7112/ClubMusicAudioQualityProfiles.luau"},
+    {name = "ClubMusicDJSessionManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/6ec3766ef48f38eb2893f3385e4b4370ec0b7112/ClubMusicDJSessionManager.luau"},
+    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/6ec3766ef48f38eb2893f3385e4b4370ec0b7112/ClubMusicPlayerPreferences.luau"},
+    {name = "ClubMusicSpatialAudioGraph", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/6ec3766ef48f38eb2893f3385e4b4370ec0b7112/ClubMusicSpatialAudioGraph.luau"},
 }
 
 local coreModules = {
-    {name = "MusicCatalogService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicCatalogService.lua"},
-    {name = "MusicPlaylistService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicPlaylistService.lua"},
-    {name = "MusicQueueManager", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicQueueManager.lua"},
-    {name = "MusicQueueManagerService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicQueueManagerService.lua"},
-    {name = "MusicValidationService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicValidationService.lua"},
+    {name = "MusicCoreService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/6ec3766ef48f38eb2893f3385e4b4370ec0b7112/MusicCoreService.lua"},
+    {name = "MusicPlaylistService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/6ec3766ef48f38eb2893f3385e4b4370ec0b7112/MusicPlaylistService.lua"},
 }
 
 local destinations = {
@@ -126,7 +123,7 @@ for _, item in ipairs(coreModules) do
 end
 
 print("[ClubMusic] Installed 5 audio support ModuleScripts in ServerStorage/" .. folders.server)
-print("[ClubMusic] Installed 5 controller-required ServerStorage core ModuleScripts directly under ServerStorage.")
+print("[ClubMusic] Installed 2 controller-required ServerStorage core ModuleScripts directly under ServerStorage.")
 print("[ClubMusic] Installed 1 client ModuleScript in ReplicatedStorage/" .. folders.client)
 print("[ClubMusic] Install this package with the matching controller and UI_Renderer from the same branch snapshot.")
 print("[ClubMusic] Modern AudioPlayer is the only controller playback source. This installer does not create or delete legacy Sound objects; remove any old Sound/MusicGroup instances only after auditing live-place consumers.")
