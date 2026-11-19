@@ -298,6 +298,7 @@ local STAFF_COMMANDS: {[string]: string} = {
 	SecurityReplay = "SecurityReplay", ThreatIntelligence = "SecurityThreatIntelligence",
 	SpectateEnter = "StaffSpectatorEnter", SpectateSwitch = "StaffSpectatorSwitch",
 	SpectateExit = "StaffSpectatorExit", SpectateState = "StaffSpectatorState",
+	SpectateStealth = "StaffSpectatorStealth",
 	SecurityStatus = "SecurityStatus", SecurityIncidents = "SecurityIncidents",
 	ThreatCaseOpen = "SecurityThreatCaseOpen", IncidentOpen = "SecurityIncidentOpen",
 	IncidentResolve = "SecurityIncidentResolve", SecurityPolicy = "SecurityPolicy",
