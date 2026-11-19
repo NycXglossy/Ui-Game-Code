@@ -3076,7 +3076,14 @@ ControllerFunctions.saveProfile = function(player: Player, lockTimeoutSeconds: n
 				end
 			end
 			local preservedPendingReceipt = if typeof(oldData.pendingReceipt) == "string" then oldData.pendingReceipt else nil
-			local output = table.clone(snapshot)
+			-- Start from the current durable record so fields introduced by an
+			-- older/newer profile writer survive this controller's narrower schema.
+			-- The validated in-memory snapshot remains authoritative for every field
+			-- this controller owns; nested allowlisted collections are replaced below.
+			local output = table.clone(oldData)
+			for key, value in pairs(snapshot) do
+				output[key] = value
+			end
 			output.ownedTags = table.clone(snapshot.ownedTags)
 			output.favorites = table.clone(snapshot.favorites)
 			output.receiptIds = preservedReceipts -- legacy entries only; new receipts use the sharded journal.
