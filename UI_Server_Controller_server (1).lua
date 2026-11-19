@@ -2805,6 +2805,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 				lastError = "Profile is busy with another local write."
 				break
 			end
+			local invalidStoredRecord = false
 			local callOk, result = pcall(function()
 				return store:UpdateAsync(tostring(userId), function(oldData)
 					local current = if typeof(oldData) == "table" then table.clone(oldData) else {}
@@ -2824,7 +2825,11 @@ ControllerFunctions.loadProfile = function(player: Player)
 				ok = true
 				break
 			end
-			if not callOk then lastError = tostring(result) end
+			if invalidStoredRecord then
+				lastError = "Stored profile or session lock is malformed; refusing to overwrite it."
+			elseif not callOk then
+				lastError = tostring(result)
+			end
 			if attempt < 5 then
 				task.wait(2)
 				if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
