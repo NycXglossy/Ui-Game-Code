@@ -80,9 +80,9 @@ local function hasValidStoredPlaylistRecords(raw: any): boolean
  if #cleaned ~= count then return false end
  for index, item in ipairs(raw.playlists) do
   if typeof(item.trackIds) ~= "table" then return false end
-  for _, timestamp in ipairs({item.createdAt, item.updatedAt}) do
-   if timestamp ~= nil and (typeof(timestamp) ~= "number" or timestamp ~= timestamp or timestamp < 0 or timestamp >= math.huge) then return false end
-  end
+  local createdAt, updatedAt = item.createdAt, item.updatedAt
+  if createdAt ~= nil and (typeof(createdAt) ~= "number" or createdAt ~= createdAt or createdAt < 0 or createdAt >= math.huge) then return false end
+  if updatedAt ~= nil and (typeof(updatedAt) ~= "number" or updatedAt ~= updatedAt or updatedAt < 0 or updatedAt >= math.huge) then return false end
   local trackCount, trackHighest = 0, 0
   for key in pairs(item.trackIds) do
    if typeof(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > MAX_TRACKS then return false end
