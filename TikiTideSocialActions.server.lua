@@ -3,7 +3,7 @@
 -- Server-authoritative requests, invitations, entitlement checks and animation playback.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
+local ServerStorage = game:GetService("ServerStorage")
 local HttpService = game:GetService("HttpService")
 
 local configFolder = script.Parent:FindFirstChild("TikiTideSocialActions")
@@ -43,6 +43,15 @@ local lastIngressAt: {[number]: number} = {}
 local ingressTokens: {[number]: number} = {}
 local MAX_TOKENS = 12
 local REFILL_PER_SECOND = 4
+
+local function recordSecuritySignal(player: Player, signal: string, detail: string)
+	local replay = ServerStorage:FindFirstChild("TikiTideSecurityReplay")
+	if replay and replay:IsA("BindableFunction") then
+		pcall(function()
+			replay:Invoke("Record", signal, player.UserId, 0, "Warning", "TikiTideSocialActions", {detail = string.sub(detail, 1, 100)})
+		end)
+	end
+end
 
 local function notify(player: Player, message: string, kind: string?)
 	if player.Parent == Players then eventRemote:FireClient(player, "Notice", message, kind or "info") end
@@ -221,16 +230,32 @@ local function respond(player: Player, id: any, accepted: any)
 end
 
 requestRemote.OnServerEvent:Connect(function(player: Player, action: any, payload: any)
-	if player.Parent ~= Players or not consumeIngress(player) then return end
-	if typeof(action) ~= "string" or #action > 24 or typeof(payload) ~= "table" then return end
+	if player.Parent ~= Players then return end
+	if not consumeIngress(player) then
+		recordSecuritySignal(player, "social_action_ingress_limited", "per-player token bucket exhausted")
+		return
+	end
+	if typeof(action) ~= "string" or #action > 24 or typeof(payload) ~= "table" then
+		recordSecuritySignal(player, "social_action_invalid_request", "invalid action or payload type")
+		return
+	end
 	local count = 0
 	for key, value in pairs(payload) do
 		count += 1
-		if count > 4 or typeof(key) ~= "string" or #key > 24 then return end
+		if count > 4 or typeof(key) ~= "string" or #key > 24 then
+			recordSecuritySignal(player, "social_action_invalid_payload", "payload shape exceeded bounds")
+			return
+		end
 		local kind = typeof(value)
 		if kind ~= "string" and kind ~= "number" and kind ~= "boolean" then return end
-		if kind == "string" and #value > 64 then return end
-		if kind == "number" and (value ~= value or math.abs(value) == math.huge) then return end
+		if kind == "string" and #value > 64 then
+			recordSecuritySignal(player, "social_action_invalid_payload", "payload string exceeded bounds")
+			return
+		end
+		if kind == "number" and (value ~= value or math.abs(value) == math.huge) then
+			recordSecuritySignal(player, "social_action_invalid_payload", "non-finite numeric payload")
+			return
+		end
 	end
 	if action == "Play" then
 		if typeof(payload.name) == "string" then playSolo(player, payload.name) end
