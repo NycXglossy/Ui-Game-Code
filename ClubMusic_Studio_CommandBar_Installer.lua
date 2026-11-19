@@ -20,20 +20,20 @@ if RunService:IsRunning() then
 end
 
 local modules = {
-    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/ClubMusicAudioBackend.luau"},
-    {name = "ClubMusicAudioCrossfadeManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/ClubMusicAudioCrossfadeManager.luau"},
-    {name = "ClubMusicAudioQualityProfiles", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/ClubMusicAudioQualityProfiles.luau"},
-    {name = "ClubMusicDJSessionManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/ClubMusicDJSessionManager.luau"},
-    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/ClubMusicPlayerPreferences.luau"},
-    {name = "ClubMusicSpatialAudioGraph", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/ClubMusicSpatialAudioGraph.luau"},
+    {name = "ClubMusicAudioBackend", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicAudioBackend.luau"},
+    {name = "ClubMusicAudioCrossfadeManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicAudioCrossfadeManager.luau"},
+    {name = "ClubMusicAudioQualityProfiles", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicAudioQualityProfiles.luau"},
+    {name = "ClubMusicDJSessionManager", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicDJSessionManager.luau"},
+    {name = "ClubMusicPlayerPreferences", side = "client", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicPlayerPreferences.luau"},
+    {name = "ClubMusicSpatialAudioGraph", side = "server", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/ClubMusicSpatialAudioGraph.luau"},
 }
 
 local coreModules = {
-    {name = "MusicCatalogService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/MusicCatalogService.lua"},
-    {name = "MusicPlaylistService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/MusicPlaylistService.lua"},
-    {name = "MusicQueueManager", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/MusicQueueManager.lua"},
-    {name = "MusicQueueManagerService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/MusicQueueManagerService.lua"},
-    {name = "MusicValidationService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/b8ee084b4dc001b084e4b36c79f02031097cbe76/MusicValidationService.lua"},
+    {name = "MusicCatalogService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicCatalogService.lua"},
+    {name = "MusicPlaylistService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicPlaylistService.lua"},
+    {name = "MusicQueueManager", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicQueueManager.lua"},
+    {name = "MusicQueueManagerService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicQueueManagerService.lua"},
+    {name = "MusicValidationService", url = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/4a13d16c849b401febf9df1fb46719f30c7ad0ec/MusicValidationService.lua"},
 }
 
 local destinations = {
