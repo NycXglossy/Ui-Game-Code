@@ -153,7 +153,8 @@ end
 local function playSolo(player: Player, action: string)
 	if not access(player) then notify(player, "Tiki Tide access is required.", "error"); return end
 	local now = os.clock()
-	if now - (lastActionAt[player.UserId] or 0) < ACTION_COOLDOWN then notify(player, "Please wait before starting another social action."); return end
+	local previousAction = lastActionAt[player.UserId] or 0
+	if previousAction > 0 and now - previousAction < ACTION_COOLDOWN then notify(player, "Please wait before starting another social action."); return end
 	if action ~= "Dance1" and action ~= "Dance2" and action ~= "VIPDance" then return end
 	if action == "VIPDance" and not vip(player) then notify(player, "VIP or higher access is required.", "error"); return end
 	local assetId = config[action]
@@ -165,8 +166,10 @@ local function invite(player: Player, target: Player, action: string)
 	if action ~= "Hug" or target == player then return end
 	if not access(player) or not access(target) then notify(player, "Both players need Tiki Tide access for duo actions.", "error"); return end
 	local now = os.clock()
-	if now - (lastInviteAt[player.UserId] or 0) < INVITE_COOLDOWN then notify(player, "Please wait before sending another invitation."); return end
-	if now - (lastInboundAt[target.UserId] or 0) < INBOUND_COOLDOWN then notify(player, "That player has recently received an invitation."); return end
+	local previousInvite = lastInviteAt[player.UserId] or 0
+	if previousInvite > 0 and now - previousInvite < INVITE_COOLDOWN then notify(player, "Please wait before sending another invitation."); return end
+	local previousInbound = lastInboundAt[target.UserId] or 0
+	if previousInbound > 0 and now - previousInbound < INBOUND_COOLDOWN then notify(player, "That player has recently received an invitation."); return end
 	if inviteBySender[player.UserId] or inviteByTarget[player.UserId] then notify(player, "You already have a pending social invitation."); return end
 	if inviteBySender[target.UserId] or inviteByTarget[target.UserId] then notify(player, "That player is already handling another invitation."); return end
 	if not closeEnough(player, target) then notify(player, "Move closer before sending a duo invitation."); return end
