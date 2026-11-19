@@ -1720,11 +1720,19 @@ end
 local function onCatalog(message)
 	local data = message.Data
 	if not validEnvelope(data, "Catalog") or data.kind ~= "Catalog" or not unseen(data.id) then return end
-	-- Catalog invalidation remains metadata-free; the optional moderation fields
-	-- carry only a validated track key and boolean decision.
+	-- Catalog invalidation carries only a validated track key and boolean decision.
 	if typeof(data.trackId) == "string" and #data.trackId <= 64
 		and string.match(data.trackId, "^[%w%-_]+$") and typeof(data.blocked) == "boolean" then
-		globalEventBinlocal function subscribeWithRetry(topic: string, callback: (any) -> ())
+		globalEventBindable:Fire({
+			kind = "TrackModeration",
+			trackId = data.trackId,
+			blocked = data.blocked,
+			senderJob = data.senderJob,
+		})
+	end
+end
+
+local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	ownThread(task.spawn(function()
 		while SERVICE_ENABLED and not globalServiceShuttingDown do
@@ -1746,14 +1754,11 @@ local function onCatalog(message)
 					pcall(function() connection:Disconnect() end)
 					break
 				end
-				-- Keep an explicit owner even when the optional janitor module is absent.
 				subscriptionConnections[topic] = connection
 				ownConnection(connection)
 				subscriptionStatus[topic] = "Active"
 				print("[ClubMusic Global] Messaging subscription active: " .. topic)
 
-				-- SubscribeAsync returns a live connection. If Roblox disconnects it,
-				-- retry the topic rather than leaving the status permanently Active.
 				while not globalServiceShuttingDown and connection.Connected do
 					task.wait(5)
 				end
@@ -1769,12 +1774,6 @@ local function onCatalog(message)
 				warn("[ClubMusic Global] Subscription failed for " .. topic .. "; retrying: " .. tostring(subscriptionOrError))
 			end
 			if not globalServiceShuttingDown then task.wait(CONFIG.SubscriptionRetrySeconds) end
-		end
-		subscriptionStatus[topic] = "Disabled"
-	end))
-end"
-			warn("[ClubMusic Global] Subscription failed for " .. topic .. "; retrying: " .. tostring(subscriptionOrError))
-			task.wait(CONFIG.SubscriptionRetrySeconds)
 		end
 		subscriptionStatus[topic] = "Disabled"
 	end))
