@@ -1573,9 +1573,10 @@ ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, strin
 		return false, "The current audio source state could not be read safely."
 	end
 	if snapshot.kind == "Unavailable" then
-		-- A restart is an explicit request to recover the selected track. Replace
-		-- any stale in-flight startup candidate and let the modern-only startup
-		-- path restore the playhead from the controller's reset state.
+		-- A restart is an explicit request to recover and resume the selected
+		-- track. Publish its intended start state before task.spawn can observe it.
+		nowPlaying.elapsed = 0
+		playbackPaused = false
 		ControllerFunctions.startServerMusic(soundId)
 		return true, nil
 	end
