@@ -35,6 +35,35 @@ local ok, message = control:Invoke("Enter", staffPlayer.UserId, targetPlayer.Use
 
 Do not expose this BindableFunction through a client RemoteFunction/RemoteEvent without a separate server-authorized request adapter. The BindableFunction is intentionally server-only.
 
+The existing Phase 22 `SecurityAction` RemoteEvent is the client-to-server adapter; no `SpectateRequest` remote is created. Existing Staff UI buttons can call it through the allowlisted command route:
+
+```lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local securityAction = ReplicatedStorage:WaitForChild("SecurityAction")
+
+local function requestSpectate(targetPlayer: Player, stealth: boolean?)
+	if not targetPlayer or targetPlayer.Parent ~= game:GetService("Players") then return end
+	local mode = if stealth == true then " stealth" else " visible"
+	securityAction:FireServer("RunClubMusicCommand", "SpectateEnter",
+		tostring(targetPlayer.UserId) .. mode)
+end
+
+local function switchSpectateTarget(targetPlayer: Player)
+	if not targetPlayer or targetPlayer.Parent ~= game:GetService("Players") then return end
+	securityAction:FireServer("RunClubMusicCommand", "SpectateSwitch", tostring(targetPlayer.UserId))
+end
+
+local function setSpectatorStealth(enabled: boolean)
+	securityAction:FireServer("RunClubMusicCommand", "SpectateStealth", if enabled then "on" else "off")
+end
+
+local function stopSpectating()
+	securityAction:FireServer("RunClubMusicCommand", "SpectateExit", "")
+end
+```
+
+The existing `SecurityActionResult` response reports acceptance or rejection. The installed camera adapter reacts to server-owned spectator attributes, so the client button handler must not set the camera subject or visibility itself.
+
 ## Explicit limitations
 
 - This phase supplies the server service and camera presentation, but does not add a Kohl's Admin command, staff GUI button, or chat command. A trusted server command/UI adapter must call the BindableFunction. The Phase 22 staff command bridge exposes `SpectateEnter`, `SpectateSwitch`, `SpectateExit`, `SpectateState`, and `SpectateStealth`. Enter accepts `<UserId> [stealth|visible]` (visible is the default); the stealth action accepts `on`/`off` or `stealth`/`visible`.
