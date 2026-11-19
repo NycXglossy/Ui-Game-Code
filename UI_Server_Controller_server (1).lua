@@ -4599,6 +4599,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.waitForDataStoreBudget(5) then
 			notify(player, "Shared DataStore budget is unavailable; playlist was not changed.", "warn"); return
 		end
+		-- The budget wait can yield. Revalidate the caller and staff role before
+		-- entering a persistent playlist mutation.
+		if not ControllerFunctions.isLiveRemotePlayer(player) or not ControllerFunctions.isStaff(player) then return end
 		local wasActivePlaylist = activePlaylistId == payload.playlistId
 		local ok, message = false, "Invalid playlist action."
 		if action == "PlaylistCreate" then
@@ -4709,6 +4712,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if player.Parent ~= Players or not ControllerFunctions.isStaff(player) then return end
 		local budgetReady = ControllerFunctions.waitForDataStoreBudget(5)
 		if not budgetReady then notify(player, "Shared DataStore budget is unavailable; catalog was not changed.", "warn"); return end
+		-- DataStore budget waits yield; do not let a departed or demoted caller
+		-- commit a catalog change using an earlier authorization check.
+		if not ControllerFunctions.isLiveRemotePlayer(player) or not ControllerFunctions.isStaff(player) then return end
 		local trackId = "custom-" .. tostring(assetId)
 		local saved, message = MusicCatalogService:AddCustomTrack(assetId, title, artist, duration, genreId, artworkAssetId)
 		if not saved then
@@ -4744,6 +4750,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not catalogStorageReady or not ControllerFunctions.waitForDataStoreBudget(5) then
 			notify(player, "Catalog storage is unavailable; track was not removed.", "warn"); return
 		end
+		-- The storage-budget wait can yield while the caller leaves or loses staff access.
+		if not ControllerFunctions.isLiveRemotePlayer(player) or not ControllerFunctions.isStaff(player) then return end
 		if nowPlaying.trackId == trackId then
 			notify(player, "That track is currently playing. Remove it after playback ends.", "warn"); return
 		end
