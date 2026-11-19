@@ -80,6 +80,9 @@ local function hasValidStoredPlaylistRecords(raw: any): boolean
  if #cleaned ~= count then return false end
  for index, item in ipairs(raw.playlists) do
   if typeof(item.trackIds) ~= "table" then return false end
+  for _, timestamp in ipairs({item.createdAt, item.updatedAt}) do
+   if timestamp ~= nil and (typeof(timestamp) ~= "number" or timestamp ~= timestamp or timestamp < 0 or timestamp >= math.huge) then return false end
+  end
   local trackCount, trackHighest = 0, 0
   for key in pairs(item.trackIds) do
    if typeof(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > MAX_TRACKS then return false end
@@ -91,9 +94,25 @@ local function hasValidStoredPlaylistRecords(raw: any): boolean
  return true
 end
 
-local function pack(list: {Playlist})
- local data = {schemaVersion=1, playlists={}}
- for _, p in ipairs(list) do table.insert(data.playlists, clonePlaylist(p)) end
+local function pack(list: {Playlist}, oldData: any)
+ local data = if typeof(oldData) == "table" then table.clone(oldData) else {}
+ data.schemaVersion = 1
+ data.playlists = {}
+ local oldById: {[string]: any} = {}
+ if typeof(oldData) == "table" and typeof(oldData.playlists) == "table" then
+  for _, oldPlaylist in ipairs(oldData.playlists) do
+   if typeof(oldPlaylist) == "table" and typeof(oldPlaylist.id) == "string" then oldById[oldPlaylist.id] = oldPlaylist end
+  end
+ end
+ for _, p in ipairs(list) do
+  local saved = if oldById[p.id] then table.clone(oldById[p.id]) else {}
+  saved.id = p.id
+  saved.name = p.name
+  saved.trackIds = table.clone(p.trackIds)
+  saved.createdAt = p.createdAt
+  saved.updatedAt = p.updatedAt
+  table.insert(data.playlists, saved)
+ end
  return data
 end
 
