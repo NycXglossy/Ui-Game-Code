@@ -13,7 +13,7 @@
 - Entry and target switching require a live staff Player and the existing SecurityCore `GlobalModeration` permission. No client permission or target claim is trusted.
 - The service resolves targets through the server's live Players list, rejects invalid IDs and self-targeting, and requires a living target Humanoid.
 - The server publishes only the staff observer's own spectator attributes. The client LocalScript uses those attributes only to select a camera subject; it cannot enter, switch, or authorize observation.
-- During observation, the server saves the staff Humanoid's current WalkSpeed, JumpPower, JumpHeight, AutoRotate, UseJumpPower, and Jumping-enabled state, then suspends movement. Exit restores the captured values. Re-entering an active session is rejected; use SwitchTarget.
+- During observation, the server saves the staff Humanoid's current WalkSpeed, JumpPower, JumpHeight, AutoRotate, UseJumpPower, and Jumping-enabled state, then suspends movement. Exact WalkSpeed, JumpPower, and JumpHeight changes are registered through the existing `TikiTideMovementAuthority` ledger so the detection-only CharacterPhysicsGuard does not misclassify the service's own movement changes. Exit restores the captured values and registers those restored values. Re-entering an active session is rejected; use SwitchTarget.
 - Optional stealth is server-applied and off by default. `Enter` accepts a third boolean argument; when true, the server snapshots each character BasePart's Transparency, CanCollide, CanTouch, and CanQuery plus Decal/Texture Transparency, then hides/disables collision and interaction. Descendants added during the same character session are also captured. Disabling stealth or exiting restores the exact captured values. The HumanoidRootPart is not anchored.
 - The service automatically exits when the observer's character is removed, clears observer state if a target leaves, and cleans up on player departure or service shutdown.
 - Enter, switch, exit, target departure, and staff departure are sent to the existing global audit endpoint when it is available. If unavailable, the bootstrap emits a bounded warning rather than claiming a durable audit succeeded.
@@ -26,9 +26,11 @@ The installer exposes `ServerStorage.TikiTideStaffSpectatorControl` as a Bindabl
 ```lua
 local control = game:GetService("ServerStorage"):WaitForChild("TikiTideStaffSpectatorControl")
 local ok, message = control:Invoke("Enter", staffPlayer.UserId, targetPlayer.UserId)
--- Switch target: control:Invoke("SwitchTarget", staffPlayer.UserId, nextTarget.UserId)
--- Exit:         control:Invoke("Exit", staffPlayer.UserId)
--- State:        control:Invoke("GetState", staffPlayer.UserId)
+-- Optional stealth entry: control:Invoke("Enter", staffPlayer.UserId, targetPlayer.UserId, true)
+-- Switch target:          control:Invoke("SwitchTarget", staffPlayer.UserId, nextTarget.UserId)
+-- Toggle stealth:         control:Invoke("SetStealth", staffPlayer.UserId, nil, true) -- false disables
+-- Exit:                   control:Invoke("Exit", staffPlayer.UserId)
+-- State:                  control:Invoke("GetState", staffPlayer.UserId)
 ```
 
 Do not expose this BindableFunction through a client RemoteFunction/RemoteEvent without a separate server-authorized request adapter. The BindableFunction is intentionally server-only.
