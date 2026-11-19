@@ -613,7 +613,28 @@ return function(_K: any)
 						if globalValue == "DEFAULT" and activePolicy.property == "WorldGravity" and context.env then globalValue = context.env.gravity end
 						registerAuthority(0, globalValue)
 					else
-						for _, target in ipairs(targets) do registerAuthority(target.UserId, value) end
+						for _, target in ipairs(targets) do
+							registerAuthority(target.UserId, value)
+							-- Kohl's Admin's size handler may also adjust WalkSpeed as a
+							-- size-related movement side effect. Register only the exact
+							-- server-observed post-command value for this validated target.
+							if aliasName == "size" and activePolicy.property == "BodyScale" then
+								local character = target.Character
+								local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+								if humanoid and finiteNumber(humanoid.WalkSpeed) then
+									local speedOk, speedRegistered = pcall(function()
+										return (authority :: BindableFunction):Invoke(
+											"Register", actorId, target.UserId, "WalkSpeed",
+											humanoid.WalkSpeed, "KohlsAdminSizeSideEffect", 120
+										)
+									end)
+									if (not speedOk or speedRegistered ~= true) and not authorityRegistrationWarned then
+										authorityRegistrationWarned = true
+										warn("[Tiki Tide Security][Kohl's] Size WalkSpeed side-effect registration failed; movement audit remains active.")
+									end
+								end
+							end
+						end
 					end
 				end
 				logAction(context, activePolicy, value, targetCount, targetSummary)
