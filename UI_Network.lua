@@ -377,6 +377,9 @@ function Network.GetMusicCatalog(query: string?, genreId: string?, offset: numbe
 		local ok, result = pcall(function()
 			return remote:InvokeServer(safeQuery, safeGenre, safeOffset, safeLimit)
 		end)
+		-- InvokeServer yields and cannot be cancelled, but its result must not
+		-- escape to a caller after this network module has been torn down.
+		if destroyed or remote.Parent == nil then return nil end
 		if ok and typeof(result) == "table" and typeof(result.items) == "table"
 			and typeof(result.total) == "number" and typeof(result.offset) == "number" then
 			return safeClone(result)
@@ -396,6 +399,8 @@ function Network.GetMusicPlaylists()
 	local remote = playlistFunction
 	if remote == nil or remote.Parent == nil then return nil end
 	local ok, result = pcall(function() return remote:InvokeServer() end)
+	-- The request may complete after Destroy while InvokeServer is yielding.
+	if destroyed or remote.Parent == nil then return nil end
 	if not ok or typeof(result) ~= "table" then return nil end
 	return safeClone(result)
 end
