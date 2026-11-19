@@ -1422,6 +1422,7 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	end
 
 	local trackId = tostring(nowPlaying and nowPlaying.trackId or "")
+	local expectedTransitionToken = audioTransitionTrackToken
 	local trim = getTrackVolumeTrim(trackId)
 	local playbackSpeed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId] or 1
 	local wasPaused = playbackPaused == true
@@ -1429,8 +1430,11 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 	local function isCurrentStart(): boolean
 		return modernAudioStartToken == startToken
 			and audioSourceRevision == startRevision
-			and activeAudioSource.kind == "Unavailable"
+			and audioTransitionTrackToken == expectedTransitionToken
+			and tostring(nowPlaying and nowPlaying.trackId or "") == trackId
 			and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
+			and playbackPaused == wasPaused
+			and activeAudioSource.kind == "Unavailable"
 	end
 
 	local function reportModernStartupFailure(reason: string?)
@@ -1526,22 +1530,26 @@ ControllerFunctions.startServerMusic = function(soundId: any)
 		discardCandidate()
 		if ok and failure == "stale" then
 			-- Expected cancellation: never warn or invoke legacy recovery for an
-			-- obsolete track. If only the same track's playhead/pause revision
-			-- changed, retry with the latest controller state.
+			-- obsolete track. If the same startup still owns the current track but
+			-- its playhead or pause state changed, retry with the latest state.
 			if modernAudioStartToken == startToken
 				and activeAudioSource.kind == "Unavailable"
+				and audioTransitionTrackToken == expectedTransitionToken
+				and tostring(nowPlaying and nowPlaying.trackId or "") == trackId
 				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
-				and audioSourceRevision ~= startRevision then
+				and (audioSourceRevision ~= startRevision or playbackPaused ~= wasPaused) then
 				task.defer(ControllerFunctions.startServerMusic, soundId)
 			end
 		elseif not ok then
 			-- A seek/pause or other controller action may legitimately revise the
-			-- active backend while the candidate is loading. Retry the same current
-			-- track with the latest playhead/pause state instead of falling silent.
+			-- source while the candidate is loading. Retry only if this startup
+			-- still owns the same track transition, using the latest controller state.
 			if modernAudioStartToken == startToken
 				and activeAudioSource.kind == "Unavailable"
+				and audioTransitionTrackToken == expectedTransitionToken
+				and tostring(nowPlaying and nowPlaying.trackId or "") == trackId
 				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
-				and audioSourceRevision ~= startRevision then
+				and (audioSourceRevision ~= startRevision or playbackPaused ~= wasPaused) then
 				task.defer(ControllerFunctions.startServerMusic, soundId)
 			else
 				reportModernStartupFailure(tostring(failure))
