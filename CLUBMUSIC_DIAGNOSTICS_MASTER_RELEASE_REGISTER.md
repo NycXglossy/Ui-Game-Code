@@ -616,3 +616,12 @@ Static source review only; no Luau compiler, Roblox Studio runtime, live place, 
 - Durable receipt recovery semantics are unchanged: an interrupted Prepared transaction / pending marker remains recoverable, and unacknowledged receipts are returned as `NotProcessedYet` for Roblox retry.
 - Static checks only. No Luau compilation, Roblox Studio/runtime, live DataStore/receipt fault injection, or deployment.
 - Source commits: `297ab6352d0cf13c05a24c72ad14f3e25973caaa`, `0254c83f938f253546f0646338a5638d6b58400c`.
+
+
+## Crash recovery / malformed durable-record protection (2026-11-18)
+
+- Profile session acquisition no longer treats an existing non-table DataStore value as an empty profile. Existing session-lock metadata must have a valid owner and finite positive expiry before it can be respected or expired; malformed metadata fails closed rather than being overwritten.
+- Receipt journal preparation initializes only absent keys. Malformed existing journal values are preserved for validation failure instead of being replaced by a fresh Prepared journal.
+- Existing recovery remains: receipt retry resumes Prepared journals, reconciles durable pending markers, completes journals, and clears markers; completed journals prevent duplicate grants. Existing 180-second session lease and writer ownership checks remain unchanged.
+- Static checks only; no Luau compilation, live DataStore fault injection, Studio/runtime test, or deployment.
+- Source commits: `e83df44427f41567dc4da837cdab34bce31af50a`, `055898f9f668eb0334af1b4488f88acfe3c460ef`.
