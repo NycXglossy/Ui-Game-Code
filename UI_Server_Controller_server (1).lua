@@ -1569,8 +1569,15 @@ ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, strin
 	-- queries readiness, duration, and playhead, adding work to a latency-sensitive
 	-- button path without changing the restart decision.
 	local snapshotOk, snapshot = pcall(ControllerFunctions.getAudioSnapshot)
-	if not snapshotOk or typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
+	if not snapshotOk or typeof(snapshot) ~= "table" then
 		return false, "The current audio source state could not be read safely."
+	end
+	if snapshot.kind == "Unavailable" then
+		-- A restart is an explicit request to recover the selected track. Replace
+		-- any stale in-flight startup candidate and let the modern-only startup
+		-- path restore the playhead from the controller's reset state.
+		ControllerFunctions.startServerMusic(soundId)
+		return true, nil
 	end
 	local sourceAsset = tostring(snapshot.asset or "")
 	local sourcePlaying = snapshot.playing == true
