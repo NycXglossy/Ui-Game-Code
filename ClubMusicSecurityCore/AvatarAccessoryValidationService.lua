@@ -11,8 +11,8 @@ local MAX_ACCESSORIES = 50
 local MAX_TRACKED_TOOLS = 100
 local MAX_PARTS_PER_ACCESSORY = 32
 local MAX_HANDLE_AXIS = 30
-local ADD_WINDOW_SECONDS = 10
-local MAX_ADDITIONS_PER_WINDOW = 12
+local APPEARANCE_CHANGE_GRACE_SECONDS = 3
+local COLLISION_PERSISTENCE_SECONDS = 1
 
 type PlayerState = {
 	character: Model?,
@@ -27,7 +27,7 @@ type PlayerState = {
 	accessoryObservationCapSignaled: boolean,
 	toolCapSignaled: boolean,
 	appearanceReady: boolean,
-	additions: {number},
+	lastAppearanceAppliedAt: number,
 	lastSignalAt: {[string]: number},
 	signals: number,
 }
@@ -154,9 +154,6 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 	local state = self.states[player.UserId]
 	if not state or not accessory:IsA("Accessory") then return end
 	state.knownAccessories[accessory] = true
-	if runtimeAdded and state.appearanceReady then
-		self:_signal(player, "avatar_accessory_added_after_appearance", accessory.Name)
-	end
 
 	local partCount = 0
 	for _, descendant in ipairs(accessory:GetDescendants()) do
@@ -171,7 +168,15 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 
 	local handle = accessory:FindFirstChild("Handle")
 	if not handle or not handle:IsA("BasePart") then
-		self:_signal(player, "avatar_accessory_missing_handle", accessory.Name)
+		-- Accessory instances can replicate before their Handle is parented.
+		-- Only report a missing handle if the accessory remains incomplete.
+		task.delay(0.5, function()
+			if self.states[player.UserId] ~= state or accessory.Parent ~= state.character then return end
+			local delayedHandle = accessory:FindFirstChild("Handle")
+			if not delayedHandle or not delayedHandle:IsA("BasePart") then
+				self:_signal(player, "avatar_accessory_missing_handle", accessory.Name)
+			end
+		end)
 		return
 	end
 
@@ -182,9 +187,17 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 		self:_signal(player, "avatar_accessory_abnormal_handle_size", accessory.Name)
 	end
 
-	if handle.CanCollide then
-		self:_signal(player, "avatar_accessory_collidable_handle", accessory.Name)
+	local function reportCollidableIfPersistent()
+		task.delay(COLLISION_PERSISTENCE_SECONDS, function()
+			if self.states[player.UserId] ~= state or accessory.Parent ~= state.character then return end
+			if os.clock() - state.lastAppearanceAppliedAt < APPEARANCE_CHANGE_GRACE_SECONDS then return end
+			local currentHandle = accessory:FindFirstChild("Handle")
+			if currentHandle == handle and handle.CanCollide then
+				self:_signal(player, "avatar_accessory_collidable_handle", accessory.Name)
+			end
+		end)
 	end
+	if handle.CanCollide then reportCollidableIfPersistent() end
 	if state.observedAccessoryHandles[accessory] == nil then
 		local tracked = 0
 		for _ in pairs(state.observedAccessoryHandles) do tracked += 1 end
@@ -201,24 +214,15 @@ function Service:_inspectAccessory(player: Player, accessory: Accessory, runtime
 				end
 			end))
 			table.insert(state.characterConnections, handle:GetPropertyChangedSignal("CanCollide"):Connect(function()
-				if self.states[player.UserId] == state and accessory.Parent == state.character then
-					self:_signal(player, "avatar_accessory_handle_collision_changed", accessory.Name)
+				-- Ignore false transitions and transient changes during outfit application.
+				if self.states[player.UserId] == state and accessory.Parent == state.character
+					and handle.CanCollide then
+					reportCollidableIfPersistent()
 				end
 			end))
 		end
 	end
 
-	if runtimeAdded and state.appearanceReady then
-		local now = os.clock()
-		local additions = state.additions
-		table.insert(additions, now)
-		while additions[1] and now - additions[1] > ADD_WINDOW_SECONDS do
-			table.remove(additions, 1)
-		end
-		if #additions > MAX_ADDITIONS_PER_WINDOW then
-			self:_signal(player, "avatar_accessory_rapid_insertion", tostring(#additions))
-		end
-	end
 end
 
 function Service:_inspectDescription(player: Player, humanoid: Humanoid)
@@ -265,7 +269,7 @@ function Service:_attachCharacter(player: Player, character: Model)
 	state.appearanceReady = false
 	table.clear(state.knownAccessories)
 	table.clear(state.observedAccessoryHandles)
-	table.clear(state.additions)
+	state.lastAppearanceAppliedAt = 0
 	table.clear(state.lastSignalAt)
 
 	local function attachAppearance()
@@ -299,9 +303,6 @@ function Service:_attachCharacter(player: Player, character: Model)
 			task.defer(function()
 				if self.states[player.UserId] == state and child.Parent ~= character then
 					state.knownAccessories[child] = nil
-					if state.appearanceReady then
-						self:_signal(player, "avatar_accessory_removed_after_appearance", child.Name)
-					end
 				end
 			end)
 		end
@@ -318,6 +319,15 @@ function Service:_attachCharacter(player: Player, character: Model)
 			state.appearanceReady = false
 		end
 	end))
+
+	local humanoidForAppearance = character:FindFirstChildOfClass("Humanoid")
+	if humanoidForAppearance then
+		table.insert(state.characterConnections, humanoidForAppearance.ApplyDescriptionFinished:Connect(function()
+			if self.states[player.UserId] == state and player.Character == character then
+				state.lastAppearanceAppliedAt = os.clock()
+			end
+		end))
+	end
 
 	if player:HasAppearanceLoaded() then
 		task.defer(attachAppearance)
@@ -348,7 +358,7 @@ function Service:_attachPlayer(player: Player)
 		accessoryObservationCapSignaled = false,
 		toolCapSignaled = false,
 		appearanceReady = false,
-		additions = {},
+		lastAppearanceAppliedAt = 0,
 		lastSignalAt = {},
 		signals = 0,
 	}
