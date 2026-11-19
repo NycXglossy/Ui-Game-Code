@@ -32,34 +32,6 @@ local function clonePlaylist(p: Playlist): Playlist
  return {id=p.id, name=p.name, trackIds=table.clone(p.trackIds), createdAt=p.createdAt, updatedAt=p.updatedAt}
 end
 
-local function hasValidStoredPlaylistRecords(raw: any): boolean
- if raw == nil then return true end
- if typeof(raw) ~= "table" or typeof(raw.playlists) ~= "table" then return false end
- -- Accept the original unversioned shape and the current v1 record only.
- -- Unknown future versions must not be interpreted as an empty list and overwritten.
- if raw.schemaVersion ~= nil and raw.schemaVersion ~= 1 then return false end
- local count, highest = 0, 0
- for key in pairs(raw.playlists) do
-  if typeof(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > MAX_PLAYLISTS then return false end
-  count += 1
-  if key > highest then highest = key end
- end
- if count ~= highest then return false end
- local cleaned = sanitize(raw)
- if #cleaned ~= count then return false end
- for index, item in ipairs(raw.playlists) do
-  if typeof(item.trackIds) ~= "table" then return false end
-  local trackCount, trackHighest = 0, 0
-  for key in pairs(item.trackIds) do
-   if typeof(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > MAX_TRACKS then return false end
-   trackCount += 1
-   if key > trackHighest then trackHighest = key end
-  end
-  if trackCount ~= trackHighest or #cleaned[index].trackIds ~= trackCount then return false end
- end
- return true
-end
-
 local function sanitize(raw: any): {Playlist}
  local result: {Playlist} = {}
  if typeof(raw) ~= "table" or typeof(raw.playlists) ~= "table" then return result end
@@ -89,6 +61,34 @@ local function sanitize(raw: any): {Playlist}
   end
  end
  return result
+end
+
+local function hasValidStoredPlaylistRecords(raw: any): boolean
+ if raw == nil then return true end
+ if typeof(raw) ~= "table" or typeof(raw.playlists) ~= "table" then return false end
+ -- Accept the original unversioned shape and the current v1 record only.
+ -- Unknown future versions must not be interpreted as an empty list and overwritten.
+ if raw.schemaVersion ~= nil and raw.schemaVersion ~= 1 then return false end
+ local count, highest = 0, 0
+ for key in pairs(raw.playlists) do
+  if typeof(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > MAX_PLAYLISTS then return false end
+  count += 1
+  if key > highest then highest = key end
+ end
+ if count ~= highest then return false end
+ local cleaned = sanitize(raw)
+ if #cleaned ~= count then return false end
+ for index, item in ipairs(raw.playlists) do
+  if typeof(item.trackIds) ~= "table" then return false end
+  local trackCount, trackHighest = 0, 0
+  for key in pairs(item.trackIds) do
+   if typeof(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > MAX_TRACKS then return false end
+   trackCount += 1
+   if key > trackHighest then trackHighest = key end
+  end
+  if trackCount ~= trackHighest or #cleaned[index].trackIds ~= trackCount then return false end
+ end
+ return true
 end
 
 local function pack(list: {Playlist})
