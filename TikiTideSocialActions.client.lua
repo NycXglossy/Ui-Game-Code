@@ -33,12 +33,29 @@ local function makeButton(parent: Instance, text: string, position: UDim2, size:
 	return button
 end
 
+local toggle = Instance.new("TextButton")
+toggle.Name = "SocialToggle"
+toggle.Size = UDim2.fromOffset(104, 34)
+toggle.Position = UDim2.new(1, -116, 0, 72)
+toggle.BackgroundColor3 = Color3.fromRGB(31, 37, 52)
+toggle.TextColor3 = Color3.fromRGB(242, 241, 236)
+toggle.Text = "SOCIAL  +"
+toggle.TextSize = 11
+toggle.Font = Enum.Font.GothamBold
+toggle.Parent = gui
+local toggleCorner = Instance.new("UICorner"); toggleCorner.CornerRadius = UDim.new(0, 10); toggleCorner.Parent = toggle
+
 local panel = Instance.new("Frame")
 panel.Name = "SocialPanel"
 panel.Size = UDim2.fromOffset(210, 214)
-panel.Position = UDim2.new(1, -224, 0.5, -89)
+panel.Position = UDim2.new(1, -224, 0, 112)
+panel.Visible = false
 panel.BackgroundColor3 = Color3.fromRGB(13, 16, 24)
 panel.Parent = gui
+toggle.Activated:Connect(function()
+	panel.Visible = not panel.Visible
+	toggle.Text = if panel.Visible then "SOCIAL  −" else "SOCIAL  +"
+end)
 local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 14); corner.Parent = panel
 local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(226, 194, 132); stroke.Transparency = 0.35; stroke.Parent = panel
 local heading = Instance.new("TextLabel")
