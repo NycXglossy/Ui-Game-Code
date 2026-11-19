@@ -630,3 +630,13 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Added a detailed Studio acceptance checklist covering source installation, Luau validation, startup/teardown, remote contracts, modern audio, queue independence, profile/session persistence, receipts, security, device UI, published two-server tests, and live-place legacy-consumer reconciliation.
 - Documentation commit: 5eb818825fbb627286a790dbfe18966d0428d95d.
 - Static-only scope remains unchanged: no Studio install, Luau compile, live hierarchy inspection, runtime or device tests, purchase test, fault injection, or deployment was performed.
+
+
+## MusicCoreService consolidation (2026-11-19)
+
+- Consolidated the active catalog, metadata validation cache, and controller-owned queue operations into `MusicCoreService.lua`, exposed as separate `Catalog`, `Validation`, and `Queue` interfaces.
+- Updated `UI_Server_Controller_server (1).lua` to require the core module once and retain the existing catalog methods, validation constructor, and queue `.new(sharedQueue, releaseSlot)` contract.
+- Updated `ClubMusic_ServerStorage_Modules.rbxmx` to contain only `MusicCoreService` and the separate `MusicPlaylistService`.
+- Updated the audio Studio installer to provision those two direct ServerStorage core modules from the same reviewed source snapshot.
+- Removed the four superseded `.lua` module files: `MusicCatalogService.lua`, `MusicValidationService.lua`, `MusicQueueManager.lua`, and `MusicQueueManagerService.lua`. The `.luau` rollback artifacts were not included in this deletion.
+- Static source consolidation only. No Luau compiler, Roblox Studio import, runtime, multiplayer, DataStore, AudioPlayer, or device tests were performed. No live place was changed or published.
