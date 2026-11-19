@@ -38,6 +38,15 @@ function Preferences.new(context)
 		connections = {},
 	}, Preferences)
 
+	local function destroyRouteGraph(route)
+		if route.graph then
+			pcall(function() route.graph:Destroy() end)
+			route.graph = nil
+		end
+		route.fader = nil
+		route.sourceFader = nil
+	end
+
 	local function destroyRoute(root)
 		local route = self.routes[root]
 		if not route then return end
@@ -45,7 +54,7 @@ function Preferences.new(context)
 		for _, connection in ipairs(route.connections) do
 			pcall(function() connection:Disconnect() end)
 		end
-		if route.graph then pcall(function() route.graph:Destroy() end) end
+		destroyRouteGraph(route)
 	end
 
 	local function attachFader(root, sourceFader)
@@ -101,6 +110,7 @@ function Preferences.new(context)
 
 		route.graph = result.graph
 		route.fader = result.fader
+		route.sourceFader = sourceFader
 	end
 
 	local function inspectRoot(root)
@@ -110,11 +120,16 @@ function Preferences.new(context)
 		end
 		if self.routes[root] then return end
 
-		local route = { connections = {}, fader = nil, graph = nil }
+		local route = { connections = {}, fader = nil, graph = nil, sourceFader = nil }
 		self.routes[root] = route
 		table.insert(route.connections, root.DescendantAdded:Connect(function(descendant)
 			if descendant:IsA("AudioFader") and descendant.Name == "MusicFader" then
 				attachFader(root, descendant)
+			end
+		end))
+		table.insert(route.connections, root.DescendantRemoving:Connect(function(descendant)
+			if descendant == route.sourceFader then
+				destroyRouteGraph(route)
 			end
 		end))
 		table.insert(route.connections, root.AncestryChanged:Connect(function(_, parent)
