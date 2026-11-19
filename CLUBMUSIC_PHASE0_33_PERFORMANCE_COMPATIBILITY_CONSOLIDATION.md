@@ -620,3 +620,13 @@ No topic schema, message handler, durable write, receipt behavior, or authorizat
 - Re-checked the source changes for prepared-crossfade invalidation, muted replacement-deck ownership handoff, reload serialization, startup pause/transition fencing, and watchdog restart recovery. The previously noted pending static checks are complete at source level.
 - Installer source commit: c5acb420690e70367f9364cc2b5d326f8da76b89.
 - Validation remains static only. No Luau parser/compiler, Studio import/install, multiplayer runtime, device profiling, live hierarchy reconciliation, DataStore fault injection, or deployment was performed. Binary assets and third-party Kohl's Admin model contents remain outside this text-source certification boundary.
+
+## Installer dependency and Studio acceptance follow-up (2026-11-19)
+
+- Audited all repository installer entry points: audio Command Bar installer, SecurityCore installer, and optional client diagnostics installer.
+- Confirmed the diagnostics installer pins to a release whose two downloaded files (diagnostics service and bootstrap) are byte-for-byte identical to current branch sources.
+- Confirmed the SecurityCore installer intentionally pins two independently versioned releases (28 SecurityCore modules and 4 Phase 32 modules). Every named module exists in its respective pinned Git tree. These pins are independent release boundaries and were not rewritten to the audio branch snapshot.
+- Updated CLUBMUSIC_AUDIO_STUDIO_INSTALLATION.md to identify the actual Phase 33 branch, current local-only playback behavior, correct 5+5+1 audio installer placement, current audio source pin, separate SecurityCore release pins, and diagnostics installer scope.
+- Added a detailed Studio acceptance checklist covering source installation, Luau validation, startup/teardown, remote contracts, modern audio, queue independence, profile/session persistence, receipts, security, device UI, published two-server tests, and live-place legacy-consumer reconciliation.
+- Documentation commit: 5eb818825fbb627286a790dbfe18966d0428d95d.
+- Static-only scope remains unchanged: no Studio install, Luau compile, live hierarchy inspection, runtime or device tests, purchase test, fault injection, or deployment was performed.
