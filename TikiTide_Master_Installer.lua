@@ -37,11 +37,6 @@ end
 
 local audioFolder = folder(ServerStorage, "ClubMusicAudioModules")
 local securityFolder = folder(ServerStorage, "ClubMusicSecurityCore")
-local utilityServerFolder = folder(ServerScriptService, "TikiTideUtilityBar")
-local utilityClientFolder = folder(StarterPlayerScripts, "TikiTideUtilityBar")
-local settingsClientFolder = folder(StarterPlayerScripts, "TikiTideSettings")
-local socialServerFolder = folder(ServerScriptService, "TikiTideSocialActions")
-local socialClientFolder = folder(StarterPlayerScripts, "TikiTideSocialActions")
 local globalOptionalFolder = folder(ServerStorage, "ClubMusic_Global_Optional_Services")
 local clientAudioFolder = folder(ReplicatedStorage, "ClubMusicClientAudioModules")
 
@@ -83,8 +78,8 @@ for _, name in ipairs({
 end
 add("SecurityServer.server.lua", "Script", ServerScriptService, "SecurityServer")
 add("StaffActions.server.lua", "Script", ServerScriptService, "StaffActions")
-add("RegularCommandsSecurityServer.lua", "ModuleScript", folder(folder(ServerScriptService, "Kohls Admin"), "Addons"), "RegularCommandsSecurityServer")
-add("KohlsAdmin_ClubMusic_Addon.lua", "ModuleScript", folder(folder(ServerScriptService, "Kohls Admin"), "Addons"), "KohlsAdmin_ClubMusic_Addon")
+add("RegularCommandsSecurityServer.lua", "ModuleScript", ServerScriptService, "RegularCommandsSecurityServer")
+add("KohlsAdmin_ClubMusic_Addon.lua", "ModuleScript", ServerScriptService, "KohlsAdmin_ClubMusic_Addon")
 add("ClientIntegrityTelemetry.client.lua", "LocalScript", StarterPlayerScripts, "ClientIntegrityTelemetry")
 add("StaffSpectatorCamera.client.lua", "LocalScript", StarterPlayerScripts, "StaffSpectatorCamera")
 add("TikiTideAdaptiveVisualQuality.client.lua", "LocalScript", StarterPlayerScripts, "TikiTideAdaptiveVisualQuality")
@@ -106,18 +101,18 @@ add("ClubMusic_Server_Health_Service.lua", "ModuleScript", ServerStorage)
 
 -- Utility Bar
 for _, name in ipairs({"UtilityBar.client.lua","UtilityBarActions.client.lua","UtilityBarPanels.client.lua","ToolShop.client.lua"}) do
-    add("UtilityBar/" .. name, "LocalScript", utilityClientFolder)
+    add("UtilityBar/" .. name, "LocalScript", StarterPlayerScripts)
 end
 for _, name in ipairs({"UtilityBarActions.server.lua","UtilityBarExtendedActions.server.lua","ToolShop.server.lua"}) do
-    add("UtilityBar/" .. name, "Script", utilityServerFolder)
+    add("UtilityBar/" .. name, "Script", ServerScriptService)
 end
 
 -- Settings and social actions
-add("TikiTideSettings/TikiTideSettings.client.lua", "LocalScript", settingsClientFolder, "TikiTideSettings")
+add("TikiTideSettings/TikiTideSettings.client.lua", "LocalScript", StarterPlayerScripts, "TikiTideSettings")
 add("TikiTideSettings/TikiTideSettingsService.server.lua", "Script", ServerScriptService, "TikiTideSettingsService")
-add("TikiTideSocialActions.client.lua", "LocalScript", socialClientFolder, "TikiTideSocialActions")
-add("TikiTideSocialActions.server.lua", "Script", socialServerFolder, "TikiTideSocialActionsServer")
-add("TikiTideSocialActions/AnimationConfig.lua", "ModuleScript", socialServerFolder, "AnimationConfig")
+add("TikiTideSocialActions.client.lua", "LocalScript", StarterPlayerScripts, "TikiTideSocialActions")
+add("TikiTideSocialActions.server.lua", "Script", ServerScriptService, "TikiTideSocialActionsServer")
+add("TikiTideSocialActions/AnimationConfig.lua", "ModuleScript", ServerScriptService, "AnimationConfig")
 add("StarterPlayer/StarterPlayerScripts/TikiTideUnifiedLauncher.client.lua", "LocalScript", StarterPlayerScripts, "TikiTideUnifiedLauncher")
 
 -- Stage every source before touching active scripts.
