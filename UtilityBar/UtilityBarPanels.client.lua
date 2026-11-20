@@ -106,7 +106,7 @@ local function open(name: string)
 		local targetNames={"CHARACTER","TOOLS","ACCESSORIES"}
 		local targets={"Character","Tools","Accessories"}
 		local activeStyle,activeTarget=1,1
-		local activeSection="Aura"
+		local activeSection=if name=="ToolShop" then "Shop" else "Aura"
 		local sectionRow=make("Frame",{BackgroundTransparency=1,Size=UDim2.new(1,0,0,38)},body)
 		local styleRow=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,0,42)},body)
 		local targetRow=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,88),Size=UDim2.new(1,0,0,42)},body)
@@ -178,7 +178,7 @@ local function open(name: string)
 			shopTab.Activated:Connect(function() activeSection="Shop"; drawSectionTabs(); drawShop() end)
 		end
 		drawSectionTabs()
-		drawAura()
+		if activeSection=="Shop" then drawShop() else drawAura() end
 	elseif name=="Size" then
 		local value=1.0
 		local valueLabel=make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,4),Size=UDim2.new(1,0,0,34),Font=Enum.Font.GothamBold,Text="1.00×",TextColor3=C.gold,TextSize=22},body) :: TextLabel
@@ -276,7 +276,7 @@ actionEvent.Event:Connect(function(actionName: string)
 	if actionName=="Mount" and player:GetAttribute("HasIslandMountPass") ~= true then return end
 	if actionName=="Clone" and player:GetAttribute("HasIslandCompanionPass") ~= true then return end
 	if actionName=="LightingControl" and player:GetAttribute("HasStageClubLightingPass") ~= true then return end
-	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" or actionName=="LightingControl" then
+	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" or actionName=="ToolShop" or actionName=="LightingControl" then
 		open(actionName)
 	end
 end)
