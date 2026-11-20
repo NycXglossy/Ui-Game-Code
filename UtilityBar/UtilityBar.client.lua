@@ -206,9 +206,8 @@ local definitions = {
 	{key = "Mount", label = "Mount", tint = COLORS.cyan, passAttribute = "HasIslandMountPass"},
 	{key = "Size", label = "Size", tint = COLORS.gold},
 	{key = "Clone", label = "Clone Companion", compactLabel = "Clone", tint = COLORS.cyan, passAttribute = "HasIslandCompanionPass"},
-	{key = "Aura", label = "Aura", tint = COLORS.gold},
+	{key = "Aura", label = "Aura & Shop", compactLabel = "Aura", tint = COLORS.gold},
 	{key = "Inventory", label = "Inventory", compactLabel = "Bag", tint = COLORS.cyan},
-	{key = "ToolShop", label = "Tool Shop", compactLabel = "Shop", tint = COLORS.gold},
 	{key = "LightingControl", label = "Lighting Control", compactLabel = "Lights", tint = COLORS.cyan, passAttribute = "HasStageClubLightingPass"},
 }
 
@@ -385,8 +384,7 @@ local function updateVisibility()
 	local tikiTideOpen = playerGui:GetAttribute("TikiTideSettingsOpen") == true
 	local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
 	local utilityPanelOpen = playerGui:GetAttribute("UtilityActionPanelOpen") == true
-	local toolShopOpen = playerGui:GetAttribute("UtilityToolShopOpen") == true
-	local visible = not expanded and not tikiTideOpen and not inventoryOpen and not utilityPanelOpen and not toolShopOpen
+	local visible = not expanded and not tikiTideOpen and not inventoryOpen and not utilityPanelOpen
 	shell.Visible = visible
 	playerGui:SetAttribute("UtilityBarVisible", visible)
 	if not visible then
@@ -409,7 +407,6 @@ playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisib
 playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("UtilityActionPanelOpen"):Connect(updateVisibility)
-playerGui:GetAttributeChangedSignal("UtilityToolShopOpen"):Connect(updateVisibility)
 -- The Tiki Tide entry stays in the seven-button layout; its activation is
 -- entitlement-checked before the panel receives an open request.
 
@@ -446,4 +443,4 @@ gui.Destroying:Connect(function()
 	end
 end)
 
-print("[Utility Bar] Separate nine-action launcher with pass-gated Lighting Control loaded.")
+print("[Utility Bar] Unified Aura & Shop launcher with pass-gated Lighting Control loaded.")
