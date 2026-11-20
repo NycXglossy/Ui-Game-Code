@@ -832,6 +832,8 @@ playerGui:GetAttributeChangedSignal("TikiTideSettingsOpenRequest"):Connect(funct
 	if not panel.Visible then open() end
 end)
 
+local closePanel: () -> ()
+
 local lastCloseRequest = tonumber(playerGui:GetAttribute("TikiTideSettingsCloseRequest")) or 0
 playerGui:GetAttributeChangedSignal("TikiTideSettingsCloseRequest"):Connect(function()
 	local requestId = tonumber(playerGui:GetAttribute("TikiTideSettingsCloseRequest")) or 0
@@ -840,7 +842,7 @@ playerGui:GetAttributeChangedSignal("TikiTideSettingsCloseRequest"):Connect(func
 	if panel.Visible then closePanel() end
 end)
 
-local function closePanel()
+closePanel = function()
 	panel.Visible = false
 	shade.Visible = false
 	-- The unified launcher is now the only Settings entry point.
