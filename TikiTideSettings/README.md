@@ -17,6 +17,10 @@ The server add-on creates `ReplicatedStorage/TikiTideSettingsRemotes` itself. It
 
 **Required entitlement configuration:** In the existing `UI_Server_Controller` configuration, set `TikiTidePassId` to the real Tiki Tide Game Pass asset ID before testing pass-holder access. Its current value in the audited source is `0`, which disables Game Pass ownership grants. Existing verified staff rank level 1+ still receives Tiki Tide tier access. Tiki Tide pass ownership alone does not grant administrator permissions: gravity requires `GlobalConfig` (rank level 3+) and announcements require `GlobalAnnouncement` (rank level 2+).
 
+## Unified launcher
+
+The `TikiTideUnifiedLauncher.client.lua` LocalScript is installed under `StarterPlayer > StarterPlayerScripts` alongside this Settings client. It exposes **TIKI TIDE SETTINGS** in the unified Quick Access panel and sends an incrementing `TikiTideSettingsOpenRequest` PlayerGui attribute. The Settings client listens for that request and opens the existing panel. The launcher also sends `TikiTideSettingsCloseRequest` when switching to another surface, so Settings closes cleanly and restores the compact ClubMusic HUD. The old floating Settings button remains hidden; do not add a second standalone Settings launcher.
+
 ## Included
 
 - Tiki Tide-only walk speed (20–100) and jump power (80–300), applied on respawn only for verified Tiki Tide players; the service waits briefly for late-loading Humanoids in custom character rigs.
@@ -24,7 +28,7 @@ The server add-on creates `ReplicatedStorage/TikiTideSettingsRemotes` itself. It
 - Opt-in teleport-to-me permission; teleport requests are validated on the server.
 - Gravity control (20–192.62) restricted to ClubMusic `GlobalConfig` permission.
 - Admin overhead broadcasts and server announcements restricted to `GlobalAnnouncement`; announcements have a 180-second server-wide cooldown.
-- Separate Settings / Players / Message panel. Existing custom overhead titles, title slots, fonts, effects and collection tags remain in ClubMusic → Title Tag.
+- Unified-launcher entry for the Settings / Players / Message panel; the separate floating Settings button is retired. Existing custom overhead titles, title slots, fonts, effects and collection tags remain in ClubMusic → Title Tag.
 - Gamepad navigation for selectable tabs, actions and text fields, with gold focus feedback, automatic vertical scroll-to-selection, and B / Escape back handling. TextBox focus is allowed to handle the console virtual keyboard.
 
 ## Important scope notes
