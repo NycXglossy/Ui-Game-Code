@@ -1381,7 +1381,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		BorderSizePixel = 0,
 		Visible = false,
 	}, panel) :: Frame
-	local tabs = {"Home","Music","All Tracks","Playlists","Queue","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Audio ID","Moderation"}
+	local tabs = {"Home","Music","All Tracks","Playlists","Queue","DJ Booth","Shop","Daily Rewards","Title Tag","Community","Audio ID","Moderation"}
 	local function addNavGroup(text: string, order: number)
 		local heading = make("TextLabel", {
 			Name = "NavGroup" .. text:gsub("%s", ""),
@@ -4626,6 +4626,30 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		accessNote.TextWrapped = true
 	end
 
+	local shopSection = "Items"
+	local function renderCombinedShop()
+		local sectionCard = card(46)
+		local sections = {
+			{ id = "Items", label = "ITEMS" },
+			{ id = "XP & Boosts", label = "XP & BOOSTS" },
+			{ id = "Tip Jar", label = "TIP JAR" },
+		}
+		for i, section in ipairs(sections) do
+			local selected = shopSection == section.id
+			actionButton(sectionCard, section.label, UDim2.new((i - 1) / 3, 6, 0, 8), UDim2.new(1 / 3, -12, 0, 30), function()
+				shopSection = section.id
+				if renderTabFn then renderTabFn() end
+			end, if selected then C.Magenta else C.SurfaceLight)
+		end
+		if shopSection == "XP & Boosts" then
+			renderXPBoosts()
+		elseif shopSection == "Tip Jar" then
+			renderTipJar()
+		else
+			renderShop()
+		end
+	end
+
 	local renderers: {[string]: () -> ()} = {
 		["Home"] = renderHome,
 		["Music"] = renderMusic,
@@ -4634,9 +4658,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		["Queue"] = renderQueue,
 		["Audio ID"] = renderAudioId,
 		["DJ Booth"] = renderDJ,
-		["XP & Boosts"] = renderXPBoosts,
-		["Tip Jar"] = renderTipJar,
-		["Item Shop"] = renderShop,
+		["Shop"] = renderCombinedShop,
 		["Daily Rewards"] = renderRewards,
 		["Title Tag"] = renderTags,
 		["Community"] = renderCommunity,
