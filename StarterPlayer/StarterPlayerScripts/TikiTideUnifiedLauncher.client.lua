@@ -6,6 +6,20 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
+-- Create the main-menu bridge before the renderer mounts. The renderer
+-- connects its Open callback and sets Ready=true once that callback is live.
+local mainOpenBridge = playerGui:FindFirstChild("TikiTideOpenMainUI")
+if mainOpenBridge and not mainOpenBridge:IsA("BindableEvent") then
+	mainOpenBridge:Destroy()
+	mainOpenBridge = nil
+end
+if not mainOpenBridge then
+	mainOpenBridge = Instance.new("BindableEvent")
+	mainOpenBridge.Name = "TikiTideOpenMainUI"
+	mainOpenBridge.Parent = playerGui
+end
+mainOpenBridge:SetAttribute("Ready", false)
+
 local ROOT_NAME = "TikiTideUnifiedLauncher"
 local old = playerGui:FindFirstChild(ROOT_NAME)
 if old then old:Destroy() end
@@ -120,12 +134,19 @@ end
 local mainEntry = makeEntry("MainUI", "MAIN FESTIVAL UI", 35, function()
  panel.Visible = false
  closeSocialPanel()
- local openEvent = playerGui:FindFirstChild("TikiTideOpenMainUI")
- if openEvent and openEvent:IsA("BindableEvent") then
-  openEvent:Fire()
- else
-  warn("[TikiTideUnifiedLauncher] Main UI open bridge is not ready yet.")
- end
+ task.spawn(function()
+  -- The renderer can mount after this launcher. Wait for its callback to
+  -- register instead of firing a BindableEvent before a listener exists.
+  for _ = 1, 100 do
+   if not gui.Parent then return end
+   if mainOpenBridge.Parent == playerGui and mainOpenBridge:GetAttribute("Ready") == true then
+    mainOpenBridge:Fire()
+    return
+   end
+   task.wait(0.1)
+  end
+  warn("[TikiTideUnifiedLauncher] Main UI did not finish loading. Check UI_Renderer startup.")
+ end)
 end)
 
 local socialEntry = makeEntry("SocialActions", "SOCIAL ACTIONS", 74, function()
