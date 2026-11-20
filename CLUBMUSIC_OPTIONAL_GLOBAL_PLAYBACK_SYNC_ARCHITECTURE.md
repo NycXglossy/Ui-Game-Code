@@ -18,7 +18,7 @@ Every server retains its own independent request queue and local selection state
 
 The elected leader consumes **its own local queue** when selecting the next shared track. Followers never import, publish, or mutate another server's queue. A follower's own queue remains intact and becomes eligible to drive playback if that server later becomes leader or if sync is disabled.
 
-When sync is disabled, every server resumes independent local playback without deleting its queue.
+When sync is disabled, each server stops following and continues independently from its current track, then advances from its own local queue. Disabling sync does not delete or merge any queue.
 
 ## Implementation
 
