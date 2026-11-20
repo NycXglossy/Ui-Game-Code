@@ -30,6 +30,15 @@ expect(#service.incidents == 0, "repeated one-code signal does not create a revi
 service:Record("unverified_movement_change", 900001, "CharacterPhysicsGuard", "Warning")
 expect(#service.incidents == 0, "same-category evidence does not create a review")
 
+-- Sustained extreme assembly velocity and rotation are registered Movement signals.
+expect(service:Record("suspicious_physics_velocity", 900006, "CharacterPhysicsGuard", "Warning") == true,
+	"extreme assembly velocity signal is registered")
+expect(service:Record("suspicious_physics_rotation", 900006, "CharacterPhysicsGuard", "Warning") == true,
+	"extreme assembly rotation signal is registered")
+expect(service.buckets["900006"].score == 4, "physics signals receive bounded Movement weight")
+expect(service.buckets["900006"].categories.Movement == true, "physics signals use Movement category")
+expect(#service.incidents == 0, "physics signals alone do not satisfy category diversity")
+
 -- Unknown strings containing alarming words are zero-weight and cannot classify by substring.
 service:Record("movement_exploit_critical", 900002, "UnregisteredAdapter", "Critical")
 expect(service.buckets["900002"].score == 0, "unknown code receives no score")
