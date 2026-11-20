@@ -13,6 +13,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+playerGui:SetAttribute("TikiTideSettingsReady", false)
 -- The server service may initialize after this LocalScript on slower joins.
 -- Wait for its remotes instead of permanently aborting the client UI after a
 -- short timeout; authorization remains enforced by the server on every request.
@@ -936,6 +937,7 @@ playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(updateVisibi
 playerGui:GetAttributeChangedSignal("UtilityActionPanelOpen"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("UtilityToolShopOpen"):Connect(updateVisibility)
 updateVisibility()
+playerGui:SetAttribute("TikiTideSettingsReady", true)
 
 player.CharacterAdded:Connect(function()
 	if panel.Visible then
