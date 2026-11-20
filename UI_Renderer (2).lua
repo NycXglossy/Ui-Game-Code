@@ -2187,6 +2187,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		actionButton(homeHeading, "FULL PLAYER", UDim2.new(1, -92, 0, 3), UDim2.fromOffset(84, 24), function()
 			activeTab = "Music"
+			musicSubView = "listen"
 			if renderTabFn then renderTabFn() end
 		end, C.Cyan)
 
@@ -2384,6 +2385,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		label(favoriteCard, "YOUR FAVORITES", UDim2.fromOffset(12, 6), UDim2.new(1, -112, 0, 17), C.Gold, 10, true)
 		actionButton(favoriteCard, "LIBRARY", UDim2.new(1, -88, 0, 5), UDim2.fromOffset(76, 24), function()
 			activeTab = "Music"
+			musicSubView = "listen"
 			if renderTabFn then renderTabFn() end
 		end, C.SurfaceLight)
 		if favoriteCount == 0 then
