@@ -120,8 +120,12 @@ end
 local mainEntry = makeEntry("MainUI", "MAIN FESTIVAL UI", 35, function()
  panel.Visible = false
  closeSocialPanel()
- local button = findButton("FirebeachMusicFestivalClubUI", "OpenButton")
- if button then button:Activate() end
+ local openEvent = playerGui:FindFirstChild("TikiTideOpenMainUI")
+ if openEvent and openEvent:IsA("BindableEvent") then
+  openEvent:Fire()
+ else
+  warn("[TikiTideUnifiedLauncher] Main UI open bridge is not ready yet.")
+ end
 end)
 
 local socialEntry = makeEntry("SocialActions", "SOCIAL ACTIONS", 74, function()
@@ -133,8 +137,7 @@ local socialEntry = makeEntry("SocialActions", "SOCIAL ACTIONS", 74, function()
   local socialToggle = socialGui and socialGui:FindFirstChild("SocialToggle", true)
   if socialToggle and socialToggle:IsA("TextButton") then socialToggle.Text = "SOCIAL  −" end
  else
-  local button = findButton("TikiTideSocialGui", "SocialToggle")
-  if button then button:Activate() end
+  warn("[TikiTideUnifiedLauncher] Social Actions panel is not ready yet.")
  end
 end)
 
