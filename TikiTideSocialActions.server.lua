@@ -6,10 +6,25 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local HttpService = game:GetService("HttpService")
 
-local configFolder = script.Parent:FindFirstChild("TikiTideSocialActions")
+-- Support both documented layouts:
+-- 1) ServerScriptService/TikiTideSocialActions.server.lua + sibling config folder
+-- 2) ServerScriptService/TikiTideSocialActions/TikiTideSocialActions.server.lua + child config
+local configFolder: Instance? = nil
+if script.Parent.Name == "TikiTideSocialActions" then
+	configFolder = script.Parent
+else
+	configFolder = script.Parent:FindFirstChild("TikiTideSocialActions")
+end
+
 local configModule = configFolder and configFolder:FindFirstChild("AnimationConfig")
-assert(configModule and configModule:IsA("ModuleScript"), "[Tiki Tide Social] Missing AnimationConfig ModuleScript.")
+if not configModule or not configModule:IsA("ModuleScript") then
+	error("[Tiki Tide Social] AnimationConfig ModuleScript not found. Expected AnimationConfig inside the TikiTideSocialActions folder.", 0)
+end
+
 local config = require(configModule)
+if typeof(config) ~= "table" then
+	error("[Tiki Tide Social] AnimationConfig must return a table.", 0)
+end
 
 local REMOTE_FOLDER = "TikiTideSocialRemotes"
 local folder = ReplicatedStorage:FindFirstChild(REMOTE_FOLDER)
