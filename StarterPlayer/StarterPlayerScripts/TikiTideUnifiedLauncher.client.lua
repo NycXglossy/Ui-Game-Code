@@ -1,6 +1,6 @@
 --!strict
 -- Unified Tiki Tide launcher.
--- Hides the three standalone launch buttons and routes into their existing UIs.
+-- Consolidates the main menu, Social Actions, Tiki Tide Settings and authorized Staff Console.
 -- Staff visibility is presentation only; the server remains authoritative.
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
@@ -104,6 +104,16 @@ local function findGui(guiName: string): ScreenGui?
  return nil
 end
 
+local function requestSettingsClose()
+ local current = tonumber(playerGui:GetAttribute("TikiTideSettingsCloseRequest")) or 0
+ playerGui:SetAttribute("TikiTideSettingsCloseRequest", current + 1)
+end
+
+local function requestSettingsOpen()
+ local current = tonumber(playerGui:GetAttribute("TikiTideSettingsOpenRequest")) or 0
+ playerGui:SetAttribute("TikiTideSettingsOpenRequest", current + 1)
+end
+
 local function closeSocialPanel()
  local socialGui = findGui("TikiTideSocialGui")
  if not socialGui then return end
@@ -134,6 +144,7 @@ end
 local mainEntry = makeEntry("MainUI", "MAIN FESTIVAL UI", 35, function()
  panel.Visible = false
  closeSocialPanel()
+ requestSettingsClose()
  task.spawn(function()
   -- The renderer can mount after this launcher. Wait for its callback to
   -- register instead of firing a BindableEvent before a listener exists.
@@ -151,6 +162,7 @@ end)
 
 local socialEntry = makeEntry("SocialActions", "SOCIAL ACTIONS", 74, function()
  panel.Visible = false
+ requestSettingsClose()
  local socialGui = findGui("TikiTideSocialGui")
  local socialPanel = socialGui and socialGui:FindFirstChild("SocialPanel", true)
  if socialPanel and socialPanel:IsA("GuiObject") then
@@ -165,8 +177,16 @@ local socialEntry = makeEntry("SocialActions", "SOCIAL ACTIONS", 74, function()
  end
 end)
 
-local staffEntry = makeEntry("StaffUI", "STAFF CONSOLE", 113, function()
+local settingsEntry = makeEntry("TikiTideSettings", "TIKI TIDE SETTINGS", 113, function()
  panel.Visible = false
+ closeSocialPanel()
+ requestSettingsOpen()
+end)
+
+local staffEntry = makeEntry("StaffUI", "STAFF CONSOLE", 152, function()
+ panel.Visible = false
+ closeSocialPanel()
+ requestSettingsClose()
  if not staffIsAuthorized() then return end
  local staffGui = findGui("StaffConsoleGui")
  if staffGui then staffGui.Enabled = true end
@@ -176,8 +196,10 @@ local function refresh()
  hideOriginalLaunchers()
  local authorized = staffIsAuthorized()
  staffEntry.Visible = authorized
- panel.Size = UDim2.fromOffset(214, if authorized then 160 else 121)
+ panel.Size = UDim2.fromOffset(214, if authorized then 199 else 160)
  socialEntry.Position = UDim2.fromOffset(9, 74)
+ settingsEntry.Position = UDim2.fromOffset(9, 113)
+ staffEntry.Position = UDim2.fromOffset(9, 152)
  if not authorized then
   staffEntry.Visible = false
  end
