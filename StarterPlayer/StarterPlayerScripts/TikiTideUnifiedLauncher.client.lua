@@ -154,9 +154,12 @@ local socialEntry = makeEntry("SocialActions", "SOCIAL ACTIONS", 74, function()
  local socialGui = findGui("TikiTideSocialGui")
  local socialPanel = socialGui and socialGui:FindFirstChild("SocialPanel", true)
  if socialPanel and socialPanel:IsA("GuiObject") then
-  socialPanel.Visible = true
+  local shouldOpen = not socialPanel.Visible
+  socialPanel.Visible = shouldOpen
   local socialToggle = socialGui and socialGui:FindFirstChild("SocialToggle", true)
-  if socialToggle and socialToggle:IsA("TextButton") then socialToggle.Text = "SOCIAL  −" end
+  if socialToggle and socialToggle:IsA("TextButton") then
+   socialToggle.Text = if shouldOpen then "SOCIAL  −" else "SOCIAL  +"
+  end
  else
   warn("[TikiTideUnifiedLauncher] Social Actions panel is not ready yet.")
  end
