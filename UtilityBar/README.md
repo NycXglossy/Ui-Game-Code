@@ -7,13 +7,12 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 1. Add `UtilityBar.client.lua` as a **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
 2. Add `UtilityBarActions.client.lua` as a second **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
 3. Add `UtilityBarPanels.client.lua` as a third **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
-4. Add `ToolShop.client.lua` as a fourth **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
-5. Add `UtilityBarActions.server.lua` as a **Script** under `ServerScriptService`.
-6. Add `UtilityBarExtendedActions.server.lua` as a second **Script** under `ServerScriptService`.
-7. Add `ToolShop.server.lua` as a third **Script** under `ServerScriptService`.
-8. Keep exactly one copy of each Utility Bar script.
-9. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
-10. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the existing settings-open request attribute.
+4. Add `UtilityBarActions.server.lua` as a **Script** under `ServerScriptService`.
+5. Add `UtilityBarExtendedActions.server.lua` as a second **Script** under `ServerScriptService`.
+6. Add `ToolShop.server.lua` as a third **Script** under `ServerScriptService` (keeps persistent Coins and the shop balance query).
+7. Keep exactly one copy of each installed Utility Bar script; do not install the retired `ToolShop.client.lua`.
+8. Keep the existing ClubMusic renderer and compact HUD as the owners of their current UI state.
+9. Keep the Tiki Tide Settings client installed separately. The Tiki Tide button requests its panel through the existing settings-open request attribute.
 
 ## Included buttons
 
@@ -22,9 +21,8 @@ A standalone, responsive utility launcher for the experience. It is intentionall
 - Mount
 - Size
 - Clone
-- Aura
+- Aura & Shop (Aura controls and an embedded Tool Shop section)
 - Inventory (includes Tool equip/unequip)
-- Tool Shop (separate placeholder storefront)
 - Lighting Control (requires Stage & Club Lighting Game Pass)
 
 The bar uses the ClubMusic dark-surface / muted-gold / teal visual language, fully rounded surfaces, viewport-aware sizing, horizontal scrolling on narrow screens, and controller focus navigation. It hides while the full ClubMusic menu or Tiki Tide Settings is open, then returns when those surfaces close. The Tiki Tide Settings panel uses the shared `TikiTideSettingsOpen` state attribute.
@@ -35,7 +33,7 @@ For actions other than Tiki Tide Settings, the bar fires the local BindableEvent
 
 `PlayerGui.UtilityBarAction:Fire(actionName)`
 
-Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone` (Clone Companion), `Aura`, `Inventory`, `LightingControl`, and `ToolShop`. The Tool Shop panel listens directly for `ToolShop`; Inventory remains the only owned-Tool equip/unequip surface. Legacy `Tools` requests are routed to the unified Inventory view.
+Action names are `RefreshOutfit`, `Mount`, `Size`, `Clone` (Clone Companion), `Aura`, `Inventory`, and `LightingControl`. The Aura panel contains **AURA** and **TOOL SHOP** sections; Inventory remains the only owned-Tool equip/unequip surface. Legacy `Tools` requests are routed to the unified Inventory view.
 
 ### Implemented: Inventory and Tools
 
@@ -91,7 +89,7 @@ The Utility Bar Size button remains an ordinary self-service feature; it does no
 The repository-side integration audit and static contract checks are complete. The checklist below is the remaining Roblox Studio runtime validation; GitHub edits cannot simulate live Roblox input, character physics, DataStore availability, or cross-device rendering, so do not treat unchecked items as runtime-tested.
 
 - [ ] Install all four client LocalScripts and all three server Scripts once; verify nine buttons appear in the bottom utility rail. Open Inventory and verify Backpack/equipped Tools can be equipped and unequipped from the same list.
-- [ ] Open Tool Shop; verify its separate panel appears, the coin balance loads from the server, and three Coming Soon placeholders display without purchase controls.
+- [ ] Open Aura & Shop, switch to TOOL SHOP, verify the saved coin balance loads from the server and three Coming Soon placeholders display without purchase controls; switch back to AURA and verify all aura style/target controls still work.
 - [ ] Verify Mount, Clone Companion, Lighting Control, Size and Aura open their separate panels only for players who own the matching passes; verify the lighting presets affect only tagged stage/club fixtures.
 - [ ] Open the full ClubMusic menu; verify the utility rail hides and returns on close.
 - [ ] Open Tiki Tide Settings; verify the rail hides and returns on close.
@@ -115,8 +113,8 @@ The repository-side integration audit and static contract checks are complete. T
 
 ### Tool Shop and Coins foundation
 
-- **Tool Shop** is a separate utility-bar tab. It does not replace or modify Inventory. Inventory remains the only place for equipping and unequipping owned Tools.
-- The shop intentionally displays three **COMING SOON** placeholder slots. No Tool assets, item names, prices, or purchase buttons have been invented or configured.
+- **Tool Shop** is a section inside the Aura panel, not a separate utility-bar tab. It does not replace or modify Inventory. Inventory remains the only place for equipping and unequipping owned Tools.
+- The embedded Tool Shop section intentionally displays three **COMING SOON** placeholder slots. No Tool assets, item names, prices, or purchase buttons have been invented or configured.
 - `ToolShop.server.lua` creates `leaderstats.Coins` when it does not already exist as an IntValue and persists the balance in the `TikiTideCoins_v1` DataStore. The starting balance is deliberately `0` in the script's `STARTING_COINS` setting; change it only when the game's launch economy is decided.
 - Enable **Game Settings → Security → Enable Studio Access to API Services** for Studio DataStore testing. Published experiences need DataStore access enabled. Test persistence in a separate test place before release.
 - Server-side reward systems can award currency by changing the player's `leaderstats.Coins.Value` from server code. Never award Coins from a LocalScript or accept a client-supplied balance.
