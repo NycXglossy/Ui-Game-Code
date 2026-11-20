@@ -1,46 +1,87 @@
-# UI Renderer Compatibility & Integration Consolidation
+# Tiki Tide Unified UI, ClubMusic, Diagnostics & Security Consolidation
 
-Base: `UI_Renderer (2).lua` at commit `70fd8247cdf90d5d22cc942b158556d1fc0406cb`.
+## Branch foundation
 
-This branch is a consolidated snapshot of the unified Tiki Tide branch, with an integration inventory for the renderer and its compatibility/bridge scripts. It does not merge the older `phase0-33-performance-compatibility` branch because that branch is 35 commits behind and would risk reverting newer UI and project work.
+- Branch: `feature/ui-renderer-compatibility-consolidation`
+- Renderer foundation: `UI_Renderer (2).lua` at `70fd8247cdf90d5d22cc942b158556d1fc0406cb`.
+- This branch is based on the unified Tiki Tide UI/music/social snapshot. The source tree already contains the UI, modern audio, local/global diagnostics, security modules, and utility/settings scripts listed below.
+- The older `phase0-33-performance-compatibility` and `audit/hardened-clubmusic-2026-11-08` lines are not blindly merged: they are separate historical lines with divergent versions. The current snapshot is retained as the integration baseline to avoid reverting newer UI/audio work.
 
-## Renderer placement and direct entry point
+## 1. UI renderer and compatibility
 
-- **Module:** `UI_Renderer (2).lua` → `ReplicatedStorage/UI_Renderer` (ModuleScript).
-- **Direct mount caller:** `ClubMusicBootstrap.client.lua` → StarterPlayerScripts. It waits for `ReplicatedStorage.UI_Renderer`, requires it, validates `Renderer.Mount`, and calls `Renderer.Mount(player, Network)`.
-- **Network adapter:** `UI_Network.lua` → the bootstrap's network adapter passed to `Renderer.Mount`. It supplies state/actions expected by the renderer and aligns action payloads with server handling.
-- **Server authority:** `UI_Server_Controller_server (1).lua` → ServerScriptService. Handles authoritative requests, state, permissions, and attributes used by the renderer. Client UI is not authority.
+- `UI_Renderer (2).lua` → install as `ReplicatedStorage/UI_Renderer` (ModuleScript).
+- `UI_Network.lua` → `ReplicatedStorage/UI_Network` (ModuleScript).
+- `ClubMusicBootstrap.client.lua` → `StarterPlayer/StarterPlayerScripts` (LocalScript). This is the only direct `Renderer.Mount` caller found in the pinned snapshot.
+- `UI_Server_Controller_server (1).lua` → `ServerScriptService/UI_Server_Controller` (Script); authoritative state, permissions, request validation, purchases, queue and audio control.
+- `StarterPlayer/StarterPlayerScripts/TikiTideUnifiedLauncher.client.lua` → launcher bridge using `PlayerGui.TikiTideOpenMainUI`.
+- `TikiTideSettings/TikiTideSettings.client.lua` and `TikiTideSettings/TikiTideSettingsService.server.lua` → settings client/server integration.
+- `UtilityBar/UtilityBar.client.lua`, `UtilityBar/UtilityBarPanels.client.lua`, `UtilityBar/UtilityBarActions.client.lua`, `UtilityBar/UtilityBarActions.server.lua`, and `UtilityBar/UtilityBarExtendedActions.server.lua` → utility launcher, panels, dispatch, and server actions.
+- `TikiTideSocialActions.client.lua`, `TikiTideSocialActions.server.lua`, and `TikiTideSocialActions/AnimationConfig.lua` → social action integration.
 
-## Related caller / bridge / compatibility scripts in this branch
+## 2. Modern ClubMusic audio
 
-### Main-menu bridge
-- `StarterPlayer/StarterPlayerScripts/TikiTideUnifiedLauncher.client.lua`: creates `PlayerGui.TikiTideOpenMainUI` BindableEvent before renderer startup; the renderer binds its `Open` callback and marks the bridge Ready. Launcher uses the bridge to open the main renderer and waits for startup readiness.
+The modern audio implementation is present in this snapshot:
 
-### UI visibility and foreground compatibility
-- `TikiTideSettings/TikiTideSettings.client.lua`: settings UI publishes its open state through PlayerGui attributes; compatible UI surfaces coordinate visibility/restore state.
-- `TikiTideSettings/TikiTideSettingsService.server.lua`: server-side settings requests/remotes and access enforcement; not a renderer mount caller.
-- `UtilityBar/UtilityBar.client.lua`: utility launcher and settings entry point; requests Settings via PlayerGui request attributes and coordinates its own visibility. It does not directly require or mount the renderer.
-- `UtilityBar/UtilityBarPanels.client.lua`: panel/foreground ownership compatibility for utility panels; does not directly mount renderer.
-- `UtilityBar/UtilityBarActions.client.lua`: utility action dispatch and client action bridges; does not directly mount renderer.
-- Renderer itself observes the Settings-open state and suppresses/restores compact HUD/menu launcher surfaces as appropriate.
+- `ClubMusicAudioBackend.luau` — controller-owned modern AudioPlayer graph.
+- `ClubMusicAudioCrossfadeManager.luau` — crossfade transition support.
+- `ClubMusicAudioQualityProfiles.luau` — audio quality profiles.
+- `ClubMusicSpatialAudioGraph.luau` — spatial audio graph support.
+- `ClubMusicDJSessionManager.luau` and `ClubMusicPlayerPreferences.luau` — DJ session and listener preference modules.
+- `MusicCoreService.lua`, `MusicQueueManager.luau`, `MusicPlaylistService.lua`, `MusicGlobalPlaybackAuthority.lua`, and `MusicValidationService.luau` — music core, queue, playlists, global playback authority, and validation.
+- `ClubMusicErrorHandler.lua` — audio error handling.
+- `ClubMusic_Global_Service_server_1.lua`, `ClubMusic_Global_Config_Service.lua`, `ClubMusic_Global_Maintenance_Service.lua`, and `ClubMusic_Global_SafeCall_Service.lua` — global service/configuration/maintenance/safe-call components.
 
-### Other UI-adjacent scripts (not direct renderer callers)
-- `TikiTideSocialActions.client.lua` and `TikiTideSocialActions.server.lua`: unified launcher social-action feature, separate from renderer mount.
-- `ClubMusic_Client_Diagnostics_Bootstrap.client.lua` and diagnostics scripts: diagnostics/telemetry compatibility; not renderer mount callers.
+The server controller explicitly sets `UseModernAudioBackend = true`; the controller remains authoritative for track selection, queue state, and transitions. Do not remove legacy recovery or fallback paths until Studio/public-server tests confirm the modern path is stable.
 
-## Direct-call audit result
+## 3. Diagnostics and health
 
-At the pinned base revision, the only script that requires and calls `Renderer.Mount` is `ClubMusicBootstrap.client.lua`. The unified launcher calls the renderer through the `TikiTideOpenMainUI` BindableEvent bridge, rather than requiring the module itself. `UI_Network.lua` is the renderer's adapter dependency, not a mount caller.
+The snapshot includes:
 
-## Install / dependency checklist
+- `ClubMusic_Client_Diagnostics_Bootstrap.client.lua`, `ClubMusic_Client_Diagnostics_Service.lua`, and `ClubMusic_Client_Diagnostics_Installer.lua`.
+- `ClubMusic_Global_Diagnostics_Service.lua` — server-local observational diagnostics coordinator.
+- `ClubMusic_Local_Service_Registry.lua` and `ClubMusic_Local_Watchdog_Service.lua` — local service/dependency registry and observational watchdog.
+- `ClubMusic_Server_Health_Service.lua` — server health service.
+- `ClientIntegrityTelemetry.client.lua` and `ClubMusicSecurityCore/ClientIntegrityTelemetry.lua` — client integrity telemetry components.
+- `ClubMusic_SecuritySmokeTest.client.lua` — security smoke-test client.
+- `ClubMusic_Studio_CommandBar_Installer.lua` — Studio installation helper.
 
-1. Put `UI_Renderer (2).lua` in `ReplicatedStorage` as a ModuleScript named exactly `UI_Renderer`.
-2. Install `UI_Network.lua` in the location expected by `ClubMusicBootstrap.client.lua` (the bootstrap resolves its network module).
-3. Install `ClubMusicBootstrap.client.lua` in `StarterPlayer/StarterPlayerScripts`.
-4. Install the unified launcher and the Settings/Utility compatibility scripts at their documented paths if those UI entry points are wanted.
-5. Install `UI_Server_Controller_server (1).lua` in `ServerScriptService` and the renderer's server-side dependencies/remotes.
-6. Ensure only one active renderer bootstrap/mount script exists per player. The renderer has mount reuse logic, but duplicate bootstraps can still create duplicate listeners or competing integrations.
+Diagnostics are observational unless a separately documented owning service performs an action. Client-local measurements are untrusted and must not be treated as server authority.
 
-## Scope note
+## 4. Security and authorization
 
-This is a source/branch consolidation and integration inventory. Roblox Studio runtime, mobile/desktop foreground behavior, permissions, and live audio were not tested here.
+The snapshot includes the `ClubMusicSecurityCore/` module set:
+
+- Authorization, sanity/message validation, security policy/monitoring, audit and event logging.
+- Rate limiting, idempotency, receipt authority/hash/transaction services, entitlement authority, and storage/resource guards.
+- Movement, teleport, avatar/accessory, character physics, and animation integrity validation.
+- Honeypot, threat intelligence, incident response, account-risk, chat-abuse, moderation/punishment, and staff spectator services.
+- `ClubMusicSecurityCore/Phase32ServiceBundle.lua` — server-only composition root for the Phase 32 services.
+- `ClubMusic_Global_Security_Service.lua` and `ClubMusic_Security_Core_Installer.lua` — global security bundle and installer.
+- `SecurityServer.server.lua`, `RegularCommandsSecurityServer.lua`, `StaffActions.server.lua`, `StarterPlayer/StarterPlayerScripts/SecurityClient.client.lua`, and `StarterPlayer/StarterPlayerScripts/SecurityConsole.client.lua` — security and staff-facing entry points.
+
+Security remains server-authoritative. Client-side checks/telemetry are defense-in-depth only. Install only the server/client entry points intended for the experience; do not run duplicate copies of the same service.
+
+## 5. Other included systems
+
+- `UtilityBar/ToolShop.client.lua` and `UtilityBar/ToolShop.server.lua`.
+- `TikiTideAdaptiveVisualQuality.client.lua`.
+- `ClubMusic_Overhead_Title_Renderer_client.lua`.
+- `KohlsAdmin_ClubMusic_Addon.lua` and `ClubMusicKohlsAuditServer.lua`.
+
+## 6. Installation and integration order
+
+1. Install the server-side authoritative controller and its required remotes/dependencies.
+2. Install the required server security modules and only the intended security service entry points.
+3. Install the modern audio modules and their controller-owned lifecycle dependencies.
+4. Install diagnostics modules and their bootstrap/health/watchdog entry points.
+5. Install `UI_Network` and `UI_Renderer` into ReplicatedStorage.
+6. Install exactly one `ClubMusicBootstrap.client.lua` in StarterPlayerScripts.
+7. Install the unified launcher, settings, utility, social and optional staff clients at their intended paths.
+8. Verify every `require(script.Parent...)` / `WaitForChild` dependency against the actual Roblox hierarchy before publishing.
+
+## 7. Validation status and known limitations
+
+- Repository tree and source inspection confirm that UI, audio, diagnostics, security, settings, utility, and social source files are present on this branch.
+- This is source-level consolidation and an installation/dependency map, not proof that every optional module is wired into the live place or that every subsystem is runtime healthy.
+- Roblox Studio runtime, live DataStore/MemoryStore/MessagingService behavior, mobile/desktop UI behavior, audio playback/crossfade, and security enforcement have not been tested by this GitHub source operation.
+- Do not delete legacy audio/recovery code or merge the older audit branch wholesale until runtime verification and a file-by-file compatibility review are complete.
