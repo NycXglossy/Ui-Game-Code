@@ -18,7 +18,7 @@
 
 ## Release reconciliation
 
-Only `SecurityThreatIntelligence.lua` is pinned to `2b0c8ad144bf3257798c18f149c922d44ad350f1`. The main Security Core release remains `7ebc71e3a6fa9ef04e80d5f332e5f72617c8d288`; Phase 32 remains `6ae4883c2c260df61bf760b8637dd339bda33d7b`. Receipt modules remain in the current installer manifest.
+Only `SecurityThreatIntelligence.lua` is pinned to `5790cd0c61d2f1bd38fe8aab92f5a234e7ec7e87`. The main Security Core release remains `7ebc71e3a6fa9ef04e80d5f332e5f72617c8d288`; Phase 32 remains `6ae4883c2c260df61bf760b8637dd339bda33d7b`. Receipt modules remain in the current installer manifest.
 
 ## Safety boundary
 
