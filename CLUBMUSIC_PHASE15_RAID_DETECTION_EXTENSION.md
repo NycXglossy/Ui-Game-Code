@@ -5,7 +5,7 @@
 ## Implemented
 
 - Exact registered machine codes replace substring-based classification. Unknown codes remain visible in counters but receive no score, category, or confidence contribution.
-- Audited signal families include movement/world-physics, audio, avatar/accessory, honeypot, admin authorization, SecurityMonitor, SafeCall, and watchdog signals.
+- Audited signal families include movement/world-physics (including delayed extreme assembly velocity/rotation), audio, avatar/accessory, honeypot, admin authorization, SecurityMonitor, SafeCall, and watchdog signals. The two physics codes are registered as Movement evidence at weight 2; observation-only inventory/animation telemetry and avatar API read failures remain zero-weight.
 - Optional event IDs are deduplicated for 30 seconds in a bounded 256-ID table. Existing producers do not yet consistently provide event IDs.
 - Repeated identical codes contribute at most three times per player window. Category and source contributions are capped at eight points; at most eight sources and twelve codes are retained per subject.
 - Only allowlisted Critical severity receives a one-point bonus. Invalid or missing severity is normalized to Info.
