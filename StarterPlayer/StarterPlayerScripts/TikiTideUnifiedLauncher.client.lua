@@ -110,8 +110,20 @@ local function requestSettingsClose()
 end
 
 local function requestSettingsOpen()
- local current = tonumber(playerGui:GetAttribute("TikiTideSettingsOpenRequest")) or 0
- playerGui:SetAttribute("TikiTideSettingsOpenRequest", current + 1)
+ task.spawn(function()
+  -- The settings client waits for its server remotes before building the panel.
+  -- Avoid losing the first launcher click if that initialization is still running.
+  for _ = 1, 100 do
+   if not gui.Parent then return end
+   if playerGui:GetAttribute("TikiTideSettingsReady") == true then
+    local current = tonumber(playerGui:GetAttribute("TikiTideSettingsOpenRequest")) or 0
+    playerGui:SetAttribute("TikiTideSettingsOpenRequest", current + 1)
+    return
+   end
+   task.wait(0.1)
+  end
+  warn("[TikiTideUnifiedLauncher] Tiki Tide Settings did not finish loading.")
+ end)
 end
 
 local function closeSocialPanel()
