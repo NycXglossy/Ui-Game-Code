@@ -6219,25 +6219,63 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 		if not queryOk or allowed ~= true or typeof(incidents) ~= "table" then
 			return false, if typeof(queryError) == "string" then queryError else "Threat-intelligence query failed."
 		end
-		if #incidents == 0 then
-			return true, if targetUserId then "No correlated review items for UserId " .. tostring(targetUserId) .. " on this server."
-				else "No correlated threat-review items are currently retained on this server."
+		local raidReviews = {}
+		local raidQueryError: string? = nil
+		if targetUserId == nil then
+			local raidOk, raidAllowed, raidItems, raidError = pcall(function()
+				return endpoint:Invoke("QueryRaids", caller, math.min(queryLimit, 10))
+			end)
+			if raidOk and raidAllowed == true and typeof(raidItems) == "table" then
+				raidReviews = raidItems
+			else
+				raidQueryError = if raidOk and typeof(raidError) == "string" then raidError else "Raid cohort query failed."
+			end
 		end
-		local lines = {"Tiki Tide Threat Intelligence (server-local review only):"}
+		if #incidents == 0 and #raidReviews == 0 then
+			return true, if targetUserId then "No correlated review items for UserId " .. tostring(targetUserId) .. " on this server."
+				elseif raidQueryError then "No player reviews are retained; raid cohort review is unavailable: " .. string.sub(raidQueryError, 1, 120)
+				else "No correlated player or raid-cohort review items are currently retained on this server."
+		end
+		local lines = {"Tiki Tide Threat Intelligence (server-local advisory review only):"}
 		for index, item in ipairs(incidents) do
 			if index > queryLimit then break end
 			if typeof(item) == "table" then
 				local age = if typeof(item.lastAt) == "number" then math.floor(math.max(0, os.clock() - item.lastAt)) else 0
 				local categories = if typeof(item.categories) == "table" then table.concat(item.categories, ",") else "n/a"
 				local signals = if typeof(item.signals) == "table" then table.concat(item.signals, ",") else "n/a"
-				table.insert(lines, string.format("%s | UserId %d | %s confidence | score %d | %d events | %ds ago",
-					tostring(item.id or "?"), typeof(item.subjectUserId) == "number" and item.subjectUserId or 0,
+				local sources = if typeof(item.sources) == "table" then table.concat(item.sources, ",") else "n/a"
+				local reasons = if typeof(item.reasons) == "table" then table.concat(item.reasons, ",") else "n/a"
+				local subjectLabel = if item.kind == "ServerReview" then "SERVER"
+					else "UserId " .. tostring(typeof(item.subjectUserId) == "number" and item.subjectUserId or 0)
+				table.insert(lines, string.format("%s | %s | %s confidence | score %d | %d events | %ds ago",
+					tostring(item.id or "?"), subjectLabel,
 					tostring(item.confidence or "Low"), typeof(item.score) == "number" and item.score or 0,
 					typeof(item.eventCount) == "number" and item.eventCount or 0, age))
-				table.insert(lines, "  Categories: " .. string.sub(categories, 1, 180))
-				table.insert(lines, "  Signals: " .. string.sub(signals, 1, 180))
+				table.insert(lines, "  Categories: " .. string.sub(categories, 1, 140)
+					.. " | Sources: " .. string.sub(sources, 1, 100))
+				table.insert(lines, "  Signals: " .. string.sub(signals, 1, 180)
+					.. " | Reasons: " .. string.sub(reasons, 1, 100))
+				table.insert(lines, "  Session: " .. tostring(item.sessionAgeSeconds or 0) .. "s / "
+					.. tostring(item.sessionEventCount or 0) .. " observed events")
 			end
 		end
+		for index, item in ipairs(raidReviews) do
+			if index > math.min(queryLimit, 10) then break end
+			if typeof(item) == "table" then
+				local age = if typeof(item.lastAt) == "number" then math.floor(math.max(0, os.clock() - item.lastAt)) else 0
+				table.insert(lines, string.format("%s | RAID COHORT | %s confidence | %d joins | %d distinct signaled players | %ds ago",
+					tostring(item.id or "RAID-?"), tostring(item.confidence or "Medium"),
+					typeof(item.joinCount) == "number" and item.joinCount or 0,
+					typeof(item.signaledPlayerCount) == "number" and item.signaledPlayerCount or 0, age))
+				table.insert(lines, string.format("  Evidence: %d categories | %d sources | %d signal codes",
+					typeof(item.categoryCount) == "number" and item.categoryCount or 0,
+					typeof(item.sourceCount) == "number" and item.sourceCount or 0,
+					typeof(item.signalCodeCount) == "number" and item.signalCodeCount or 0))
+				table.insert(lines, "  Reasons: " .. (typeof(item.reasons) == "table" and table.concat(item.reasons, ",") or "n/a"))
+			end
+		end
+		if raidQueryError then table.insert(lines, "Raid cohort query unavailable: " .. string.sub(raidQueryError, 1, 120)) end
+		table.insert(lines, "Raid reviews are advisory; join bursts alone never trigger enforcement.")
 		return true, string.sub(table.concat(lines, "\n"), 1, 1850)
 	end
 	if operation == "StaffSpectatorEnter" or operation == "StaffSpectatorSwitch" or operation == "StaffSpectatorExit" or operation == "StaffSpectatorState" or operation == "StaffSpectatorStealth" then
@@ -6581,7 +6619,11 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 			"Threat intelligence: " .. tostring(threatIntelligence.state or "NotInstalled")
 				.. " | review items " .. tostring(threatIntelligence.openReviewItems or 0)
 				.. "/" .. tostring(threatIntelligence.maxReviewItems or 0)
-				.. " | tracked subjects " .. tostring(threatIntelligence.trackedSubjects or 0),
+				.. " | tracked subjects " .. tostring(threatIntelligence.trackedSubjects or 0)
+				.. " | raid reviews " .. tostring(threatIntelligence.raidReviewItems or 0)
+				.. " | join window " .. tostring(threatIntelligence.cohortWindowJoins or 0)
+				.. " | signaled players " .. tostring(threatIntelligence.cohortSignaledPlayers or 0)
+				.. " | unknown codes " .. tostring(threatIntelligence.unknownSignals or 0),
 			"Honeypot: " .. tostring(honeypot.state or "NotInstalled")
 				.. " | hits " .. tostring(honeypot.totalHits or 0)
 				.. " | suppressed " .. tostring(honeypot.suppressedHits or 0)
