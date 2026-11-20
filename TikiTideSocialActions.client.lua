@@ -52,10 +52,35 @@ panel.Position = UDim2.new(1, -224, 0, 112)
 panel.Visible = false
 panel.BackgroundColor3 = Color3.fromRGB(13, 16, 24)
 panel.Parent = gui
+local function setPanelOpen(isOpen: boolean)
+	panel.Visible = isOpen
+	toggle.Text = if isOpen then "SOCIAL  −" else "SOCIAL  +"
+end
+
 toggle.Activated:Connect(function()
-	panel.Visible = not panel.Visible
-	toggle.Text = if panel.Visible then "SOCIAL  −" else "SOCIAL  +"
+	setPanelOpen(not panel.Visible)
 end)
+
+-- A dedicated close control remains available when the standalone toggle is
+-- hidden by the unified launcher.
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "CloseSocialPanel"
+closeButton.AnchorPoint = Vector2.new(1, 0)
+closeButton.Position = UDim2.new(1, -7, 0, 5)
+closeButton.Size = UDim2.fromOffset(25, 24)
+closeButton.BackgroundColor3 = Color3.fromRGB(42, 48, 62)
+closeButton.Text = "×"
+closeButton.TextColor3 = Color3.fromRGB(242, 241, 236)
+closeButton.TextSize = 18
+closeButton.Font = Enum.Font.GothamBold
+closeButton.Parent = panel
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 7)
+closeCorner.Parent = closeButton
+closeButton.Activated:Connect(function()
+	setPanelOpen(false)
+end)
+
 local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 14); corner.Parent = panel
 local stroke = Instance.new("UIStroke"); stroke.Color = Color3.fromRGB(226, 194, 132); stroke.Transparency = 0.35; stroke.Parent = panel
 local heading = Instance.new("TextLabel")
