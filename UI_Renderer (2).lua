@@ -2733,12 +2733,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			label(allTile, "♫  ALL TRACKS", UDim2.fromOffset(12, 10), UDim2.new(1, -24, 0, 22), C.Cyan, 13, true)
 			label(allTile, string.format("%d tracks in the catalog", #ALL_TRACKS), UDim2.fromOffset(12, 35), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
 			badge(allTile, "FULL LIBRARY", C.Cyan, UDim2.new(1, -96, 1, -27), 84)
-			local allHit = actionButton(allTile, if selectedGenre == "all" then "HIDE" else "OPEN",
+			local allHit = actionButton(allTile, "OPEN",
 				UDim2.new(1, -68, 0, 7), UDim2.fromOffset(58, 24), function()
-				selectedGenre = if selectedGenre == "all" then "" else "all"
-					clearContent()
-					renderMusic()
-				end, C.Cyan)
+				musicSubView = "catalog"
+				trackGenreFilter = "all"
+				trackSearch = ""
+				catalogOffset = 0
+				if renderTabFn then renderTabFn() end
+			end, C.Cyan)
 			allHit.TextSize = 9
 
 		if selectedGenre == "favorites" then
@@ -2751,10 +2753,6 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					makeTrackCard(TRACK_INDEX[id])
 				end
 			end
-			return
-		elseif selectedGenre == "all" then
-			sectionLabel("ALL TRACKS  •  " .. tostring(#ALL_TRACKS))
-			for _, track in ipairs(ALL_TRACKS) do makeTrackCard(track) end
 			return
 		end
 
