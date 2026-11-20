@@ -1353,7 +1353,12 @@ end
 
 bindFunction("GetGlobalPlaybackSyncStatus", function()
 	local status = if globalPlaybackAuthority then globalPlaybackAuthority:GetStatus()
-		else {enabled = false, error = "Playback authority module unavailable."}
+		else {
+			enabled = false,
+			error = if IS_STUDIO and not CONFIG.EnableInStudio then "Cross-server playback sync is disabled in Studio isolation."
+				elseif not SERVICE_ENABLED then "Cross-server playback sync is unavailable because the global service is disabled."
+				else "Playback authority module unavailable.",
+		}
 	status.syncEnabled = playbackSyncEnabled
 	status.lastServiceError = playbackAuthorityLastError
 	status.localQueueIsolated = true
