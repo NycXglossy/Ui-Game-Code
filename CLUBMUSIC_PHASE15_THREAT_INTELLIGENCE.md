@@ -23,13 +23,26 @@ The installer fetches `SecurityThreatIntelligence.lua` from the dedicated Phase 
 
 Only explicitly registered machine codes contribute score, category diversity, or confidence. Unknown codes are counted for diagnostics but contribute zero score and no confidence evidence. This avoids substring-based classification of arbitrary telemetry.
 
-The reviewed registry covers movement/world-physics validation, audio asset validation, avatar/accessory validation, isolated honeypot remotes, staff/admin authorization failures, SecurityMonitor threshold crossings, SafeCall failures, and degraded watchdog pulses. Observation-only client telemetry is not a risk signal. Additional current producer codes remain zero-weight until individually audited and registered.
+The reviewed registry covers movement/world-physics validation (including sustained extreme assembly velocity and rotation from CharacterPhysicsGuard), audio asset validation, avatar/accessory validation, isolated honeypot remotes, staff/admin authorization failures, SecurityMonitor threshold crossings, SafeCall failures, and degraded watchdog pulses. Observation-only client telemetry is not a risk signal. Additional current producer codes remain zero-weight until individually audited and registered.
 
 - Severity is normalized to `Info`, `Warning`, or `Critical`; only `Critical` receives the bounded one-point bonus.
 - Repeated identical registered codes contribute at most three times per subject window.
 - Per-category and per-source contribution caps are eight points; total score is capped.
 - Maximum eight source identifiers and twelve distinct registered codes are retained per subject window.
 - Optional event IDs are deduplicated for 30 seconds in a 256-ID cap. Existing producers do not yet consistently provide event IDs.
+
+## Producer audit disposition
+
+| Producer code(s) | Source and meaning | Registry decision |
+| --- | --- | --- |
+| `suspicious_physics_velocity`, `suspicious_physics_rotation` | CharacterPhysicsGuard emits after a delayed threshold recheck, excludes seated characters, and checks the server movement-authority exemption | Registered as Movement, weight 2 each; advisory only |
+| `tool_inventory_observation_cap`, `tool_added_after_appearance`, `tool_removed_from_inventory` | AvatarAccessoryValidationService inventory observations; tools may be granted, moved, or removed legitimately | Remain zero-weight |
+| `avatar_accessory_observation_cap`, `avatar_description_unavailable`, `avatar_accessory_description_invalid` | Observation-cap and Humanoid description/API read outcomes, not proof of abuse | Remain zero-weight |
+| `animation_track_observation_cap`, `animation_asset_observation_cap`, `animation_asset_observed` | Bounded inventory telemetry; unfamiliar animation IDs are not inherently malicious | Remain zero-weight |
+| `TeleportTicketExpired`, `TeleportTicketIdentityMismatch`, `TeleportCharacterChanged`, `TeleportObservedPositionInvalid`, `TeleportDestinationMismatch`, `TeleportVerified` | TeleportValidationService has a callback interface, but no active wiring was found in the integration controller/global service | Not registered; producer is not currently wired |
+| `message_validator_unavailable`, `invalid_message` | Messaging envelope validation failures are recorded in SecurityMonitor; they are operational telemetry, not currently forwarded as exact Threat Intelligence codes | Remain outside the threat registry pending a dedicated producer audit |
+
+The audit also confirmed the existing exact-code paths for audio asset validation, staff/admin authorization failures, honeypot remotes, SafeCall failures, SecurityMonitor threshold crossings, and degraded watchdog pulses. Unknown/unreviewed strings remain zero-weight by design.
 
 ## Player correlation
 
