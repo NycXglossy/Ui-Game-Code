@@ -15,7 +15,7 @@ local RELEASE_COMMIT = "7ebc71e3a6fa9ef04e80d5f332e5f72617c8d288"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
 -- Threat Intelligence alone is sourced from the hardened Phase 15 snapshot.
 -- All other SecurityCore modules, including receipt modules, keep the current release pin.
-local THREAT_INTELLIGENCE_COMMIT = "2b0c8ad144bf3257798c18f149c922d44ad350f1"
+local THREAT_INTELLIGENCE_COMMIT = "5790cd0c61d2f1bd38fe8aab92f5a234e7ec7e87"
 local THREAT_INTELLIGENCE_BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. THREAT_INTELLIGENCE_COMMIT .. "/ClubMusicSecurityCore/"
 -- Phase 32 is pinned independently so the previously certified SecurityCore
 -- module snapshot is not silently changed by later commits.
