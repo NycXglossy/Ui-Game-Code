@@ -6,14 +6,16 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local HttpService = game:GetService("HttpService")
 
--- Support both documented layouts:
+-- Support all installed layouts:
 -- 1) ServerScriptService/TikiTideSocialActions.server.lua + sibling config folder
 -- 2) ServerScriptService/TikiTideSocialActions/TikiTideSocialActions.server.lua + child config
+-- 3) ServerScriptService/TikiTideSocialActions.server.lua with the config folder parented under the Script
 local configFolder: Instance? = nil
 if script.Parent.Name == "TikiTideSocialActions" then
 	configFolder = script.Parent
 else
-	configFolder = script.Parent:FindFirstChild("TikiTideSocialActions")
+	configFolder = script:FindFirstChild("TikiTideSocialActions")
+		or script.Parent:FindFirstChild("TikiTideSocialActions")
 end
 
 local configModule = configFolder and configFolder:FindFirstChild("AnimationConfig")
