@@ -7,7 +7,7 @@
 The hardened module is pinned independently:
 - Security Core release: `7ebc71e3a6fa9ef04e80d5f332e5f72617c8d288` (unchanged)
 - Phase 32 release: `6ae4883c2c260df61bf760b8637dd339bda33d7b` (unchanged)
-- Threat Intelligence module only: `2b0c8ad144bf3257798c18f149c922d44ad350f1`
+- Threat Intelligence module only: `5790cd0c61d2f1bd38fe8aab92f5a234e7ec7e87`
 
 The installer fetches `SecurityThreatIntelligence.lua` from the dedicated Phase 15 pin and every other Security Core module from the existing release pin. `ReceiptAuthority`, `ReceiptHash`, and `ReceiptTransactionService` remain in the installer list. Do not replace the complete Security Core release pin with the older Phase 15 installer pin.
 
