@@ -39,7 +39,7 @@ Status: Optional playback-only sync is integrated on `integration/tiki-tide-syst
 | S11 | Wake the former leader after takeover | Its stale fencing token/revision cannot overwrite the new leader's playback snapshot. |
 | S12 | Drop a Playback MessagingService invalidation | Periodic snapshot reconciliation repairs the follower's Now Playing state. |
 | S13 | Temporarily interrupt DataStore or MemoryStore | Authority status becomes degraded; stale leaders cannot commit; recovery restores a single leader. |
-| S14 | Disable sync while multiple servers are active | Each server returns to its own local playback without deleting or merging queues. |
+| S14 | Disable sync while multiple servers are active | Each server stops following, continues from its current track, and uses its own local queue for subsequent transitions; no queue is deleted or merged. |
 | S15 | Disable then re-enable sync | The service re-elects a leader; each server's local queue remains intact. |
 | S16 | Attempt to enable sync in default Studio isolation | The service rejects the change with a Studio-isolation message; local playback remains usable. |
 | S17 | Test modern AudioPlayer startup, seek, pause, resume, reload, and crossfade while following | Followers converge on the leader's track/playhead without falling back to legacy audio or modifying local queues. |
