@@ -185,11 +185,6 @@ local function buildUtilityIcon(parent: Instance, kind: string, color: Color3): 
 		part("ToolHandle",.30,.58,.13,.68,-38)
 		part("ToolHead",.62,.28,.60,.16,0)
 		part("ToolEnd",.78,.28,.16,.32,0)
-	elseif kind == "ToolShop" then
-		outline("ShopBag",.5,.54,.66,.62)
-		part("ShopHandle",.5,.17,.34,.12,0)
-		part("ShopWheelA",.32,.88,.14,.14,0)
-		part("ShopWheelB",.68,.88,.14,.14,0)
 	elseif kind == "LightingControl" then
 		part("LightStand",.5,.52,.10,.68,0)
 		part("LightTop",.5,.20,.66,.14,0)
@@ -407,7 +402,7 @@ playerGui:GetAttributeChangedSignal("ClubMusicMenuExpanded"):Connect(updateVisib
 playerGui:GetAttributeChangedSignal("TikiTideSettingsOpen"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("UtilityActionPanelOpen"):Connect(updateVisibility)
--- The Tiki Tide entry stays in the seven-button layout; its activation is
+-- The Tiki Tide entry remains in the utility rail; its activation is
 -- entitlement-checked before the panel receives an open request.
 
 local viewportConnection: RBXScriptConnection? = nil
