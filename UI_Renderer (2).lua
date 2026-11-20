@@ -5052,6 +5052,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 	if openMainEvent:IsA("BindableEvent") then
 		openMainEvent.Event:Connect(open)
+		openMainEvent:SetAttribute("Ready", true)
 	end
 	hud.Activated:Connect(function()
 		if expanded then close() else open() end
