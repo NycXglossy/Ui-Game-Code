@@ -42,6 +42,9 @@ end
 add("Movement", 2, {
 	"movement_limit_exceeded", "unverified_movement_change",
 	"world_physics_limit_exceeded", "unverified_world_physics_change",
+	-- Sustained extreme assembly velocity/rotation after the guard's delay and
+	-- server-authority exemption checks. These remain advisory evidence only.
+	"suspicious_physics_velocity", "suspicious_physics_rotation",
 })
 add("Audio", 2, {"audio_asset_invalid_id", "audio_asset_not_allowlisted"})
 add("Avatar", 1, {
