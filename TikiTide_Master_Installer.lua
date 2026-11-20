@@ -5,6 +5,9 @@
 -- Source snapshot is immutable: every downloaded script comes from one commit.
 -- Playback and request queues remain server-local. Cross-server playback sync is DISABLED.
 -- This installer does not create/replace remote endpoints, DataStores, purchases, or world assets.
+-- SAFETY HOLD: source inventory is not yet complete and live-place parent mappings are unverified.
+-- Do not remove this guard until the full script/package/hierarchy audit and Studio test pass.
+error("[TikiTide Master Installer] SAFETY HOLD: not ready to run. Await the completed hierarchy-aware release.")
 
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
