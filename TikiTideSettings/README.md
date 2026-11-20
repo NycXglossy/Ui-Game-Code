@@ -1,65 +1,97 @@
-# Tiki Tide Settings Add-on
+# Tiki Tide Settings, Social Actions, and Unified Launcher
 
-**Branding:** All runtime attributes, remotes, service markers, entitlement fields, and code identifiers use the Tiki Tide naming convention.
+## Scope
 
-This add-on is intentionally separate from the ClubMusic renderer and overhead title renderer.
+This add-on is installed alongside the existing ClubMusic UI and Security Core. It does not replace the ClubMusic renderer, title renderer, audio system, or server controller. Install the updated renderer below as a replacement for the existing renderer ModuleScript; do not run two renderer copies.
 
-## Install
+## Required scripts and placement
 
-1. Add `TikiTideSettingsService.server.lua` as a **Script** under `ServerScriptService`.
-2. Add `TikiTideSettings.client.lua` as a **LocalScript** under `StarterPlayer > StarterPlayerScripts`.
-3. Keep the existing `ClubMusicBootstrap.client.lua`, `UI_Network`, `UI_Server_Controller`, and `ClubMusic_Overhead_Title_Renderer_client.lua` unchanged.
-4. Install the updated `UI_Renderer (2).lua` from this branch in place of the current ClubMusic UI renderer. It contains the small shared-state bridge that coordinates the compact HUD and floating launcher with Tiki Tide Settings; do not install it as a second parallel renderer.
-5. Ensure there is exactly one copy of `TikiTideSettingsService.server.lua` and one copy of `TikiTideSettings.client.lua`. The server service creates a runtime singleton marker in `ServerStorage` and refuses to start a second copy, preventing duplicate scripts from competing for `RemoteFunction.OnServerInvoke` or duplicating player lifecycle listeners.
-6. Publish/test in a private test place first.
+| File | Roblox placement | Purpose |
+|---|---|---|
+| `UI_Renderer (2).lua` | ModuleScript: `ReplicatedStorage/UI_Renderer` | Existing ClubMusic UI plus the main-menu open bridge used by the unified launcher |
+| `UI_Server_Controller_server (1).lua` | Script: `ServerScriptService` | Existing server-authoritative ClubMusic controller and Tiki Tide entitlement source |
+| `ClubMusic_Security_Core_Installer.lua` | Script: `ServerScriptService` | Installs the pinned Security Core modules and staff spectator adapter |
+| `ClubMusic_Global_Service_server_1.lua` | Script: `ServerScriptService` | Global service; its expected Security Core release must match the installer |
+| `TikiTideSettings/TikiTideSettingsService.server.lua` | Script: `ServerScriptService` | Server-side Settings, Players, and Message actions |
+| `TikiTideSettings/TikiTideSettings.client.lua` | LocalScript: `StarterPlayer/StarterPlayerScripts` | Settings UI |
+| `TikiTideSocialActions.server.lua` | Script: `ServerScriptService` | Server-authoritative dances and consent-based duo actions |
+| `TikiTideSocialActions/AnimationConfig.lua` | ModuleScript: child folder `TikiTideSocialActions` under the Social Actions server Script | Owned animation asset IDs |
+| `TikiTideSocialActions.client.lua` | LocalScript: `StarterPlayer/StarterPlayerScripts` | Social Actions UI and invitation prompts |
+| `TikiTideUnifiedLauncher.client.lua` | LocalScript: `StarterPlayer/StarterPlayerScripts` | Single entry point for Main UI, Social Actions, Settings, and Staff Console |
+| `SecurityServer.server.lua` | Script: `ServerScriptService` | Creates security remotes, applies server authorization, and dispatches staff alerts |
+| `SecurityClient.client.lua` | LocalScript: `StarterPlayer/StarterPlayerScripts` | Displays staff alerts and submits player reports |
+| `SecurityConsole.client.lua` | LocalScript: `StarterPlayer/StarterPlayerScripts` | Staff Console presentation; it does not authorize staff |
+| `StaffActions.server.lua` | Script: `ServerScriptService` | Server-side staff action adapter |
+| `RegularCommandsSecurityServer.lua` | Script: `ServerScriptService` | Server-side protected command adapter |
 
-The server add-on creates `ReplicatedStorage/TikiTideSettingsRemotes` itself. It reads the server-owned `HasTikiTideAccess` player attribute set by the existing ClubMusic controller, and uses the existing server-only `ClubMusicAuthorizationResolver` for privileged gravity and announcement actions.
+The SecurityClient, SecurityServer, SecurityConsole, Settings server service, and other listed base scripts already exist in the selected integration base. Keep exactly one copy of each. The social scripts and unified launcher are additional scripts.
 
-**Required entitlement configuration:** In the existing `UI_Server_Controller` configuration, set `TikiTidePassId` to the real Tiki Tide Game Pass asset ID before testing pass-holder access. Its current value in the audited source is `0`, which disables Game Pass ownership grants. Existing verified staff rank level 1+ still receives Tiki Tide tier access. Tiki Tide pass ownership alone does not grant administrator permissions: gravity requires `GlobalConfig` (rank level 3+) and announcements require `GlobalAnnouncement` (rank level 2+).
+## Release alignment
 
-## Included
+The Security Core installer pins its main module release to:
 
-- Tiki Tide-only walk speed (20–100) and jump power (80–300), applied on respawn only for verified Tiki Tide players; the service waits briefly for late-loading Humanoids in custom character rigs.
-- AFK state and filtered AFK message replicated as `TikiTideAFK` and `TikiTideAFKMessage` attributes.
-- Opt-in teleport-to-me permission; teleport requests are validated on the server.
-- Gravity control (20–192.62) restricted to ClubMusic `GlobalConfig` permission.
-- Admin overhead broadcasts and server announcements restricted to `GlobalAnnouncement`; announcements have a 180-second server-wide cooldown.
-- Separate Settings / Players / Message panel. Existing custom overhead titles, title slots, fonts, effects and collection tags remain in ClubMusic → Title Tag.
-- Gamepad navigation for selectable tabs, actions and text fields, with gold focus feedback, automatic vertical scroll-to-selection, and B / Escape back handling. TextBox focus is allowed to handle the console virtual keyboard.
+`7ebc71e3a6fa9ef04e80d5f332e5f72617c8d288`
 
-## Important scope notes
+The Global Service's `EXPECTED_SECURITY_CORE_RELEASE` must use that exact same identifier. The installer separately pins the Phase 32 module bundle to:
 
-- This add-on does not modify the existing ClubMusic profile schema or title renderer.
-- Movement and AFK preferences are session-scoped; they reset when the player leaves.
-- Gravity affects the whole current server, not every server in the experience.
-- Announcement cooldown is server-local, not cross-server.
-- The existing controller must be running so its verified Tiki Tide attribute and authorization resolver are available. The Tiki Tide service can create its remotes independently, but privileged administrator actions fail closed until the controller's resolver exists.
-- Install order: existing ClubMusic controller and its required modules first, then the Tiki Tide server service and client LocalScript. The scripts may start in Roblox's normal scheduling order, but the controller must finish initialization before testing administrator-only actions.
-- If the Tiki Tide GUI is destroyed or replaced while open, its cleanup restores the compact ClubMusic HUD state and releases its controller back binding.
-- Privileged actions re-check Tiki Tide/admin authorization after text filtering or other yielding permission checks; broadcast cooldowns are checked again immediately before sending.
+`6ae4883c2c260df61bf760b8637dd339bda33d7b`
 
-## Controller test checklist
+Do not change one pin independently. The Global Service rejects a present but mismatched Security Core manifest.
 
-In Roblox Studio with a gamepad connected, verify D-pad / thumbstick selection across all tabs and controls, gold focus visibility, scrolling through long player lists, A-button activation, text entry through the console keyboard, confirm focus stays on the text field when the keyboard opens and returns when it closes, B to dismiss the keyboard before closing the panel, and B again to close the panel. On Settings, apply movement and toggle AFK / teleport permissions; confirm focus returns to a valid control after any page rebuild. On Players, filter the roster and confirm hidden rows disappear without leaving navigation gaps, the list resizes to the visible matches, and focus moves to Search if the selected row is filtered out. Trigger a denied teleport request and confirm focus returns to that row's action button. Also test closing/replacing the Tiki Tide GUI while open and confirm the compact HUD is restored; revoke Tiki Tide access during a pending filtered message and confirm the request is rejected; submit simultaneous broadcasts and confirm cooldowns are not bypassed. Verify touch and mouse input remain functional. Controller support is implemented in the client UI but still requires runtime testing on the target console.
+## Runtime bridges and remotes
 
-## Pass creation status and Studio test mode
+- The renderer creates or reuses `PlayerGui/TikiTideOpenMainUI`, connects its open callback, and sets its `Ready` attribute. The unified launcher waits for that readiness before firing the BindableEvent.
+- The Settings server service creates `ReplicatedStorage/TikiTideSettingsRemotes`; the client listens for the launcher's `TikiTideSettingsOpenRequest` and `TikiTideSettingsCloseRequest` PlayerGui attributes.
+- The Social Actions server creates `ReplicatedStorage/TikiTideSocialRemotes` with `Request` and `Event` RemoteEvents.
+- The Security server creates `ReplicatedStorage/SecuritySystem` with `StaffAlert` and `ReportIncident` RemoteEvents.
+- The Staff Console client creates `StaffConsoleGui` and `StaffConsoleLauncher`; the unified launcher only displays its entry after the client reports `StaffAuthorized = true`. The server still checks every protected action.
 
-The Tiki Tide Game Pass has **not been created yet**. Keep `TikiTidePassId = 0` until the real pass is published and its asset ID is available. A zero ID intentionally disables Tiki Tide Game Pass ownership grants; do not use a placeholder or another pass ID.
+## Security boundaries
 
-The current controller configuration has `StudioStaff = true`. In Studio, that setting treats **every test player as OWNER**, which also grants Tiki Tide tier access through the server-verified staff path even while the Tiki Tide pass ID is zero. This is useful for testing the Tiki Tide interface, but it is **not** a valid guest-access or pass-ownership test. To test guest denial in Studio, temporarily set `StudioStaff = false`; with `GroupId = 0` and no matching `StaffUserIds`, Studio players will then be guests. Restore the intended production setting before publishing. Once the pass is created, configure only its actual asset ID and verify ownership in a published private test server.
+- Client launchers, menus, notifications, and report controls are presentation/input surfaces only.
+- Security Core Authorization, the ClubMusic controller, SecurityServer, Settings server service, Social Actions server service, and StaffActions server adapter enforce permissions and validate requests on the server.
+- Social Actions accepts only named actions; clients cannot submit animation asset IDs. Duo hugs require both players to have Tiki Tide access, a live character, and proximity within 12 studs. Invitations expire after 20 seconds and are revalidated on acceptance.
+- Settings privileged gravity and announcement actions use server-side ClubMusic permissions. Tiki Tide pass ownership does not itself grant staff permissions.
+- SecurityClient's local report helper does not authorize or adjudicate reports; SecurityServer validates and routes them.
+- Do not expose server-only BindableFunctions to clients.
 
+## Configuration that must be completed
 
-## Deployment readiness checklist
+### Social animation assets
 
-Before publishing to the live experience:
+Set numeric IDs that the experience/group owns in `TikiTideSocialActions/AnimationConfig.lua`:
 
-- [ ] Replace the existing ClubMusic renderer with this branch's updated `UI_Renderer (2).lua`; do not run both renderer copies.
-- [ ] Confirm the existing ClubMusic server controller and all of its required ServerStorage modules are installed exactly once.
-- [ ] Install exactly one Tiki Tide server Script and one Tiki Tide client LocalScript at the paths listed above; the server singleton guard will reject a second service copy.
-- [ ] Keep `TikiTidePassId = 0` until the Tiki Tide Game Pass is actually created and published; the unconfigured shop entry displays `COMING SOON` and cannot launch a purchase prompt.
-- [ ] Set `StudioStaff = false` when validating guest denial in Studio; its current `true` value grants OWNER/Tiki Tide test access to every Studio player.
-- [ ] Test staff access, guest denial, entitlement revocation, respawn, and controller/UI transitions in a private test place.
-- [ ] After the Game Pass exists, add its real asset ID and verify a real owner and a non-owner in a published private server.
-- [ ] Test keyboard, touch, mouse, and a physical console controller. Do not treat responsive sizing or source-level focus wiring as proof of console runtime compatibility.
-- [ ] Check server/client output for missing remotes, duplicate scripts, TextService filtering failures, and controller resolver startup errors.
-- [ ] Only publish after all applicable checks pass; pass-owner and live console checks remain blocked until the pass exists and target-device testing is performed.
+- `Dance1`
+- `Dance2`
+- `VIPDance`
+- `HugActor`
+- `HugTarget`
+
+The checked-in values are currently `0`. Unconfigured animations fail closed and show an unavailable message. No animation assets are created or uploaded by these scripts.
+
+### Tiki Tide entitlement
+
+The selected controller source currently configures `TikiTidePassId = 2087955353`. Verify the asset ID and ownership in a published private test server before release. The Settings service reads the server-owned entitlement attribute set by the controller; it does not trust a client-provided pass claim.
+
+### Studio testing
+
+The controller source has `StudioStaff = true`. In Studio this treats test players as OWNER for testing. It is not a valid guest-denial or pass-ownership test. Temporarily set `StudioStaff = false` when testing guest denial, then restore the intended production setting.
+
+## Install and test order
+
+1. Install the pinned Security Core installer and verify the installed manifest reports the matching release IDs above.
+2. Install the ClubMusic controller, Global Service, and the single updated renderer ModuleScript.
+3. Install one Settings server Script and one Settings client LocalScript.
+4. Install the Social Actions server Script with its child `TikiTideSocialActions/AnimationConfig` ModuleScript, plus one Social Actions client LocalScript.
+5. Install one SecurityServer, SecurityClient, SecurityConsole, StaffActions, and RegularCommandsSecurityServer.
+6. Install the unified launcher LocalScript. It hides the old main-menu, Social Actions, and Staff Console launch buttons; Settings' retired floating launcher remains hidden.
+7. Test server authorization, guest denial, entitlement revocation, Settings open/close transitions, social invite accept/decline/expiry/cancel, proximity checks, malformed/flooded requests, staff alerts, report routing, spectator entry/exit/stealth restoration, and respawn/departure cleanup.
+8. Test mouse, keyboard, touch, gamepad, desktop, tablet, and mobile layouts. Do not treat source-level support as proof of device runtime compatibility.
+
+## Known integration boundary
+
+The selected base Global Service currently marks cross-server playback synchronization as retired and uses per-server playback and request queues. This branch does not silently reintroduce the older full global queue. The requested optional playback-only synchronization with independent local request queues remains a separate merge item and must be restored by reconciling its authority, lease, and queue changes against this Security Core release.
+
+## Verification status
+
+This is a source integration. No Roblox Studio or published-server runtime test is claimed. Complete the test plan above before publishing.

@@ -5043,6 +5043,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	toggleButton.Activated:Connect(open)
+	-- Public local UI bridge used by the unified Tiki Tide launcher.
+	local openMainEvent = playerGui:FindFirstChild("TikiTideOpenMainUI")
+	if not openMainEvent then
+		openMainEvent = Instance.new("BindableEvent")
+		openMainEvent.Name = "TikiTideOpenMainUI"
+		openMainEvent.Parent = playerGui
+	end
+	if openMainEvent:IsA("BindableEvent") then
+		openMainEvent.Event:Connect(open)
+		openMainEvent:SetAttribute("Ready", true)
+	end
 	hud.Activated:Connect(function()
 		if expanded then close() else open() end
 	end)
