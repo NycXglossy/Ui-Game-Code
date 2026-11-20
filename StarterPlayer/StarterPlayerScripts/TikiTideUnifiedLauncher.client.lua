@@ -16,9 +16,9 @@ end
 if not mainOpenBridge then
 	mainOpenBridge = Instance.new("BindableEvent")
 	mainOpenBridge.Name = "TikiTideOpenMainUI"
+	mainOpenBridge:SetAttribute("Ready", false)
 	mainOpenBridge.Parent = playerGui
 end
-mainOpenBridge:SetAttribute("Ready", false)
 
 local ROOT_NAME = "TikiTideUnifiedLauncher"
 local old = playerGui:FindFirstChild(ROOT_NAME)
