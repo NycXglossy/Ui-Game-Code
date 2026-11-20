@@ -13,6 +13,10 @@ local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
 local RELEASE_COMMIT = "7ebc71e3a6fa9ef04e80d5f332e5f72617c8d288"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubMusicSecurityCore/"
+-- Threat Intelligence alone is sourced from the hardened Phase 15 snapshot.
+-- All other SecurityCore modules, including receipt modules, keep the current release pin.
+local THREAT_INTELLIGENCE_COMMIT = "2b0c8ad144bf3257798c18f149c922d44ad350f1"
+local THREAT_INTELLIGENCE_BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. THREAT_INTELLIGENCE_COMMIT .. "/ClubMusicSecurityCore/"
 -- Phase 32 is pinned independently so the previously certified SecurityCore
 -- module snapshot is not silently changed by later commits.
 local PHASE32_COMMIT = "6ae4883c2c260df61bf760b8637dd339bda33d7b"
@@ -79,7 +83,8 @@ end
 
 local stagedSources = {}
 for _, name in ipairs(MODULE_NAMES) do
- local ok, source = pcall(function() return HttpService:GetAsync(BASE_URL .. name .. ".lua", true) end)
+ local moduleBaseUrl = if name == "SecurityThreatIntelligence" then THREAT_INTELLIGENCE_BASE_URL else BASE_URL
+ local ok, source = pcall(function() return HttpService:GetAsync(moduleBaseUrl .. name .. ".lua", true) end)
  if not ok or type(source) ~= "string" or #source < 100 then
   error("Could not stage " .. name .. "; active installation was not changed.")
  end
@@ -122,7 +127,7 @@ for _, name in ipairs(ALL_MODULE_NAMES) do
 end
 local manifest = Instance.new("StringValue")
 manifest.Name = "InstallManifest"
-manifest.Value = "securityCoreRelease=" .. RELEASE_COMMIT .. ";phase32Release=" .. PHASE32_COMMIT .. ";modules=" .. table.concat(ALL_MODULE_NAMES, ",") .. ";visualClient=" .. VISUAL_NAME .. ";installedAt=" .. DateTime.now():ToIsoDate()
+manifest.Value = "securityCoreRelease=" .. RELEASE_COMMIT .. ";phase32Release=" .. PHASE32_COMMIT .. ";threatIntelligenceRelease=" .. THREAT_INTELLIGENCE_COMMIT .. ";modules=" .. table.concat(ALL_MODULE_NAMES, ",") .. ";visualClient=" .. VISUAL_NAME .. ";installedAt=" .. DateTime.now():ToIsoDate()
 manifest.Parent = stage
 
 local bootstrapSource = [=[
@@ -331,7 +336,8 @@ if threatModule and threatModule:IsA("ModuleScript") then
    authorize = function(userId, permission) return auth:Check(userId, permission) end,
   })
   if createOk and typeof(instance) == "table" and type(instance.Record) == "function"
-   and type(instance.Query) == "function" and type(instance.GetStatus) == "function" then
+   and type(instance.Query) == "function" and type(instance.QueryRaids) == "function"
+   and type(instance.GetStatus) == "function" then
    threatService = instance
    if not threatService:Start() then threatService = nil end
   else
@@ -362,6 +368,12 @@ else
     return false, {}, "Threat review is temporarily rate-limited while the server is under load."
    end
    return threatService:Query(...)
+  end
+  if action == "QueryRaids" then
+   if loadManager and not loadManager:TryConsume("ThreatReviewQueries") then
+    return false, {}, "Raid review is temporarily rate-limited while the server is under load."
+   end
+   return threatService:QueryRaids(...)
   end
   if action == "Status" then return threatService:GetStatus() end
   return false, "Unsupported threat-intelligence action."
