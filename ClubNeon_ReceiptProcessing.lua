@@ -78,7 +78,7 @@ local function processValidatedReceipt(receiptInfo: any, productData: any): Enum
 		publishState(nil)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
-	if not receiptTransactions then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	if not getReceiptTransactions() then return Enum.ProductPurchaseDecision.NotProcessedYet end
 	local ok, alreadyProcessed, err = getReceiptTransactions():Commit(userId, receiptId, productData)
 	if not ok then
 		warn("[ClubMusic] Receipt persistence failed for userId " .. tostring(userId) .. " productId " .. tostring(productId) .. ": " .. tostring(err))
