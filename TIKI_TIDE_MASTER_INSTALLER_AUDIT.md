@@ -1,6 +1,6 @@
 # Tiki Tide Master Installer — Coverage Audit and Release Gate
 
-**Status: NOT READY TO RUN — source-based release work is proceeding without a live-place export.** The current `TikiTide_Master_Installer.lua` contains an intentional safety stop. Do not remove it until this audit is closed and the installer passes in a copied test place.
+**Status: SOURCE MANIFEST REBUILT; DRY-RUN DEFAULT; NOT YET RUNTIME-VALIDATED.** The installer no longer requires a place export to build the documented hierarchy, but it must still be tested in an unpublished copy before publication. The current `TikiTide_Master_Installer.lua` contains an intentional safety stop. Do not remove it until this audit is closed and the installer passes in a copied test place.
 
 ## Authoritative playback rule
 
@@ -153,7 +153,7 @@ Exact endpoint names and ownership must be checked against each current source b
 
 ## Required closure before removing the safety stop
 
-1. Obtain the current target place export (`.rbxl`, `.rbxlx`, or Explorer hierarchy `.rbxmx`) and inventory every Script, LocalScript, ModuleScript, RemoteEvent, RemoteFunction, BindableEvent, BindableFunction, Folder, and package descendant.
+1. The user elected to proceed without a target place export. Use the installer's exact-path class preflight and backups; treat unknown existing descendants and external package contents as out of scope, preserve them, and report conflicts instead of guessing.
 2. Fetch and statically inspect every runtime candidate's `require`, `WaitForChild`, `FindFirstChild`, remote creation, attribute, and service references. Resolve every dependency to one authoritative source and destination.
 3. Reconcile the master manifest with the separate audio, SecurityCore, diagnostics, Utility Bar, Settings, social, Kohl's Admin, and global-service installation contracts. Preserve independent immutable release pins where required.
 4. Classify every tracked file as installed runtime, embedded package source, reference-only, legacy rollback, documentation, screenshot, or third-party asset. Do not equate repository file count with runtime script count.
@@ -204,3 +204,48 @@ The installer can create documented destination folders and provision the reposi
 5. If a target path is owned by an external package or is ambiguous, stop that entry and report it rather than guessing.
 6. Report the Kohl's Admin adapters as pending if the expected package hierarchy is absent.
 7. Keep the safety hold until the corrected source manifest, transactional promotion/rollback, and source-level consistency checks are complete. Runtime verification in a copied Studio place is still required before publication.
+
+
+## Master installer rebuild committed
+
+The single installer was rebuilt and committed on `integration/tiki-tide-system-consolidation`:
+
+- Installer: `TikiTide_Master_Installer.lua`
+- Rebuild commit: `0557f7a550231c4792d27f263c024050389dbf70`
+- Follow-up parser/dry-run fix: `e3d25e4459a9707dd4172ac43865d9dbb9d5640b`
+- Social config preflight fix: `e0cef38fabbcf695e25a1fe60cc9f9ab7e743fdd`
+- Startup ordering update: `b15af8b746724cc5547e230cd4b73237c832e685`
+
+The installer now:
+- Uses separate immutable pins for the general runtime, modern audio, Security Core, Threat Intelligence, Phase 32, client diagnostics, and the hard-disabled Global Service.
+- Extracts only the three active embedded global modules (Event Log, Rate Limit, Authorization) from the XML package. It does not extract the retired playback authority.
+- Extracts the exact CharacterPhysicsGuard bootstrap source from the certified Security Core installer instead of maintaining a divergent copy.
+- Places `ClubMusicErrorHandler` in ServerStorage, keeps `MusicCoreService` and `MusicPlaylistService` as direct ServerStorage children, and does not install rollback-only queue/validation adapters.
+- Nests `AnimationConfig` under the Social Actions server Script's `TikiTideSocialActions` folder.
+- Installs client diagnostics separately from server error-history diagnostics.
+- Installs Kohl's Admin adapters only when the documented external Addons folders already exist; it never creates or replaces Kohl's Admin.
+- Preflights exact destination classes, preserves replaced instances under a timestamped backup folder, and restores moved instances if promotion fails.
+- Archives any existing `MusicGlobalPlaybackAuthority` ModuleScripts found under ServerStorage.
+- Defaults to `DRY_RUN = true`; a dry run stages all pinned sources and checks destinations without creating folders or replacing scripts.
+
+## Playback synchronization hard-disable
+
+The Global Service itself was patched and committed at `03982721949665c4fc0fa7a29c54a70bce749339`:
+- It no longer loads or references `MusicGlobalPlaybackAuthority`.
+- Global playback status is always `LocalOnly`.
+- Snapshot, leadership, and commit endpoints return disabled.
+- Attempts to enable playback synchronization are rejected.
+- Retained legacy Playback-topic messages are ignored.
+- MemoryStore diagnostics report no playback lease.
+The master installer fetches this exact commit and checks the hard-disable marker before proceeding.
+
+## Remaining release gates
+
+1. Run the installer with `DRY_RUN = true` in Studio and resolve any exact-path class conflicts.
+2. Review the printed manifest and confirm the optional Kohl's Admin adapters are either installed into the existing expected folders or clearly reported as pending.
+3. In a backed-up unpublished copy, set `DRY_RUN = false` and perform the installation.
+4. Verify Studio output and all regression items in the original audit, especially startup order, standard playback controls, queue operations, watchdog/registry health, purchase receipts, Security Core manifest alignment, desktop/mobile UI, and two-server local playback isolation.
+5. Confirm the Global Service reports `LocalOnly` even if an old shared config value exists, and confirm no `MusicGlobalPlaybackAuthority` remains under ServerStorage.
+6. Only after those runtime tests pass should the release be called ready for publishing.
+
+**Current safety posture:** source staging and static package parsing were verified against the pinned GitHub files. No Roblox Studio execution or published-server runtime test has been performed or claimed.
