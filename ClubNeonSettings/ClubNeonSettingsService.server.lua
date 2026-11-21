@@ -12,7 +12,7 @@ local ServerStorage = game:GetService("ServerStorage")
 -- is deployed; no client payload is trusted for authority decisions.
 local SanityValidation: any = nil
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = core and core:IsA("Folder") and core:FindFirstChild("SanityValidation")
 	if module and module:IsA("ModuleScript") then
 		local ok, exported = pcall(require, module)
@@ -29,7 +29,7 @@ local TextService = game:GetService("TextService")
 -- Authorization is read directly from the shared SecurityCore singleton.
 local authorizationService: any = nil
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("Authorization") else nil
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
@@ -211,7 +211,7 @@ end
 -- TeleportTo action remains unavailable rather than falling back to raw CFrame writes.
 local teleportValidationService: any = nil
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("TeleportValidationService") else nil
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
