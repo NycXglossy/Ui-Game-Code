@@ -135,13 +135,13 @@ local SHOP = {
 }
 -- Donation products are configured with live Creator Dashboard Developer Product IDs.
 local DONATIONS: {any} = {
-	{ label = "Coconut", perk = "A little tropical love", amount = 10, productId = 0 },
-	{ label = "Pineapple", perk = "A burst of island sunshine", amount = 50, productId = 0 },
-	{ label = "Neon Torch", perk = "Light up the island", amount = 100, productId = 0 },
-	{ label = "Volcano", perk = "Unleash the island's fiery spirit", amount = 500, productId = 0 },
-	{ label = "Island Legend", perk = "A legendary show of support", amount = 1000, productId = 0 },
-	{ label = "Island Royalty", perk = "A royal contribution to paradise", amount = 5000, productId = 0 },
-	{ label = "Club Neon Legacy", perk = "The ultimate island contribution", amount = 10000, productId = 0 },
+	{ key = "Coconut", label = "Coconut", perk = "A little tropical love", amount = 10, productId = 0 },
+	{ key = "Pineapple", label = "Pineapple", perk = "A burst of island sunshine", amount = 50, productId = 0 },
+	{ key = "NeonTorch", label = "Neon Torch", perk = "Light up the island", amount = 100, productId = 0 },
+	{ key = "Volcano", label = "Volcano", perk = "Unleash the island's fiery spirit", amount = 500, productId = 0 },
+	{ key = "IslandLegend", label = "Island Legend", perk = "A legendary show of support", amount = 1000, productId = 0 },
+	{ key = "IslandRoyalty", label = "Island Royalty", perk = "A royal contribution to paradise", amount = 5000, productId = 0 },
+	{ key = "ClubNeonLegacy", label = "Club Neon Legacy", perk = "The ultimate island contribution", amount = 10000, productId = 0 },
 }
 local REWARDS = {
 	{day=1,label="50 Coins"},{day=2,label="2x Glowsticks"},{day=3,label="100 Tickets"},
@@ -3816,8 +3816,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 		-- Use verified Developer Product IDs locally; stale replicated state
 		-- must not redirect a purchase prompt to a placeholder/foreign product.
-		local twoId = XP_BOOST_PRODUCTS.twoX
-		local fourId = XP_BOOST_PRODUCTS.fourX
+		local boostIds = if typeof(state.xpBoostProductIds) == "table" then state.xpBoostProductIds else {}
+		local twoId = tonumber(boostIds.twoX) or XP_BOOST_PRODUCTS.twoX
+		local fourId = tonumber(boostIds.fourX) or XP_BOOST_PRODUCTS.fourX
 		local twoCard = card(86)
 		label(twoCard, "2x XP • 15 MINUTES", UDim2.fromOffset(12,8), UDim2.new(1,-120,0,22), C.Cyan, 12, true)
 		label(twoCard, "Adds 15 minutes to the shared 2x timer.", UDim2.fromOffset(12,34), UDim2.new(1,-120,0,30), C.Muted, 9, false)
@@ -3854,7 +3855,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				label(donationCard, item.label .. "  •  " .. tostring(item.amount) .. " Robux", UDim2.fromOffset(12, 8), UDim2.new(1, -130, 0, 22), C.Gold, 13, true)
 				label(donationCard, item.perk, UDim2.fromOffset(12, 34), UDim2.new(1, -130, 0, 20), C.Muted, 10, false)
 				actionButton(donationCard, "TIP", UDim2.new(1, -104, 0.5, -16), UDim2.fromOffset(92, 32), function()
-					local productId = tonumber(item.productId) or 0
+					local donationIds = if typeof(state.donationProductIds) == "table" then state.donationProductIds else {}
+					local productId = tonumber(donationIds[item.key]) or tonumber(item.productId) or 0
 					if productId <= 0 then notify("Configure this Developer Product ID first.", C.Red); return end
 					reportPromptRequest("DeveloperProduct", productId, "DonationTip")
 					MarketplaceService:PromptProductPurchase(player, productId)
@@ -3874,13 +3876,13 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local itemId = tonumber(item.id) or 0
 			if item.kind == "GamePass" and itemId <= 0 then
 				local passKey = item.passKey or "vip"
-				if passKey == "elite" then
-					itemId = tonumber(state.eliteGamePassId) or 0
-				elseif passKey == "vvip" then
-					itemId = tonumber(state.vvipGamePassId) or 0
-				else
-					itemId = tonumber(state.vipGamePassId) or 0
-				end
+				local passIds = {
+					vip = state.vipGamePassId, vvip = state.vvipGamePassId, elite = state.eliteGamePassId,
+					personalXP2x = state.personalXP2xGamePassId, personalXP4x = state.personalXP4xGamePassId,
+					mount = state.mountGamePassId, companion = state.companionGamePassId,
+					stageClubLighting = state.stageClubLightingGamePassId,
+				}
+				itemId = tonumber(passIds[passKey]) or 0
 			end
 			local alreadyOwned = item.kind == "GamePass" and item.ownedAttribute ~= nil
 				and player:GetAttribute(item.ownedAttribute) == true
@@ -4010,7 +4012,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			return
 		end
 		local products: any = if typeof(ts.products) == "table" then ts.products else {}
-		local productId = TITLE_SLOT_PRODUCTS[slot] or 0
+		local productId = tonumber(products[slot]) or TITLE_SLOT_PRODUCTS[slot] or 0
 		if productId <= 0 then
 			notify("Configure this slot's Developer Product ID first.", C.Red)
 			return
