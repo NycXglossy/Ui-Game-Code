@@ -103,15 +103,15 @@ sessionMarker = Instance.new("Folder")
 sessionMarker.Name = SESSION_MARKER_NAME
 sessionMarker.Parent = playerGui
 
-local networkInstance = ReplicatedStorage:WaitForChild("ClubNeon_ClubNeon_UI_Network", MODULE_TIMEOUT)
-local rendererInstance = ReplicatedStorage:WaitForChild("UI_Renderer", MODULE_TIMEOUT)
+local networkInstance = ReplicatedStorage:WaitForChild("ClubNeon_UI_Network", MODULE_TIMEOUT)
+local rendererInstance = ReplicatedStorage:WaitForChild("ClubNeon_UI_Renderer", MODULE_TIMEOUT)
 
 if not networkInstance or not networkInstance:IsA("ModuleScript") then
 	fail("ReplicatedStorage.ClubNeon_UI_Network is missing or is not a ModuleScript.")
 	return
 end
 if not rendererInstance or not rendererInstance:IsA("ModuleScript") then
-	fail("ReplicatedStorage.UI_Renderer is missing or is not a ModuleScript.")
+	fail("ReplicatedStorage.ClubNeon_UI_Renderer is missing or is not a ModuleScript.")
 	return
 end
 
