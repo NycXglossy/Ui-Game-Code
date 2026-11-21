@@ -1,0 +1,889 @@
+  19:29:14.925  > --!strict
+-- TIKI TIDE MASTER INSTALLER
+-- One Command Bar installer for the repository-owned Tiki Tide / ClubMusic runtime.
+-- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
+-- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
+--
+-- This source-based release does not require a .rbxl export. It uses documented
+-- service paths, validates destination classes, preserves replaced instances,
+-- and never deletes unknown descendants or third-party packages.
+--
+-- IMPORTANT: DRY_RUN defaults to true. Review the printed plan first. Set false
+-- only when running in a backed-up test copy. Runtime verification is still required.
+--
+-- Playback isolation is enforced: the Global Service source is pinned to the
+-- hard-disabled release, and MusicGlobalPlaybackAuthority is excluded/archived.
+
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterPlayer = game:GetService("StarterPlayer")
+local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
+
+local DRY_RUN = true
+
+local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
+local RELEASE = {
+	runtime = "db9387c7e796694d647b09bdaf34dcadf1691c1a",
+	audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
+	globalService = "03982721949665c4fc0fa7a29c54a70bce749339",
+	security = "7ebc71e3a6fa9ef04e80d5f332e5f72617c8d288",
+	threat = "5790cd0c61d2f1bd38fe8aab92f5a234e7ec7e87",
+	phase32 = "6ae4883c2c260df61bf760b8637dd339bda33d7b",
+	diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
+}
+
+if RunService:IsRunning() then
+	error("[TikiTide Master Installer] Stop Play/Run before installing. No changes made.")
+end
+
+local function encodePath(path: string): string
+	return (string.gsub(path, " ", "%%20"))
+end
+
+local function fetchSource(path: string, commit: string, minimum: number?): string
+	local url = REPO .. commit .. "/" .. encodePath(path)
+	local ok, result = pcall(function()
+		return HttpService:GetAsync(url, true)
+	end)
+	if not ok or type(result) ~= "string" or #result < (minimum or 100) then
+		error("[TikiTide Master Installer] Could not stage " .. path .. " from " .. commit .. ": " .. tostring(result))
+	end
+	return result
+end
+
+type Entry = {
+	name: string,
+	className: string,
+	parentKey: string,
+	source: string?,
+	value: string?,
+	sourcePath: string,
+	optional: boolean?,
+}
+
+local entries: {Entry} = {}
+local skippedOptional: {string} = {}
+
+local function addSource(path: string, className: string, parentKey: string, name: string?, commit: string?, minimum: number?)
+	local resolvedName = name or path:match("([^/]+)$")
+	resolvedName = resolvedName:gsub("%.client%.lua$", ""):gsub("%.server%.lua$", ""):gsub("%.luau$", ""):gsub("%.lua$", "")
+	table.insert(entries, {
+		name = resolvedName,
+		className = className,
+		parentKey = parentKey,
+		source = fetchSource(path, commit or RELEASE.runtime, minimum),
+		sourcePath = path,
+	})
+end
+
+local function addValue(name: string, className: string, parentKey: string, value: string, sourcePath: string)
+	table.insert(entries, {name=name, className=className, parentKey=parentKey, value=value, sourcePath=sourcePath})
+end
+
+local function addRaw(name: string, className: string, parentKey: string, source: string, sourcePath: string)
+	if type(source) ~= "string" or #source < 100 then error("Invalid staged source for " .. name) end
+	table.insert(entries, {name=name, className=className, parentKey=parentKey, source=source, sourcePath=sourcePath})
+end
+
+-- Core controller and client UI.
+addSource("UI_Server_Controller_server (1).lua", "Script", "ServerScriptService", "UI_Server_Controller")
+addSource("UI_Renderer (2).lua", "ModuleScript", "ReplicatedStorage", "UI_Renderer")
+addSource("UI_Network.lua", "ModuleScript", "ReplicatedStorage", "UI_Network")
+addSource("ClubMusicBootstrap.client.lua", "LocalScript", "StarterPlayerScripts", "ClubMusicBootstrap")
+addSource("ClubMusic_Overhead_Title_Renderer_client.lua", "LocalScript", "StarterPlayerScripts", "ClubMusic_Overhead_Title_Renderer")
+addSource("ClubMusicErrorHandler.lua", "ModuleScript", "ServerStorage", "ClubMusicErrorHandler")
+
+-- Modern AudioPlayer modules and controller-required core modules use their
+-- dedicated immutable audio release. Do not install rollback-only adapters.
+for _, item in ipairs({
+	{"ClubMusicAudioBackend.luau", "ClubMusicAudioBackend"},
+	{"ClubMusicAudioCrossfadeManager.luau", "ClubMusicAudioCrossfadeManager"},
+	{"ClubMusicAudioQualityProfiles.luau", "ClubMusicAudioQualityProfiles"},
+	{"ClubMusicDJSessionManager.luau", "ClubMusicDJSessionManager"},
+	{"ClubMusicSpatialAudioGraph.luau", "ClubMusicSpatialAudioGraph"},
+	}) do
+	addSource(item[1], "ModuleScript", "AudioModules", item[2], RELEASE.audio)
+end
+addSource("ClubMusicPlayerPreferences.luau", "ModuleScript", "ClientAudioModules", "ClubMusicPlayerPreferences", RELEASE.audio)
+addSource("MusicCoreService.lua", "ModuleScript", "ServerStorage", "MusicCoreService", RELEASE.audio)
+addSource("MusicPlaylistService.lua", "ModuleScript", "ServerStorage", "MusicPlaylistService", RELEASE.audio)
+
+-- Security Core keeps its three certified source pins independent.
+local securityModules = {
+	"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization",
+	"EntitlementAuthority", "AvatarAccessoryValidationService", "AnimationIntegrityService",
+	"RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy",
+	"Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard",
+	"SanityValidation", "TeleportValidationService", "StaffSpectatorService",
+	"SecurityReplayService", "AdaptiveSecurityLoadManager", "HoneypotManager",
+	"ClientIntegrityTelemetry", "ReceiptAuthority", "ReceiptHash", "ReceiptTransactionService",
+}
+for _, moduleName in ipairs(securityModules) do
+	addSource("ClubMusicSecurityCore/" .. moduleName .. ".lua", "ModuleScript", "SecurityCore", moduleName, RELEASE.security)
+end
+addSource("ClubMusicSecurityCore/SecurityThreatIntelligence.lua", "ModuleScript", "SecurityCore", "SecurityThreatIntelligence", RELEASE.threat)
+for _, moduleName in ipairs({"ModerationPunishmentService", "AccountRiskSignalService", "ChatAbuseDetectionService", "Phase32ServiceBundle"}) do
+	addSource("ClubMusicSecurityCore/" .. moduleName .. ".lua", "ModuleScript", "SecurityCore", moduleName, RELEASE.phase32)
+end
+
+-- Reuse the exact detection-only bootstrap source embedded in the certified
+-- Security Core installer; do not maintain a divergent hand-copied variant.
+local securityInstallerSource = fetchSource("ClubMusic_Security_Core_Installer.lua", RELEASE.runtime)
+local bootstrapMarker = "local bootstrapSource = [=["
+local bootstrapStart = string.find(securityInstallerSource, bootstrapMarker, 1, true)
+if not bootstrapStart then error("Security installer bootstrap source marker was not found.") end
+bootstrapStart += #bootstrapMarker
+local bootstrapEnd = string.find(securityInstallerSource, "]=]", bootstrapStart, true)
+if not bootstrapEnd then error("Security installer bootstrap source terminator was not found.") end
+local physicsBootstrapSource = string.sub(securityInstallerSource, bootstrapStart, bootstrapEnd - 1)
+addRaw("TikiTideCharacterPhysicsGuardBootstrap", "Script", "ServerScriptService", physicsBootstrapSource, "embedded:ClubMusic_Security_Core_Installer.lua")
+
+addSource("SecurityServer.server.lua", "Script", "ServerScriptService", "SecurityServer")
+addSource("StaffActions.server.lua", "Script", "ServerScriptService", "StaffActions")
+addSource("StarterPlayer/StarterPlayerScripts/SecurityClient.client.lua", "LocalScript", "StarterPlayerScripts", "SecurityClient")
+addSource("StarterPlayer/StarterPlayerScripts/SecurityConsole.client.lua", "LocalScript", "StarterPlayerScripts", "SecurityConsole")
+addSource("StaffSpectatorCamera.client.lua", "LocalScript", "StarterPlayerScripts", "TikiTideStaffSpectatorCamera", RELEASE.security)
+addSource("ClientIntegrityTelemetry.client.lua", "LocalScript", "StarterPlayerScripts", "TikiTideClientIntegrityTelemetry", RELEASE.security)
+addSource("TikiTideAdaptiveVisualQuality.client.lua", "LocalScript", "StarterPlayerScripts", "TikiTideAdaptiveVisualQuality", RELEASE.security)
+
+-- Client-local diagnostics are independently pinned and are not the server
+-- diagnostics/error-history module.
+addSource("ClubMusic_Client_Diagnostics_Service.lua", "ModuleScript", "ReplicatedStorage", "ClubMusic_Client_Diagnostics_Service", RELEASE.diagnostics)
+addSource("ClubMusic_Client_Diagnostics_Bootstrap.client.lua", "LocalScript", "StarterPlayerScripts", "ClubMusic_Client_Diagnostics_Bootstrap", RELEASE.diagnostics)
+
+-- Global operational services. The patched Global Service hard-disables all
+-- cross-server playback sync and rejects attempts to enable it.
+local globalServiceSource = fetchSource("ClubMusic_Global_Service_server_1.lua", RELEASE.globalService)
+if string.find(globalServiceSource, "MusicGlobalPlaybackAuthority", 1, true)
+	or not string.find(globalServiceSource, "Cross-server playback synchronization is disabled in this release.", 1, true) then
+	error("Global Service source did not pass the playback-isolation release check.")
+end
+addRaw("ClubMusic_Global_Service", "Script", "ServerScriptService", globalServiceSource, "ClubMusic_Global_Service_server_1.lua@" .. RELEASE.globalService)
+addSource("ClubMusic_Global_Config_Service.lua", "ModuleScript", "GlobalOptional", "ClubMusic_Global_Config_Service")
+addSource("ClubMusic_Global_Diagnostics_Service.lua", "ModuleScript", "GlobalOptional", "ClubMusic_Global_Diagnostics_Service")
+addSource("ClubMusic_Global_Maintenance_Service.lua", "ModuleScript", "GlobalOptional", "ClubMusic_Global_Maintenance_Service")
+addSource("ClubMusic_Global_SafeCall_Service.lua", "ModuleScript", "GlobalOptional", "ClubMusic_Global_SafeCall_Service")
+addSource("ClubMusic_Global_Security_Service.lua", "ModuleScript", "GlobalOptional", "ClubMusic_Global_Security_Service")
+addSource("ClubMusic_Local_Service_Registry.lua", "ModuleScript", "ServerStorage", "ClubMusic_Local_Service_Registry")
+addSource("ClubMusic_Local_Watchdog_Service.lua", "ModuleScript", "ServerStorage", "ClubMusic_Local_Watchdog_Service")
+addSource("ClubMusic_Server_Health_Service.lua", "ModuleScript", "ServerStorage", "ClubMusic_Server_Health_Service")
+
+-- Extract only the three active optional services from the XML package. The
+-- embedded MusicGlobalPlaybackAuthority is intentionally not extracted.
+local packageXml = fetchSource("ClubMusic_Global_Optional_Services.rbxmx", RELEASE.runtime, 1000)
+local packageAllowlist = {
+	ClubMusic_Global_Event_Log_Service = true,
+	ClubMusic_Global_RateLimit_Service = true,
+	ClubMusic_Global_Authorization_Service = true,
+}
+local extracted = {}
+local cursor = 1
+while true do
+	local itemStart = string.find(packageXml, '<Item class="ModuleScript"', cursor, true)
+	if not itemStart then break end
+	local itemEnd = string.find(packageXml, "</Item>", itemStart, true)
+	if not itemEnd then error("Malformed global optional services RBXMX package.") end
+	local block = string.sub(packageXml, itemStart, itemEnd + 6)
+	local moduleName = string.match(block, '<string name="Name">(.-)</string>')
+	if moduleName and packageAllowlist[moduleName] then
+		local protectedStart = string.find(block, '<ProtectedString name="Source">', 1, true)
+		local cdataMarker = protectedStart and string.find(block, "<![CDATA[", protectedStart, true)
+		local sourceEnd = cdataMarker and string.find(block, "]]></ProtectedString>", cdataMarker + 9, true)
+		if not protectedStart or not cdataMarker or not sourceEnd then error("Missing embedded Source for " .. moduleName) end
+		local moduleSource = string.sub(block, cdataMarker + 9, sourceEnd - 1)
+		if #moduleSource < 100 then error("Embedded module source is too short: " .. moduleName) end
+		extracted[moduleName] = moduleSource
+	end
+	cursor = itemEnd + 7
+end
+for moduleName in pairs(packageAllowlist) do
+	if not extracted[moduleName] then error("Global optional services package is missing " .. moduleName) end
+	addRaw(moduleName, "ModuleScript", "GlobalOptional", extracted[moduleName], "embedded:ClubMusic_Global_Optional_Services.rbxmx")
+end
+
+-- Settings, social actions, unified launcher, and Utility Bar.
+addSource("TikiTideSettings/TikiTideSettingsService.server.lua", "Script", "ServerScriptService", "TikiTideSettingsService")
+addSource("TikiTideSettings/TikiTideSettings.client.lua", "LocalScript", "StarterPlayerScripts", "TikiTideSettings")
+addSource("TikiTideSocialActions.server.lua", "Script", "ServerScriptService", "TikiTideSocialActionsServer")
+addSource("TikiTideSocialActions/AnimationConfig.lua", "ModuleScript", "SocialConfig", "AnimationConfig")
+addSource("TikiTideSocialActions.client.lua", "LocalScript", "StarterPlayerScripts", "TikiTideSocialActions")
+addSource("StarterPlayer/StarterPlayerScripts/TikiTideUnifiedLauncher.client.lua", "LocalScript", "StarterPlayerScripts", "TikiTideUnifiedLauncher")
+
+for _, item in ipairs({
+	{"UtilityBar/UtilityBar.client.lua", "LocalScript", "UtilityBar"},
+	{"UtilityBar/UtilityBarActions.client.lua", "LocalScript", "UtilityBarActions"},
+	{"UtilityBar/UtilityBarPanels.client.lua", "LocalScript", "UtilityBarPanels"},
+	{"UtilityBar/ToolShop.client.lua", "LocalScript", "ToolShop"},
+	{"UtilityBar/UtilityBarActions.server.lua", "Script", "UtilityBarActions"},
+	{"UtilityBar/UtilityBarExtendedActions.server.lua", "Script", "UtilityBarExtendedActions"},
+	{"UtilityBar/ToolShop.server.lua", "Script", "ToolShop"},
+	}) do
+	local parentKey = if string.find(item[1], ".client.", 1, true) then "StarterPlayerScripts" else "ServerScriptService"
+	addSource(item[1], item[2], parentKey, item[3])
+end
+
+-- Optional Kohl's Admin adapters are installed only into existing external
+-- package folders. The installer never creates/replaces Kohl's Admin itself.
+local kohlsRoot = ServerScriptService:FindFirstChild("Kohl's Admin")
+local configFolder = kohlsRoot and kohlsRoot:FindFirstChild("Config")
+local configAddons = configFolder and configFolder:FindFirstChild("Addons")
+local regularAddons = kohlsRoot and kohlsRoot:FindFirstChild("Addons")
+if configAddons and configAddons:IsA("Folder") then
+	addSource("KohlsAdmin_ClubMusic_Addon.lua", "ModuleScript", "KohlsConfigAddons", "ClubMusic")
+else
+	table.insert(skippedOptional, "KohlsAdmin_ClubMusic_Addon.lua — Kohl's Admin Config/Addons folder not found")
+end
+if regularAddons and regularAddons:IsA("Folder") then
+	addSource("RegularCommandsSecurityServer.lua", "ModuleScript", "KohlsRegularAddons", "RegularCommandsSecurityServer")
+else
+	table.insert(skippedOptional, "RegularCommandsSecurityServer.lua — Kohl's Admin Addons folder not found")
+end
+
+-- Security manifest is consumed by the Global Service to reject mixed releases.
+local securityManifest = "securityCoreRelease=" .. RELEASE.security
+	.. ";phase32Release=" .. RELEASE.phase32
+	.. ";threatIntelligenceRelease=" .. RELEASE.threat
+	.. ";modules=" .. table.concat(securityModules, ",")
+	.. ",SecurityThreatIntelligence,ModerationPunishmentService,AccountRiskSignalService,ChatAbuseDetectionService,Phase32ServiceBundle"
+	.. ";visualClient=TikiTideAdaptiveVisualQuality;installedBy=TikiTideMasterInstaller"
+addValue("InstallManifest", "StringValue", "SecurityCore", securityManifest, "generated:SecurityCoreInstallManifest")
+addValue("TikiTideMasterInstallManifest", "StringValue", "ServerStorage",
+	"runtime=" .. RELEASE.runtime .. ";audio=" .. RELEASE.audio .. ";globalService=" .. RELEASE.globalService
+		.. ";security=" .. RELEASE.security .. ";threat=" .. RELEASE.threat .. ";phase32=" .. RELEASE.phase32
+		.. ";diagnostics=" .. RELEASE.diagnostics .. ";playbackSync=DISABLED;localQueues=ENFORCED",
+	"generated:TikiTideMasterInstallManifest")
+
+-- Destination folders are deterministic and only created when absent.
+local createdFolders: {Folder} = {}
+local function ensureFolder(parent: Instance, name: string): Folder
+	local existing = parent:FindFirstChild(name)
+	if existing then
+		if not existing:IsA("Folder") then error(parent:GetFullName() .. "/" .. name .. " exists but is not a Folder.") end
+		return existing
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = name
+	folder.Parent = parent
+	table.insert(createdFolders, folder)
+	return folder
+end
+
+local backupRootExisting = ServerStorage:FindFirstChild("TikiTide_MasterInstaller_Backups")
+if backupRootExisting and not backupRootExisting:IsA("Folder") then
+	error("ServerStorage/TikiTide_MasterInstaller_Backups exists but is not a Folder.")
+end
+
+local parents: {[string]: Instance} = {
+	ServerScriptService = ServerScriptService,
+	ReplicatedStorage = ReplicatedStorage,
+	ServerStorage = ServerStorage,
+	StarterPlayerScripts = StarterPlayerScripts,
+}
+if configAddons and configAddons:IsA("Folder") then parents.KohlsConfigAddons = configAddons end
+if regularAddons and regularAddons:IsA("Folder") then parents.KohlsRegularAddons = regularAddons end
+
+local function peekParent(parentKey: string): Instance?
+	if parentKey == "AudioModules" then return ServerStorage:FindFirstChild("ClubMusicAudioModules") end
+	if parentKey == "ClientAudioModules" then return ReplicatedStorage:FindFirstChild("ClubMusicClientAudioModules") end
+	if parentKey == "GlobalOptional" then return ServerStorage:FindFirstChild("ClubMusic_Global_Optional_Services") end
+	if parentKey == "SecurityCore" then return ServerStorage:FindFirstChild("ClubMusicSecurityCore") end
+	if parentKey == "SocialConfig" then
+		local socialScript = ServerScriptService:FindFirstChild("TikiTideSocialActionsServer")
+		return socialScript and socialScript:FindFirstChild("TikiTideSocialActions") or nil
+	end
+	return parents[parentKey]
+end
+
+local function resolveParent(parentKey: string): Instance
+	if parentKey == "AudioModules" then return ensureFolder(ServerStorage, "ClubMusicAudioModules") end
+	if parentKey == "ClientAudioModules" then return ensureFolder(ReplicatedStorage, "ClubMusicClientAudioModules") end
+	if parentKey == "GlobalOptional" then return ensureFolder(ServerStorage, "ClubMusic_Global_Optional_Services") end
+	if parentKey == "SecurityCore" then return ensureFolder(ServerStorage, "ClubMusicSecurityCore") end
+	if parentKey == "SocialConfig" then
+		local socialScript = ServerScriptService:FindFirstChild("TikiTideSocialActionsServer")
+		if not socialScript or not socialScript:IsA("Script") then error("Social Actions server Script was not staged before its config folder.") end
+		return ensureFolder(socialScript, "TikiTideSocialActions")
+	end
+	local parent = parents[parentKey]
+	if not parent then error("Unknown or unavailable destination parent: " .. parentKey) end
+	return parent
+end
+
+-- Validate unique manifest destinations and exact destination classes before
+-- moving any existing instance.
+local destinationKeys = {}
+for _, entry in ipairs(entries) do
+	local key = entry.parentKey .. "/" .. entry.name
+	if destinationKeys[key] then error("Duplicate manifest destination: " .. key) end
+	destinationKeys[key] = true
+	local parent = peekParent(entry.parentKey)
+	if parent then
+		if (entry.parentKey == "AudioModules" or entry.parentKey == "ClientAudioModules"
+			or entry.parentKey == "GlobalOptional" or entry.parentKey == "SecurityCore"
+			or entry.parentKey == "SocialConfig") and not parent:IsA("Folder") then
+			error(parent:GetFullName() .. " exists but is not a Folder.")
+		end
+		local existing = parent:FindFirstChild(entry.name)
+		if existing and not existing:IsA(entry.className) then
+			error(parent:GetFullName() .. "/" .. entry.name .. " has class " .. existing.ClassName
+				.. "; expected " .. entry.className .. ". No scripts were replaced.")
+		end
+		if existing and not existing.Archivable then
+			error(parent:GetFullName() .. "/" .. entry.name .. " is not Archivable and cannot be safely backed up.")
+		end
+	end
+end
+
+-- The retired authority must not remain anywhere under ServerStorage because
+-- the Global Service historically searched recursively for this module.
+local retiredAuthorities = {}
+for _, descendant in ipairs(ServerStorage:GetDescendants()) do
+	if descendant.Name == "MusicGlobalPlaybackAuthority" then
+		if not descendant:IsA("ModuleScript") then
+			error("A non-ModuleScript named MusicGlobalPlaybackAuthority exists under ServerStorage.")
+		end
+		table.insert(retiredAuthorities, descendant)
+	end
+end
+
+local sourceScriptCount = 0
+for _, entry in ipairs(entries) do
+	if entry.className == "Script" or entry.className == "LocalScript" or entry.className == "ModuleScript" then
+		sourceScriptCount += 1
+	end
+end
+print("======================================================")
+print("[TikiTide Master Installer] Source staging and preflight passed.")
+print("Runtime source instances: " .. sourceScriptCount)
+print("Security Core modules: " .. (#securityModules + 5))
+print("Embedded global modules: " .. #({ "ClubMusic_Global_Event_Log_Service", "ClubMusic_Global_RateLimit_Service", "ClubMusic_Global_Authorization_Service" }))
+print("Existing retired playback authority instances to archive: " .. #retiredAuthorities)
+print("Playback synchronization: DISABLED; per-server Now Playing and request queues.")
+print("Kohl's Admin adapters pending: " .. #skippedOptional)
+for _, message in ipairs(skippedOptional) do print("[TikiTide Master Installer] OPTIONAL: " .. message) end
+if DRY_RUN then
+	print("[TikiTide Master Installer] DRY RUN ONLY. No existing scripts were replaced and no staged sources were promoted.")
+	print("Set DRY_RUN = false only in a backed-up unpublished test place after reviewing this plan.")
+	print("======================================================")
+	return
+end
+
+local backupRoot = backupRootExisting or ensureFolder(ServerStorage, "TikiTide_MasterInstaller_Backups")
+local backupName = DateTime.now():ToUnixTimestamp() .. "_" .. HttpService:GenerateGUID(false) .. "_" .. RELEASE.runtime:sub(1,8)
+local backupRelease = ensureFolder(backupRoot, backupName)
+local replacements = {}
+local promoted = {}
+
+local function makeInstance(entry: Entry): Instance
+	local object = Instance.new(entry.className)
+	object.Name = entry.name
+	if entry.source then
+		(object :: any).Source = entry.source
+	elseif entry.value then
+		(object :: any).Value = entry.value
+	end
+	if object:IsA("BaseScript") then object.Disabled = true end
+	return object
+end
+
+local ok, failure = pcall(function()
+	-- Archive retired authority modules first, preserving their original parent.
+	for _, old in ipairs(retiredAuthorities) do
+		local oldParent = old.Parent
+		local oldName = old.Name
+		old.Name = oldName .. "__Retired"
+		old.Parent = backupRelease
+		table.insert(replacements, {old=old, parent=oldParent, name=oldName, disabled=nil})
+	end
+
+	for _, entry in ipairs(entries) do
+		local parent = resolveParent(entry.parentKey)
+		local old = parent:FindFirstChild(entry.name)
+		local oldDisabled = if old and old:IsA("BaseScript") then old.Disabled else nil
+		if old then
+			if old:IsA("BaseScript") then old.Disabled = true end
+			old.Name = entry.name .. "__Previous"
+			old.Parent = backupRelease
+			table.insert(replacements, {old=old, parent=parent, name=entry.name, disabled=oldDisabled})
+		end
+
+		local replacement = makeInstance(entry)
+		replacement.Parent = parent
+		table.insert(promoted, replacement)
+	end
+
+	-- All new instances are in place and disabled. Start shared services before
+	-- consumers, then enable the remaining scripts.
+	local priority = {
+		ClubMusic_Global_Service = 1,
+		SecurityServer = 2,
+		TikiTideCharacterPhysicsGuardBootstrap = 3,
+		StaffActions = 4,
+		UI_Server_Controller = 5,
+		TikiTideSettingsService = 6,
+		TikiTideSocialActionsServer = 7,
+		UtilityBarActions = 8,
+		UtilityBarExtendedActions = 9,
+		ToolShop = 10,
+	}
+	table.sort(promoted, function(a, b)
+		local ap = priority[a.Name] or 100
+		local bp = priority[b.Name] or 100
+		if ap == bp then return a.Name < b.Name end
+		return ap < bp
+	end)
+	for _, object in ipairs(promoted) do
+		if object:IsA("BaseScript") then
+			object.Disabled = false
+			if object:IsA("Script") then task.wait(0.05) end
+		end
+	end
+end)
+
+if not ok then
+	for i = #promoted, 1, -1 do pcall(function() promoted[i]:Destroy() end) end
+	for i = #replacements, 1, -1 do
+		local item = replacements[i]
+		pcall(function()
+			item.old.Name = item.name
+			item.old.Parent = item.parent
+			if item.old:IsA("BaseScript") and item.disabled ~= nil then item.old.Disabled = item.disabled end
+		end)
+	end
+	for i = #createdFolders, 1, -1 do
+		local folder = createdFolders[i]
+		pcall(function() if #folder:GetChildren() == 0 then folder:Destroy() end end)
+	end
+	error("[TikiTide Master Installer] Promotion failed and prior instances were restored: " .. tostring(failure))
+end
+
+print("======================================================")
+print("[TikiTide Master Installer] INSTALL PROMOTION COMPLETE")
+print("Source release: " .. RELEASE.runtime)
+print("Audio release: " .. RELEASE.audio)
+print("Global Service hard-disabled release: " .. RELEASE.globalService)
+print("Security Core release: " .. RELEASE.security)
+print("Threat Intelligence release: " .. RELEASE.threat)
+print("Phase 32 release: " .. RELEASE.phase32)
+print("Client diagnostics release: " .. RELEASE.diagnostics)
+print("Instances promoted: " .. #promoted)
+print("Prior instances and retired playback authority archived under ServerStorage/" .. backupRoot.Name .. "/" .. backupRelease.Name)
+print("Playback synchronization: DISABLED. No leader lease or shared playback snapshots are installed.")
+print("Server-owned AudioPlayer remains the only playback source; each server keeps its own queue and Now Playing state.")
+print("No player data, DataStores, purchases, world assets, or unknown descendants were deleted.")
+print("Configure owned Social Action animation IDs and supply approved TikiTideMounts models separately.")
+print("Tool Shop catalog intentionally remains empty until configured.")
+print("Run the full copied-place regression checklist before publishing.")
+print("======================================================")  -  Studio
+  19:29:25.313  ======================================================  -  Edit
+  19:29:25.313  [TikiTide Master Installer] Source staging and preflight passed.  -  Edit
+  19:29:25.313  Runtime source instances: 81  -  Edit
+  19:29:25.313  Security Core modules: 32  -  Edit
+  19:29:25.313  Embedded global modules: 3  -  Edit
+  19:29:25.313  Existing retired playback authority instances to archive: 0  -  Edit
+  19:29:25.314  Playback synchronization: DISABLED; per-server Now Playing and request queues.  -  Edit
+  19:29:25.314  Kohl's Admin adapters pending: 2  -  Edit
+  19:29:25.314  [TikiTide Master Installer] OPTIONAL: KohlsAdmin_ClubMusic_Addon.lua — Kohl's Admin Config/Addons folder not found  -  Edit
+  19:29:25.314  [TikiTide Master Installer] OPTIONAL: RegularCommandsSecurityServer.lua — Kohl's Admin Addons folder not found  -  Edit
+  19:29:25.314  [TikiTide Master Installer] DRY RUN ONLY. No existing scripts were replaced and no staged sources were promoted.  -  Edit
+  19:29:25.314  Set DRY_RUN = false only in a backed-up unpublished test place after reviewing this plan.  -  Edit
+  19:29:25.314  ======================================================  -  Edit
+  19:29:38.878  > -- Tiki Tide Studio Runtime Audit
+-- Paste into Roblox Studio > View > Command Bar while NOT playing.
+-- Read-only: does not modify instances, scripts, attributes, tags, or data.
+-- Use this to identify the source of high instance counts, duplicate Theme objects,
+-- duplicate script names, and leftover Hello world scripts before changing anything.
+
+local roots = game:GetChildren()
+local classCounts = {}
+local serviceRows = {}
+local themeRows = {}
+local helloRows = {}
+local duplicateNameRows = {}
+local nameIndex = {}
+
+local function safeFullName(instance)
+	local ok, value = pcall(function() return instance:GetFullName() end)
+	return if ok then value else instance.Name
+end
+
+local function safeSource(instance)
+	local ok, value = pcall(function() return instance.Source end)
+	return if ok and type(value) == "string" then value else nil
+end
+
+for _, root in ipairs(roots) do
+	local descendants = root:GetDescendants()
+	local counts = {}
+	local baseParts = 0
+	local scripts = 0
+	local models = 0
+	local guiObjects = 0
+	local meshParts = 0
+	local unions = 0
+
+	for _, instance in ipairs(descendants) do
+		local className = instance.ClassName
+		counts[className] = (counts[className] or 0) + 1
+		classCounts[className] = (classCounts[className] or 0) + 1
+
+		if instance:IsA("BasePart") then baseParts += 1 end
+		if instance:IsA("LuaSourceContainer") then scripts += 1 end
+		if instance:IsA("Model") then models += 1 end
+		if instance:IsA("GuiObject") then guiObjects += 1 end
+		if className == "MeshPart" then meshParts += 1 end
+		if className == "UnionOperation" then unions += 1 end
+
+		if string.lower(instance.Name) == "theme" then
+			table.insert(themeRows, safeFullName(instance) .. " [" .. className .. "]")
+		end
+
+		if instance:IsA("LuaSourceContainer") then
+			local source = safeSource(instance)
+			if source and string.find(string.lower(source), "hello world!", 1, true) then
+				table.insert(helloRows, safeFullName(instance) .. " [" .. className .. "]")
+			end
+		end
+
+		local key = className .. "|" .. instance.Name
+		nameIndex[key] = nameIndex[key] or {}
+		table.insert(nameIndex[key], safeFullName(instance))
+	end
+
+	table.insert(serviceRows, {
+		name = root.Name,
+		className = root.ClassName,
+		count = #descendants,
+		baseParts = baseParts,
+		meshParts = meshParts,
+		unions = unions,
+		models = models,
+		guiObjects = guiObjects,
+		scripts = scripts,
+	})
+end
+
+for key, paths in pairs(nameIndex) do
+	if #paths > 1 then
+		table.insert(duplicateNameRows, key .. " (" .. #paths .. " copies): " .. table.concat(paths, " || "))
+	end
+end
+
+table.sort(serviceRows, function(a, b) return a.count > b.count end)
+table.sort(themeRows)
+table.sort(helloRows)
+table.sort(duplicateNameRows)
+
+print("========== TIKI TIDE READ-ONLY STUDIO AUDIT ==========")
+print("Total DataModel descendants: " .. #game:GetDescendants())
+print("Top-level service count: " .. #roots)
+print("-- Descendants by service (largest first) --")
+for index, row in ipairs(serviceRows) do
+	print(string.format(
+		"%02d. %s (%s): %d descendants | BaseParts=%d MeshParts=%d Unions=%d Models=%d GuiObjects=%d Scripts=%d",
+		index, row.name, row.className, row.count, row.baseParts, row.meshParts,
+		row.unions, row.models, row.guiObjects, row.scripts
+		))
+end
+
+print("-- Global class totals (largest first) --")
+local classRows = {}
+for className, count in pairs(classCounts) do
+	table.insert(classRows, {name = className, count = count})
+end
+table.sort(classRows, function(a, b) return a.count > b.count end)
+for index = 1, math.min(25, #classRows) do
+	local row = classRows[index]
+	print(string.format("%02d. %s = %d", index, row.name, row.count))
+end
+
+print("-- Objects named Theme --")
+if #themeRows == 0 then print("No objects named exactly Theme were found.") end
+for _, row in ipairs(themeRows) do print(row) end
+
+print("-- Scripts containing 'Hello world!' --")
+if #helloRows == 0 then print("No script source containing 'Hello world!' was readable/found.") end
+for _, row in ipairs(helloRows) do print(row) end
+
+print("-- Duplicate instance names (same class + name) --")
+for index = 1, math.min(100, #duplicateNameRows) do print(duplicateNameRows[index]) end
+if #duplicateNameRows > 100 then print("Additional duplicate-name groups omitted: " .. (#duplicateNameRows - 100)) end
+
+print("========== END READ-ONLY AUDIT ==========")  -  Studio
+  19:29:39.458  ========== TIKI TIDE READ-ONLY STUDIO AUDIT ==========  -  Edit
+  19:29:39.469  Total DataModel descendants: 15681  -  Edit
+  19:29:39.469  Top-level service count: 136  -  Edit
+  19:29:39.469  -- Descendants by service (largest first) --  -  Edit
+  19:29:39.469  01. ReplicatedStorage (ReplicatedStorage): 6939 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.469  02. Workspace (Workspace): 5999 descendants | BaseParts=2602 MeshParts=31 Unions=72 Models=181 GuiObjects=807 Scripts=351  -  Edit
+  19:29:39.469  03. Stats (Stats): 1191 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.469  04. StylingService (StylingService): 573 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.469  05. DebuggerManager (DebuggerManager): 367 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.469  06. MemStorageService (MemStorageService): 217 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.469  07. CoreGui (CoreGui): 122 descendants | BaseParts=12 MeshParts=9 Unions=0 Models=0 GuiObjects=22 Scripts=0  -  Edit
+  19:29:39.469  08. PluginGuiService (PluginGuiService): 44 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=25 Scripts=0  -  Edit
+  19:29:39.470  09. VisualizationModeService (VisualizationModeService): 32 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  10. Lighting (Lighting): 12 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  11. StarterPlayer (StarterPlayer): 9 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=7  -  Edit
+  19:29:39.470  12. ServerScriptService (ServerScriptService): 8 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=8  -  Edit
+  19:29:39.470  13. TextChatService (TextChatService): 8 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=1 Scripts=0  -  Edit
+  19:29:39.470  14. MaterialService (MaterialService): 7 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  15. StarterGui (StarterGui): 6 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=1  -  Edit
+  19:29:39.470  16. Players (Players): 5 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  17. ScriptEditorService (ScriptEditorService): 2 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  18. NetworkClient (NetworkClient): 1 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  19. InsertService (InsertService): 1 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  20. ControllerService (ControllerService): 1 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  21. GuiService (GuiService): 1 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  22. SerializationService (SerializationService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  23. Teams (Teams): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  24. FilteredSelection (): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  25. PlaceSettings (PlaceSettings): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  26. FeatureRestrictionManager (FeatureRestrictionManager): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  27. CommerceService (CommerceService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  28. RecommendationService (RecommendationService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  29. TestService (TestService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  30. ProximityPromptService (ProximityPromptService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  31. PluginManagementService (PluginManagementService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  32. SocialService (SocialService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  33. AdService (AdService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  34. TraceRouteService (TraceRouteService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  35. Visit (Visit): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.470  36. InstanceExtensionsService (InstanceExtensionsService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  37. StudioDeviceSimulatorService (StudioDeviceSimulatorService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  38. VideoService (VideoService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  39. StudioService (StudioService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  40. VirtualInputManager (VirtualInputManager): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  41. VoiceChatService (VoiceChatService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  42. HttpService (HttpService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  43. PackageService (PackageService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  44. HapticService (HapticService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  45. StudioTestService (StudioTestService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  46. EncodingService (EncodingService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  47. AvatarCreationService (AvatarCreationService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  48. AvatarEditorService (AvatarEditorService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  49. GenerationService (GenerationService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  50. ReflectionService (ReflectionService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  51. StudioCaptureService (StudioCaptureService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  52. DraggerService (DraggerService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  53. UniqueIdLookupService (UniqueIdLookupService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  54. InstanceFileSyncService (InstanceFileSyncService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  55. GroupService (GroupService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  56. GamepadService (GamepadService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  57. FilteredSelection (): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  58. UserService (UserService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  59. TextBoxService (TextBoxService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  60. FilteredSelection (): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  61. FilteredSelection (): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  62. VideoScreenCaptureService (VideoScreenCaptureService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.471  63. MeshContentProvider (MeshContentProvider): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  64. ModerationService (ModerationService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  65. VersionControlService (VersionControlService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  66. HeapProfilerService (HeapProfilerService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  67. ScriptProfilerService (ScriptProfilerService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  68. SolidModelContentProvider (SolidModelContentProvider): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  69. RemoteCommandService (RemoteCommandService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  70. FilteredSelection (): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  71. SpawnerService (SpawnerService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  72. UGCValidationService (UGCValidationService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  73. HSRDataContentProvider (HSRDataContentProvider): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  74. DraftsService (DraftsService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  75. ServerStorage (ServerStorage): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  76. PlacesService (PlacesService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  77. LuaWebService (LuaWebService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  78. PermissionsService (PermissionsService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.472  79. SharedTableRegistry (SharedTableRegistry): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  80. TextService (TextService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  81. HttpRbxApiService (HttpRbxApiService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  82. TweenService (TweenService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  83. ReplicatedFirst (ReplicatedFirst): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  84. StarterPack (StarterPack): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  85. PolicyService (PolicyService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  86. BadgeService (BadgeService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  87. LocalizationService (LocalizationService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  88. PhysicsService (PhysicsService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  89. Teleport Service (TeleportService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  90. JointsService (JointsService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  91. FriendService (FriendService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  92. NotificationService (NotificationService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  93. MarketplaceService (MarketplaceService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  94. SoundService (SoundService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  95. VideoCaptureService (VideoCaptureService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.473  96. CollectionService (CollectionService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  97. Run Service (RunService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  98. TimerService (TimerService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  99. PointsService (PointsService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  100. LogService (LogService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  101. ContentProvider (ContentProvider): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  102. Chat (Chat): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  103. MicroProfilerService (MicroProfilerService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  104. AnimationClipProvider (AnimationClipProvider): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  105. KeyframeSequenceProvider (KeyframeSequenceProvider): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  106. ProcessInstancePhysicsService (ProcessInstancePhysicsService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  107. GamePassService (GamePassService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  108. CookiesService (CookiesService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  109. ServiceVisibilityService (ServiceVisibilityService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.474  110. TeamCreateService (TeamCreateService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.475  111. SelectionHighlightManager (SelectionHighlightManager): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.475  112. Script Context (ScriptContext): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.475  113. PathfindingService (PathfindingService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.475  114. GuidRegistryService (GuidRegistryService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.475  115. RemoteDebuggerServer (RemoteDebuggerServer): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.475  116. PluginDebugService (PluginDebugService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.475  117. ChangeHistoryService (ChangeHistoryService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.475  118. ScriptDebuggerService (ScriptDebuggerService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.475  119. PublishService (PublishService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.476  120. HeightmapImporterService (HeightmapImporterService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.476  121. Debris (Debris): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.476  122. Packages (Packages): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.476  123. AnalyticsService (AnalyticsService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.476  124. MouseService (MouseService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.476  125. VRService (VRService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.476  126. KeyboardService (KeyboardService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  127. Selection (Selection): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  128. UserInputService (UserInputService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  129. SlimContentProvider (SlimContentProvider): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  130. ContextActionService (ContextActionService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  131. AssetService (AssetService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  132. CaptureService (CaptureService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  133. ScriptService (ScriptService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  134. BrowserService (BrowserService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  135. TouchInputService (TouchInputService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  136. UIDragDetectorService (UIDragDetectorService): 0 descendants | BaseParts=0 MeshParts=0 Unions=0 Models=0 GuiObjects=0 Scripts=0  -  Edit
+  19:29:39.477  -- Global class totals (largest first) --  -  Edit
+  19:29:39.477  01. Pose = 7692  -  Edit
+  19:29:39.477  02. Part = 2493  -  Edit
+  19:29:39.477  03. StatsItem = 1107  -  Edit
+  19:29:39.477  04. StyleRule = 557  -  Edit
+  19:29:39.478  05. Keyframe = 456  -  Edit
+  19:29:39.478  06. Frame = 368  -  Edit
+  19:29:39.478  07. ScriptDebugger = 367  -  Edit
+  19:29:39.478  08. ModuleScript = 333  -  Edit
+  19:29:39.478  09. MemStorageConnection = 217  -  Edit
+  19:29:39.478  10. TextButton = 181  -  Edit
+  19:29:39.478  11. Model = 178  -  Edit
+  19:29:39.478  12. PointLight = 170  -  Edit
+  19:29:39.478  13. TextLabel = 160  -  Edit
+  19:29:39.478  14. SpecialMesh = 122  -  Edit
+  19:29:39.478  15. Folder = 85  -  Edit
+  19:29:39.478  16. UnionOperation = 72  -  Edit
+  19:29:39.478  17. Vector3Value = 69  -  Edit
+  19:29:39.478  18. ImageLabel = 65  -  Edit
+  19:29:39.478  19. MaterialVariant = 57  -  Edit
+  19:29:39.478  20. Attachment = 55  -  Edit
+  19:29:39.478  21. RunningAverageItemInt = 44  -  Edit
+  19:29:39.478  22. TextBox = 41  -  Edit
+  19:29:39.478  23. MeshPart = 40  -  Edit
+  19:29:39.478  24. TotalCountTimeIntervalItem = 38  -  Edit
+  19:29:39.478  25. ImageButton = 38  -  Edit
+  19:29:39.478  -- Objects named Theme --  -  Edit
+  19:29:39.478  Workspace.Kohl's Admin.Loader.MainModule.Client.UI.Theme [ModuleScript]  -  Edit
+  19:29:39.478  -- Scripts containing 'Hello world!' --  -  Edit
+  19:29:39.478  Workspace.Part.Script [Script]  -  Edit
+  19:29:39.478  Workspace.Part.Script.Script [Script]  -  Edit
+  19:29:39.479  -- Duplicate instance names (same class + name) --  -  Edit
+  19:29:39.479  AnimationRigData|AnimationRigData (3 copies): ReplicatedStorage.InteractionAnims.CarryHolder.AnimationRigData || ReplicatedStorage.InteractionAnims.Hug.AnimationRigData || ReplicatedStorage.InteractionAnims.CarryHeld.AnimationRigData  -  Edit
+  19:29:39.479  Animation|Animation1 (5 copies): Workspace.Rig.Animate.mood.Animation1 || Workspace.Rig.Animate.idle.Animation1 || Workspace.Rig.Animate.dance.Animation1 || Workspace.Rig.Animate.dance3.Animation1 || Workspace.Rig.Animate.dance2.Animation1  -  Edit
+  19:29:39.479  Animation|Animation2 (4 copies): Workspace.Rig.Animate.idle.Animation2 || Workspace.Rig.Animate.dance.Animation2 || Workspace.Rig.Animate.dance3.Animation2 || Workspace.Rig.Animate.dance2.Animation2  -  Edit
+  19:29:39.479  Animation|Animation3 (3 copies): Workspace.Rig.Animate.dance.Animation3 || Workspace.Rig.Animate.dance3.Animation3 || Workspace.Rig.Animate.dance2.Animation3  -  Edit
+  19:29:39.479  Attachment|JointRotation (4 copies): Workspace.Rig.UpperTorso.LeftShoulderRigAttachment.JointRotation || Workspace.Rig.UpperTorso.RightShoulderRigAttachment.JointRotation || Workspace.Rig.RightUpperArm.RightShoulderRigAttachment.JointRotation || Workspace.Rig.LeftUpperArm.LeftShoulderRigAttachment.JointRotation  -  Edit
+  19:29:39.479  Attachment|LeftAnkleRigAttachment (2 copies): Workspace.Rig.LeftLowerLeg.LeftAnkleRigAttachment || Workspace.Rig.LeftFoot.LeftAnkleRigAttachment  -  Edit
+  19:29:39.479  Attachment|LeftElbowRigAttachment (2 copies): Workspace.Rig.LeftUpperArm.LeftElbowRigAttachment || Workspace.Rig.LeftLowerArm.LeftElbowRigAttachment  -  Edit
+  19:29:39.479  Attachment|LeftHipRigAttachment (2 copies): Workspace.Rig.LowerTorso.LeftHipRigAttachment || Workspace.Rig.LeftUpperLeg.LeftHipRigAttachment  -  Edit
+  19:29:39.479  Attachment|LeftKneeRigAttachment (2 copies): Workspace.Rig.LeftLowerLeg.LeftKneeRigAttachment || Workspace.Rig.LeftUpperLeg.LeftKneeRigAttachment  -  Edit
+  19:29:39.479  Attachment|LeftShoulderRigAttachment (2 copies): Workspace.Rig.UpperTorso.LeftShoulderRigAttachment || Workspace.Rig.LeftUpperArm.LeftShoulderRigAttachment  -  Edit
+  19:29:39.479  Attachment|LeftWristRigAttachment (2 copies): Workspace.Rig.LeftHand.LeftWristRigAttachment || Workspace.Rig.LeftLowerArm.LeftWristRigAttachment  -  Edit
+  19:29:39.479  Attachment|NeckRigAttachment (2 copies): Workspace.Rig.UpperTorso.NeckRigAttachment || Workspace.Rig.Head.NeckRigAttachment  -  Edit
+  19:29:39.479  Attachment|RightAnkleRigAttachment (2 copies): Workspace.Rig.RightLowerLeg.RightAnkleRigAttachment || Workspace.Rig.RightFoot.RightAnkleRigAttachment  -  Edit
+  19:29:39.479  Attachment|RightElbowRigAttachment (2 copies): Workspace.Rig.RightUpperArm.RightElbowRigAttachment || Workspace.Rig.RightLowerArm.RightElbowRigAttachment  -  Edit
+  19:29:39.479  Attachment|RightHipRigAttachment (2 copies): Workspace.Rig.RightUpperLeg.RightHipRigAttachment || Workspace.Rig.LowerTorso.RightHipRigAttachment  -  Edit
+  19:29:39.479  Attachment|RightKneeRigAttachment (2 copies): Workspace.Rig.RightUpperLeg.RightKneeRigAttachment || Workspace.Rig.RightLowerLeg.RightKneeRigAttachment  -  Edit
+  19:29:39.479  Attachment|RightShoulderRigAttachment (2 copies): Workspace.Rig.UpperTorso.RightShoulderRigAttachment || Workspace.Rig.RightUpperArm.RightShoulderRigAttachment  -  Edit
+  19:29:39.479  Attachment|RightWristRigAttachment (2 copies): Workspace.Rig.RightLowerArm.RightWristRigAttachment || Workspace.Rig.RightHand.RightWristRigAttachment  -  Edit
+  19:29:39.479  Attachment|RootRigAttachment (2 copies): Workspace.Rig.HumanoidRootPart.RootRigAttachment || Workspace.Rig.LowerTorso.RootRigAttachment  -  Edit
+  19:29:39.479  Attachment|WaistRigAttachment (2 copies): Workspace.Rig.UpperTorso.WaistRigAttachment || Workspace.Rig.LowerTorso.WaistRigAttachment  -  Edit
+  19:29:39.480  Backpack|Backpack (2 copies): Players.DoctorDoombringer99.Backpack || Players.tiksaucyfn.Backpack  -  Edit
+  19:29:39.480  BloomEffect|Bloom (2 copies): Workspace.Bloom || Lighting.Bloom  -  Edit
+  19:29:39.480  BodyPartDescription|BodyPartDescription (6 copies): Workspace.Rig.Humanoid.HumanoidDescription.BodyPartDescription || Workspace.Rig.Humanoid.HumanoidDescription.BodyPartDescription || Workspace.Rig.Humanoid.HumanoidDescription.BodyPartDescription || Workspace.Rig.Humanoid.HumanoidDescription.BodyPartDescription || Workspace.Rig.Humanoid.HumanoidDescription.BodyPartDescription || Workspace.Rig.Humanoid.HumanoidDescription.BodyPartDescription  -  Edit
+  19:29:39.480  Camera|Camera (2 copies): Workspace.Camera || CoreGui.ViewSelectorScreenGui.Panel.Viewport.Camera  -  Edit
+  19:29:39.480  ColorCorrectionEffect|ColorCorrection (2 copies): Workspace.ColorCorrection || Lighting.ColorCorrection  -  Edit
+  19:29:39.480  Decal|Decal (5 copies): Workspace.Part.Decal || Workspace.Part.Decal || Workspace.Part.Decal || Workspace.Part.Decal || Workspace.SpawnLocation.Decal  -  Edit
+  19:29:39.480  DockWidgetPluginGui|PluginGui (2 copies): PluginGuiService.PluginGui || PluginGuiService.PluginGui  -  Edit
+  19:29:39.480  FileMesh|Mesh (3 copies): CoreGui.ViewSelectorScreenGui.Panel.Viewport.Model.y.Mesh || CoreGui.ViewSelectorScreenGui.Panel.Viewport.Model.z.Mesh || CoreGui.ViewSelectorScreenGui.Panel.Viewport.Model.x.Mesh  -  Edit
+  19:29:39.480  Fire|Fire (8 copies): Workspace.Model.Part.Fire || Workspace.Model.Part.Fire || Workspace.Model.Part.Fire || Workspace.Model.Part.Fire || Workspace.Model.Part.Fire || Workspace.Model.Part.Fire || Workspace.Model.Part.Fire || Workspace.Model.Part.Fire  -  Edit
+  19:29:39.480  Folder|Gen3d (2 copies): CoreGui.Gen3d || StylingService.Gen3d  -  Edit
+  19:29:39.480  Folder|PlaceAnnotations (2 copies): CoreGui.PlaceAnnotations || StylingService.PlaceAnnotations  -  Edit
+  19:29:39.480  Folder|Themes (3 copies): Workspace.Kohl's Admin.Loader.MainModule.Client.UI.Theme.Themes || Workspace.Kohl's Admin.Config.Themes || StylingService.StudioDesign-4.Themes  -  Edit
+  19:29:39.480  Folder|Tools (2 copies): Workspace.Kohl's Admin.Loader.Tools || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Tools  -  Edit
+  19:29:39.480  Frame|AddButton (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.AddButton || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.AddButton  -  Edit
+  19:29:39.480  Frame|AngleOption (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.AngleOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.AngleOption  -  Edit
+  19:29:39.480  Frame|Background (14 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTPaintToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTSurfaceToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTNewPartToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Title.Signature.HelpButton.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTWeldToolGUI.Title.Signature.HelpButton.Background  -  Edit
+  19:29:39.480  Frame|BottomBorder (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.MeshIdOption.TextBoxBorder.BottomBorder || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TextureIdOption.TextBoxBorder.BottomBorder || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.ImageIDOption.TextBoxBorder.BottomBorder  -  Edit
+  19:29:39.480  Frame|BottomColorBar (4 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.BottomColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.BottomColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.BottomColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.BottomColorBar  -  Edit
+  19:29:39.480  Frame|BrightnessOption (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.BrightnessOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.BrightnessOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.BrightnessOption  -  Edit
+  19:29:39.480  Frame|Center (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Center || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Info.Center  -  Edit
+  19:29:39.480  Frame|Changes (4 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Changes || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Changes || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Changes || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTWeldToolGUI.Changes  -  Edit
+  19:29:39.480  Frame|Children (2 copies): CoreGui.PlaceAnnotations.PlaceAnnotationsGui.Wrapper.Children || CoreGui.Gen3d.Gen3dGui.Wrapper.Children  -  Edit
+  19:29:39.480  Frame|ColorBar (33 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTPaintToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTPaintToolGUI.Controls.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTSurfaceToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTSurfaceToolGUI.Tip.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Tip.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTNewPartToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTNewPartToolGUI.Tip.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Info.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Changes.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Sparkles.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Info.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Changes.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.Bottom.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Tip.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Changes.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Info.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTWeldToolGUI.Title.ColorBar || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTWeldToolGUI.Changes.ColorBar  -  Edit
+  19:29:39.480  Frame|ColorOption (6 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.ColorOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.ColorOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.ColorOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.ColorOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.ColorOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Sparkles.Options.ColorOption  -  Edit
+  19:29:39.480  Frame|CrossLine (6 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.PointMarker.CrossLine || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.PointMarker.CrossLine || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.SnapLineSegment.PointMarkerA.CrossLine || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.SnapLineSegment.PointMarkerA.CrossLine || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.SnapLine.PointMarker.CrossLine || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.SnapLine.PointMarker.CrossLine  -  Edit
+  19:29:39.480  Frame|FoundationCursorContainer (2 copies): CoreGui.PlaceAnnotations.PlaceAnnotationsGui.Wrapper.FoundationCursorContainer || CoreGui.Gen3d.Gen3dGui.Wrapper.FoundationCursorContainer  -  Edit
+  19:29:39.480  Frame|Frame (8 copies): PluginGuiService.PluginGui.Frame || PluginGuiService.PluginGui.ScrollingFrame.Frame || PluginGuiService.PluginGui.ScrollingFrame.Frame || PluginGuiService.PluginGui.ScrollingFrame.Frame || PluginGuiService.PluginGui.ScrollingFrame.Frame || PluginGuiService.PluginGui.ScrollingFrame.Frame.Frame || PluginGuiService.PluginGui.ScrollingFrame.Frame.Frame.Frame || PluginGuiService.PluginGui.ScrollingFrame.Frame  -  Edit
+  19:29:39.480  Frame|Increment (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.IncrementOption.Increment || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.IncrementOption.Increment || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.IncrementOption.Increment  -  Edit
+  19:29:39.481  Frame|IncrementOption (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.IncrementOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.IncrementOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.IncrementOption  -  Edit
+  19:29:39.481  Frame|Indicator (8 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.ColorOption.Indicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.ColorOption.Indicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.ColorOption.Indicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TintOption.Indicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.ColorOption.Indicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.ColorOption.Indicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.SecondaryColorOption.Indicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Sparkles.Options.ColorOption.Indicator  -  Edit
+  19:29:39.481  Frame|Info (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Info || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Info || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Info  -  Edit
+  19:29:39.481  Frame|Input (16 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.RangeOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.BrightnessOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.RangeOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.AngleOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.BrightnessOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.RangeOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.AngleOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.BrightnessOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.TransparencyOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.OpacityOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.VelocityOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.SizeOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.HeatOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.SizeOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.TransparencyOption.Input || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.ReflectanceOption.Input  -  Edit
+  19:29:39.481  Frame|Label (6 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.DirectionsOption.Label || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.IncrementOption.Label || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Label || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.IncrementOption.Label || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.IncrementOption.Label || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.AxesOption.Label  -  Edit
+  19:29:39.481  Frame|Last (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Last || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.AxesOption.Last  -  Edit
+  19:29:39.481  Frame|LeftBorder (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.MeshIdOption.TextBoxBorder.LeftBorder || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TextureIdOption.TextBoxBorder.LeftBorder || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.ImageIDOption.TextBoxBorder.LeftBorder  -  Edit
+  19:29:39.481  Frame|Local (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Local || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.AxesOption.Local  -  Edit
+  19:29:39.481  Frame|Options (6 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Sparkles.Options  -  Edit
+  19:29:39.481  Frame|PointMarker (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.PointMarker || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.SnapLine.PointMarker  -  Edit
+  19:29:39.481  Frame|RangeOption (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.RangeOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.RangeOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.RangeOption  -  Edit
+  19:29:39.481  Frame|RemoveButton (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.RemoveButton || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.RemoveButton  -  Edit
+  19:29:39.481  Frame|RightBorder (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.MeshIdOption.TextBoxBorder.RightBorder || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TextureIdOption.TextBoxBorder.RightBorder || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.ImageIDOption.TextBoxBorder.RightBorder  -  Edit
+  19:29:39.481  Frame|SelectedIndicator (41 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.RangeOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.BrightnessOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.RangeOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.AngleOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.BrightnessOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.RangeOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.AngleOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.BrightnessOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.ScaleOption.XInput.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.ScaleOption.YInput.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.ScaleOption.ZInput.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.OffsetOption.XInput.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.OffsetOption.YInput.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.OffsetOption.ZInput.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Status.On.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Status.Off.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.RepeatOption.XInput.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.RepeatOption.YInput.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.TransparencyOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.ModeOption.Decal.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.ModeOption.Texture.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.DirectionsOption.Normal.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.DirectionsOption.Both.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.IncrementOption.Increment.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.OpacityOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.VelocityOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.SizeOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.HeatOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.SizeOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Center.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Local.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Last.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.IncrementOption.Increment.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.TransparencyOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.ReflectanceOption.Input.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Status.Anchored.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Status.Unanchored.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.IncrementOption.Increment.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.AxesOption.Last.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.AxesOption.Local.SelectedIndicator || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.AxesOption.Global.SelectedIndicator  -  Edit
+  19:29:39.481  Frame|Shadow (28 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.ColorOption.HSVPicker.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.ColorOption.Indicator.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.ColorOption.HSVPicker.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.ColorOption.Indicator.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.ColorOption.HSVPicker.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.ColorOption.Indicator.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.AddButton.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.RemoveButton.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TintOption.Indicator.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TintOption.HSVPicker.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.AddButton.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.RemoveButton.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.ColorOption.HSVPicker.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.ColorOption.Indicator.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.ColorOption.HSVPicker.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.ColorOption.Indicator.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.SecondaryColorOption.HSVPicker.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.SecondaryColorOption.Indicator.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Sparkles.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Sparkles.Options.ColorOption.HSVPicker.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Sparkles.Options.ColorOption.Indicator.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTWeldToolGUI.Interface.WeldButton.Shadow || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTWeldToolGUI.Interface.BreakWeldsButton.Shadow  -  Edit
+  19:29:39.481  Frame|ShadowsOption (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.ShadowsOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.ShadowsOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.ShadowsOption  -  Edit
+  19:29:39.481  Frame|SideOption (4 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTSurfaceToolGUI.SideOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.SideOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.SideOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.SideOption  -  Edit
+  19:29:39.481  Frame|SizeOption (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.SizeOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.SizeOption  -  Edit
+  19:29:39.481  Frame|Status (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Status || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Status  -  Edit
+  19:29:39.481  Frame|TextBoxBackground (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.MeshIdOption.TextBoxBackground || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TextureIdOption.TextBoxBackground || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.ImageIDOption.TextBoxBackground  -  Edit
+  19:29:39.481  Frame|TextBoxBorder (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.MeshIdOption.TextBoxBorder || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TextureIdOption.TextBoxBorder || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.ImageIDOption.TextBoxBorder  -  Edit
+  19:29:39.481  Frame|Tip (4 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTSurfaceToolGUI.Tip || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Tip || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTNewPartToolGUI.Tip || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Tip  -  Edit
+  19:29:39.481  Frame|Title (14 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTPaintToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTSurfaceToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTNewPartToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Title || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTWeldToolGUI.Title  -  Edit
+  19:29:39.481  Frame|TransparencyOption (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.TransparencyOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.TransparencyOption  -  Edit
+  19:29:39.481  Frame|TypeOption (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTSurfaceToolGUI.TypeOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TypeOption || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTNewPartToolGUI.TypeOption  -  Edit
+  19:29:39.482  Frame|Wrapper (2 copies): CoreGui.PlaceAnnotations.PlaceAnnotationsGui.Wrapper || CoreGui.Gen3d.Gen3dGui.Wrapper  -  Edit
+  19:29:39.482  Frame|X (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Info.SizeInfo.X || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Info.RotationInfo.X || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Info.Center.X  -  Edit
+  19:29:39.482  Frame|XInput (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.ScaleOption.XInput || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.OffsetOption.XInput || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.RepeatOption.XInput  -  Edit
+  19:29:39.482  Frame|Y (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Info.SizeInfo.Y || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Info.RotationInfo.Y || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Info.Center.Y  -  Edit
+  19:29:39.482  Frame|YInput (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.ScaleOption.YInput || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.OffsetOption.YInput || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.RepeatOption.YInput  -  Edit
+  19:29:39.482  Frame|Z (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Info.SizeInfo.Z || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Info.RotationInfo.Z || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Info.Center.Z  -  Edit
+  19:29:39.482  Frame|ZInput (2 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.ScaleOption.ZInput || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.OffsetOption.ZInput  -  Edit
+  19:29:39.482  ImageButton|ArrowButton (6 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.ArrowButton || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.ArrowButton || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.ArrowButton || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.ArrowButton || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.ArrowButton || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Sparkles.ArrowButton  -  Edit
+  19:29:39.482  ImageButton|Checkbox (3 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.ShadowsOption.Checkbox || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.ShadowsOption.Checkbox || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.ShadowsOption.Checkbox  -  Edit
+  19:29:39.482  ImageButton|HSVPicker (8 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.ColorOption.HSVPicker || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.ColorOption.HSVPicker || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.ColorOption.HSVPicker || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.TintOption.HSVPicker || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.ColorOption.HSVPicker || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.ColorOption.HSVPicker || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.SecondaryColorOption.HSVPicker || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Sparkles.Options.ColorOption.HSVPicker  -  Edit
+  19:29:39.482  ImageButton|Signature (14 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTPaintToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTSurfaceToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTNewPartToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Title.Signature || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTWeldToolGUI.Title.Signature  -  Edit
+  19:29:39.482  ImageLabel|Background (50 copies): Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.RangeOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.PointLight.Options.BrightnessOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.RangeOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.AngleOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SpotLight.Options.BrightnessOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.RangeOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.AngleOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTLightingToolGUI.SurfaceLight.Options.BrightnessOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.ScaleOption.XInput.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.ScaleOption.YInput.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.ScaleOption.ZInput.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.OffsetOption.XInput.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.OffsetOption.YInput.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMeshToolGUI.OffsetOption.ZInput.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Status.On.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTCollisionToolGUI.Status.Off.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.RepeatOption.XInput.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.RepeatOption.YInput.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.TransparencyOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.ModeOption.Decal.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTTextureToolGUI.ModeOption.Texture.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.DirectionsOption.Normal.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.DirectionsOption.Both.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.IncrementOption.Increment.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Info.SizeInfo.X.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Info.SizeInfo.Y.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTResizeToolGUI.Info.SizeInfo.Z.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.OpacityOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.VelocityOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Smoke.Options.SizeOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.HeatOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTDecorateToolGUI.Fire.Options.SizeOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Center.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Local.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.PivotOption.Last.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.IncrementOption.Increment.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Info.RotationInfo.X.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Info.RotationInfo.Y.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTRotateToolGUI.Info.RotationInfo.Z.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.TransparencyOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMaterialToolGUI.ReflectanceOption.Input.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Status.Anchored.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTAnchorToolGUI.Status.Unanchored.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Info.Center.Z.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Info.Center.Y.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.Info.Center.X.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.IncrementOption.Increment.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.AxesOption.Last.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.AxesOption.Local.Background || Workspace.Kohl's Admin.Loader.Tools.Building Tools.Interfaces.BTMoveToolGUI.AxesOption.Global.Background  -  Edit
+  19:29:39.482  ImageLabel|ImageLabel (2 copies): TextChatService.BubbleChatConfiguration.ImageLabel || PluginGuiService.PluginGui.ScrollingFrame.Frame.ImageLabel  -  Edit
+  19:29:39.482  Keyframe|End (6 copies): Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.End || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.End || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.End || ReplicatedStorage.InteractionAnims.CarryHolder.End || ReplicatedStorage.InteractionAnims.Hug.End || ReplicatedStorage.InteractionAnims.CarryHeld.End  -  Edit
+  19:29:39.482  Keyframe|Keyframe (450 copies): Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.idle2.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || Workspace.Kohl's Admin.Loader.MainModule.Shared.VIP.UGC.AlphaWings.Animate.Animations.fall.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.CarryHolder.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.Hug.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe || ReplicatedStorage.InteractionAnims.CarryHeld.Keyframe  -  Edit
+  19:29:39.482  LocalScript|LocalScript (2 copies): Workspace.ScreenGui.ImageButton.LocalScript || Workspace.Kohl's Admin.Loader.MainModuleLegacy.D.Extras.Explorer.Explorer.LocalScript  -  Edit
+  19:29:39.482  MemStorageConnection|MemStorageConnection (212 copies): MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection || MemStorageService.MemStorageConnection  -  Edit
+  19:29:39.482  MeshPart|MeshPart (4 copies): Workspace.Model.Feniex.MeshPart || Workspace.Model.Feniex.MeshPart || Workspace.Model.Feniex.MeshPart || Workspace.Model.Feniex.MeshPart  -  Edit
+  19:29:39.482  MeshPart|Meshes/big speaker (12 copies): Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker || Workspace.Model.Meshes/big speaker  -  Edit
+  19:29:39.482  Model|Barra2v2 (5 copies): Workspace.Model.Prop.Barra2v2 || Workspace.Model.Prop.Barra2v2 || Workspace.Model.Prop.Barra2v2 || Workspace.Model.Prop.Barra2v2 || Workspace.Model.Prop.Barra2v2  -  Edit
+  19:29:39.482  Model|Feniex (2 copies): Workspace.Model.Feniex || Workspace.Model.Feniex  -  Edit
+  19:29:39.482  Model|Model (110 copies): Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Model || Workspace.Model.Prop.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model.Model.Model || Workspace.Model.Prop.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Model.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Barra2v2.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.Model.Prop.Pilar.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.Model || Workspace.Model.Model || Workspace.Model || Workspace.Model || Workspace.Model.Model || Workspace.Model || Workspace.Model.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.SL// Glow Stairs.Model || Workspace.Model || Workspace.Model.Model || Workspace.Model || Workspace.TimePlayedLeaderboard.Model || Workspace.Model  -  Edit
+  19:29:39.483  Model|Pilar (16 copies): Workspace.Model.Prop.Model.Pilar || Workspace.Model.Prop.Model.Pilar || Workspace.Model.Prop.Model.Pilar || Workspace.Model.Prop.Model.Pilar || Workspace.Model.Prop.Model.Pilar || Workspace.Model.Prop.Model.Pilar || Workspace.Model.Prop.Model.Pilar || Workspace.Model.Prop.Model.Pilar || Workspace.Model.Prop.Pilar || Workspace.Model.Prop.Pilar || Workspace.Model.Prop.Pilar || Workspace.Model.Prop.Pilar || Workspace.Model.Prop.Pilar || Workspace.Model.Prop.Pilar || Workspace.Model.Prop.Pilar || Workspace.Model.Prop.Pilar  -  Edit
+  19:29:39.483  Model|SL// Glow Stairs (3 copies): Workspace.SL// Glow Stairs || Workspace.SL// Glow Stairs || Workspace.SL// Glow Stairs  -  Edit
+  19:29:39.483  ModuleScript|Color (3 copies): Workspace.Kohl's Admin.Loader.MainModule.Client.UI.Classes.Color || Workspace.Kohl's Admin.Loader.MainModule.Shared.Util.Color || Workspace.Kohl's Admin.Loader.MainModule.Shared.DefaultTypes.Color  -  Edit
+  19:29:39.483  ModuleScript|ColorPicker (2 copies): Workspace.Kohl's Admin.Loader.MainModule.Client.UI.Classes.ColorPicker || Workspace.Kohl's Admin.Loader.Tools.Building Tools.UI.ColorPicker  -  Edit
+  19:29:39.483  ModuleScript|Command (2 copies): Workspace.Kohl's Admin.Loader.MainModule.Shared.Process.Command || Workspace.Kohl's Admin.Loader.MainModule.Shared.DefaultTypes.Command  -  Edit
+  19:29:39.483  Additional duplicate-name groups omitted: 578  -  Edit
+  19:29:39.483  ========== END READ-ONLY AUDIT ==========  -  Edit
