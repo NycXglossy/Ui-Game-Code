@@ -154,7 +154,7 @@ for attempt = 1, 2 do
 	if attempt < 2 then task.wait(3) end
 end
 if not networkReady then
-	fail("Network initialization did not complete after 2 attempts. Verify ServerScriptService.UI_Server_Controller is enabled and that ServerStorage contains MusicCatalogService, MusicPlaylistService, and ClubMusic_ReceiptHash. Last error: " .. string.sub(lastInitError, 1, 220))
+	fail("Network initialization did not complete after 2 attempts. Verify ServerScriptService.UI_Server_Controller is enabled and that ServerStorage contains MusicCoreService, MusicPlaylistService, and ClubNeonSecurityCore.ReceiptHash. Last error: " .. string.sub(lastInitError, 1, 220))
 	return
 end
 ownsNetwork = true
