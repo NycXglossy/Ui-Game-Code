@@ -249,3 +249,21 @@ The master installer fetches this exact commit and checks the hard-disable marke
 6. Only after those runtime tests pass should the release be called ready for publishing.
 
 **Current safety posture:** source staging and static package parsing were verified against the pinned GitHub files. No Roblox Studio execution or published-server runtime test has been performed or claimed.
+
+
+## Studio log follow-up: read-only runtime audit
+
+Added `TikiTide_Studio_Runtime_Audit.lua` in commit `682b4f3ae2da8456310a408294df6a5548b2cd19`.
+
+Paste this read-only script into Studio's Command Bar while not playing. It reports:
+- Descendant totals by top-level service, including BaseParts, MeshParts, unions, Models, GUI objects, and scripts.
+- The largest instance classes across the DataModel.
+- Every object named exactly `Theme`.
+- Readable scripts containing the literal `Hello world!`.
+- Duplicate instance-name groups by class and name.
+
+It makes no changes. This will distinguish whether the approximately 69,500 instances are primarily in Workspace/map content, UI, or another service, and locate the two generic Hello World scripts. It is a diagnostic inventory, not an automatic cleanup tool.
+
+The duplicate-theme warning originates from an external Kohl's Admin script path (`Kohl's Admin.Loader.MainModuleLegacy.D.Extras.Explorer.Explorer`) in the supplied Studio log. The repository's Tiki Tide UI/controller source contains no theme registration calls, so no speculative theme rename was made. The Kohl's Admin package's Explorer and Building Tools errors likewise cannot be safely patched from repository sources; they require inspection of the exact installed package hierarchy/source.
+
+The memory values (812 MB peak in this log) are global Roblox runtime measurements, not per-script attribution. No memory threshold or automatic cleanup was added. The service/class audit is the next evidence-gathering step before any deletion or optimization.
