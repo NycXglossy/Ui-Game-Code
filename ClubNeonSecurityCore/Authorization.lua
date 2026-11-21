@@ -189,7 +189,7 @@ function Service:_levelForRank(rank: number): number
 	if rank >= t.Owner then return 4 end
 	if rank >= t.CoOwner then return 3 end
 	if rank >= t.Admin then return 2 end
-	if rank >= t.Moderator then return 1 end
+	if rank >= (t.GroupDJ or t.Moderator) then return 1 end
 	return 0
 end
 
