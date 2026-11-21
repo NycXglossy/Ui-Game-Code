@@ -95,13 +95,13 @@ task.spawn(function()
 		{ label = "4x XP Developer Product", id = CONFIG.XPBoost4xProductId, infoType = Enum.InfoType.Product },
 		{ label = "Title Slot 2 Developer Product", id = CONFIG.TitleSlotProductIds[2], infoType = Enum.InfoType.Product },
 		{ label = "Title Slot 3 Developer Product", id = CONFIG.TitleSlotProductIds[3], infoType = Enum.InfoType.Product },
-		{ label = "Coconut Donation Developer Product", id = 3731488823, infoType = Enum.InfoType.Product },
-		{ label = "Pineapple Donation Developer Product", id = 3731489572, infoType = Enum.InfoType.Product },
-		{ label = "Tiki Torch Donation Developer Product", id = 3731490154, infoType = Enum.InfoType.Product },
-		{ label = "Volcano Donation Developer Product", id = 3731490513, infoType = Enum.InfoType.Product },
-		{ label = "Island Legend Donation Developer Product", id = 3731490937, infoType = Enum.InfoType.Product },
-		{ label = "Island Royalty Donation Developer Product", id = 3731491257, infoType = Enum.InfoType.Product },
-		{ label = "Sultan's Legacy Donation Developer Product", id = 3731491679, infoType = Enum.InfoType.Product },
+		{ label = "Coconut Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
+		{ label = "Pineapple Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
+		{ label = "Tiki Torch Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
+		{ label = "Volcano Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
+		{ label = "Island Legend Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
+		{ label = "Island Royalty Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
+		{ label = "Sultan's Legacy Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
 	}
 	for _, entry in ipairs(configured) do
 		if typeof(entry.id) ~= "number" or entry.id <= 0 then
@@ -240,9 +240,9 @@ local function classifyConfiguredPurchaseId(promptType: string, itemId: number):
 		end
 	elseif itemId == CONFIG.XPBoost2xProductId or itemId == CONFIG.XPBoost4xProductId
 		or itemId == CONFIG.TitleSlotProductIds[2] or itemId == CONFIG.TitleSlotProductIds[3]
-		or itemId == 3731488823 or itemId == 3731489572 or itemId == 3731490154
-		or itemId == 3731490513 or itemId == 3731490937 or itemId == 3731491257
-		or itemId == 3731491679 then
+		or itemId == 0 or itemId == 0 or itemId == 0
+		or itemId == 0 or itemId == 0 or itemId == 0
+		or itemId == 0 then
 		return "ConfiguredClubMusicDeveloperProduct"
 	end
 	return "UnrecognizedByClubMusicConfig"
@@ -4031,13 +4031,13 @@ end
 -- A zero ID is intentionally ignored so unconfigured products cannot collide.
 local PRODUCT_IDS = {
 	-- Donations / Tips
-	Coconut = 3731488823,
-	Pineapple = 3731489572,
-	TikiTorch = 3731490154,
-	Volcano = 3731490513,
-	IslandLegend = 3731490937,
-	IslandRoyalty = 3731491257,
-	SultansLegacy = 3731491679,
+	Coconut = 0,
+	Pineapple = 0,
+	TikiTorch = 0,
+	Volcano = 0,
+	IslandLegend = 0,
+	IslandRoyalty = 0,
+	SultansLegacy = 0,
 
 	-- Shop Items
 	Glowsticks = 0,
