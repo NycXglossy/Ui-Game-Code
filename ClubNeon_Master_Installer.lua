@@ -89,13 +89,19 @@ local function addRaw(name: string, className: string, parentKey: string, source
 end
 
 -- Project config must be staged before any runtime service can start.
-addSource("ClubNeon_Config.lua", "ModuleScript", "ServerStorage", "ClubNeon_Config", RELEASE.runtime)
+local projectConfigSource = fetchSource("ClubNeon_Config.lua", RELEASE.runtime)
+local ownerList = string.match(projectConfigSource, "OwnerUserIds%s*=%s*%{([^}]*)%}") or ""
+local configuredGroupId = string.match(projectConfigSource, "GroupId%s*=%s*(%d+)") or "0"
+if not DRY_RUN and string.gsub(ownerList, "%s", "") == "" then
+    error("[Club Neon Master Installer] Configure at least one OwnerUserId in ClubNeon_Config.lua before live installation. No changes made.")
+end
+addRaw("ClubNeon_Config", "ModuleScript", "ServerStorage", projectConfigSource, "ClubNeon_Config.lua@" .. RELEASE.runtime)
 
 -- Core controller and client UI.
 addSource("ClubNeon_UI_Server_Controller.server.lua", "Script", "ServerScriptService", "UI_Server_Controller")
-addSource("ClubNeon_UI_Renderer.lua", "ModuleScript", "ReplicatedStorage", "UI_Renderer")
-addSource("ClubNeon_UI_Network.lua", "ModuleScript", "ReplicatedStorage", "UI_Network")
-addSource("ClubNeonBootstrap.client.lua", "LocalScript", "StarterPlayerScripts", "ClubMusicBootstrap")
+addSource("ClubNeon_UI_Renderer.lua", "ModuleScript", "ReplicatedStorage", "ClubNeon_UI_Renderer")
+addSource("ClubNeon_UI_Network.lua", "ModuleScript", "ReplicatedStorage", "ClubNeon_UI_Network")
+addSource("ClubNeonBootstrap.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonBootstrap")
 addSource("ClubMusic_Overhead_Title_Renderer_client.lua", "LocalScript", "StarterPlayerScripts", "ClubMusic_Overhead_Title_Renderer")
 addSource("ClubMusicErrorHandler.lua", "ModuleScript", "ServerStorage", "ClubMusicErrorHandler")
 
@@ -144,10 +150,10 @@ if not bootstrapEnd then error("Security installer bootstrap source terminator w
 local physicsBootstrapSource = string.sub(securityInstallerSource, bootstrapStart, bootstrapEnd - 1)
 addRaw("ClubNeonCharacterPhysicsGuardBootstrap", "Script", "ServerScriptService", physicsBootstrapSource, "embedded:ClubNeon_Security_Core_Installer.lua")
 
-addSource("ClubNeonSecurityServer.server.lua", "Script", "ServerScriptService", "SecurityServer")
-addSource("ClubNeonStaffActions.server.lua", "Script", "ServerScriptService", "StaffActions")
-addSource("ClubNeon_SecurityClient.client.lua", "LocalScript", "StarterPlayerScripts", "SecurityClient")
-addSource("ClubNeon_SecurityConsole.client.lua", "LocalScript", "StarterPlayerScripts", "SecurityConsole")
+addSource("ClubNeonSecurityServer.server.lua", "Script", "ServerScriptService", "ClubNeonSecurityServer")
+addSource("ClubNeonStaffActions.server.lua", "Script", "ServerScriptService", "ClubNeonStaffActions")
+addSource("ClubNeon_SecurityClient.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonSecurityClient")
+addSource("ClubNeon_SecurityConsole.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonSecurityConsole")
 addSource("ClubNeon_StaffSpectatorCamera.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonStaffSpectatorCamera", RELEASE.security)
 addSource("ClubNeonClientIntegrityTelemetry.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonClientIntegrityTelemetry", RELEASE.security)
 addSource("ClubNeonAdaptiveVisualQuality.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonAdaptiveVisualQuality", RELEASE.security)
@@ -164,7 +170,7 @@ if string.find(globalServiceSource, "MusicGlobalPlaybackAuthority", 1, true)
     or not string.find(globalServiceSource, "Cross-server playback synchronization is disabled in this release.", 1, true) then
     error("Global Service source did not pass the playback-isolation release check.")
 end
-addRaw("ClubMusic_Global_Service", "Script", "ServerScriptService", globalServiceSource, "ClubNeon_Global_Service.server.lua@" .. RELEASE.globalService)
+addRaw("ClubNeon_Global_Service", "Script", "ServerScriptService", globalServiceSource, "ClubNeon_Global_Service.server.lua@" .. RELEASE.globalService)
 addSource("ClubMusic_Global_Config_Service.lua", "ModuleScript", "GlobalOptional", "ClubMusic_Global_Config_Service")
 addSource("ClubMusic_Global_Diagnostics_Service.lua", "ModuleScript", "GlobalOptional", "ClubMusic_Global_Diagnostics_Service")
 addSource("ClubMusic_Global_Maintenance_Service.lua", "ModuleScript", "GlobalOptional", "ClubMusic_Global_Maintenance_Service")
@@ -197,7 +203,7 @@ while true do
         local sourceEnd = cdataMarker and string.find(block, "]]></ProtectedString>", cdataMarker + 9, true)
         if not protectedStart or not cdataMarker or not sourceEnd then error("Missing embedded Source for " .. moduleName) end
         local moduleSource = string.sub(block, cdataMarker + 9, sourceEnd - 1)
-        moduleSource = moduleSource:gsub("TikiTide", "ClubNeon"):gsub("Tiki Tide", "Club Neon"):gsub("500470662", "0")
+        moduleSource = moduleSource:gsub("TikiTide", "ClubNeon"):gsub("Tiki Tide", "Club Neon"):gsub("500470662", configuredGroupId)
         if #moduleSource < 100 then error("Embedded module source is too short: " .. moduleName) end
         extracted[moduleName] = moduleSource
     end
@@ -236,12 +242,12 @@ local configFolder = kohlsRoot and kohlsRoot:FindFirstChild("Config")
 local configAddons = configFolder and configFolder:FindFirstChild("Addons")
 local regularAddons = kohlsRoot and kohlsRoot:FindFirstChild("Addons")
 if configAddons and configAddons:IsA("Folder") then
-    addSource("KohlsAdmin_ClubNeon_Addon.lua", "ModuleScript", "KohlsConfigAddons", "ClubMusic")
+    addSource("KohlsAdmin_ClubNeon_Addon.lua", "ModuleScript", "KohlsConfigAddons", "ClubNeon")
 else
     table.insert(skippedOptional, "KohlsAdmin_ClubNeon_Addon.lua — Kohl's Admin Config/Addons folder not found")
 end
 if regularAddons and regularAddons:IsA("Folder") then
-    addSource("ClubNeonRegularCommandsSecurityServer.lua", "ModuleScript", "KohlsRegularAddons", "RegularCommandsSecurityServer")
+    addSource("ClubNeonRegularCommandsSecurityServer.lua", "ModuleScript", "KohlsRegularAddons", "ClubNeonRegularCommandsSecurityServer")
 else
     table.insert(skippedOptional, "ClubNeonRegularCommandsSecurityServer.lua — Kohl's Admin Addons folder not found")
 end
