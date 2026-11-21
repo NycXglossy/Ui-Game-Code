@@ -93,8 +93,13 @@ end
 local projectConfigSource = fetchSource("ClubNeon_Config.lua", RELEASE.runtime)
 local ownerList = string.match(projectConfigSource, "OwnerUserIds%s*=%s*%{([^}]*)%}") or ""
 local configuredGroupId = string.match(projectConfigSource, "GroupId%s*=%s*(%d+)") or "0"
-if not DRY_RUN and string.gsub(ownerList, "%s", "") == "" then
-    error("[Club Neon Master Installer] Configure at least one OwnerUserId in ClubNeon_Config.lua before live installation. No changes made.")
+local hasOwnerUserId = false
+for idText in string.gmatch(ownerList, "%d+") do
+    local id = tonumber(idText)
+    if id and id > 0 then hasOwnerUserId = true; break end
+end
+if not DRY_RUN and not hasOwnerUserId then
+    error("[Club Neon Master Installer] Configure at least one numeric OwnerUserId in ClubNeon_Config.lua before live installation. No changes made.")
 end
 addRaw("ClubNeon_Config", "ModuleScript", "ServerStorage", projectConfigSource, "ClubNeon_Config.lua@" .. RELEASE.runtime)
 
