@@ -639,11 +639,16 @@ local SESSION_TOKEN = if game.JobId ~= "" then game.JobId else HttpService:Gener
 local random = Random.new()
 
 -- Main playback is owned exclusively by the modern AudioPlayer backend.
-local activeAudioSource: any = { kind = "Unavailable" }
-local audioSourceRevision = 0
-local modernBackendStartSucceeded = false
-local modernBackendStartFailureCount = 0
-local modernAudioStartToken = 0
+local audioState: {[string]: any} = {
+	audioState.activeAudioSource = { kind = "Unavailable" },
+	audioState.audioSourceRevision = 0,
+	audioState.modernBackendStartSucceeded = false,
+	audioState.modernBackendStartFailureCount = 0,
+	audioState.modernAudioStartToken = 0,
+	audioState.playbackPaused = false,
+	audioState.audioReloadInProgress = false,
+	audioState.audioTransitionTrackToken = 0,
+}
 -- Forward-declared state is shared with the early-created crossfade factory.
 local queue: any = {}
 local queueManager: any = nil
@@ -656,301 +661,12 @@ local refreshLocalCatalog: (() -> boolean)? = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
-local audioTransitionTrackToken = 0
+local audioState.audioTransitionTrackToken = 0
 
 -- legacy group migration and setup
 -- Publish the number of active controller-owned main outputs (0 or 1).
 -- The binding is refreshed whenever the canonical source changes.
-local activeAudioPlayingConnection: RBXScriptConnection? = nil
-ControllerFunctions.refreshActiveMusicSoundCount = function()
-	local snapshot = ControllerFunctions.getAudioSnapshot and ControllerFunctions.getAudioSnapshot() or nil
-	local playing = typeof(snapshot) == "table" and snapshot.playing == true
-	SoundService:SetAttribute("ActiveMusicSoundCount", if playing then 1 else 0)
-end
-ControllerFunctions.bindActiveAudioPlayingSignal = function()
-	if activeAudioPlayingConnection then
-		activeAudioPlayingConnection:Disconnect()
-		activeAudioPlayingConnection = nil
-	end
-	local source = activeAudioSource
-	-- Publish the active output type. Unavailable means modern startup/recovery
-	-- failed; no legacy source is selected.
-	local sourceKind = if source.kind == "Backend" and source.backend then "AudioPlayer" else "Unavailable"
-	SoundService:SetAttribute("ClubMusicAudioSourceKind", sourceKind)
-	local signalInstance = if source.kind == "Backend" and source.backend then source.backend:GetPlayer() else nil
-	if typeof(signalInstance) == "Instance" then
-		local ok, signal = pcall(function() return signalInstance:GetPropertyChangedSignal("IsPlaying") end)
-		if ok and signal then
-			activeAudioPlayingConnection = signal:Connect(ControllerFunctions.refreshActiveMusicSoundCount)
-		end
-	end
-	ControllerFunctions.refreshActiveMusicSoundCount()
-end
-
-local playbackPaused = false
-local audioReloadInProgress = false
--- Prevent out-of-order persistence replies from an earlier pause/resume/restart
--- overwriting a newer local control action on the same track.
-local playbackControlRequestId = 0
-
--- One controller-owned source contract: modern AudioPlayer or unavailable.
-ControllerFunctions.getAudioSnapshot = function()
-	local source = activeAudioSource
-	if typeof(source) ~= "table" then
-		return { kind = "Unavailable", ready = false, playing = false, paused = playbackPaused, position = 0, length = 0, asset = "" }
-	end
-	if source.kind == "Backend" and source.backend then
-		local backend = source.backend
-		local function read(methodName: string, fallback: any)
-			local ok, value = pcall(function() return backend[methodName](backend) end)
-			return if ok then value else fallback
-		end
-		local asset = read("GetAsset", "")
-		if typeof(asset) ~= "string" then asset = "" end
-		if asset == "" then
-			local player = read("GetPlayer", nil)
-			if player then pcall(function() asset = tostring(player.Asset) end) end
-		end
-		local function finiteNonNegative(value: any): number
-			local numberValue = tonumber(value)
-			if numberValue == nil or numberValue ~= numberValue or numberValue == math.huge or numberValue == -math.huge then return 0 end
-			return math.max(0, numberValue)
-		end
-		return {
-			kind = "AudioPlayer",
-			ready = read("IsReady", false) == true,
-			playing = read("IsPlaying", false) == true,
-			paused = playbackPaused,
-			position = finiteNonNegative(read("GetTimePosition", 0)),
-			length = finiteNonNegative(read("GetTimeLength", 0)),
-			asset = asset,
-		}
-	end
-	return { kind = "Unavailable", ready = false, playing = false, paused = playbackPaused, position = 0, length = 0, asset = "" }
-end
--- Per-track loudness trim for the 11 Club Exclusives. A 1.5 multiplier is a
--- first-pass +50% boost. It is applied before the fader so crossfade gain
--- remains independent of each player's private output preference.
-local TRACK_VOLUME_TRIM_OVERRIDES: {[string]: number} = {
-	["custom-100919684616729"] = 1.5, -- CROWN OF THE NIGHT
-	["custom-99973341792058"] = 1.5, -- Midnight Lucid
-	["custom-137104933242988"] = 1.5, -- Empire of Stone
-	["custom-84266261446965"] = 1.5, -- Anvil_of_Ruin
-	["custom-85420661204078"] = 1.5, -- Code in the Smoke
-	["custom-134987433423089"] = 1.5, -- Rich Lifestyle
-	["custom-92952858514774"] = 1.5, -- Metallic Chaos Within Magic Theory
-	["custom-117388170134707"] = 1.5, -- Steel Collision
-	["custom-86468432953052"] = 1.5, -- Fallen Star Blues
-	["custom-126526272193872"] = 1.5, -- Winter Between Us
-	["custom-96399574470852"] = 1.5, -- Terminal Frequency
-}
-local function getTrackVolumeTrim(trackId: string?): number
-	if typeof(trackId) ~= "string" then return 1 end
-	local configured = TRACK_VOLUME_TRIM_OVERRIDES[trackId]
-	if not ControllerFunctions.isFiniteNumber(configured) or configured <= 0 then return 1 end
-	-- AudioPlayer.Volume supports values above 1, but
-	-- clamp the shared per-track trim to their documented 0..10 range.
-	return math.clamp(configured, 0.01, 10)
-end
-ControllerFunctions.getTrackVolumeTrim = getTrackVolumeTrim
-
--- Gain is owned by the active source. Keep the crossfade/profile contract
--- backend-neutral so a transition never assumes the outgoing deck is at 100%.
-ControllerFunctions.getAudioGain = function(sourceOverride: any?): (boolean, number)
-	local source = sourceOverride or activeAudioSource
-	if typeof(source) ~= "table" then return false, 0 end
-	if source.kind == "Backend" and source.backend then
-		local ok, value = pcall(function() return source.backend:GetGain() end)
-		if not ok or typeof(value) ~= "number" or not ControllerFunctions.isFiniteNumber(value)
-			or value < 0 or value > 1 then return false, 0 end
-		return true, value
-	end
-	return false, 0
-end
-ControllerFunctions.setAudioGain = function(value: number, sourceOverride: any?): boolean
-	if not ControllerFunctions.isFiniteNumber(value) or value < 0 or value > 1 then return false end
-	local source = sourceOverride or activeAudioSource
-	if typeof(source) ~= "table" then return false end
-	if source.kind == "Backend" and source.backend then
-		local ok, result = pcall(function() return source.backend:SetGain(value) end)
-		return ok and result ~= false
-	end
-	return false
-end
-
--- Track-specific playback-rate corrections. CROWN OF THE NIGHT's uploaded
--- source is already time-stretched by 9% with pitch preserved, so Roblox must
--- play that asset at normal speed rather than applying another 1.09 multiplier.
-local TRACK_PLAYBACK_SPEED_OVERRIDES: {[string]: number} = {
-	["custom-100919684616729"] = 1.0,
-}
-ControllerFunctions.setAudioPlaybackSpeed = function(value: number): boolean
-	if not ControllerFunctions.isFiniteNumber(value) or value < 0.5 or value > 2 then return false end
-	local source = activeAudioSource
-	if typeof(source) ~= "table" then return false end
-	if source.kind == "Backend" and source.backend then
-		local ok, result = pcall(function() return source.backend:SetPlaybackSpeed(value) end)
-		return ok and result ~= false
-	end
-	return false
-end
-ControllerFunctions.applyTrackPlaybackSpeed = function(trackId: string): boolean
-	local speed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId]
-	if speed == nil then return true end
-	return ControllerFunctions.setAudioPlaybackSpeed(speed)
-end
-
--- A controller mutation must not invalidate the source/revision captured by
--- an in-flight crossfade. Cancel first so the coordinator restores the outgoing
--- gain while its ownership guard is still valid; refuse the mutation if that
--- restoration cannot be completed safely.
-local function cancelCrossfadeBeforeAudioMutation(reason: string): boolean
-	local managers = ControllerFunctions.ChildManagers
-	local crossfade = managers and managers.Crossfade
-	if not crossfade or (not crossfade.active and not crossfade.starting) then return true end
-	if typeof(ControllerFunctions.cancelAudioTransition) ~= "function" then return false end
-	return ControllerFunctions.cancelAudioTransition(reason) == true
-end
-
-ControllerFunctions.setAudioAsset = function(asset: string)
-	if not cancelCrossfadeBeforeAudioMutation("set-audio-asset") then
-		return false, "Active crossfade could not be safely cancelled before changing the audio asset."
-	end
-	audioSourceRevision += 1
-	local source = activeAudioSource
-	if source.kind == "Backend" then return source.backend:SetAsset(asset) end
-	return false, "No active audio source is available."
-end
-ControllerFunctions.seekAudio = function(position: number)
-	if audioReloadInProgress then return false, "Audio controls are temporarily locked while the current track reloads." end
-	if not cancelCrossfadeBeforeAudioMutation("seek-audio") then
-		return false, "Active crossfade could not be safely cancelled before seeking."
-	end
-	audioSourceRevision += 1
-	local source = activeAudioSource
-	if source.kind == "Backend" then return source.backend:Seek(position) end
-	return false, "No active audio source is available."
-end
-ControllerFunctions.playAudio = function()
-	if audioReloadInProgress then return false, "Audio controls are temporarily locked while the current track reloads." end
-	if not cancelCrossfadeBeforeAudioMutation("play-audio") then
-		return false, "Active crossfade could not be safely cancelled before playback restart."
-	end
-	audioSourceRevision += 1
-	local source = activeAudioSource
-	if source.kind == "Backend" then return source.backend:Play() end
-	return false, "No active audio source is available."
-end
-ControllerFunctions.stopAudio = function()
-	if not cancelCrossfadeBeforeAudioMutation("stop-audio") then
-		return false, "Active crossfade could not be safely cancelled before stopping playback."
-	end
-	audioSourceRevision += 1
-	local source = activeAudioSource
-	if source.kind == "Backend" then return source.backend:Stop() end
-	return true, nil
-end
-ControllerFunctions.pauseAudio = function()
-	if audioReloadInProgress then return false, "Audio controls are temporarily locked while the current track reloads." end
-	if not cancelCrossfadeBeforeAudioMutation("pause-audio") then
-		return false, "Active crossfade could not be safely cancelled before pausing playback."
-	end
-	audioSourceRevision += 1
-	local source = activeAudioSource
-	if source.kind == "Backend" then return source.backend:Pause() end
-	return false, "No active audio source is available."
-end
-ControllerFunctions.resumeAudio = function()
-	if audioReloadInProgress then return false, "Audio controls are temporarily locked while the current track reloads." end
-	if not cancelCrossfadeBeforeAudioMutation("resume-audio") then
-		return false, "Active crossfade could not be safely cancelled before resuming playback."
-	end
-	audioSourceRevision += 1
-	local source = activeAudioSource
-	if source.kind == "Backend" then return source.backend:Resume() end
-	return false, "No active audio source is available."
-end
-
--- Keep failed backend retirements reachable and retry transient Destroy failures.
--- A backend may be retired only after controller ownership has moved elsewhere.
-local retiredAudioBackends: {[any]: string} = {}
-local function retireAudioBackend(backend: any, reason: string): boolean
-	if typeof(backend) ~= "table" then return true end
-	if retiredAudioBackends[backend] == "retrying" then return false end
-	local ok, result, detail = pcall(function()
-		return backend:Cleanup()
-	end)
-	if ok and result ~= false then
-		retiredAudioBackends[backend] = nil
-		return true
-	end
-	retiredAudioBackends[backend] = "retrying"
-	warn("[ClubMusic][AudioBackend] Backend retirement failed (" .. reason .. "): " .. tostring(detail or result))
-	task.spawn(function()
-		for attempt = 1, 3 do
-			task.wait(attempt)
-			local retryOk, retryResult, retryDetail = pcall(function()
-				return backend:Cleanup()
-			end)
-			if retryOk and retryResult ~= false then
-				retiredAudioBackends[backend] = nil
-				return
-			end
-			warn("[ClubMusic][AudioBackend] Backend cleanup retry " .. tostring(attempt)
-				.. " failed (" .. reason .. "): " .. tostring(retryDetail or retryResult))
-		end
-		-- Keep the reference in the registry for diagnosis and a later retry.
-		retiredAudioBackends[backend] = "pending"
-	end)
-	return false
-end
-
--- Final teardown drain for controller-retired backends. Normal retirement uses
--- bounded asynchronous retries; shutdown waits for those attempts, then makes a
--- final bounded pass over entries explicitly marked pending.
-local function drainRetiredAudioBackends(reason: string): boolean
-	local deadline = os.clock() + 6.5
-	while os.clock() < deadline do
-		local retrying = false
-		for _, status in pairs(retiredAudioBackends) do
-			if status == "retrying" then retrying = true; break end
-		end
-		if not retrying then break end
-		task.wait(0.1)
-	end
-
-	local allClean = true
-	for backend, status in pairs(retiredAudioBackends) do
-		if status == "pending" then
-			retiredAudioBackends[backend] = "retrying"
-			local cleaned = false
-			for attempt = 1, 3 do
-				if attempt > 1 then task.wait(attempt) end
-				local ok, result, detail = pcall(function()
-					return backend:Cleanup()
-				end)
-				if ok and result ~= false then
-					retiredAudioBackends[backend] = nil
-					cleaned = true
-					break
-				end
-				warn("[ClubMusic][AudioBackend] Final cleanup retry " .. tostring(attempt)
-					.. " failed (" .. reason .. "): " .. tostring(detail or result))
-			end
-			if not cleaned then
-				retiredAudioBackends[backend] = "pending"
-				allClean = false
-			end
-		elseif status == "retrying" then
-			allClean = false
-		end
-	end
-	return allClean
-end
-
--- Initialize source telemetry/playing-count for the unavailable pre-track state.
-ControllerFunctions.bindActiveAudioPlayingSignal()
-
+-- AudioBackendManager owns the modern source contract and recovery lifecycle.
 -- One controller-owned cancellation seam for every dual-deck transition.
 -- Pending queue metadata is invalidated even when the manager is absent or cleanup reports failure.
 ControllerFunctions.cancelAudioTransition = function(reason: string?)
@@ -1032,7 +748,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 					then tostring(pendingCrossfadeEntry.trackId or "") else ""
 				local player = deck:GetPlayer()
 				if not player then error("Incoming AudioPlayer instance is unavailable.") end
-				local trim = getTrackVolumeTrim(incomingTrackId)
+				local trim = audioBackendManager.GetTrackVolumeTrim(incomingTrackId)
 				if ControllerFunctions.isFiniteNumber(trim) then player.Volume = math.clamp(trim, 0.01, 10) end
 			end)
 			if not setupOk then
@@ -1052,11 +768,11 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			return math.max(0, (tonumber(nowPlaying.duration) or 0) - (tonumber(nowPlaying.elapsed) or 0))
 		end,
 		GetOutgoingGain = function()
-			if activeAudioSource.kind ~= "Backend" or not activeAudioSource.backend then
+			if audioState.activeAudioSource.kind ~= "Backend" or not audioState.activeAudioSource.backend then
 				error("Crossfade requires the modern AudioPlayer backend; no legacy Sound fallback is available.")
 			end
-			transitionOutgoing = activeAudioSource
-			transitionRevision = audioSourceRevision
+			transitionOutgoing = audioState.activeAudioSource
+			transitionRevision = audioState.audioSourceRevision
 			local ok, value = ControllerFunctions.getAudioGain(transitionOutgoing)
 			if not ok then error("Outgoing audio gain is unavailable.") end
 			ControllerFunctions.crossfadeOutgoingBaseGain = value
@@ -1064,7 +780,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 		end,
 		SetOutgoingGain = function(value: number)
 			if not transitionOutgoing or transitionOutgoing.kind ~= "Backend" or not transitionOutgoing.backend
-				or activeAudioSource ~= transitionOutgoing or audioSourceRevision ~= transitionRevision then return false end
+				or audioState.activeAudioSource ~= transitionOutgoing or audioState.audioSourceRevision ~= transitionRevision then return false end
 			return ControllerFunctions.setAudioGain(value, transitionOutgoing)
 		end,
 		OnFailure = function(message: string)
@@ -1081,8 +797,8 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			local outgoing = transitionOutgoing
 			local entry = pendingCrossfadeEntry
 			if not outgoing or outgoing.kind ~= "Backend" or not outgoing.backend
-				or activeAudioSource ~= outgoing or audioSourceRevision ~= transitionRevision or playbackPaused
-				or not entry or pendingCrossfadeToken ~= audioTransitionTrackToken then
+				or audioState.activeAudioSource ~= outgoing or audioState.audioSourceRevision ~= transitionRevision or audioState.playbackPaused
+				or not entry or pendingCrossfadeToken ~= audioState.audioTransitionTrackToken then
 				return false
 			end
 			local playerOk, player = pcall(function() return incoming:GetPlayer() end)
@@ -1108,10 +824,10 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return false
 			end
 
-			activeAudioSource = { kind = "Backend", backend = incoming }
+			audioState.activeAudioSource = { kind = "Backend", backend = incoming }
 			local bindOk = pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
 			if not bindOk then
-				activeAudioSource = outgoing
+				audioState.activeAudioSource = outgoing
 				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
 				if recoverCommittedGlobalTrack() then return true end
 				if outgoingWasPlaying then
@@ -1128,7 +844,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return queueManager:PopNext()
 			end)
 			if not popOk or popped ~= entry then
-				activeAudioSource = outgoing
+				audioState.activeAudioSource = outgoing
 				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
 				if outgoingWasPlaying then
 					pcall(function()
@@ -1137,7 +853,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				end
 				return false
 			end
-			audioSourceRevision += 1
+			audioState.audioSourceRevision += 1
 			-- Ownership and queue consumption are now committed. Never surface a
 			-- later bookkeeping error as a failed commit: manager cancellation would
 			-- otherwise destroy the incoming deck that is already controller-active.
@@ -1166,7 +882,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			if outgoing.backend ~= incoming then
 				-- Ownership has transferred to the incoming deck; retire the previous
 				-- backend through the controller registry so failed cleanup stays reachable.
-				retireAudioBackend(outgoing.backend, "crossfade outgoing commit")
+				audioBackendManager.RetireBackend(outgoing.backend, "crossfade outgoing commit")
 			end
 			return true
 		end,
@@ -1187,8 +903,8 @@ ControllerFunctions.beginAudioCrossfade = function(asset: string, duration: numb
 	local managers = ControllerFunctions.ChildManagers
 	local crossfade = managers and managers.Crossfade
 	if not crossfade then return false, "Audio crossfade manager is not initialized." end
-	if playbackPaused then return false, "Cannot crossfade while playback is paused." end
-	if activeAudioSource.kind ~= "Backend" or not activeAudioSource.backend then
+	if audioState.playbackPaused then return false, "Cannot crossfade while playback is paused." end
+	if audioState.activeAudioSource.kind ~= "Backend" or not audioState.activeAudioSource.backend then
 		return false, "Crossfade requires the modern AudioPlayer backend; normal track advance remains available while the backend is unavailable."
 	end
 	local snapshot = ControllerFunctions.getAudioSnapshot()
@@ -1216,416 +932,14 @@ ControllerFunctions.beginAudioCrossfade = function(asset: string, duration: numb
 end
 
 
-ControllerFunctions.stopServerMusic = function()
-	pcall(function() ControllerFunctions.stopAudio() end)
-	ControllerFunctions.refreshActiveMusicSoundCount()
-end
+local audioBackendManager = require(ServerStorage:WaitForChild("ClubNeon_AudioBackendManager"))({
+	ControllerFunctions = ControllerFunctions,
+	SoundService = SoundService,
+	CONFIG = CONFIG,
+	state = audioState,
+	getNowPlaying = function() return nowPlaying end,
+})
 
--- Modern-only startup. If module loading, decoding, or playback verification
--- fails, leave the source unavailable and report the failure; never start legacy
--- AudioPlayer. A monotonically increasing token fences late decoder completions.
-ControllerFunctions.startServerMusic = function(soundId: any)
-	local retiredSource = activeAudioSource
-	ControllerFunctions.stopServerMusic()
-	-- New-track startup owns a fresh candidate. Mark the source unavailable while
-	-- it loads, and retire the stopped previous backend so the controller never
-	-- reports a stopped output as the active source.
-	if retiredSource.kind == "Backend" and retiredSource.backend then
-		retireAudioBackend(retiredSource.backend, "new track startup")
-	end
-	activeAudioSource = { kind = "Unavailable" }
-	ControllerFunctions.bindActiveAudioPlayingSignal()
-	modernAudioStartToken += 1
-	local startToken = modernAudioStartToken
-	local startRevision = audioSourceRevision
-	if typeof(soundId) ~= "string" or #soundId > 64
-		or not string.match(soundId, "^rbxassetid://%d+$") then
-		ControllerFunctions.setAudioAsset("")
-		return
-	end
-
-	local trackId = tostring(nowPlaying and nowPlaying.trackId or "")
-	local expectedTransitionToken = audioTransitionTrackToken
-	local trim = getTrackVolumeTrim(trackId)
-	local playbackSpeed = TRACK_PLAYBACK_SPEED_OVERRIDES[trackId] or 1
-	local wasPaused = playbackPaused == true
-
-	local function isCurrentStart(): boolean
-		return modernAudioStartToken == startToken
-			and audioSourceRevision == startRevision
-			and audioTransitionTrackToken == expectedTransitionToken
-			and tostring(nowPlaying and nowPlaying.trackId or "") == trackId
-			and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
-			and playbackPaused == wasPaused
-			and activeAudioSource.kind == "Unavailable"
-	end
-
-	local function reportModernStartupFailure(reason: string?)
-		if not isCurrentStart() then return end
-		modernBackendStartFailureCount += 1
-		warn("[ClubMusic][AudioBackend] Modern-only startup failed; no legacy fallback was started: "
-			.. tostring(reason or "UseModernAudioBackend is disabled."))
-	end
-
-	if not CONFIG.UseModernAudioBackend then
-		reportModernStartupFailure("UseModernAudioBackend is disabled.")
-		return
-	end
-
-	task.spawn(function()
-		local candidate: any = nil
-		local function discardCandidate()
-			if candidate then
-				pcall(function() candidate:Stop() end)
-				retireAudioBackend(candidate, "modern startup candidate discarded")
-				candidate = nil
-			end
-		end
-		local ok, failure = pcall(function()
-			local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
-			if not backendModule or not backendModule:IsA("ModuleScript") then
-				error("Modern backend ModuleScript is missing.")
-			end
-			local BackendClass = require(backendModule)
-			if typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
-				error("Modern backend module has an invalid constructor.")
-			end
-			candidate = BackendClass.new({
-				Name = "ClubMusicMainAudioBackend",
-				Parent = SoundService,
-				Volume = math.clamp(trim, 0.01, 10),
-				PlaybackSpeed = playbackSpeed,
-				InitialGain = 0,
-			})
-			if typeof(candidate) ~= "table" then error("Modern backend could not be constructed.") end
-			local assetOk, assetError = candidate:SetAsset(soundId)
-			if assetOk ~= true then error(tostring(assetError or "Modern backend rejected the track asset.")) end
-
-			local readyDeadline = os.clock() + 8
-			local ready = false
-			repeat
-				if not isCurrentStart() then return "stale" end
-				local readiness = candidate:GetReadinessSnapshot()
-				ready = typeof(readiness) == "table"
-					and readiness.ready == true
-					and readiness.asset == soundId
-					and ControllerFunctions.isFiniteNumber(readiness.length)
-					and readiness.length > 0
-				if not ready then task.wait(0.1) end
-			until ready or os.clock() >= readyDeadline
-			if not ready then error("Modern AudioPlayer decoder did not become ready within 8 seconds.") end
-
-			local startPosition = math.max(0, tonumber(nowPlaying and nowPlaying.elapsed) or 0)
-			local played, playError = candidate:Play(nil, startPosition)
-			if played ~= true then error(tostring(playError or "Modern AudioPlayer failed to start.")) end
-			local playDeadline = os.clock() + 2
-			local playing = false
-			repeat
-				if not isCurrentStart() then return "stale" end
-				playing = candidate:IsPlaying() == true
-				if not playing then task.wait(0.05) end
-			until playing or os.clock() >= playDeadline
-			if not playing then error("Modern AudioPlayer did not enter the playing state.") end
-			local finalReadiness = candidate:GetReadinessSnapshot()
-			if typeof(finalReadiness) ~= "table" or finalReadiness.ready ~= true
-				or finalReadiness.asset ~= soundId or finalReadiness.length <= 0 then
-				error("Modern AudioPlayer readiness changed during startup.")
-			end
-			if wasPaused then
-				local paused, pauseError = candidate:Pause()
-				if paused ~= true then error(tostring(pauseError or "Modern AudioPlayer could not preserve pause state.")) end
-			end
-			if not isCurrentStart() then return "stale" end
-			local gainOk, gainError = candidate:SetGain(1)
-			if gainOk ~= true then error(tostring(gainError or "Modern AudioPlayer gain could not be enabled.")) end
-
-			local previousSource = activeAudioSource
-			activeAudioSource = { kind = "Backend", backend = candidate }
-			candidate = nil
-			ControllerFunctions.bindActiveAudioPlayingSignal()
-			if previousSource.kind == "Backend" and previousSource.backend then
-				retireAudioBackend(previousSource.backend, "modern startup source replacement")
-			end
-			modernBackendStartSucceeded = true
-			modernBackendStartFailureCount = 0
-			print("[ClubMusic][AudioBackend] Modern AudioPlayer started as the primary track source.")
-		end)
-		discardCandidate()
-		if ok and failure == "stale" then
-			-- Expected cancellation: never warn or invoke legacy recovery for an
-			-- obsolete track. If the same startup still owns the current track but
-			-- its playhead or pause state changed, retry with the latest state.
-			if modernAudioStartToken == startToken
-				and activeAudioSource.kind == "Unavailable"
-				and audioTransitionTrackToken == expectedTransitionToken
-				and tostring(nowPlaying and nowPlaying.trackId or "") == trackId
-				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
-				and (audioSourceRevision ~= startRevision or playbackPaused ~= wasPaused) then
-				task.defer(ControllerFunctions.startServerMusic, soundId)
-			end
-		elseif not ok then
-			-- A seek/pause or other controller action may legitimately revise the
-			-- source while the candidate is loading. Retry only if this startup
-			-- still owns the same track transition, using the latest controller state.
-			if modernAudioStartToken == startToken
-				and activeAudioSource.kind == "Unavailable"
-				and audioTransitionTrackToken == expectedTransitionToken
-				and tostring(nowPlaying and nowPlaying.trackId or "") == trackId
-				and tostring(nowPlaying and nowPlaying.soundId or "") == soundId
-				and (audioSourceRevision ~= startRevision or playbackPaused ~= wasPaused) then
-				task.defer(ControllerFunctions.startServerMusic, soundId)
-			else
-				reportModernStartupFailure(tostring(failure))
-			end
-		end
-	end)
-end
-
--- Restart the active source in place through the normalized controller contract.
--- Avoid reselecting the asset and reapplying track gain/speed on every restart.
-ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, string?)
-	if typeof(soundId) ~= "string" or #soundId > 64
-		or not string.match(soundId, "^rbxassetid://%d+$") then
-		return false, "The current track has no valid audio asset."
-	end
-	-- Read only the two properties restart actually needs. A full snapshot also
-	-- queries readiness, duration, and playhead, adding work to a latency-sensitive
-	-- button path without changing the restart decision.
-	local snapshotOk, snapshot = pcall(ControllerFunctions.getAudioSnapshot)
-	if not snapshotOk or typeof(snapshot) ~= "table" then
-		return false, "The current audio source state could not be read safely."
-	end
-	if snapshot.kind == "Unavailable" then
-		-- A restart is an explicit request to recover and resume the selected
-		-- track. Publish its intended start state before task.spawn can observe it.
-		nowPlaying.elapsed = 0
-		playbackPaused = false
-		ControllerFunctions.startServerMusic(soundId)
-		return true, nil
-	end
-	local sourceAsset = tostring(snapshot.asset or "")
-	local sourcePlaying = snapshot.playing == true
-	if sourceAsset ~= soundId then
-		ControllerFunctions.startServerMusic(soundId)
-		return true, nil
-	end
-
-	-- Reset the active playhead in place instead of Stop -> Seek -> Play.
-	-- Stopping a loaded source can force the decoder to reinitialize and adds
-	-- avoidable latency. If the source was paused/stopped, start it after seeking.
-	local seekOk, seekResult, seekError = pcall(ControllerFunctions.seekAudio, 0)
-	if not seekOk or seekResult == false then
-		return false, tostring(seekError or seekResult or "The current audio source could not be reset.")
-	end
-	if sourcePlaying ~= true then
-		local playOk, playResult, playError = pcall(ControllerFunctions.playAudio)
-		if not playOk or playResult == false then
-			return false, tostring(playError or playResult or "The current audio source could not be restarted.")
-		end
-	end
-	return true, nil
-end
-
--- Rebuild a failed modern deck without falling back to legacy Sound playback.
--- The queue and authoritative track clock remain untouched; only the audio graph
--- is replaced after the new AudioPlayer is loaded, positioned, and verified.
-local function rebuildModernAudioBackend(source: any, asset: string, position: number,
-	expectedTrackId: string, expectedTransitionToken: number): (boolean, string?)
-	if typeof(source) ~= "table" or source.kind ~= "Backend" or typeof(source.backend) ~= "table" then
-		return false, "Modern audio recovery requires the controller-owned AudioPlayer backend."
-	end
-	local expectedRevision = audioSourceRevision
-	local wasPaused = playbackPaused == true
-	local gainOk, outgoingGain = ControllerFunctions.getAudioGain(source)
-	if not gainOk then
-		return false, "The active AudioPlayer gain could not be read safely; keeping the current backend unchanged."
-	end
-	local backendModule = ControllerFunctions.findAudioModule("ClubMusicAudioBackend")
-	if not backendModule or not backendModule:IsA("ModuleScript") then
-		return false, "Modern audio recovery module is unavailable."
-	end
-	local requireOk, BackendClass = pcall(require, backendModule)
-	if not requireOk or typeof(BackendClass) ~= "table" or typeof(BackendClass.new) ~= "function" then
-		return false, "Modern audio recovery module could not be loaded."
-	end
-	local createOk, candidate = pcall(BackendClass.new, {
-		Name = "ClubMusicMainAudioBackendRecovery",
-		Parent = SoundService,
-		Volume = getTrackVolumeTrim(expectedTrackId),
-		InitialGain = 0,
-	})
-	if not createOk or typeof(candidate) ~= "table" then
-		return false, "A replacement modern AudioPlayer graph could not be created."
-	end
-	local function abandon(message: string): (boolean, string?)
-		pcall(function() candidate:Stop() end)
-		retireAudioBackend(candidate, "modern recovery candidate abandoned")
-		return false, message
-	end
-	local selected, selectError = candidate:SetAsset(asset)
-	if selected ~= true then return abandon(tostring(selectError or "Replacement AudioPlayer rejected the current asset.")) end
-	local speed = TRACK_PLAYBACK_SPEED_OVERRIDES[expectedTrackId] or 1
-	local speedSet, speedError = candidate:SetPlaybackSpeed(speed)
-	if speedSet ~= true then return abandon(tostring(speedError or "Replacement AudioPlayer rejected playback speed.")) end
-
-	local deadline = os.clock() + 8
-	local readiness = nil
-	repeat
-		task.wait(0.1)
-		local readOk, state = pcall(function() return candidate:GetReadinessSnapshot() end)
-		if readOk and typeof(state) == "table" and state.ready == true
-			and state.asset == asset and ControllerFunctions.isFiniteNumber(state.length) and state.length > 0 then
-			readiness = state
-			break
-		end
-	until os.clock() >= deadline
-	if not readiness then return abandon("Replacement AudioPlayer did not become ready within 8 seconds.") end
-
-	local target = math.clamp(position, 0, math.max(0, readiness.length - 0.5))
-	local seeked, seekError = candidate:Seek(target)
-	if seeked ~= true then return abandon(tostring(seekError or "Replacement AudioPlayer could not restore the playhead.")) end
-	if wasPaused then
-		local paused, pauseError = candidate:Pause()
-		if paused ~= true then return abandon(tostring(pauseError or "Replacement AudioPlayer could not preserve pause state.")) end
-	else
-		local started, startError = candidate:Play()
-		if started ~= true then return abandon(tostring(startError or "Replacement AudioPlayer could not start.")) end
-		local startDeadline = os.clock() + 2
-		repeat
-			task.wait(0.05)
-		until candidate:IsPlaying() or os.clock() >= startDeadline
-		if not candidate:IsPlaying() then return abandon("Replacement AudioPlayer did not enter the playing state.") end
-	end
-	-- Keep the replacement deck muted throughout every yielding preparation
-	-- step. Revalidate ownership immediately before restoring audible gain; the
-	-- gain setter is synchronous, so no stale candidate can become audible between
-	-- this final compare and the controller ownership transfer.
-	if activeAudioSource ~= source or audioSourceRevision ~= expectedRevision
-		or tostring(nowPlaying.trackId or "") ~= expectedTrackId
-		or audioTransitionTrackToken ~= expectedTransitionToken
-		or playbackPaused ~= wasPaused then
-		return abandon("Playback changed while modern audio recovery was preparing.")
-	end
-
-	local gainSet, gainError = candidate:SetGain(math.clamp(outgoingGain, 0, 1))
-	if gainSet ~= true then return abandon(tostring(gainError or "Replacement AudioPlayer could not restore output gain.")) end
-
-	activeAudioSource = { kind = "Backend", backend = candidate }
-	ControllerFunctions.bindActiveAudioPlayingSignal()
-	retireAudioBackend(source.backend, "watchdog backend recovery")
-	print("[ClubMusic][AudioBackend] Recovered playback with a replacement modern AudioPlayer.")
-	return true, nil
-end
-
--- Recover the current server-local audio source without changing queue ownership,
--- track identity, or the authoritative playback clock. This is deliberately blocked
--- during a crossfade so a manual recovery cannot interrupt a deck handoff.
-local function performReloadServerMusic(): (boolean, string?)
-	local asset = nowPlaying.soundId or CONFIG.SoundIds[nowPlaying.trackId] or ""
-	if typeof(asset) ~= "string" or #asset > 64
-		or not string.match(asset, "^rbxassetid://%d+$") then
-		return false, "There is no playable audio asset for the current track."
-	end
-	local managers = ControllerFunctions.ChildManagers
-	local crossfade = managers and managers.Crossfade
-	if crossfade and crossfade.active then
-		return false, "Please wait for the current crossfade to finish before reloading audio."
-	end
-
-	local source = activeAudioSource
-	local duration = math.max(1, tonumber(nowPlaying.duration) or 1)
-	local expectedTrackId = tostring(nowPlaying.trackId or "")
-	local expectedTransitionToken = audioTransitionTrackToken
-	local expectedPaused = playbackPaused == true
-
-	if source.kind ~= "Backend" or not source.backend then
-		-- If startup previously failed, retry the current track through the same
-		-- verified modern-only startup path. startServerMusic restores the
-		-- controller's saved elapsed position and pause state; it never starts Sound.
-		ControllerFunctions.startServerMusic(asset)
-		local startupDeadline = os.clock() + 12
-		repeat
-			task.wait(0.1)
-			if tostring(nowPlaying.trackId or "") ~= expectedTrackId
-				or audioTransitionTrackToken ~= expectedTransitionToken
-				or playbackPaused ~= expectedPaused then
-				return false, "The current track changed during modern audio recovery."
-			end
-			local recoveredSource = activeAudioSource
-			if recoveredSource.kind == "Backend" and recoveredSource.backend then
-				local stateOk, recoveredSnapshot = pcall(ControllerFunctions.getAudioSnapshot)
-				local restoredState = if expectedPaused
-					then typeof(recoveredSnapshot) == "table" and recoveredSnapshot.paused == true
-					else typeof(recoveredSnapshot) == "table" and recoveredSnapshot.playing == true
-				if stateOk and restoredState and recoveredSnapshot.asset == asset then
-					return true, nil
-				end
-			elseif recoveredSource.kind ~= "Unavailable" then
-				return false, "The audio source changed unexpectedly during modern recovery."
-			end
-		until os.clock() >= startupDeadline
-		return false, "Modern AudioPlayer could not be restarted; no legacy fallback was started."
-	end
-
-	local snapshot = ControllerFunctions.getAudioSnapshot()
-	if typeof(snapshot) ~= "table" or snapshot.kind == "Unavailable" then
-		return false, "The active modern AudioPlayer is unavailable."
-	end
-	local expectedSourceRevision = audioSourceRevision
-	local position = if ControllerFunctions.isFiniteNumber(snapshot.position)
-		then snapshot.position else math.max(0, tonumber(nowPlaying.elapsed) or 0)
-	position = math.clamp(position, 0, math.max(0, duration - 0.5))
-
-	if source.kind == "Backend" and source.backend then
-		-- AudioPlayer reload must reselect the asset and wait for its decoder;
-		-- Stop/Seek/Play on the same selection is not a reliable recovery.
-		local reloadCallOk, reloaded, reloadError = pcall(function()
-			return source.backend:Reload(position)
-		end)
-		if not reloadCallOk or reloaded ~= true then
-			local recovered, recoveryError = rebuildModernAudioBackend(
-				source, asset, position, expectedTrackId, expectedTransitionToken
-			)
-			if recovered then return true, nil end
-			return false, tostring(recoveryError or reloadError or reloaded or "The modern audio decoder could not be recovered.")
-		end
-	else
-		return false, "The active modern AudioPlayer does not support reload recovery."
-	end
-
-	-- Confirm actual playback and fence out a track change that occurred while
-	-- the decoder was loading. Never report success for a stale source.
-	local resumeDeadline = os.clock() + 3
-	repeat
-		task.wait(0.1)
-		if activeAudioSource ~= source or audioSourceRevision ~= expectedSourceRevision
-			or tostring(nowPlaying.trackId or "") ~= expectedTrackId
-			or audioTransitionTrackToken ~= expectedTransitionToken or playbackPaused then
-			return false, "The current track changed during reload; no stale playback state was committed."
-		end
-		local stateOk, current = pcall(ControllerFunctions.getAudioSnapshot)
-		local restoredState = if playbackPaused
-			then typeof(current) == "table" and current.paused == true
-			else typeof(current) == "table" and current.playing == true
-		if stateOk and restoredState and current.asset == asset then
-			return true, nil
-		end
-	until os.clock() >= resumeDeadline
-	return false, "The audio source did not resume after reloading. Please try again."
-end
-
-ControllerFunctions.reloadServerMusic = function(): (boolean, string?)
-	if audioReloadInProgress then
-		return false, "An audio reload is already in progress."
-	end
-	audioReloadInProgress = true
-	local callOk, recovered, recoveryError = pcall(performReloadServerMusic)
-	audioReloadInProgress = false
-	if not callOk then
-		return false, "Audio reload failed safely: " .. tostring(recovered)
-	end
-	return recovered == true, recoveryError
-end
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
@@ -3412,7 +2726,7 @@ ControllerFunctions.audioRecoveryAttemptedGeneration = -1
 ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: boolean?, suppressGlobalCommit: boolean?)
 	if preserveAudio ~= true then ControllerFunctions.cancelAudioTransition("track-change") end
 	playbackGeneration += 1
-	audioTransitionTrackToken += 1
+	audioState.audioTransitionTrackToken += 1
 	pendingCrossfadeEntry = nil
 	pendingCrossfadeToken = -1
 				crossfadeAttemptedGeneration = -1
@@ -3464,7 +2778,7 @@ ControllerFunctions.commitGlobalPlaybackSync = function(reason: string?): boolea
 			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
 			soundId = nowPlaying.soundId, duration = nowPlaying.duration,
 		} else nil,
-		paused = playbackPaused == true,
+		paused = audioState.playbackPaused == true,
 		position = position,
 		anchorTime = workspace:GetServerTimeNow(),
 		trackRevision = nextTrackRevision,
@@ -3505,7 +2819,7 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 				ControllerFunctions.setAudioAsset("")
 				nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
 				nowPlaying.soundId = ""; nowPlaying.elapsed = 0
-				playbackPaused = true
+				audioState.playbackPaused = true
 				ControllerFunctions.publishPlaybackState()
 			end
 			state.lastAppliedRevision = snapshot.revision
@@ -3518,7 +2832,7 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 		end
 		local canonicalSoundId = catalogTrack.soundId or CONFIG.SoundIds[current.trackId] or ""
 		if canonicalSoundId == "" or canonicalSoundId ~= current.soundId then return false end
-		playbackPaused = snapshot.paused == true
+		audioState.playbackPaused = snapshot.paused == true
 		if nowPlaying.trackId ~= current.trackId then
 			local entry: QueueEntry = {
 				id = "global-playback-" .. tostring(snapshot.trackRevision or snapshot.revision),
@@ -3533,11 +2847,11 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 		local base = if ControllerFunctions.isFiniteNumber(snapshot.position) then snapshot.position else 0
 		local elapsed = if snapshot.paused == true then base else base + math.max(0, workspace:GetServerTimeNow() - anchor)
 		nowPlaying.elapsed = math.clamp(elapsed, 0, nowPlaying.duration)
-		playbackPaused = snapshot.paused == true
+		audioState.playbackPaused = snapshot.paused == true
 		pcall(function()
 			local audio = ControllerFunctions.getAudioSnapshot()
 			if audio.ready then ControllerFunctions.seekAudio(nowPlaying.elapsed) end
-			if playbackPaused then ControllerFunctions.pauseAudio()
+			if audioState.playbackPaused then ControllerFunctions.pauseAudio()
 			elseif not audio.playing then ControllerFunctions.playAudio() end
 		end)
 	else
@@ -3548,7 +2862,7 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 			nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
 			nowPlaying.soundId = ""; nowPlaying.elapsed = 0
 		end
-		playbackPaused = true
+		audioState.playbackPaused = true
 	end
 	state.revision = snapshot.revision
 	state.trackRevision = tonumber(snapshot.trackRevision) or state.trackRevision
@@ -3558,7 +2872,7 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 	local targetTrackId = nowPlaying.trackId
 	local targetRevision = snapshot.revision
 	local targetPosition = nowPlaying.elapsed
-	local targetPaused = playbackPaused
+	local targetPaused = audioState.playbackPaused
 	task.spawn(function()
 		local deadline = os.clock() + 10
 		while os.clock() < deadline do
@@ -3727,7 +3041,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 			trackId = nowPlaying.trackId, title = nowPlaying.title, artist = nowPlaying.artist,
 			genre = nowPlaying.genre, duration = nowPlaying.duration, elapsed = nowPlaying.elapsed,
 			dj = nowPlaying.dj, source = nowPlaying.source, requestedBy = nowPlaying.requestedBy,
-			vip = nowPlaying.vip, soundId = nowPlaying.soundId, paused = playbackPaused,
+			vip = nowPlaying.vip, soundId = nowPlaying.soundId, paused = audioState.playbackPaused,
 			playlist = {
 				active = activePlaylistId ~= nil, id = activePlaylistId, name = activePlaylistName,
 				currentPosition = playlistPosition, totalTracks = playlistTotal,
@@ -4797,12 +4111,12 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if ControllerFunctions.globalPlaybackSyncState.enabled == true and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
 			return false, "Only the elected playback leader can pause or resume while global playback sync is enabled."
 		end
-		if audioReloadInProgress then
+		if audioState.audioReloadInProgress then
 			notify(player, "Please wait for the current audio reload to finish before changing playback controls.", "warn")
 			return false, "Audio reload is in progress."
 		end
 		if nowPlaying.trackId == "" then notify(player, "No track is currently selected.", "warn"); return false, "No track is currently selected." end
-		local desiredPaused = not playbackPaused
+		local desiredPaused = not audioState.playbackPaused
 		playbackControlRequestId += 1
 		ControllerFunctions.cancelAudioTransition(if desiredPaused then "pause" else "resume")
 		local position = math.clamp(tonumber(nowPlaying.elapsed) or 0, 0, nowPlaying.duration)
@@ -4823,7 +4137,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			return false, tostring(audioError)
 		end
 		nowPlaying.elapsed = position
-		playbackPaused = desiredPaused
+		audioState.playbackPaused = desiredPaused
 		ControllerFunctions.publishPlaybackState()
 		ControllerFunctions.commitGlobalPlaybackSync(if desiredPaused then "pause" else "resume")
 		notify(player, if desiredPaused then "Music paused on this server." else "Music resumed on this server.", "ok")
@@ -4835,7 +4149,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if ControllerFunctions.globalPlaybackSyncState.enabled == true and ControllerFunctions.globalPlaybackSyncState.isLeader ~= true then
 			return false, "Only the elected playback leader can restart while global playback sync is enabled."
 		end
-		if audioReloadInProgress then
+		if audioState.audioReloadInProgress then
 			notify(player, "Please wait for the current audio reload to finish before restarting the track.", "warn")
 			return false, "Audio reload is in progress."
 		end
@@ -4845,12 +4159,12 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		ControllerFunctions.cancelAudioTransition("restart")
 		local restartOk, restartError = ControllerFunctions.restartServerMusic(restartAsset)
 		if not restartOk then
-			playbackPaused = true
+			audioState.playbackPaused = true
 			notify(player, "Track restart could not be applied: " .. tostring(restartError), "warn")
 			return false, tostring(restartError)
 		end
 		nowPlaying.elapsed = 0
-		playbackPaused = false
+		audioState.playbackPaused = false
 		ControllerFunctions.publishPlaybackState()
 		ControllerFunctions.commitGlobalPlaybackSync("restart")
 		notify(player, "Current track restarted on this server.", "ok")
@@ -5354,9 +4668,9 @@ localDiagnosticsBindable.OnInvoke = function()
 				localQueueIsolated = true,
 			},
 			modernBackendConfigured = CONFIG.UseModernAudioBackend == true,
-			modernBackendStartSucceeded = modernBackendStartSucceeded,
-			modernBackendStartFailureCount = modernBackendStartFailureCount,
-			activeSourceKind = activeAudioSource.kind,
+			audioState.modernBackendStartSucceeded = audioState.modernBackendStartSucceeded,
+			audioState.modernBackendStartFailureCount = audioState.modernBackendStartFailureCount,
+			activeSourceKind = audioState.activeAudioSource.kind,
 		},
 		updatedAt = os.time(),
 	}
@@ -5404,8 +4718,8 @@ end
 local createAdminBridge = require(adminBridgeModuleSource)
 local adminBridgeModule = createAdminBridge({
 	-- Mutable primitives remain controller-owned; bridge receives live accessors, not snapshots.
-	getPlaybackPaused = function(): boolean return playbackPaused end,
-	setPlaybackPaused = function(value: boolean) playbackPaused = value == true end,
+	getPlaybackPaused = function(): boolean return audioState.playbackPaused end,
+	setPlaybackPaused = function(value: boolean) audioState.playbackPaused = value == true end,
 	getRequestsLocked = function(): boolean return requestsLocked end,
 	setRequestsLocked = function(value: boolean) requestsLocked = value == true end,
 	getDJControlModeEnabled = function(): boolean return djControlModeEnabled end,
@@ -5419,7 +4733,7 @@ local adminBridgeModule = createAdminBridge({
 	operationalDiagnosticsFormatter = operationalDiagnosticsFormatter,
 	permissions = permissions,
 	phase32Services = phase32Services,
-	playbackPaused = playbackPaused,
+	audioState.playbackPaused = audioState.playbackPaused,
 	publishState = publishState,
 	purchaseDiagnostics = purchaseDiagnostics,
 	queue = queue,
@@ -6391,7 +5705,7 @@ task.spawn(function()
 	while not serverShuttingDown do
 		task.wait(1)
 		if serverShuttingDown then break end
-		if not playbackPaused and not audioReloadInProgress then
+		if not audioState.playbackPaused and not audioState.audioReloadInProgress then
 			nowPlaying.elapsed += 1
 		end
 		ticks += 1
@@ -6409,7 +5723,7 @@ task.spawn(function()
 		end
 
 		local currentGeneration = playbackGeneration
-		local shouldAdvance = not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
+		local shouldAdvance = not audioState.playbackPaused and not audioState.audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.elapsed >= nowPlaying.duration
 		-- Catalog tracks without a configured SoundId are intentionally silent
 		-- UI/visualizer entries. Do not treat their intentionally absent audio as a failed
@@ -6419,12 +5733,12 @@ task.spawn(function()
 		-- captured playhead before allowing the queue watchdog to advance.
 		local audio = ControllerFunctions.getAudioSnapshot()
 		if serverShuttingDown then break end
-		if playbackPaused or audioReloadInProgress or nowPlaying.trackId == "" or nowPlaying.soundId == ""
+		if audioState.playbackPaused or audioState.audioReloadInProgress or nowPlaying.trackId == "" or nowPlaying.soundId == ""
 			or audio.playing == true then
 			ControllerFunctions.stoppedAudioGeneration = -1
 			ControllerFunctions.stoppedAudioSince = 0
 			ControllerFunctions.audioRecoveryAttemptedGeneration = -1
-		elseif not audioReloadInProgress and not shouldAdvance and nowPlaying.elapsed >= 15 then
+		elseif not audioState.audioReloadInProgress and not shouldAdvance and nowPlaying.elapsed >= 15 then
 			local now = os.clock()
 			if ControllerFunctions.stoppedAudioGeneration ~= currentGeneration then
 				ControllerFunctions.stoppedAudioGeneration = currentGeneration
@@ -6461,7 +5775,7 @@ task.spawn(function()
 				if ControllerFunctions.ErrorHandler then
 					local errorContext: Instance? = nil
 					pcall(function()
-						local source = activeAudioSource
+						local source = audioState.activeAudioSource
 						if source.kind == "Backend" and source.backend then
 							errorContext = source.backend:GetPlayer()
 						end
@@ -6473,7 +5787,7 @@ task.spawn(function()
 
 		-- This server prepares its own next local queue entry before the current
 		-- track ends; the crossfade commit advances only this server's queue.
-		if not playbackPaused and not audioReloadInProgress and nowPlaying.trackId ~= ""
+		if not audioState.playbackPaused and not audioState.audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
 			local remaining = nowPlaying.duration - nowPlaying.elapsed
 			local managers = ControllerFunctions.ChildManagers
@@ -6494,7 +5808,7 @@ task.spawn(function()
 				and ControllerFunctions.getAudioSnapshot().playing == true then
 				crossfadeAttemptedGeneration = currentGeneration
 				pendingCrossfadeEntry = nextEntry
-				pendingCrossfadeToken = audioTransitionTrackToken
+				pendingCrossfadeToken = audioState.audioTransitionTrackToken
 				local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
 				if not started then
 					pendingCrossfadeEntry = nil
@@ -6506,7 +5820,7 @@ task.spawn(function()
 
 		if shouldAdvance then
 			local crossfade = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
-			if crossfade and crossfade.active and pendingCrossfadeToken == audioTransitionTrackToken then
+			if crossfade and crossfade.active and pendingCrossfadeToken == audioState.audioTransitionTrackToken then
 				-- Never race the in-flight deck commit with a second queue advance.
 				-- The manager owns completion or cancellation; normal advance resumes
 				-- on the next clock tick if preparation/fade/commit fails.
@@ -6558,12 +5872,12 @@ game:BindToClose(function()
 	-- Cancel first so an interrupted fade restores the controller-owned outgoing
 	-- source before the active backend is stopped and retired.
 	ControllerFunctions.destroyAudioCrossfadeManager("server-shutdown")
-	local shutdownSource = activeAudioSource
+	local shutdownSource = audioState.activeAudioSource
 	if shutdownSource and shutdownSource.kind == "Backend" and shutdownSource.backend then
 		pcall(function() shutdownSource.backend:Stop() end)
-		retireAudioBackend(shutdownSource.backend, "server shutdown active source")
+		audioBackendManager.RetireBackend(shutdownSource.backend, "server shutdown active source")
 	end
-	if not drainRetiredAudioBackends("server shutdown") then
+	if not audioBackendManager.DrainRetiredBackends("server shutdown") then
 		warn("[ClubMusic][AudioBackend] One or more retired backends remain pending after final shutdown cleanup.")
 	end
 
