@@ -130,49 +130,50 @@ function Service:Commit(userId: number, purchaseId: string, productData: {[strin
 	if self.useStudioMemoryProfiles then
 		return self.getProfile(userId) ~= nil, false, nil
 	end
-	if not self.acquireProfileWriteLock(userId) then
+	local profileWriteLockToken = self.acquireProfileWriteLock(userId)
+	if not profileWriteLockToken then
 		self.retries += 1
 		return false, false, "Profile is busy; receipt will be retried"
 	end
 
 	local recovered, recoveryError = self:RecoverPendingProductReceipt(userId)
 	if not recovered then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, recoveryError
 	end
 
 	local journalKey = self:_key(userId, purchaseId)
 	if not self.waitForDataStoreBudget(10) then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, "DataStore budget is busy while reading receipt journal"
 	end
 	local readOk, journal = pcall(function() return self.journalStore:GetAsync(journalKey) end)
 	if not readOk then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, tostring(journal)
 	end
 	if typeof(journal) == "table" then
 		if journal.purchaseId ~= purchaseId or journal.userId ~= userId or journal.productId ~= productData.productId then
-			self.releaseProfileWriteLock(userId)
+			self.releaseProfileWriteLock(userId, profileWriteLockToken)
 			return false, false, "Receipt journal key collision or product mismatch"
 		end
 		if journal.status == "Completed" then
 			local currentProfile = self:_reconcilePendingMemory(userId, purchaseId)
 			local memoryApplied = currentProfile ~= nil and self.appliedMemory[purchaseId] == currentProfile
 			if not memoryApplied then self.pendingMemory[purchaseId] = nil end
-			self.releaseProfileWriteLock(userId)
+			self.releaseProfileWriteLock(userId, profileWriteLockToken)
 			return true, not memoryApplied, nil
 		end
 		if journal.status ~= "Prepared" then
-			self.releaseProfileWriteLock(userId)
+			self.releaseProfileWriteLock(userId, profileWriteLockToken)
 			return false, false, "Receipt journal has an invalid status"
 		end
 	else
 		if not self.waitForDataStoreBudget(10) then
-			self.releaseProfileWriteLock(userId)
+			self.releaseProfileWriteLock(userId, profileWriteLockToken)
 			self.retries += 1
 			return false, false, "DataStore budget is busy while preparing receipt"
 		end
@@ -191,7 +192,7 @@ function Service:Commit(userId: number, purchaseId: string, productData: {[strin
 		if not prepareOk or typeof(prepared) ~= "table" or prepared.purchaseId ~= purchaseId
 			or prepared.userId ~= userId or prepared.productId ~= productData.productId
 			or (prepared.status ~= "Prepared" and prepared.status ~= "Completed") then
-			self.releaseProfileWriteLock(userId)
+			self.releaseProfileWriteLock(userId, profileWriteLockToken)
 			self.retries += 1
 			return false, false, "Could not prepare durable receipt journal"
 		end
@@ -200,20 +201,20 @@ function Service:Commit(userId: number, purchaseId: string, productData: {[strin
 			local currentProfile = self:_reconcilePendingMemory(userId, purchaseId)
 			local memoryApplied = currentProfile ~= nil and self.appliedMemory[purchaseId] == currentProfile
 			if not memoryApplied then self.pendingMemory[purchaseId] = nil end
-			self.releaseProfileWriteLock(userId)
+			self.releaseProfileWriteLock(userId, profileWriteLockToken)
 			return true, not memoryApplied, nil
 		end
 	end
 
 	if not self.waitForDataStoreBudget(10) then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, "DataStore budget is busy while applying receipt"
 	end
 	local alreadyProcessed = false
 	local receiptProfile = self.getProfile(userId)
 	if not receiptProfile then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, "Profile disappeared before receipt application"
 	end
@@ -238,7 +239,7 @@ function Service:Commit(userId: number, purchaseId: string, productData: {[strin
 		end)
 	end)
 	if not applyOk or typeof(applied) ~= "table" then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, "Receipt reward was not confirmed in the profile"
 	end
@@ -251,7 +252,7 @@ function Service:Commit(userId: number, purchaseId: string, productData: {[strin
 		self.pendingMemory[purchaseId] = nil
 	end
 	if not self.waitForDataStoreBudget(10) then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, "DataStore budget is busy while completing receipt journal"
 	end
@@ -265,13 +266,13 @@ function Service:Commit(userId: number, purchaseId: string, productData: {[strin
 		end)
 	end)
 	if not completeOk or typeof(completed) ~= "table" or completed.status ~= "Completed" then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, "Reward is saved; receipt journal completion will recover on retry"
 	end
 
 	if not self.waitForDataStoreBudget(10) then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, "Receipt is durable; pending marker cleanup will recover on retry"
 	end
@@ -287,12 +288,12 @@ function Service:Commit(userId: number, purchaseId: string, productData: {[strin
 		end)
 	end)
 	if not clearOk or typeof(cleared) ~= "table" or cleared.pendingReceipt == purchaseId then
-		self.releaseProfileWriteLock(userId)
+		self.releaseProfileWriteLock(userId, profileWriteLockToken)
 		self.retries += 1
 		return false, false, "Receipt is durable; pending marker cleanup will recover on retry"
 	end
 
-	self.releaseProfileWriteLock(userId)
+	self.releaseProfileWriteLock(userId, profileWriteLockToken)
 	self.commits += 1
 	return true, alreadyProcessed, nil
 end
