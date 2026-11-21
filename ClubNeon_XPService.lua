@@ -17,6 +17,7 @@ return function(context: {[string]: any})
 	local xpFractional: {[number]: number} = {}
 	local xpLastSaveAt: {[number]: number} = {}
 	local xpStateDirty = false
+	local stopped = false
 
 	local service = {}
 
@@ -116,7 +117,7 @@ return function(context: {[string]: any})
 
 	function service.RemovePlayer(player: Player)
 		local userId = player.UserId
-		service.SettlePlayerXP(player, os.clock())
+		if not stopped then service.SettlePlayerXP(player, os.clock()) end
 		xpLastAwardAt[userId] = nil
 		xpFractional[userId] = nil
 		xpLastSaveAt[userId] = nil
@@ -132,17 +133,25 @@ return function(context: {[string]: any})
 		}
 	end
 
+	function service.StopAndSettle()
+		if stopped then return end
+		stopped = true
+		service.SettleAll()
+	end
+
 	function service.Start(controllerScript: Instance)
 		task.spawn(function()
 			service.RefreshGlobalXPBoost()
-			while controllerScript.Parent do
+			while not stopped and controllerScript.Parent do
 				task.wait(45 + Random.new():NextNumber(0, 15))
+				if stopped then break end
 				service.RefreshGlobalXPBoost()
 			end
 		end)
 		task.spawn(function()
-			while controllerScript.Parent do
+			while not stopped and controllerScript.Parent do
 				task.wait(5)
+				if stopped then break end
 				local nowClock = os.clock()
 				local changed = xpStateDirty
 				xpStateDirty = false
