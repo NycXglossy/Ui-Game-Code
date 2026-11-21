@@ -483,7 +483,7 @@ if DRY_RUN then
 end
 
 local backupRoot = backupRootExisting or ensureFolder(ServerStorage, "ClubNeon_MasterInstaller_Backups")
-local backupName = DateTime.now():ToUnixTimestamp() .. "_" .. HttpService:GenerateGUID(false) .. "_" .. RELEASE.runtime:sub(1,8)
+local backupName = DateTime.now().UnixTimestamp .. "_" .. HttpService:GenerateGUID(false) .. "_" .. RELEASE.runtime:sub(1,8)
 local backupRelease = ensureFolder(backupRoot, backupName)
 local replacements = {}
 local promoted = {}
