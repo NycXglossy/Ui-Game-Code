@@ -10,7 +10,7 @@ local ServerStorage = game:GetService("ServerStorage")
 -- Reuse the server-only shared validator without adding a new polling service.
 local SanityValidation: any = nil
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = core and core:IsA("Folder") and core:FindFirstChild("SanityValidation")
 	if module and module:IsA("ModuleScript") then
 		local ok, exported = pcall(require, module)
