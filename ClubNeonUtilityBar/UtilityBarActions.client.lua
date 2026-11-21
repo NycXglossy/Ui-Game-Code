@@ -416,15 +416,20 @@ end)
 
 local requestPending = false
 local passPromptPending = false
-local FEATURE_PASSES: {[string]: {id: number, attribute: string}} = {
-	Mount = {id = 2087955619, attribute = "HasIslandMountPass"},
-	Clone = {id = 2088585676, attribute = "HasIslandCompanionPass"},
-	LightingControl = {id = 2088315619, attribute = "HasStageClubLightingPass"},
+local FEATURE_PASSES: {[string]: {idAttribute: string, attribute: string}} = {
+	Mount = {idAttribute = "ClubNeonMountPassId", attribute = "HasIslandMountPass"},
+	Clone = {idAttribute = "ClubNeonCompanionPassId", attribute = "HasIslandCompanionPass"},
+	LightingControl = {idAttribute = "ClubNeonStageLightingPassId", attribute = "HasStageClubLightingPass"},
 }
 actionEvent.Event:Connect(function(actionName: string)
 	local featurePass = FEATURE_PASSES[actionName]
 	if featurePass then
 		if player:GetAttribute(featurePass.attribute) == true then return end
+		local passId = tonumber(player:GetAttribute(featurePass.idAttribute)) or 0
+		if passId <= 0 then
+			showMessage("This feature's Game Pass is not configured yet.")
+			return
+		end
 		if passPromptPending then
 			showMessage("A Game Pass prompt is already open.")
 			return
@@ -433,7 +438,7 @@ actionEvent.Event:Connect(function(actionName: string)
 		showMessage("This feature requires its Game Pass.")
 		task.spawn(function()
 			local ok, err = pcall(function()
-				MarketplaceService:PromptGamePassPurchase(player, featurePass.id)
+				MarketplaceService:PromptGamePassPurchase(player, passId)
 			end)
 			if not ok then
 				warn("[UtilityBar] Game Pass prompt failed: " .. tostring(err))
