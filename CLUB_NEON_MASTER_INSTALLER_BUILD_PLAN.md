@@ -3,8 +3,11 @@
 Target: Club Neon
 Repository: NycXglossy/Ui-Game-Code
 Branch: integration/tiki-tide-system-consolidation
-Current installer: ClubNeon_Master_Installer.lua (v0.1.0)
+Current installer: ClubNeon_Master_Installer.lua (v0.2.0)
 Current mode: read-only preflight only
+Feature decision: FULL TIKI TIDE FEATURE SCOPE APPROVED; Club Neon-specific adaptation required.
+Configuration contract: ClubNeon_Config.lua
+Compatibility audit: CLUB_NEON_FULL_FEATURE_COMPATIBILITY_AUDIT.md
 
 ## 1. Verified target-place inventory
 
@@ -85,10 +88,18 @@ Test server startup, UI open/close, request/queue controls, playback transitions
 
 ## 6. Required owner decisions before enabling installation
 
-1. Confirm whether Club Neon should receive the same broad feature set as Tiki Tide or a smaller subset.
-2. Supply the Club Neon owner/staff UserIds and group ID, if group rank features are wanted.
-3. Supply Club Neon game pass and developer product IDs, or confirm monetization stays disabled for the first release.
-4. Confirm whether cross-server moderation/announcements are wanted. Playback sync is a separate decision and remains disabled by default.
-5. Confirm the preferred branding labels for the UI and DJ experience.
+1. **Resolved:** Club Neon receives the full feature set. See CLUB_NEON_FULL_FEATURE_COMPATIBILITY_AUDIT.md.
+2. **Pending:** Supply the Club Neon owner/staff UserIds and optional group ID, if group rank features are wanted.
+3. **Pending:** Supply Club Neon game pass and developer product IDs, or keep monetization disabled for the first release (safe default).
+4. **Selected in config contract:** global moderation/announcements/catalog invalidation/receipt coordination. Playback sync remains disabled and server-local playback is the default.
+5. **Provisional defaults:** CLUB NEON / NEON. Confirm final labels if different.
 
-Until these are known, keep the Club Neon installer in read-only/dry-run mode.
+Until owner/staff IDs, monetization decisions, and source adaptation are complete, keep the Club Neon installer in read-only/dry-run mode.
+
+## 7. Full-feature decision and current committed artifacts
+
+The owner selected the full feature set. The following target-specific artifacts are now committed:
+- ClubNeon_Config.lua — isolated identity, permissions, monetization, feature flags, local playback policy, and datastore namespace. Safe defaults disable monetization and require explicit owner configuration.
+- CLUB_NEON_FULL_FEATURE_COMPATIBILITY_AUDIT.md — source-level blockers, adaptation scope, preserve/exclude rules, and release gates.
+
+Installer v0.2.0 corrects script class counting to use exact ClassName comparisons and adds a scan for ClubNeon_Config. It remains read-only; it does not install the config or runtime sources.
