@@ -415,10 +415,31 @@ local ok, failure = pcall(function()
         table.insert(promoted, replacement)
     end
 
-    -- All new instances are in place and disabled. Enable server/client scripts
-    -- only after the complete manifest has been promoted.
+    -- All new instances are in place and disabled. Start shared services before
+    -- consumers, then enable the remaining scripts.
+    local priority = {
+        ClubMusic_Global_Service = 1,
+        SecurityServer = 2,
+        TikiTideCharacterPhysicsGuardBootstrap = 3,
+        StaffActions = 4,
+        UI_Server_Controller = 5,
+        TikiTideSettingsService = 6,
+        TikiTideSocialActionsServer = 7,
+        UtilityBarActions = 8,
+        UtilityBarExtendedActions = 9,
+        ToolShop = 10,
+    }
+    table.sort(promoted, function(a, b)
+        local ap = priority[a.Name] or 100
+        local bp = priority[b.Name] or 100
+        if ap == bp then return a.Name < b.Name end
+        return ap < bp
+    end)
     for _, object in ipairs(promoted) do
-        if object:IsA("BaseScript") then object.Disabled = false end
+        if object:IsA("BaseScript") then
+            object.Disabled = false
+            if object:IsA("Script") then task.wait(0.05) end
+        end
     end
 end)
 
