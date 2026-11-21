@@ -27,12 +27,12 @@ local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed an
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "505d6db00b2cc3497b7070eabbbc44c035a5d030",
+    runtime = "1314c10dba2f7fb656cd42e3e80551af686cb652",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
-    globalService = "505d6db00b2cc3497b7070eabbbc44c035a5d030",
-    security = "505d6db00b2cc3497b7070eabbbc44c035a5d030",
-    threat = "505d6db00b2cc3497b7070eabbbc44c035a5d030",
-    phase32 = "505d6db00b2cc3497b7070eabbbc44c035a5d030",
+    globalService = "1314c10dba2f7fb656cd42e3e80551af686cb652",
+    security = "1314c10dba2f7fb656cd42e3e80551af686cb652",
+    threat = "1314c10dba2f7fb656cd42e3e80551af686cb652",
+    phase32 = "1314c10dba2f7fb656cd42e3e80551af686cb652",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
 }
 
