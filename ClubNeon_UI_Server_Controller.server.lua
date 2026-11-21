@@ -170,136 +170,17 @@ local stateFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction",
 local catalogFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
 local playlistFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
 
--- Bounded, server-local purchase telemetry. Client prompt outcomes are explicitly
--- marked as unverified telemetry; only ProcessReceipt entries are server-authoritative.
+-- Purchase and moderation telemetry is isolated in a server-local service.
 local purchaseDiagnosticRemote = ControllerFunctions.getOrCreate(remotes, "RemoteEvent", "PurchaseDiagnostic") :: RemoteEvent
-local purchaseDiagnosticEntries: {any} = {}
-local purchaseDiagnosticRate: {[number]: {windowAt: number, count: number}} = {}
-local PURCHASE_DIAGNOSTIC_CAPACITY = 30
-local purchaseDiagnosticStats = {
-	totalEvents = 0, promptEvents = 0, receiptEvents = 0, receiptCallbacks = 0,
-	granted = 0, pending = 0, failures = 0, duplicates = 0, lastOutcome = nil, lastAt = nil,
-	lastSuccessAt = nil, lastPendingAt = nil, lastFailureAt = nil,
-}
-local moderationDiagnosticStats = {
-	totalLookups = 0, joinLookups = 0, retryLookups = 0,
-	successfulLookups = 0, failedLookups = 0, pendingChecks = 0,
-	bannedResults = 0, blockedResults = 0, lastLookupAt = nil,
-	lastSuccessAt = nil, lastFailureAt = nil,
-}
-local function recordModerationDiagnostic(source: string, succeeded: boolean, banned: boolean?, blocked: boolean?)
-	moderationDiagnosticStats.totalLookups += 1
-	if source == "Join" then moderationDiagnosticStats.joinLookups += 1
-	else moderationDiagnosticStats.retryLookups += 1 end
-	moderationDiagnosticStats.lastLookupAt = os.time()
-	if succeeded then
-		moderationDiagnosticStats.successfulLookups += 1
-		moderationDiagnosticStats.lastSuccessAt = moderationDiagnosticStats.lastLookupAt
-		if banned == true then moderationDiagnosticStats.bannedResults += 1 end
-		if blocked == true then moderationDiagnosticStats.blockedResults += 1 end
-	else
-		moderationDiagnosticStats.failedLookups += 1
-		moderationDiagnosticStats.pendingChecks += 1
-		moderationDiagnosticStats.lastFailureAt = moderationDiagnosticStats.lastLookupAt
-	end
+local purchaseDiagnosticsModule = ServerStorage:FindFirstChild("ClubNeon_PurchaseDiagnostics")
+if not purchaseDiagnosticsModule or not purchaseDiagnosticsModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_PurchaseDiagnostics; controller will not start.")
 end
-local function recordPurchaseDiagnostic(source: string, userId: number, itemId: number, outcome: string, detail: string?)
-	local now = os.time()
-	purchaseDiagnosticStats.totalEvents += 1
-	purchaseDiagnosticStats.lastOutcome = string.sub(outcome, 1, 48)
-	purchaseDiagnosticStats.lastAt = now
-	if source == "ServerReceipt" then
-		purchaseDiagnosticStats.receiptEvents += 1
-		if outcome == "ProcessReceiptReached" then purchaseDiagnosticStats.receiptCallbacks += 1 end
-	else
-		purchaseDiagnosticStats.promptEvents += 1
-	end
-	if outcome == "ReceiptGranted" then
-		purchaseDiagnosticStats.granted += 1
-		purchaseDiagnosticStats.lastSuccessAt = now
-	elseif outcome == "AwaitingPlayerProfile" or outcome == "XPBoostActivationFailed"
-		or outcome == "ReceiptPersistenceFailed" or outcome == "ReceiptConcurrentRetry"
-		or outcome == "ReceiptConcurrencyCapacity" then
-		purchaseDiagnosticStats.pending += 1
-		purchaseDiagnosticStats.lastPendingAt = now
-		if outcome == "XPBoostActivationFailed" or outcome == "ReceiptPersistenceFailed" then
-			purchaseDiagnosticStats.failures += 1
-			purchaseDiagnosticStats.lastFailureAt = now
-		end
-	elseif outcome == "RejectedUnregisteredProduct" or outcome == "MalformedReceipt"
-		or outcome == "ReceiptHandlerFailed" or outcome == "ReceiptInvalidDecision" then
-		purchaseDiagnosticStats.failures += 1
-		purchaseDiagnosticStats.lastFailureAt = now
-	elseif outcome == "ReceiptDuplicate" then
-		purchaseDiagnosticStats.duplicates += 1
-	end
-	table.insert(purchaseDiagnosticEntries, {
-		at = os.time(),
-		source = source,
-		userId = userId,
-		itemId = itemId,
-		outcome = string.sub(outcome, 1, 48),
-		detail = string.sub(tostring(detail or ""), 1, 140),
-	})
-	while #purchaseDiagnosticEntries > PURCHASE_DIAGNOSTIC_CAPACITY do
-		table.remove(purchaseDiagnosticEntries, 1)
-	end
-end
-
-local function classifyConfiguredPurchaseId(promptType: string, itemId: number): string
-	if promptType == "GamePass" then
-		if itemId == CONFIG.VipGamePassId or itemId == CONFIG.VvipGamePassId or itemId == CONFIG.ClubNeonPassId
-			or itemId == CONFIG.PersonalXP2xPassId or itemId == CONFIG.PersonalXP4xPassId
-			or itemId == CONFIG.MountPassId or itemId == CONFIG.CompanionPassId
-			or itemId == CONFIG.StageClubLightingPassId then
-			return "ConfiguredClubMusicGamePass"
-		end
-	elseif itemId == CONFIG.XPBoost2xProductId or itemId == CONFIG.XPBoost4xProductId
-		or itemId == CONFIG.TitleSlotProductIds[2] or itemId == CONFIG.TitleSlotProductIds[3]
-		or itemId == 0 or itemId == 0 or itemId == 0
-		or itemId == 0 or itemId == 0 or itemId == 0
-		or itemId == 0 then
-		return "ConfiguredClubMusicDeveloperProduct"
-	end
-	return "UnrecognizedByClubMusicConfig"
-end
-
-purchaseDiagnosticRemote.OnServerEvent:Connect(function(player: Player, promptType: any, itemId: any, eventKind: any, payload: any)
-	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players
-		or (promptType ~= "GamePass" and promptType ~= "DeveloperProduct")
-		or typeof(itemId) ~= "number" or not (itemId > 0 and itemId <= 9007199254740991) or itemId % 1 ~= 0 then
-		return
-	end
-	local isLegacyCallback = typeof(eventKind) == "boolean"
-	local isPromptRequest = eventKind == "PromptRequested" and typeof(payload) == "string" and #payload <= 128
-	local isPromptFinished = eventKind == "PromptFinished" and typeof(payload) == "boolean"
-	if not isLegacyCallback and not isPromptRequest and not isPromptFinished then return end
-
-	local now = os.clock()
-	local rate = purchaseDiagnosticRate[player.UserId]
-	if not rate or now - rate.windowAt >= 60 then
-		rate = {windowAt = now, count = 0}
-		purchaseDiagnosticRate[player.UserId] = rate
-	end
-	if rate.count >= 12 then return end
-	rate.count += 1
-
-	local idClass = classifyConfiguredPurchaseId(promptType, itemId)
-	if isPromptRequest then
-		recordPurchaseDiagnostic("ClientPromptRequestUnverified", player.UserId, itemId, "PromptRequested",
-			promptType .. " | source=" .. string.sub(payload, 1, 48) .. " | " .. idClass .. "; request telemetry only")
-	else
-		local wasPurchased = if isLegacyCallback then eventKind else payload
-		recordPurchaseDiagnostic("ClientPromptUnverified", player.UserId, itemId,
-			if wasPurchased then "PromptReportedPurchased" else "PromptClosedWithoutPurchase",
-			promptType .. " prompt callback | " .. idClass .. "; client telemetry is not proof of a completed transaction")
-	end
-end)
-Players.PlayerRemoving:Connect(function(player: Player)
-	purchaseDiagnosticRate[player.UserId] = nil
-end)
-
-
+local purchaseDiagnostics = require(purchaseDiagnosticsModule)({
+	Players = Players,
+	CONFIG = CONFIG,
+	PurchaseDiagnosticRemote = purchaseDiagnosticRemote,
+})
 -- Resolve optional audio modules in either supported installation layout:
 --   ServerStorage/ClubMusicAudioModules/<ModuleScript>
 --   ServerStorage/<ModuleScript>
@@ -4180,12 +4061,12 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 	local receiptId = receiptInfo.PurchaseId
 	print(string.format("[ClubMusic][PurchaseServer] ProcessReceiptReached | UserId=%s | ProductId=%s | PlaceId=%d | GameId=%d",
 		tostring(userId), tostring(productId), game.PlaceId, game.GameId))
-	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
+	purchaseDiagnostics.RecordPurchase("ServerReceipt", userId, productId, "ProcessReceiptReached", "Roblox dispatched an authoritative Developer Product receipt")
 	recordReceiptReplayEvent("receipt_received", userId, productId, "Info", "RobloxReceiptCallback")
 	local player = Players:GetPlayerByUserId(userId)
 	local profile = profiles[userId]
 	if not player or not profile then
-		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "AwaitingPlayerProfile", "Player or loaded profile is not available; Roblox receipt will retry")
+		purchaseDiagnostics.RecordPurchase("ServerReceipt", userId, productId, "AwaitingPlayerProfile", "Player or loaded profile is not available; Roblox receipt will retry")
 		recordReceiptReplayEvent("receipt_waiting_profile", userId, productId, "Info", "RetryPending")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
@@ -4205,7 +4086,7 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 			)
 			if not activateOk or activated ~= true then
 				warn("[ClubMusic] Global XP boost activation failed; receipt will be retried.")
-				recordPurchaseDiagnostic("ServerReceipt", userId, productId, "XPBoostActivationFailed", "Global XP service rejected or failed activation; Roblox receipt will retry")
+				purchaseDiagnostics.RecordPurchase("ServerReceipt", userId, productId, "XPBoostActivationFailed", "Global XP service rejected or failed activation; Roblox receipt will retry")
 				recordReceiptReplayEvent("receipt_activation_failed", userId, productId, "Warning", "RetryPending")
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
@@ -4217,7 +4098,7 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 	if productData.type == "XPBoost" then
 		-- The global per-PurchaseId journal is authoritative for XP boosts.
 		-- Do not write XP receipts into the legacy profile receipt map.
-		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Global XP boost activation completed")
+		purchaseDiagnostics.RecordPurchase("ServerReceipt", userId, productId, "ReceiptGranted", "Global XP boost activation completed")
 		recordReceiptReplayEvent("receipt_granted", userId, productId, "Info", "XPBoost")
 		notify(player, string.format("%dx global XP boost activated!", productData.multiplier), "ok")
 		publishState(nil)
@@ -4227,14 +4108,14 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 	local ok, alreadyProcessed, err = receiptTransactions:Commit(userId, receiptId, productData)
 	if not ok then
 		warn("[ClubMusic] Receipt persistence failed for userId " .. tostring(userId) .. " productId " .. tostring(productId) .. ": " .. tostring(err))
-		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptPersistenceFailed", tostring(err))
+		purchaseDiagnostics.RecordPurchase("ServerReceipt", userId, productId, "ReceiptPersistenceFailed", tostring(err))
 		recordReceiptReplayEvent("receipt_persistence_failed", userId, productId, "Warning", "RetryPending")
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	-- A receipt already in the durable ledger was granted by an earlier callback/server.
 	-- The loaded profile already contains its reward, so never apply it twice in memory.
 	if alreadyProcessed then
-		recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptDuplicate", "Receipt was already committed in the durable ledger")
+		purchaseDiagnostics.RecordPurchase("ServerReceipt", userId, productId, "ReceiptDuplicate", "Receipt was already committed in the durable ledger")
 		recordReceiptReplayEvent("receipt_duplicate", userId, productId, "Info", "AlreadyCommittedInDurableLedger")
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
@@ -4243,7 +4124,7 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	if USE_STUDIO_MEMORY_PROFILES then ControllerFunctions.applyReceiptToMemory(profile, productData) end
-	recordPurchaseDiagnostic("ServerReceipt", userId, productId, "ReceiptGranted", "Receipt persistence completed and reward application proceeded")
+	purchaseDiagnostics.RecordPurchase("ServerReceipt", userId, productId, "ReceiptGranted", "Receipt persistence completed and reward application proceeded")
 	recordReceiptReplayEvent("receipt_granted", userId, productId, "Info", "DurableReceiptCommitted")
 	player:SetAttribute("Tickets", profile.tickets)
 	player:SetAttribute("Coins", profile.coins)
@@ -4307,7 +4188,7 @@ do
 						InvalidDecision = "ReceiptInvalidDecision",
 					}
 					local outcome = outcomes[eventName] or "ReceiptAuthorityEvent"
-					recordPurchaseDiagnostic("ServerReceipt", userId, productId, outcome, detail)
+					purchaseDiagnostics.RecordPurchase("ServerReceipt", userId, productId, outcome, detail)
 					recordReceiptReplayEvent("receipt_" .. string.lower(eventName), userId, productId,
 						if eventName == "UnknownProduct" or eventName == "TransactionHandlerFailed" then "Warning" else "Info", outcome)
 				end,
@@ -5686,8 +5567,8 @@ localDiagnosticsBindable.OnInvoke = function()
 	return {
 		state = if remotes:GetAttribute("Ready") == true then "Healthy" else "Starting",
 		scope = "ServerLocal",
-		purchase = table.clone(purchaseDiagnosticStats),
-		moderation = table.clone(moderationDiagnosticStats),
+		purchase = table.clone(purchaseDiagnostics.PurchaseStats),
+		moderation = table.clone(purchaseDiagnostics.ModerationStats),
 		playback = {
 			backend = if typeof(audioSnapshot) == "table" then tostring(audioSnapshot.kind or "Unavailable") else "Unavailable",
 			playing = typeof(audioSnapshot) == "table" and audioSnapshot.playing == true,
@@ -6459,11 +6340,11 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 	end
 	if operation == "PurchaseDiagnostics" then
 		local lines = {"Recent ClubMusic purchase events (latest server-local records):"}
-		if #purchaseDiagnosticEntries == 0 then
+		if #purchaseDiagnostics.PurchaseEntries == 0 then
 			table.insert(lines, "No purchase prompt or receipt events have been recorded in this server yet.")
 		else
-			for index = math.max(1, #purchaseDiagnosticEntries - 11), #purchaseDiagnosticEntries do
-				local item = purchaseDiagnosticEntries[index]
+			for index = math.max(1, #purchaseDiagnostics.PurchaseEntries - 11), #purchaseDiagnostics.PurchaseEntries do
+				local item = purchaseDiagnostics.PurchaseEntries[index]
 				table.insert(lines, string.format("%s | %s | UserId %d | ID %d | %s%s",
 					os.date("!%H:%M:%S UTC", item.at), item.source, item.userId, item.itemId,
 					item.outcome, if item.detail ~= "" then " | " .. item.detail else ""))
@@ -6627,10 +6508,10 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 			"Client performance telemetry: " .. tostring(clientTelemetry.state or "Unavailable")
 				.. " | local-only, untrusted, not transmitted",
 			"Client integrity reports are untrusted dependency observations; absence is not proof of tampering.",
-			"Purchase telemetry: " .. tostring(#purchaseDiagnosticEntries) .. " recent server-local event(s):",
+			"Purchase telemetry: " .. tostring(#purchaseDiagnostics.PurchaseEntries) .. " recent server-local event(s):",
 		}
-		for index = math.max(1, #purchaseDiagnosticEntries - 3), #purchaseDiagnosticEntries do
-			local item = purchaseDiagnosticEntries[index]
+		for index = math.max(1, #purchaseDiagnostics.PurchaseEntries - 3), #purchaseDiagnostics.PurchaseEntries do
+			local item = purchaseDiagnostics.PurchaseEntries[index]
 			table.insert(lines, string.format("Purchase %s | ID %d | %s | %s",
 				item.source, item.itemId, item.outcome, string.sub(item.detail, 1, 90)))
 		end
@@ -7031,7 +6912,7 @@ ControllerFunctions.onJoin = function(player: Player)
 	end
 	local moderationVerified = not globalModerationRequired or (moderationCallOk and moderationLookupOk == true)
 	if globalModerationRequired then
-		recordModerationDiagnostic("Join", moderationCallOk and moderationLookupOk == true,
+		purchaseDiagnostics.RecordModeration("Join", moderationCallOk and moderationLookupOk == true,
 			globallyBanned == true, globallyBlocked == true)
 	end
 	ControllerFunctions.recordDiagnosticPulse("Moderation",
@@ -7083,7 +6964,7 @@ ControllerFunctions.onJoin = function(player: Player)
 						and (not ControllerFunctions.isFiniteNumber(revision) or revision < latestRevision) then
 						lookupOk = false
 					end
-					recordModerationDiagnostic("Retry", callOk and lookupOk == true, banned == true, blocked == true)
+					purchaseDiagnostics.RecordModeration("Retry", callOk and lookupOk == true, banned == true, blocked == true)
 					if callOk and lookupOk == true then
 						ControllerFunctions.moderationRevisions = ControllerFunctions.moderationRevisions or {}
 						ControllerFunctions.moderationRevisions[player.UserId] = revision
