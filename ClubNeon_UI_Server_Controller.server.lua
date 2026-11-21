@@ -667,6 +667,8 @@ local audioState.audioTransitionTrackToken = 0
 -- Publish the number of active controller-owned main outputs (0 or 1).
 -- The binding is refreshed whenever the canonical source changes.
 -- AudioBackendManager owns the modern source contract and recovery lifecycle.
+local audioBackendManager: any = nil
+
 -- One controller-owned cancellation seam for every dual-deck transition.
 -- Pending queue metadata is invalidated even when the manager is absent or cleanup reports failure.
 ControllerFunctions.cancelAudioTransition = function(reason: string?)
@@ -932,7 +934,7 @@ ControllerFunctions.beginAudioCrossfade = function(asset: string, duration: numb
 end
 
 
-local audioBackendManager = require(ServerStorage:WaitForChild("ClubNeon_AudioBackendManager"))({
+audioBackendManager = require(ServerStorage:WaitForChild("ClubNeon_AudioBackendManager"))({
 	ControllerFunctions = ControllerFunctions,
 	SoundService = SoundService,
 	CONFIG = CONFIG,
