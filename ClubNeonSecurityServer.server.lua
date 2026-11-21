@@ -67,7 +67,10 @@ if authorizationModule and authorizationModule:IsA("ModuleScript") then
 	if requireOk and typeof(exported) == "table" and type(exported.GetShared) == "function" then
 		local sharedOk, instance = pcall(exported.GetShared, {
 			groupId = GROUP_ID,
-			studioStaff = true,
+			studioStaff = false,
+			staffUserIds = projectConfig.Permissions.OwnerUserIds,
+			roleUserIds = {Owner = projectConfig.Permissions.OwnerUserIds, CoOwner = projectConfig.Permissions.CoOwnerUserIds, Admin = projectConfig.Permissions.AdminUserIds, Moderator = projectConfig.Permissions.ModeratorUserIds, DJ = projectConfig.Permissions.DJUserIds},
+			thresholds = projectConfig.Permissions.RankThresholds,
 		})
 		if sharedOk and typeof(instance) == "table"
 			and type(instance.GetLevel) == "function"
