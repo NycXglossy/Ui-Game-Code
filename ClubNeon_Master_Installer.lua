@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.7
+-- CLUB NEON MASTER INSTALLER v0.4.8
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,12 +22,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.7"
+local INSTALLER_VERSION = "0.4.8"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "4f6826c88d78081f6ab9cd631bc6b4c33720ab97",
+    runtime = "ccacb4c4185238b3ea7a7956018b3c846f6d3e89",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
     globalService = "032fdc0085ac0a75db270bf569b9db19ef39b36b",
     security = "32b484bd731dbbd68555c0d74c70600c87bc462e",
@@ -110,6 +110,7 @@ addSource("ClubNeon_ReceiptProcessing.lua", "ModuleScript", "ServerStorage", "Cl
 addSource("ClubNeon_AudioAssetInspector.lua", "ModuleScript", "ServerStorage", "ClubNeon_AudioAssetInspector", RELEASE.runtime)
 addSource("ClubNeon_AdminBridge.lua", "ModuleScript", "ServerStorage", "ClubNeon_AdminBridge", RELEASE.runtime)
 addSource("ClubNeon_AudioBackendManager.lua", "ModuleScript", "ServerStorage", "ClubNeon_AudioBackendManager", RELEASE.runtime)
+addSource("ClubNeon_XPService.lua", "ModuleScript", "ServerStorage", "ClubNeon_XPService", RELEASE.runtime)
 addSource("ClubNeon_CatalogMutationActions.lua", "ModuleScript", "ServerStorage", "ClubNeon_CatalogMutationActions", RELEASE.runtime)
 
 -- Core controller and client UI. Validate project isolation before staging.
