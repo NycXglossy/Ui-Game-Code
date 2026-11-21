@@ -56,6 +56,7 @@ function Service.new(dependencies: {[string]: any}?)
 		studioStaff = dependencies.studioStaff ~= false,
 		thresholds = thresholds,
 		staffUserIds = {},
+		roleUserLevels = {},
 		onDenied = dependencies.onDenied,
 		cache = {},
 		refreshInFlight = {},
@@ -106,6 +107,30 @@ function Service:Configure(dependencies: {[string]: any})
 		end
 		self.staffUserIds = configured
 	end
+	if typeof(dependencies.roleUserIds) == "table" then
+		local levels = {Owner = 4, CoOwner = 3, Admin = 2, Moderator = 1, DJ = 1, GroupDJ = 1}
+		local configured = {}
+		for role, userIds in pairs(dependencies.roleUserIds) do
+			local level = levels[role]
+			if level and typeof(userIds) == "table" then
+				for _, userId in ipairs(userIds) do
+					if validUserId(userId) then
+						local id = math.floor(userId)
+						configured[id] = math.max(configured[id] or 0, level)
+					end
+				end
+			end
+		end
+		for userId, level in pairs(self.roleUserLevels) do
+			if configured[userId] ~= level then changed = true; break end
+		end
+		if not changed then
+			for userId, level in pairs(configured) do
+				if self.roleUserLevels[userId] ~= level then changed = true; break end
+			end
+		end
+		self.roleUserLevels = configured
+	end
 	if changed then
 		-- A changed authority configuration invalidates every prior rank decision
 		-- and makes any in-flight lookup result ineligible for cache publication.
@@ -128,9 +153,10 @@ function Service:GetRank(player: Player): (string, number)
 	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then
 		return "GUEST", 0
 	end
-	if (RunService:IsStudio() and self.studioStaff) or self.staffUserIds[player.UserId] == true then
-		return "OWNER", 4
-	end
+	if RunService:IsStudio() and self.studioStaff then return "OWNER", 4 end
+	local directLevel = self.roleUserLevels[player.UserId]
+	if self.staffUserIds[player.UserId] == true then directLevel = 4 end
+	if directLevel then return self:_rankName(directLevel), directLevel end
 	local cached = self.cache[player.UserId]
 	if not cached or cached.expiresAt <= os.clock() then
 		if cached then self.cache[player.UserId] = nil end
@@ -148,7 +174,7 @@ end
 function Service:IsGroupMember(player: Player): boolean
 	if not self.started then return false end
 	if typeof(player) ~= "Instance" or not player:IsA("Player") or player.Parent ~= Players then return false end
-	if (RunService:IsStudio() and self.studioStaff) or self.staffUserIds[player.UserId] == true then return true end
+	if (RunService:IsStudio() and self.studioStaff) or self.staffUserIds[player.UserId] == true or self.roleUserLevels[player.UserId] ~= nil then return true end
 	local cached = self.cache[player.UserId]
 	if not cached or cached.expiresAt <= os.clock() then
 		if cached then self.cache[player.UserId] = nil end
@@ -198,9 +224,14 @@ function Service:Refresh(player: Player): boolean
 	local groupRank: number? = nil
 	local lookupError: any = nil
 
-	if (RunService:IsStudio() and self.studioStaff) or self.staffUserIds[userId] == true then
+	local directLevel = self.roleUserLevels[userId]
+	if self.staffUserIds[userId] == true then directLevel = 4 end
+	if RunService:IsStudio() and self.studioStaff then
 		level = 4
-		groupRank = if self.staffUserIds[userId] == true then 0 else 255
+		groupRank = 255
+	elseif directLevel then
+		level = directLevel
+		groupRank = 0
 	else
 		local ok, rank = pcall(function()
 			return player:GetRankInGroup(self.groupId)
