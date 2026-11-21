@@ -3,7 +3,7 @@
 -- Place as ModuleScript: ReplicatedStorage/UI_Network
 -- Client-side bridge to the authoritative UI_Server_Controller.
 --
--- Remote contract (created/owned by the server): ReplicatedStorage/ClubNeonRemotes
+-- Remote contract (created/owned by the server): ReplicatedStorage/ClubMusicRemotes
 --   RequestAction (RemoteEvent)   client -> server: (action: string, payload: table)
 --   StateChanged  (RemoteEvent)   server -> client: snapshot table
 --   Notice        (RemoteEvent)   server -> client: { text: string, kind: string }
@@ -15,7 +15,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local FOLDER_NAME = "ClubNeonRemotes"
+local FOLDER_NAME = "ClubMusicRemotes"
 local FOLDER_TIMEOUT = 20
 local REMOTE_TIMEOUT = 3
 local READY_TIMEOUT = 45
@@ -251,7 +251,7 @@ function Network.Init(): boolean
 	local ok, err = pcall(function()
 		local foundFolder = ReplicatedStorage:WaitForChild(FOLDER_NAME, FOLDER_TIMEOUT)
 		if not foundFolder or not foundFolder:IsA("Folder") then
-			error("Waiting for ReplicatedStorage.ClubNeonRemotes; the server controller may still be starting.")
+			error("Waiting for ReplicatedStorage.ClubMusicRemotes; the server controller may still be starting.")
 		end
 		local readyStartedAt = os.clock()
 		while foundFolder:GetAttribute("Ready") ~= true do
@@ -262,7 +262,7 @@ function Network.Init(): boolean
 					:format(tostring(stage or "unknown"), string.sub(startupError, 1, 220)))
 			end
 			if os.clock() - readyStartedAt >= READY_TIMEOUT then
-				error(("ClubNeonRemotes is still not ready after %d seconds (server stage: %s; server error: %s).")
+				error(("ClubMusicRemotes is still not ready after %d seconds (server stage: %s; server error: %s).")
 					:format(READY_TIMEOUT, tostring(stage or "unknown"), tostring(startupError or "none reported")))
 			end
 			task.wait(0.1)
