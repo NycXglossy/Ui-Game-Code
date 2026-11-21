@@ -112,13 +112,13 @@ task.spawn(function()
 		{ label = "4x XP Developer Product", id = CONFIG.XPBoost4xProductId, infoType = Enum.InfoType.Product },
 		{ label = "Title Slot 2 Developer Product", id = CONFIG.TitleSlotProductIds[2], infoType = Enum.InfoType.Product },
 		{ label = "Title Slot 3 Developer Product", id = CONFIG.TitleSlotProductIds[3], infoType = Enum.InfoType.Product },
-		{ label = "Coconut Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
-		{ label = "Pineapple Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
-		{ label = "Neon Torch Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
-		{ label = "Volcano Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
-		{ label = "Island Legend Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
-		{ label = "Island Royalty Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
-		{ label = "Club Neon Legacy Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
+		{ label = "Coconut Donation Developer Product", id = CONFIG.DonationProductIds.Coconut, infoType = Enum.InfoType.Product },
+		{ label = "Pineapple Donation Developer Product", id = CONFIG.DonationProductIds.Pineapple, infoType = Enum.InfoType.Product },
+		{ label = "Neon Torch Donation Developer Product", id = CONFIG.DonationProductIds.NeonTorch, infoType = Enum.InfoType.Product },
+		{ label = "Volcano Donation Developer Product", id = CONFIG.DonationProductIds.Volcano, infoType = Enum.InfoType.Product },
+		{ label = "Island Legend Donation Developer Product", id = CONFIG.DonationProductIds.IslandLegend, infoType = Enum.InfoType.Product },
+		{ label = "Island Royalty Donation Developer Product", id = CONFIG.DonationProductIds.IslandRoyalty, infoType = Enum.InfoType.Product },
+		{ label = "Club Neon Legacy Donation Developer Product", id = CONFIG.DonationProductIds.ClubNeonLegacy, infoType = Enum.InfoType.Product },
 	}
 	for _, entry in ipairs(configured) do
 		if typeof(entry.id) ~= "number" or entry.id <= 0 then
