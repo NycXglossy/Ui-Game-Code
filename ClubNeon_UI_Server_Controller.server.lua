@@ -1883,7 +1883,7 @@ end
 
 ControllerFunctions.loadProfile = function(player: Player)
 	local userId = player.UserId
-	if player.Parent ~= Players then return false end
+	if player.Parent ~= Players or serverShuttingDown then return false end
 	local profile = ControllerFunctions.defaultProfile()
 	local data = nil
 	local ok = false
@@ -1904,7 +1904,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 		ok = true
 	else
 		for attempt = 1, 5 do
-			if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
+			if player.Parent ~= Players or player.UserId ~= userId or serverShuttingDown then return abandonDepartedLoad() end
 			if not ControllerFunctions.waitForDataStoreBudget(20) then
 				lastError = "Server DataStore request budget is busy."
 				break
@@ -1943,7 +1943,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 				end)
 			end)
 			ControllerFunctions.releaseProfileWriteLock(userId, loadWriteLockToken)
-			if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
+			if player.Parent ~= Players or player.UserId ~= userId or serverShuttingDown then return abandonDepartedLoad() end
 			if callOk and typeof(result) == "table" then
 				data = result
 				ok = true
@@ -1956,7 +1956,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 			end
 			if attempt < 5 then
 				task.wait(2)
-				if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
+				if player.Parent ~= Players or player.UserId ~= userId or serverShuttingDown then return abandonDepartedLoad() end
 			end
 		end
 	end
@@ -2067,7 +2067,7 @@ ControllerFunctions.loadProfile = function(player: Player)
 	end
 	-- Text filtering can yield after the DataStore session lock was acquired.
 	-- Do not publish a profile or player attributes for a departed join.
-	if player.Parent ~= Players or player.UserId ~= userId then return abandonDepartedLoad() end
+	if player.Parent ~= Players or player.UserId ~= userId or serverShuttingDown then return abandonDepartedLoad() end
 
 	local today = math.floor(os.time() / 86400)
 	if profile.lastClaimDay < today then
@@ -2311,8 +2311,9 @@ ControllerFunctions.startDanceFloorRewards = function()
 	end
 
 	task.spawn(function()
-		while script.Parent do
+		while script.Parent and not serverShuttingDown do
 			task.wait(TICK_INTERVAL)
+			if serverShuttingDown then break end
 			local tagged = CollectionService:GetTagged(ZONE_TAG)
 			local zones: {BasePart} = {}
 			for index, instance in ipairs(tagged) do
@@ -4927,11 +4928,11 @@ end
 local onJoinStarted: {[Player]: boolean} = {}
 
 ControllerFunctions.onJoin = function(player: Player)
-	if player.Parent ~= Players or onJoinStarted[player] then return end
+	if serverShuttingDown or player.Parent ~= Players or onJoinStarted[player] then return end
 	onJoinStarted[player] = true
 	task.spawn(ControllerFunctions.checkNativeBanHistory, player)
 	local enabledCallOk, globalServiceEnabled = ControllerFunctions.globalInvoke("IsEnabled")
-	if player.Parent ~= Players then return end
+	if player.Parent ~= Players or serverShuttingDown then return end
 	local globalModerationRequired = not RunService:IsStudio()
 	local globalServiceReady = enabledCallOk and globalServiceEnabled == true
 	-- A service-readiness failure is not a ban. Keep moderation-sensitive actions
@@ -4939,7 +4940,7 @@ ControllerFunctions.onJoin = function(player: Player)
 	-- Fetch ban and request-block status together to avoid serial durable reads.
 	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked, _moderationReason, moderationRevision =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
-	if player.Parent ~= Players then return end
+	if player.Parent ~= Players or serverShuttingDown then return end
 	local knownModerationRevision = ControllerFunctions.moderationRevisions
 		and ControllerFunctions.moderationRevisions[player.UserId] or 0
 	if moderationCallOk and moderationLookupOk == true
@@ -4981,7 +4982,7 @@ ControllerFunctions.onJoin = function(player: Player)
 			-- Stable per-user staggering prevents simultaneous joins from retrying
 			-- the shared DataStore bucket on identical backoff boundaries.
 			local retryJitter = 0.85 + ((player.UserId % 31) / 100)
-			while player.Parent == Players and not (serviceResolved and moderationResolved) do
+			while not serverShuttingDown and player.Parent == Players and not (serviceResolved and moderationResolved) do
 				attempt += 1
 				-- The initial join checks already ran immediately. If a backend was still
 				-- loading, retry quickly instead of imposing a five-second blind lock;
@@ -4989,16 +4990,16 @@ ControllerFunctions.onJoin = function(player: Player)
 				local retryBaseDelay = if attempt == 1 then 1 else math.min(15, 2 ^ math.min(attempt - 1, 4))
 				local retryDelay = math.min(15, retryBaseDelay * retryJitter)
 				task.wait(retryDelay)
-				if player.Parent ~= Players then return end
+				if player.Parent ~= Players or serverShuttingDown then return end
 				if not serviceResolved then
 					local callOk, enabled = ControllerFunctions.globalInvoke("IsEnabled")
-					if player.Parent ~= Players then return end
+					if player.Parent ~= Players or serverShuttingDown then return end
 					serviceResolved = callOk and enabled == true
 				end
 				if not moderationResolved then
 					local callOk, lookupOk, banned, blocked, _reason, revision =
 						ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
-					if player.Parent ~= Players then return end
+					if player.Parent ~= Players or serverShuttingDown then return end
 					local latestRevision = ControllerFunctions.moderationRevisions
 						and ControllerFunctions.moderationRevisions[player.UserId] or 0
 					if callOk and lookupOk == true
@@ -5030,8 +5031,11 @@ ControllerFunctions.onJoin = function(player: Player)
 		end)
 	end
 	ControllerFunctions.refreshRank(player)
+	if serverShuttingDown or player.Parent ~= Players then return end
 	ControllerFunctions.refreshVip(player)
+	if serverShuttingDown or player.Parent ~= Players then return end
 	ControllerFunctions.refreshPersonalPasses(player)
+	if serverShuttingDown or player.Parent ~= Players then return end
 	local loaded = ControllerFunctions.loadProfile(player)
 	if not loaded then
 		notify(player, "Your profile could not be loaded. Please rejoin in a moment; no default profile was saved over your data.", "warn")
@@ -5433,6 +5437,7 @@ end)
 xpService.Start(script)
 
 Players.PlayerAdded:Connect(function(player)
+	if serverShuttingDown then return end
 	task.spawn(ControllerFunctions.onJoin, player)
 end)
 ControllerFunctions.startDanceFloorRewards()
@@ -5531,9 +5536,11 @@ end)
 -- Track time spent in this experience for the Party Animal collection unlock.
 -- Progress is server-owned, persisted, and never accepted from a client.
 task.spawn(function()
-	while true do
+	while not serverShuttingDown do
 		task.wait(60)
+		if serverShuttingDown then break end
 		for _, player in ipairs(Players:GetPlayers()) do
+			if serverShuttingDown then break end
 			local profile = profiles[player.UserId]
 			if profile then
 				local previousSeconds = profile.clubPlaySeconds
@@ -5563,14 +5570,19 @@ end)
 
 -- Periodically re-check group rank / VIP so promotions apply without rejoining.
 task.spawn(function()
-	while true do
+	while not serverShuttingDown do
 		task.wait(60)
+		if serverShuttingDown then break end
 		for _, player in ipairs(Players:GetPlayers()) do
+			if serverShuttingDown then break end
 			task.spawn(function()
+				if serverShuttingDown or player.Parent ~= Players then return end
 				local previousRank = ControllerFunctions.getRank(player)
 				local previousTier = ControllerFunctions.passTier(player)
 				ControllerFunctions.refreshRank(player)
+				if serverShuttingDown or player.Parent ~= Players then return end
 				ControllerFunctions.refreshVip(player)
+				if serverShuttingDown or player.Parent ~= Players then return end
 				local profile = profiles[player.UserId]
 				local slotsUpgraded = false
 				if profile and ControllerFunctions.isStaff(player) and profile.unlockedSlots < TITLE_SLOT_COUNT then
@@ -5581,6 +5593,7 @@ task.spawn(function()
 				end
 				ControllerFunctions.applyVipAttribute(player)
 				player:SetAttribute("ClubRank", ControllerFunctions.getRank(player))
+				if serverShuttingDown or player.Parent ~= Players then return end
 				ControllerFunctions.syncTitleTagUnlocks(player)
 				-- Publish promotions/demotions even when the player already owns all
 				-- title slots, so every client receives the current rank and tier.
@@ -5745,6 +5758,7 @@ game:BindToClose(function()
 	-- final snapshot. Existing receipt callbacks retain their shared writer lock.
 	serverShuttingDown = true
 	adminBridgeShuttingDown = true
+	xpService.StopAndSettle()
 	local shutdownDeadline = os.clock() + 27
 
 	-- Cancel delayed/coalesced saves; the shutdown pass below writes the latest
