@@ -150,15 +150,14 @@ end)
 -- wait safely even when catalog initialization is delayed.
 -- The catalog is server-owned. The controller remains the only authority
 -- for request limits, moderation, queue priority, and playback.
-ControllerFunctions.getOrCreate = function(parent: Instance, className: string, name: string): Instance
-	local found = parent:FindFirstChild(name)
-	if found and found.ClassName == className then return found end
-	if found then found:Destroy() end
-	local created = Instance.new(className)
-	created.Name = name
-	created.Parent = parent
-	return created
+local bootstrapHelpersModule = ServerStorage:FindFirstChild("ClubNeon_ControllerBootstrap")
+if not bootstrapHelpersModule or not bootstrapHelpersModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_ControllerBootstrap; controller will not start.")
 end
+local bootstrapHelpers = require(bootstrapHelpersModule)(ServerStorage)
+ControllerFunctions.getOrCreate = bootstrapHelpers.getOrCreate
+ControllerFunctions.findAudioModule = bootstrapHelpers.findAudioModule
+ControllerFunctions.findServerStorageModule = bootstrapHelpers.findServerStorageModule
 
 local remotes = ControllerFunctions.getOrCreate(ReplicatedStorage, "Folder", "ClubMusicRemotes") :: Folder
 remotes:SetAttribute("Ready", false)
@@ -301,31 +300,12 @@ Players.PlayerRemoving:Connect(function(player: Player)
 end)
 
 
--- Keep the established lowercase alias for existing storage-module loaders.
-local serverStorage = ServerStorage
-
-
 -- Resolve optional audio modules in either supported installation layout:
 --   ServerStorage/ClubMusicAudioModules/<ModuleScript>
 --   ServerStorage/<ModuleScript>
 -- Folder layout takes precedence when both copies exist, avoiding accidental
 -- mixing of two independently installed module sets.
-ControllerFunctions.findAudioModule = function(moduleName: string): ModuleScript?
-	if typeof(moduleName) ~= "string" or #moduleName < 1 or #moduleName > 100 then
-		return nil
-	end
-	local modulesFolder = serverStorage:FindFirstChild("ClubMusicAudioModules")
-	local candidate = if modulesFolder and modulesFolder:IsA("Folder")
-		then modulesFolder:FindFirstChild(moduleName) else nil
-	if candidate and candidate:IsA("ModuleScript") then
-		return candidate
-	end
-	candidate = serverStorage:FindFirstChild(moduleName)
-	if candidate and candidate:IsA("ModuleScript") then
-		return candidate
-	end
-	return nil
-end
+
 
 -- Diagnostics are optional: a missing handler must never prevent ClubMusic startup.
 local diagnosticsModule = serverStorage:FindFirstChild("ClubMusicErrorHandler")
@@ -368,22 +348,7 @@ end
 
 -- Resolve canonical ServerStorage modules from either direct-child installation
 -- or the bundled ClubMusic_ServerStorage_Modules folder.
-ControllerFunctions.findServerStorageModule = function(moduleName: string): Instance?
-	if typeof(moduleName) ~= "string" or #moduleName < 1 or #moduleName > 100 then return nil end
-	local direct = serverStorage:FindFirstChild(moduleName)
-	if direct then return direct end
-	local packageFolder = serverStorage:FindFirstChild("ClubMusic_ServerStorage_Modules")
-	if packageFolder and packageFolder:IsA("Folder") then
-		local bundled = packageFolder:FindFirstChild(moduleName)
-		if bundled then return bundled end
-	end
-	local waited = serverStorage:WaitForChild(moduleName, 20)
-	if waited then return waited end
-	if packageFolder and packageFolder:IsA("Folder") then
-		return packageFolder:WaitForChild(moduleName, 2)
-	end
-	return nil
-end
+
 
 remotes:SetAttribute("StartupStage", "LoadingMusicCoreService")
 local coreModule = ControllerFunctions.findServerStorageModule("MusicCoreService")
