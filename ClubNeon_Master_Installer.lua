@@ -97,10 +97,32 @@ if not DRY_RUN and string.gsub(ownerList, "%s", "") == "" then
 end
 addRaw("ClubNeon_Config", "ModuleScript", "ServerStorage", projectConfigSource, "ClubNeon_Config.lua@" .. RELEASE.runtime)
 
--- Core controller and client UI.
-addSource("ClubNeon_UI_Server_Controller.server.lua", "Script", "ServerScriptService", "UI_Server_Controller")
-addSource("ClubNeon_UI_Renderer.lua", "ModuleScript", "ReplicatedStorage", "ClubNeon_UI_Renderer")
-addSource("ClubNeon_UI_Network.lua", "ModuleScript", "ReplicatedStorage", "ClubNeon_UI_Network")
+-- Core controller and client UI. Validate project isolation before staging.
+local controllerSource = fetchSource("ClubNeon_UI_Server_Controller.server.lua", RELEASE.runtime)
+if not string.find(controllerSource, "EnableGlobalPlaybackSync = false", 1, true)
+    or string.find(controllerSource, "MusicGlobalPlaybackAuthority", 1, true) then
+    error("Club Neon controller failed the local-playback isolation check.")
+end
+for _, forbiddenId in ipairs({500470662,2089785323,2089263330,2087955353,2088891595,2089053637,2087955619,2088585676,2088315619,3731386650,3731387153,3731392651,3731394060,3731488823,3731489572,3731490154,3731490513,3731490937,3731491257,3731491679}) do
+    if string.find(controllerSource, tostring(forbiddenId), 1, true) then
+        error("Club Neon controller contains an inherited project ID: " .. tostring(forbiddenId))
+    end
+end
+addRaw("UI_Server_Controller", "Script", "ServerScriptService", controllerSource, "ClubNeon_UI_Server_Controller.server.lua@" .. RELEASE.runtime)
+
+local rendererSource = fetchSource("ClubNeon_UI_Renderer.lua", RELEASE.runtime)
+for _, forbiddenId in ipairs({2089785323,2089263330,2087955353,2088891595,2089053637,2087955619,2088585676,2088315619,3731386650,3731387153,3731392651,3731394060,3731488823,3731489572,3731490154,3731490513,3731490937,3731491257,3731491679}) do
+    if string.find(rendererSource, tostring(forbiddenId), 1, true) then
+        error("Club Neon renderer contains an inherited purchase ID: " .. tostring(forbiddenId))
+    end
+end
+addRaw("ClubNeon_UI_Renderer", "ModuleScript", "ReplicatedStorage", rendererSource, "ClubNeon_UI_Renderer.lua@" .. RELEASE.runtime)
+
+local networkSource = fetchSource("ClubNeon_UI_Network.lua", RELEASE.runtime)
+if not string.find(networkSource, 'FOLDER_NAME = "ClubMusicRemotes"', 1, true) then
+    error("Club Neon network remote contract does not match its server controller.")
+end
+addRaw("ClubNeon_UI_Network", "ModuleScript", "ReplicatedStorage", networkSource, "ClubNeon_UI_Network.lua@" .. RELEASE.runtime)
 addSource("ClubNeonBootstrap.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonBootstrap")
 addSource("ClubMusic_Overhead_Title_Renderer_client.lua", "LocalScript", "StarterPlayerScripts", "ClubMusic_Overhead_Title_Renderer")
 addSource("ClubMusicErrorHandler.lua", "ModuleScript", "ServerStorage", "ClubMusicErrorHandler")
