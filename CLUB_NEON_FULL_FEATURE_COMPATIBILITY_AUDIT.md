@@ -93,7 +93,7 @@ The full-feature source variants are now committed, without overwriting the Tiki
 - Global authorization, settings, staff actions, and the optional Kohl's adapter use the same role lists and rank thresholds.
 - Playback sync is hard-disabled in the controller and global service. Queue, playback clock, Auto DJ cursor, and skip votes remain per-server.
 - The master installer checks for inherited Tiki Tide product/group IDs, checks the local-only playback marker and remote folder contract, and pins all runtime source fetches to immutable commits.
-- The master installer is v0.3.0, source-based, transactional, and defaults to `DRY_RUN = true`. It backs up replaced repository-owned instances and preserves unknown descendants. It does not require an .rbxl export.
+- The master installer is v0.3.0, source-based, transactional, and defaults to `DRY_RUN = true`. Its runtime/security source pin is `32b484bd731dbbd68555c0d74c70600c87bc462e`; audio and diagnostics retain their separately pinned releases. It backs up replaced repository-owned instances and preserves unknown descendants. It does not require an .rbxl export.
 
 ## Remaining release blockers
 
