@@ -889,6 +889,7 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 	end
 	return true, if typeof(message) == "string" then message else "ClubMusic action accepted."
 end
+	adminBridge.OnInvoke = adminBridgeCallback
 	return {
 		Bridge = adminBridge,
 		Shutdown = function()
