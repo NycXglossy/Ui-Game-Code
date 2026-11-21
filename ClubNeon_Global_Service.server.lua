@@ -18,11 +18,11 @@ local DataStoreService = game:GetService("DataStoreService")
 local MessagingService = game:GetService("MessagingService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local receiptSecurityCore = ServerStorage:WaitForChild("ClubMusicSecurityCore", 20)
+local receiptSecurityCore = ServerStorage:WaitForChild("ClubNeonSecurityCore", 20)
 local receiptHashModule = if receiptSecurityCore and receiptSecurityCore:IsA("Folder")
 	then receiptSecurityCore:FindFirstChild("ReceiptHash") else nil
 if not receiptHashModule or not receiptHashModule:IsA("ModuleScript") then
-	error("[ClubMusic Global] Missing ServerStorage.ClubMusicSecurityCore.ReceiptHash ModuleScript.")
+	error("[ClubMusic Global] Missing ServerStorage.ClubNeonSecurityCore.ReceiptHash ModuleScript.")
 end
 local receiptHashOk, receiptHashResult = pcall(require, receiptHashModule)
 if not receiptHashOk or typeof(receiptHashResult) ~= "table" or type(receiptHashResult.KeySuffix) ~= "function" then
@@ -701,9 +701,9 @@ local function loadOptionalGlobalModule(moduleName: string): any?
 	local securityExport = SECURITY_MODULE_EXPORTS[moduleName]
 	if securityExport then
 		-- Preferred layout: independently maintained private ModuleScripts under
-		-- ServerStorage/ClubMusicSecurityCore. A present-but-invalid split folder
+		-- ServerStorage/ClubNeonSecurityCore. A present-but-invalid split folder
 		-- fails closed instead of silently loading an outdated fallback.
-		local privateCore = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+		local privateCore = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 		if privateCore then
 			if not privateCore:IsA("Folder") then
 				securityCoreInstallStatus.state = "InvalidContainer"
