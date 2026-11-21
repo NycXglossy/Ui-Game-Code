@@ -7,18 +7,20 @@ return function(context: {[string]: any})
 	local ServerStorage = context.ServerStorage
 	local ALL_TRACK_IDS = context.ALL_TRACK_IDS
 	local blockedUsers = context.blockedUsers
-	local djControlModeEnabled = context.djControlModeEnabled
+	local getDJControlModeEnabled = context.getDJControlModeEnabled
 	local nowPlaying = context.nowPlaying
 	local operationalDiagnosticsFormatter = context.operationalDiagnosticsFormatter
 	local permissions = context.permissions
 	local phase32Services = context.phase32Services
-	local playbackPaused = context.playbackPaused
+	local getPlaybackPaused = context.getPlaybackPaused
+	local setPlaybackPaused = context.setPlaybackPaused
 	local publishState = context.publishState
 	local purchaseDiagnostics = context.purchaseDiagnostics
 	local queue = context.queue
 	local queueManager = context.queueManager
 	local remotes = context.remotes
-	local requestsLocked = context.requestsLocked
+	local getRequestsLocked = context.getRequestsLocked
+	local setRequestsLocked = context.setRequestsLocked
 	local storage = context.storage
 
 local adminBridge = ControllerFunctions.getOrCreate(ServerStorage, "BindableFunction", "ClubMusicAdminBridge") :: BindableFunction
@@ -129,8 +131,8 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 	if operation == "Status" then
 		local currentTitle = if typeof(nowPlaying.title) == "string" and nowPlaying.title ~= "" then nowPlaying.title else "Nothing playing"
 		local currentArtist = if typeof(nowPlaying.artist) == "string" then nowPlaying.artist else ""
-		local playbackLabel = if playbackPaused then "PAUSED" else "PLAYING"
-		local requestLabel = if requestsLocked then "EMERGENCY LOCK" elseif djControlModeEnabled then "DJ CONTROL (CURRENT DJ ONLY)" else "OPEN"
+		local playbackLabel = if getPlaybackPaused() then "PAUSED" else "PLAYING"
+		local requestLabel = if getRequestsLocked() then "EMERGENCY LOCK" elseif getDJControlModeEnabled() then "DJ CONTROL (CURRENT DJ ONLY)" else "OPEN"
 		local queueCount = #queue
 		local elapsed = math.max(0, math.floor(tonumber(nowPlaying.elapsed) or 0))
 		local duration = math.max(0, math.floor(tonumber(nowPlaying.duration) or 0))
@@ -255,7 +257,7 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 	end
 	if operation == "ForceStop" then
 		ControllerFunctions.cancelAudioTransition("admin-force-stop")
-		playbackPaused = true
+		setPlaybackPaused(true)
 		nowPlaying.trackId = ""; nowPlaying.title = ""; nowPlaying.artist = ""
 		nowPlaying.genre = ""; nowPlaying.duration = 1; nowPlaying.elapsed = 0
 		nowPlaying.dj = "Staff"; nowPlaying.source = "admin"
@@ -297,7 +299,7 @@ local adminBridgeCallback = function(caller: any, operation: any, argument: any)
 		return true, string.format("Removed %d queued ClubMusic request(s) for UserId %d.", removed, targetUserId)
 	end
 	if operation == "EmergencyLock" then
-		requestsLocked = true
+		setRequestsLocked(true)
 		ControllerFunctions.broadcast("ClubMusic requests have been emergency-locked on this server by staff. Auto DJ playback/refill remains server-managed.", "warn")
 		publishState(nil)
 		return true, "ClubMusic requests are now locked on this server. Use ;cmlock after the incident to reopen them."
