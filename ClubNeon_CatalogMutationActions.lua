@@ -18,7 +18,6 @@ return function(ctx: {[string]: any}, player: Player, action: string, payload: a
 	local queue = ctx.queue
 	local activePlaylistId = ctx.getActivePlaylistId()
 	local activePlaylistTracks = ctx.activePlaylistTracks
-	local activePlaylistCursor = ctx.activePlaylistCursor
 	local publishState = ctx.publishState
 	local notify = ctx.notify
 	local function getArtworkInspectionCount() return ctx.getArtworkInspectionCount() end
