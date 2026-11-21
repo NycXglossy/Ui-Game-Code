@@ -53,7 +53,7 @@ function Service.new(dependencies: {[string]: any}?)
 	local thresholds = if typeof(dependencies.thresholds) == "table" then dependencies.thresholds else DEFAULT_THRESHOLDS
 	local instance = setmetatable({
 		groupId = if validUserId(dependencies.groupId) then math.floor(dependencies.groupId) else GROUP_ID,
-		studioStaff = dependencies.studioStaff ~= false,
+		studioStaff = dependencies.studioStaff == true,
 		thresholds = thresholds,
 		staffUserIds = {},
 		roleUserLevels = {},
