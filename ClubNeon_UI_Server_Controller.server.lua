@@ -45,6 +45,10 @@ local CONFIG = {
 	GroupId = tonumber(permissions.GroupId) or 0,
 	RankThresholds = permissions.RankThresholds,
 	StaffUserIds = permissions.OwnerUserIds,
+	RoleUserIds = {
+		Owner = permissions.OwnerUserIds, CoOwner = permissions.CoOwnerUserIds,
+		Admin = permissions.AdminUserIds, Moderator = permissions.ModeratorUserIds, DJ = permissions.DJUserIds,
+	},
 	StudioStaff = permissions.StudioOwnerBypass == true,
 	VipGamePassId = tonumber(passes.VIP) or 0,
 	VvipGamePassId = tonumber(passes.VVIP) or 0,
@@ -2176,6 +2180,7 @@ do
 				groupId = CONFIG.GroupId,
 				studioStaff = CONFIG.StudioStaff,
 				staffUserIds = CONFIG.StaffUserIds,
+				roleUserIds = CONFIG.RoleUserIds,
 				thresholds = {
 					GroupDJ = CONFIG.RankThresholds.GroupDJ,
 					Moderator = CONFIG.RankThresholds.Moderator,
