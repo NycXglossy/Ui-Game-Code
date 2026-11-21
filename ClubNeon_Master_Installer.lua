@@ -1,12 +1,12 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.1.0
+-- CLUB NEON MASTER INSTALLER v0.2.0
 -- Separate target installer. Shared Tiki Tide/ClubMusic components are candidates,
 -- not assumed dependencies. This release is READ-ONLY PREFLIGHT ONLY.
 -- Run in Studio Command Bar with Play/Run stopped. No place export is required.
 -- DRY_RUN=true and INSTALL_ENABLED=false are hard safety stops in this release.
 
 local RunService = game:GetService("RunService")
-local INSTALLER_VERSION = "0.1.0"
+local INSTALLER_VERSION = "0.2.0"
 local TARGET_PROJECT = "Club Neon"
 local DRY_RUN = true
 local INSTALL_ENABLED = false
@@ -39,9 +39,9 @@ end
 local function scriptCounts(root: Instance): (number, number, number)
 	local a, b, c = 0, 0, 0
 	for _, item in ipairs(root:GetDescendants()) do
-		if item:IsA("Script") then a += 1 end
-		if item:IsA("LocalScript") then b += 1 end
-		if item:IsA("ModuleScript") then c += 1 end
+		if item.ClassName == "Script" then a += 1 end
+		if item.ClassName == "LocalScript" then b += 1 end
+		if item.ClassName == "ModuleScript" then c += 1 end
 	end
 	return a, b, c
 end
@@ -160,7 +160,9 @@ log("INSTALL PLAN / SAFETY")
 log("  No remote sources fetched; no scripts/modules installed.")
 log("  No folders, remotes, values, or attributes created.")
 log("  No instances moved, replaced, archived, or deleted.")
-log("  Tiki Tide playback-sync policy is not automatically applied to Club Neon.")
+log("  Full feature scope approved; ClubNeon_Config is a repository contract, not yet installed.")
+log("  Club Neon owner/staff UserIds and monetization IDs remain unconfigured; live install is blocked.")
+log("  Playback remains server-local; cross-server playback sync is disabled.")
 log("  Club Neon queue/sync policy must be explicitly defined in its own manifest.")
 log("  Third-party packages and map assets remain untouched.")
 log("  Next: map approved shared modules to verified Club Neon paths and define target-specific settings.")
