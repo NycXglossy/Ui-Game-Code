@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.3.6
+-- CLUB NEON MASTER INSTALLER v0.3.7
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.3.6"
+local INSTALLER_VERSION = "0.3.7"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -461,6 +461,20 @@ for _, entry in ipairs(entries) do
     end
 end
 print("======================================================")
+-- Roblox rejects Script/ModuleScript Source at or above 200,000 characters.
+-- Check every staged source before promotion so an oversized source cannot trigger
+-- a partial promotion/rollback attempt.
+local MAX_SOURCE_CHARS = 199999
+local oversizedSources = {}
+for _, entry in ipairs(entries) do
+    if #entry.source >= 200000 then
+        table.insert(oversizedSources, entry.name .. " (" .. #entry.source .. " chars; limit is < 200000)")
+    end
+end
+if #oversizedSources > 0 then
+    error("[ClubNeon Master Installer] Source-size preflight failed before any promotion: " .. table.concat(oversizedSources, "; "))
+end
+
 print("[ClubNeon Master Installer] v" .. INSTALLER_VERSION .. " source staging and preflight passed.")
 print("Runtime source instances: " .. sourceScriptCount)
 print("Security Core modules: " .. (#securityModules + 5))
