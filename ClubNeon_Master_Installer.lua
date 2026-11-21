@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.3.1
+-- CLUB NEON MASTER INSTALLER v0.3.2
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.3.1"
+local INSTALLER_VERSION = "0.3.2"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -353,6 +353,8 @@ end
 -- Validate unique manifest destinations and exact destination classes before
 -- moving any existing instance.
 local destinationKeys = {}
+local plannedReplacements = {}
+local plannedNew = {}
 for _, entry in ipairs(entries) do
     local key = entry.parentKey .. "/" .. entry.name
     if destinationKeys[key] then error("Duplicate manifest destination: " .. key) end
@@ -372,6 +374,13 @@ for _, entry in ipairs(entries) do
         if existing and not existing.Archivable then
             error(parent:GetFullName() .. "/" .. entry.name .. " is not Archivable and cannot be safely backed up.")
         end
+        if existing then
+            table.insert(plannedReplacements, parent:GetFullName() .. "/" .. entry.name .. " [" .. existing.ClassName .. "]")
+        else
+            table.insert(plannedNew, parent:GetFullName() .. "/" .. entry.name .. " [" .. entry.className .. "]")
+        end
+    else
+        table.insert(plannedNew, parentKey .. "/" .. entry.name .. " [" .. entry.className .. "] (parent folder will be created)")
     end
 end
 
@@ -399,6 +408,10 @@ print("Runtime source instances: " .. sourceScriptCount)
 print("Security Core modules: " .. (#securityModules + 5))
 print("Embedded global modules: " .. #({ "ClubMusic_Global_Event_Log_Service", "ClubMusic_Global_RateLimit_Service", "ClubMusic_Global_Authorization_Service" }))
 print("Existing retired playback authority instances to archive: " .. #retiredAuthorities)
+print("Existing destination replacements: " .. #plannedReplacements)
+for _, path in ipairs(plannedReplacements) do print("[REPLACE/BACKUP] " .. path) end
+print("New destination instances: " .. #plannedNew)
+for _, path in ipairs(plannedNew) do print("[CREATE] " .. path) end
 print("Playback synchronization: DISABLED; per-server Now Playing and request queues.")
 print("Kohl's Admin adapters pending: " .. #skippedOptional)
 for _, message in ipairs(skippedOptional) do print("[ClubNeon Master Installer] OPTIONAL: " .. message) end
@@ -456,7 +469,7 @@ local ok, failure = pcall(function()
     -- All new instances are in place and disabled. Start shared services before
     -- consumers, then enable the remaining scripts.
     local priority = {
-        ClubMusic_Global_Service = 1,
+        ClubNeon_Global_Service = 1,
         ClubNeonSecurityServer = 2,
         ClubNeonCharacterPhysicsGuardBootstrap = 3,
         ClubNeonStaffActions = 4,
@@ -476,7 +489,7 @@ local ok, failure = pcall(function()
     for _, object in ipairs(promoted) do
         if object:IsA("BaseScript") then
             object.Disabled = false
-            if object:IsA("Script") then task.wait(0.05) end
+            if object:IsA("Script") then task.wait(0.15) end
         end
     end
 end)
@@ -495,11 +508,12 @@ if not ok then
         local folder = createdFolders[i]
         pcall(function() if #folder:GetChildren() == 0 then folder:Destroy() end end)
     end
-    error("[ClubNeon Master Installer] Promotion failed and prior instances were restored: " .. tostring(failure))
+    error("[ClubNeon Master Installer] Promotion failed; prior instances were restored where possible. IMPORTANT: rollback cannot undo external side effects already triggered by scripts (DataStore writes, remote calls, spawned tasks, etc.). Inspect the place and logs before retrying. Failure: " .. tostring(failure))
 end
 
 print("======================================================")
 print("[ClubNeon Master Installer] INSTALL PROMOTION COMPLETE")
+print("Startup priority: Global Service -> Security Server -> Physics Guard -> Staff Actions -> UI Controller -> Settings/Social -> Utility services")
 print("Source release: " .. RELEASE.runtime)
 print("Audio release: " .. RELEASE.audio)
 print("Global Service hard-disabled release: " .. RELEASE.globalService)
