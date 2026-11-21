@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.5
+-- CLUB NEON MASTER INSTALLER v0.4.7
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -27,7 +27,7 @@ local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed an
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "ce13f6c2f3df5003e7c2781c4e993ce3b63205af",
+    runtime = "4f6826c88d78081f6ab9cd631bc6b4c33720ab97",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
     globalService = "032fdc0085ac0a75db270bf569b9db19ef39b36b",
     security = "32b484bd731dbbd68555c0d74c70600c87bc462e",
