@@ -371,7 +371,6 @@ local parents: {[string]: Instance} = {
     StarterPlayerScripts = StarterPlayerScripts,
 }
 if configAddons then parents.KohlsConfigAddons = configAddons end
-if regularAddons then parents.KohlsRegularAddons = regularAddons end
 
 local function peekParent(parentKey: string): Instance?
     if parentKey == "AudioModules" then return ServerStorage:FindFirstChild("ClubMusicAudioModules") end
@@ -465,7 +464,6 @@ for _, path in ipairs(plannedNew) do print("[CREATE] " .. path) end
 print("Playback synchronization: DISABLED; per-server Now Playing and request queues.")
 print("Kohl's Admin discovery: " .. kohlsDiscoveryStatus)
 if configAddons then print("[Kohl's Admin] Config addon destination: " .. configAddons:GetFullName()) end
-if regularAddons then print("[Kohl's Admin] Regular-command addon destination: " .. regularAddons:GetFullName()) end
 print("Kohl's Admin adapters pending: " .. #skippedOptional)
 for _, message in ipairs(skippedOptional) do print("[ClubNeon Master Installer] OPTIONAL: " .. message) end
 if DRY_RUN then
