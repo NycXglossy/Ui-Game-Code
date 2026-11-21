@@ -305,6 +305,7 @@ end
 -- fails, leave the source unavailable and report the failure; never start legacy
 -- AudioPlayer. A monotonically increasing token fences late decoder completions.
 ControllerFunctions.startServerMusic = function(soundId: any)
+	local nowPlaying = getNowPlaying()
 	local retiredSource = state.activeAudioSource
 	ControllerFunctions.stopServerMusic()
 	-- New-track startup owns a fresh candidate. Mark the source unavailable while
@@ -464,6 +465,7 @@ end
 -- Restart the active source in place through the normalized controller contract.
 -- Avoid reselecting the asset and reapplying track gain/speed on every restart.
 ControllerFunctions.restartServerMusic = function(soundId: any): (boolean, string?)
+	local nowPlaying = getNowPlaying()
 	if typeof(soundId) ~= "string" or #soundId > 64
 		or not string.match(soundId, "^rbxassetid://%d+$") then
 		return false, "The current track has no valid audio asset."
@@ -511,6 +513,7 @@ end
 -- is replaced after the new AudioPlayer is loaded, positioned, and verified.
 local function rebuildModernAudioBackend(source: any, asset: string, position: number,
 	expectedTrackId: string, expectedTransitionToken: number): (boolean, string?)
+	local nowPlaying = getNowPlaying()
 	if typeof(source) ~= "table" or source.kind ~= "Backend" or typeof(source.backend) ~= "table" then
 		return false, "Modern audio recovery requires the controller-owned AudioPlayer backend."
 	end
@@ -601,6 +604,7 @@ end
 -- track identity, or the authoritative playback clock. This is deliberately blocked
 -- during a crossfade so a manual recovery cannot interrupt a deck handoff.
 local function performReloadServerMusic(): (boolean, string?)
+	local nowPlaying = getNowPlaying()
 	local asset = nowPlaying.soundId or CONFIG.SoundIds[nowPlaying.trackId] or ""
 	if typeof(asset) ~= "string" or #asset > 64
 		or not string.match(asset, "^rbxassetid://%d+$") then
