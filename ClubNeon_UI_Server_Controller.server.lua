@@ -5758,6 +5758,7 @@ game:BindToClose(function()
 	-- final snapshot. Existing receipt callbacks retain their shared writer lock.
 	serverShuttingDown = true
 	adminBridgeShuttingDown = true
+	-- Settle accumulated XP once, then fence further accrual before final profile snapshots.
 	xpService.StopAndSettle()
 	local shutdownDeadline = os.clock() + 27
 
