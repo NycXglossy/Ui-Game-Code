@@ -881,7 +881,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	if legacyGui and legacyGui:IsA("ScreenGui") then legacyGui:Destroy() end
 
 	local gui = make("ScreenGui", {
-		Name = "FirebeachMusicFestivalClubUI",
+		Name = "Club NeonMusicFestivalClubUI",
 		ResetOnSpawn = false,
 		IgnoreGuiInset = false,
 		DisplayOrder = 40,
