@@ -1,7 +1,7 @@
 # Tiki Tide → Club Neon Migration Ledger
 
 **Branch:** `integration/tiki-tide-system-consolidation`  
-**Installer audited:** `ClubNeon_Master_Installer.lua` v0.3.3  
+**Installer audited:** `ClubNeon_Master_Installer.lua` v0.3.4  
 **Audit basis:** tracked source files and packages in this repository, plus the Tiki Tide and Club Neon master installers and compatibility audit.  
 **Safety:** audit only. No Roblox place was modified. Installer remains `DRY_RUN = true`.
 
@@ -48,8 +48,8 @@ The important gaps are not all the same kind:
 | Social actions server/client/config | `ClubNeonSocialActions*` | Adapted | AnimationConfig remains nested under the Social Actions server Script. |
 | Unified launcher | `ClubNeonUnifiedLauncher.client.lua` | Adapted | Club Neon entry points. |
 | Utility Bar (4 clients, 3 servers) | `ClubNeonUtilityBar/` | Adapted | Includes Inventory, Tool Shop, Mount, Size, Clone, Aura, Lighting and outfit refresh code. |
-| Kohl's Admin config addon | `KohlsAdmin_ClubNeon_Addon.lua` | Adapted / conditional | Only installed if the expected Config/Addons folder is found under ServerScriptService. |
-| Kohl's Admin regular-command security addon | `ClubNeonRegularCommandsSecurityServer.lua` | Adapted / conditional | Only installed if the expected Addons folder is found under ServerScriptService. |
+| Kohl's Admin config addon | `KohlsAdmin_ClubNeon_Addon.lua` | Adapted / conditional | Installed when a unique Kohl's Admin container is discovered anywhere in the place and its Config/Addons folder is present. |
+| Kohl's Admin regular-command security addon | `ClubNeonRegularCommandsSecurityServer.lua` | Adapted / conditional | Installed when a unique Kohl's Admin container is discovered anywhere in the place and its root Addons folder is present. |
 
 ## 2. Deliberate exclusions and replacements
 
@@ -88,7 +88,7 @@ These are not missing scripts, but the corresponding features are not fully oper
 | Utility lighting | Club Neon stage/club fixtures tagged/configured for the lighting action | Code is present; actual map fixtures require target-place configuration. |
 | Dance-floor rewards | Approved Club Neon dance-floor zone tag(s) | Controller expects Club Neon-tagged zone parts; map tagging is not supplied by the script installer. |
 | Tool Shop | Approved catalog entries/assets | Storefront code is present; catalog intentionally remains empty until configured. |
-| Kohl's Admin | Supported addon folders at the installer-expected locations | Adapters are conditional. The previously audited package was located under Workspace, whereas this installer checks ServerScriptService. It will skip rather than move or modify the third-party package. |
+| Kohl's Admin | Supported addon folders at the installer-expected locations | Adapters are conditional. The v0.3.4 installer scans the full place hierarchy for a uniquely named Kohl's Admin container and resolves its existing Config/Addons and root Addons folders. It never moves or modifies the third-party package; ambiguous or incomplete discovery safely skips the affected adapter. |
 
 ## 4. Repository candidates that need special treatment
 
@@ -103,7 +103,7 @@ These are not missing scripts, but the corresponding features are not fully oper
 2. The Security Core is staged as 32 runtime modules from the dedicated Club Neon folder and three independently pinned release groups; the spec file is not runtime.
 3. The five modern server audio modules, client preferences and two server music core modules are staged individually. Queue and validation implementations are bundled in MusicCoreService.
 4. The global optional package is selectively extracted; MusicGlobalPlaybackAuthority is intentionally omitted.
-5. Kohl's Admin adapters are not guaranteed to install. They are conditional on the exact addon-folder paths and must be validated against the actual package contract.
+5. Kohl's Admin adapters are conditional on successful hierarchy discovery and the expected Addons folder contract; verify the discovered full paths in the Studio dry-run output.
 6. Source retrieval, pinning and static path checks do not prove Luau compilation or Roblox Studio runtime correctness.
 7. The v0.3.2 Studio dry-run output in the prior audit is not a v0.3.3 test. A fresh v0.3.3 Studio dry run and copied-place regression run are still required.
 8. Do not set `DRY_RUN = false`, publish, remove legacy systems, or alter the live place until configuration, package contracts, exact dependencies and the full regression plan are closed.
