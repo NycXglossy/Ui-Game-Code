@@ -106,6 +106,6 @@ Installer v0.2.0 corrected exact ClassName counting. Installer v0.3.0 is now the
 
 The project-specific source variants now committed include the controller, renderer, network bridge, bootstrap, global service, 32-module Security Core, settings, social actions, unified launcher, utility bar, Tool Shop, and optional Kohl's Admin adapters. The full inventory and release gates are recorded in CLUB_NEON_FULL_FEATURE_COMPATIBILITY_AUDIT.md.
 
-The installer source has been checked against its pinned repository tree: all 39 static source paths and all 32 Security Core modules exist at the pinned runtime revision. This verifies repository path availability only; it is not a Luau compile or a Roblox Studio runtime test.
+The installer source has been checked against its pinned repository tree: all 39 static source paths and all 32 Security Core modules exist at the pinned runtime revision. This verifies repository path availability only; it is not a Luau compile or a Roblox Studio runtime test. Runtime/security source pin: `32b484bd731dbbd68555c0d74c70600c87bc462e`.
 
 Live install remains blocked until ClubNeon_Config.lua contains at least one actual OwnerUserId. Monetization remains disabled by default. Run the installer with DRY_RUN=true first, then review it in Studio. Only use DRY_RUN=false in a backed-up unpublished copy after that review.
