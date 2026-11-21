@@ -101,11 +101,11 @@ task.spawn(function()
 		{ label = "Title Slot 3 Developer Product", id = CONFIG.TitleSlotProductIds[3], infoType = Enum.InfoType.Product },
 		{ label = "Coconut Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
 		{ label = "Pineapple Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
-		{ label = "Tiki Torch Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
+		{ label = "Neon Torch Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
 		{ label = "Volcano Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
 		{ label = "Island Legend Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
 		{ label = "Island Royalty Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
-		{ label = "Sultan's Legacy Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
+		{ label = "Club Neon Legacy Donation Developer Product", id = 0, infoType = Enum.InfoType.Product },
 	}
 	for _, entry in ipairs(configured) do
 		if typeof(entry.id) ~= "number" or entry.id <= 0 then
@@ -428,7 +428,7 @@ local function isPlayableTrack(track: Track?): boolean
 end
 
 local TAGS: {[string]: boolean} = {
-	vip = true, party = true, wave = true, tiki = true, sunset = true, bass = true, island = true,
+	vip = true, party = true, wave = true, neon = true, sunset = true, bass = true, island = true,
 }
 
 -- Custom title allowlists. These values are data keys, not client-supplied styles.
@@ -3889,7 +3889,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		vvipGamePassId = CONFIG.VvipGamePassId,
 		eliteGamePassId = CONFIG.ClubNeonPassId,
 		passTier = ControllerFunctions.passTier(player),
-		passName = if ControllerFunctions.hasClubNeonAccess(player) then "TIKI TIDE" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
+		passName = if ControllerFunctions.hasClubNeonAccess(player) then "CLUB NEON" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
 		passPerks = {
 			vip = { slots = CONFIG.VipMaxRequestsPerPlayer, cooldown = CONFIG.VipCooldownSeconds },
 			vvip = { slots = CONFIG.VvipMaxRequestsPerPlayer, cooldown = CONFIG.VvipCooldownSeconds },
@@ -4038,15 +4038,15 @@ local PRODUCT_IDS = {
 	-- Donations / Tips
 	Coconut = 0,
 	Pineapple = 0,
-	TikiTorch = 0,
+	NeonTorch = 0,
 	Volcano = 0,
 	IslandLegend = 0,
 	IslandRoyalty = 0,
-	SultansLegacy = 0,
+	ClubNeonLegacy = 0,
 
 	-- Shop Items
 	Glowsticks = 0,
-	TikiMask = 0,
+	NeonMask = 0,
 	NeonAura = 0,
 	NeonLei = 0,
 	LEDShades = 0,
@@ -4086,8 +4086,8 @@ ControllerFunctions.registerProduct(PRODUCT_IDS.Coconut, {
 ControllerFunctions.registerProduct(PRODUCT_IDS.Pineapple, {
 	type = "Donation", perk = "Pineapple", amount = 50,
 })
-ControllerFunctions.registerProduct(PRODUCT_IDS.TikiTorch, {
-	type = "Donation", perk = "Tiki Torch", amount = 100,
+ControllerFunctions.registerProduct(PRODUCT_IDS.NeonTorch, {
+	type = "Donation", perk = "Neon Torch", amount = 100,
 })
 ControllerFunctions.registerProduct(PRODUCT_IDS.Volcano, {
 	type = "Donation", perk = "Volcano", amount = 500,
@@ -4098,16 +4098,16 @@ ControllerFunctions.registerProduct(PRODUCT_IDS.IslandLegend, {
 ControllerFunctions.registerProduct(PRODUCT_IDS.IslandRoyalty, {
 	type = "Donation", perk = "Island Royalty", amount = 5000,
 })
-ControllerFunctions.registerProduct(PRODUCT_IDS.SultansLegacy, {
-	type = "Donation", perk = "Sultan's Legacy", amount = 10000,
+ControllerFunctions.registerProduct(PRODUCT_IDS.ClubNeonLegacy, {
+	type = "Donation", perk = "Club Neon Legacy", amount = 10000,
 })
 
 -- Shop Items
 ControllerFunctions.registerProduct(PRODUCT_IDS.Glowsticks, {
 	type = "Item", name = "Glowsticks", costCoins = 75,
 })
-ControllerFunctions.registerProduct(PRODUCT_IDS.TikiMask, {
-	type = "Item", name = "Tiki Mask", costCoins = 250,
+ControllerFunctions.registerProduct(PRODUCT_IDS.NeonMask, {
+	type = "Item", name = "Neon Mask", costCoins = 250,
 })
 ControllerFunctions.registerProduct(PRODUCT_IDS.NeonAura, {
 	type = "Item", name = "Neon Aura", costCoins = 600,
@@ -4270,11 +4270,11 @@ local function processValidatedReceipt(receiptInfo: any, productData: ProductDat
 		local perk = productData.perk or "Donation"
 		if perk == "Coconut" then ControllerFunctions.broadcast(string.format("🌴 %s sent a Coconut Tip! (+%d Tickets)", player.DisplayName, math.floor(amount * 1.5)), "info")
 		elseif perk == "Pineapple" then ControllerFunctions.broadcast(string.format("🎆 %s launched a Pineapple Firework burst!", player.DisplayName), "ok")
-		elseif perk == "Tiki Torch" then ControllerFunctions.broadcast(string.format("🎊 %s filled the dancefloor with Stage Confetti!", player.DisplayName), "ok")
+		elseif perk == "Neon Torch" then ControllerFunctions.broadcast(string.format("🎊 %s filled the dancefloor with Stage Confetti!", player.DisplayName), "ok")
 		elseif perk == "Volcano" then ControllerFunctions.broadcast(string.format("🔥 %s activated the Volcano Light Show!", player.DisplayName), "warn")
 		elseif perk == "Island Legend" then ControllerFunctions.broadcast(string.format("👑 LEGENDARY: %s is displayed on the Big Stage Screens!", player.DisplayName), "info")
 		elseif perk == "Island Royalty" then ControllerFunctions.broadcast(string.format("👑 ROYAL CELEBRATION: %s has supported the island with an extraordinary gift!", player.DisplayName), "info")
-		elseif perk == "Sultan's Legacy" then ControllerFunctions.broadcast(string.format("✨ SULTAN'S LEGACY: %s has made the ultimate island contribution!", player.DisplayName), "ok") end
+		elseif perk == "Club Neon Legacy" then ControllerFunctions.broadcast(string.format("✨ SULTAN'S LEGACY: %s has made the ultimate island contribution!", player.DisplayName), "ok") end
 	elseif productData.type == "Item" then
 		notify(player, string.format("Purchase Successful: %s acquired!", productData.name or "Item"), "ok")
 	elseif productData.type == "TitleSlot" then
@@ -5315,7 +5315,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		profile.rewardedPassTier = requestedTier
 		ControllerFunctions.applyVipAttribute(target)
 		ControllerFunctions.scheduleProfileSave(target)
-		local tierName = ({"GUEST", "VIP", "VVIP", "TIKI TIDE"})[requestedTier + 1]
+		local tierName = ({"GUEST", "VIP", "VVIP", "CLUB NEON"})[requestedTier + 1]
 		notify(target, if requestedTier > 0 then "Your free membership rank was raised to " .. tierName .. "!" else "Your owner-awarded membership rank was reset.", "info")
 		notify(player, target.DisplayName .. " membership reward set to " .. tierName .. ".", "ok")
 		publishState(nil)
@@ -5364,7 +5364,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 
 	if action == "BuyTitleTag" then
 		local tagId = payload.tagId
-		local prices = { bass = 150, sunset = 250, tiki = 400 }
+		local prices = { bass = 150, sunset = 250, neon = 400 }
 		local price = if typeof(tagId) == "string" then prices[tagId] else nil
 		local profile = profiles[player.UserId]
 		if not profile or not price then return end
@@ -5380,7 +5380,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		profile.ownedTags[tagId] = true
 		player:SetAttribute("Tickets", profile.tickets)
 		ControllerFunctions.scheduleProfileSave(player)
-		notify(player, tagId == "bass" and "Bass Head unlocked!" or tagId == "sunset" and "Sunset Soul unlocked!" or "Tiki Legend unlocked!", "ok")
+		notify(player, tagId == "bass" and "Bass Head unlocked!" or tagId == "sunset" and "Sunset Soul unlocked!" or "Neon Legend unlocked!", "ok")
 		publishState(player)
 		return
 	end
