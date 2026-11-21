@@ -6,7 +6,7 @@
 local Config = {
   Project = { Name = "Club Neon", Brand = "CLUB NEON", ShortBrand = "NEON", DataStorePrefix = "ClubNeon_v1", ReleaseChannel = "production" },
   Permissions = {
-    OwnerUserIds = {}, -- REQUIRED: add actual Club Neon owner UserId(s) before live installation.
+    OwnerUserIds = {265722198}, -- Club Neon game creator/owner UserId.
     CoOwnerUserIds = {}, AdminUserIds = {}, ModeratorUserIds = {}, DJUserIds = {},
     GroupId = 0, -- 0 disables group-rank integration until Club Neon supplies its group ID.
     RankThresholds = { Owner = 255, CoOwner = 254, Admin = 200, Moderator = 150, GroupDJ = 100 },
