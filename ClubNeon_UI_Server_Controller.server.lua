@@ -29,6 +29,8 @@ local SoundService = game:GetService("SoundService")
 local HttpService = game:GetService("HttpService")
 
 local ServerStorage = game:GetService("ServerStorage")
+-- Preserve the established lowercase alias used by legacy controller sections.
+local serverStorage = ServerStorage
 local projectConfigModule = ServerStorage:WaitForChild("ClubNeon_Config", 20)
 if not projectConfigModule or not projectConfigModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_Config; controller will not start.")
