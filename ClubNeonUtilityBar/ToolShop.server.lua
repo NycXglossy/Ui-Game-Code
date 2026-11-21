@@ -10,7 +10,12 @@ local DataStoreService = game:GetService("DataStoreService")
 
 local STARTING_COINS = 0 -- Change deliberately when choosing the launch economy.
 local AUTOSAVE_SECONDS = 60
-local COIN_STORE = DataStoreService:GetDataStore("ClubNeon_v1_ToolShopCoins")
+local configModule = ServerStorage:WaitForChild("ClubNeon_Config", 20)
+if not configModule or not configModule:IsA("ModuleScript") then
+	error("[Club Neon Tool Shop] Missing ClubNeon_Config; persistent coins are disabled.")
+end
+local projectConfig = require(configModule)
+local COIN_STORE = DataStoreService:GetDataStore(projectConfig.Storage.ToolShopCoinsStore)
 
 local folder = ReplicatedStorage:FindFirstChild("UtilityBarRemotes")
 if folder and not folder:IsA("Folder") then folder:Destroy(); folder = nil end
