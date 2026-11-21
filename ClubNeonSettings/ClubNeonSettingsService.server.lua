@@ -6,6 +6,11 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local configModule = ServerStorage:WaitForChild("ClubNeon_Config", 20)
+if not configModule or not configModule:IsA("ModuleScript") then
+	error("[Club Neon Settings] Missing ClubNeon_Config; privileged settings are disabled.")
+end
+local projectConfig = require(configModule)
 
 -- Shared structural validation is optional during staged rollout. The local
 -- fallback below remains shallow and bounded until the Security Core installer
@@ -34,7 +39,13 @@ do
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
 		if requireOk and typeof(exported) == "table" and type(exported.GetShared) == "function" then
-			local sharedOk, instance = pcall(exported.GetShared)
+			local sharedOk, instance = pcall(exported.GetShared, {
+				groupId = tonumber(projectConfig.Permissions.GroupId) or 0,
+				studioStaff = false,
+				staffUserIds = projectConfig.Permissions.OwnerUserIds,
+				roleUserIds = {Owner = projectConfig.Permissions.OwnerUserIds, CoOwner = projectConfig.Permissions.CoOwnerUserIds, Admin = projectConfig.Permissions.AdminUserIds, Moderator = projectConfig.Permissions.ModeratorUserIds, DJ = projectConfig.Permissions.DJUserIds},
+				thresholds = projectConfig.Permissions.RankThresholds,
+			})
 			if sharedOk and typeof(instance) == "table" and type(instance.Check) == "function" then
 				authorizationService = instance
 			end
