@@ -287,7 +287,7 @@ Players.PlayerRemoving:Connect(function(player: Player)
 	purchaseDiagnosticRate[player.UserId] = nil
 end)
 
-local ServerStorage = game:GetService("ServerStorage")
+
 -- Keep the established lowercase alias for existing storage-module loaders.
 local serverStorage = ServerStorage
 
