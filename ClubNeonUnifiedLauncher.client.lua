@@ -37,7 +37,7 @@ launcher.AnchorPoint = Vector2.new(1, 0)
 launcher.Position = UDim2.new(1, -14, 0, 12)
 launcher.Size = UDim2.fromOffset(116, 38)
 launcher.BackgroundColor3 = Color3.fromRGB(25, 34, 49)
-launcher.Text = "☰  TIKI TIDE"
+launcher.Text = "☰  CLUB NEON"
 launcher.TextColor3 = Color3.fromRGB(245, 213, 157)
 launcher.TextSize = 11
 launcher.Font = Enum.Font.GothamBold
@@ -136,7 +136,7 @@ local function closeSocialPanel()
 end
 
 local function hideOriginalLaunchers()
- local mainButton = findButton("FirebeachMusicFestivalClubUI", "OpenButton")
+ local mainButton = findButton("Club NeonMusicFestivalClubUI", "OpenButton")
  if mainButton then mainButton.Visible = false end
  local socialButton = findButton("ClubNeonSocialGui", "SocialToggle")
  if socialButton then socialButton.Visible = false end
@@ -189,7 +189,7 @@ local socialEntry = makeEntry("SocialActions", "SOCIAL ACTIONS", 74, function()
  end
 end)
 
-local settingsEntry = makeEntry("ClubNeonSettings", "TIKI TIDE SETTINGS", 113, function()
+local settingsEntry = makeEntry("ClubNeonSettings", "CLUB NEON SETTINGS", 113, function()
  panel.Visible = false
  closeSocialPanel()
  requestSettingsOpen()
