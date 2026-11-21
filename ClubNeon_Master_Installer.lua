@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.3.3
+-- CLUB NEON MASTER INSTALLER v0.3.5
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.3.4"
+local INSTALLER_VERSION = "0.3.5"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -271,8 +271,10 @@ for _, item in ipairs({
 end
 
 -- Discover the existing Kohl's Admin package wherever it is parented in the
--- place. Its Addons folders are the only supported destinations; never create,
--- relocate, or modify the third-party admin package itself.
+-- place. In the installed package layout, BOTH repository-owned adapters are
+-- ModuleScript addons loaded from Config/Addons. Config is a Configuration
+-- instance in common Kohl's Admin installations, not necessarily a Folder.
+-- Never create, relocate, or modify the third-party admin package itself.
 local function normalizeAdminName(value: string): string
     return string.lower((string.gsub(value, "[^%w]", "")))
 end
@@ -293,31 +295,38 @@ end
 
 local kohlsRoot: Instance? = nil
 local configAddons: Instance? = nil
-local regularAddons: Instance? = nil
 local kohlsDiscoveryStatus = "not found"
 if #kohlsRoots == 1 then
     kohlsRoot = kohlsRoots[1]
     kohlsDiscoveryStatus = "found at " .. kohlsRoot:GetFullName()
-    local configFolder = kohlsRoot:FindFirstChild("Config")
-    if configFolder and (configFolder:IsA("Folder") or configFolder:IsA("Model")) then
-        local candidate = configFolder:FindFirstChild("Addons")
-        if candidate and candidate:IsA("Folder") then configAddons = candidate end
+
+    local configContainer = kohlsRoot:FindFirstChild("Config")
+    if configContainer and (configContainer:IsA("Configuration")
+        or configContainer:IsA("Folder") or configContainer:IsA("Model")) then
+        local addonCandidates = {}
+        for _, descendant in ipairs(configContainer:GetDescendants()) do
+            if descendant.Name == "Addons" and descendant:IsA("Folder") then
+                table.insert(addonCandidates, descendant)
+            end
+        end
+
+        if #addonCandidates == 1 then
+            configAddons = addonCandidates[1]
+        elseif #addonCandidates > 1 then
+            kohlsDiscoveryStatus ..= "; ambiguous Config/Addons destinations: " .. #addonCandidates
+        end
     end
-    local candidate = kohlsRoot:FindFirstChild("Addons")
-    if candidate and candidate:IsA("Folder") then regularAddons = candidate end
 elseif #kohlsRoots > 1 then
     kohlsDiscoveryStatus = "ambiguous: found " .. #kohlsRoots .. " Kohl's Admin-like containers"
 end
 
+-- Both adapters use the package's supported Config/Addons loader. The regular
+-- command security adapter is NOT placed in a guessed root-level Addons folder.
 if #kohlsRoots == 1 and configAddons then
     addSource("KohlsAdmin_ClubNeon_Addon.lua", "ModuleScript", "KohlsConfigAddons", "ClubNeon")
+    addSource("ClubNeonRegularCommandsSecurityServer.lua", "ModuleScript", "KohlsConfigAddons", "ClubNeonRegularCommandsSecurityServer")
 else
-    table.insert(skippedOptional, "KohlsAdmin_ClubNeon_Addon.lua — Config/Addons not found under a unique Kohl's Admin package")
-end
-if #kohlsRoots == 1 and regularAddons then
-    addSource("ClubNeonRegularCommandsSecurityServer.lua", "ModuleScript", "KohlsRegularAddons", "ClubNeonRegularCommandsSecurityServer")
-else
-    table.insert(skippedOptional, "ClubNeonRegularCommandsSecurityServer.lua — root Addons folder not found under a unique Kohl's Admin package")
+    table.insert(skippedOptional, "Kohl's Admin adapters — unique Config/Addons folder not found under the unique Kohl's Admin package")
 end
 
 -- Security manifest is consumed by the Global Service to reject mixed releases.
