@@ -640,14 +640,14 @@ local random = Random.new()
 
 -- Main playback is owned exclusively by the modern AudioPlayer backend.
 local audioState: {[string]: any} = {
-	audioState.activeAudioSource = { kind = "Unavailable" },
-	audioState.audioSourceRevision = 0,
-	audioState.modernBackendStartSucceeded = false,
-	audioState.modernBackendStartFailureCount = 0,
-	audioState.modernAudioStartToken = 0,
-	audioState.playbackPaused = false,
-	audioState.audioReloadInProgress = false,
-	audioState.audioTransitionTrackToken = 0,
+	activeAudioSource = { kind = "Unavailable" },
+	audioSourceRevision = 0,
+	modernBackendStartSucceeded = false,
+	modernBackendStartFailureCount = 0,
+	modernAudioStartToken = 0,
+	playbackPaused = false,
+	audioReloadInProgress = false,
+	audioTransitionTrackToken = 0,
 }
 -- Forward-declared state is shared with the early-created crossfade factory.
 local queue: any = {}
@@ -661,7 +661,6 @@ local refreshLocalCatalog: (() -> boolean)? = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
-local audioState.audioTransitionTrackToken = 0
 
 -- legacy group migration and setup
 -- Publish the number of active controller-owned main outputs (0 or 1).
