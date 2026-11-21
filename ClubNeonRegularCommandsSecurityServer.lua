@@ -16,6 +16,12 @@ return function(_K: any)
 
 	local Players = game:GetService("Players")
 	local ServerStorage = game:GetService("ServerStorage")
+	local configModule = ServerStorage:WaitForChild("ClubNeon_Config", 20)
+	if not configModule or not configModule:IsA("ModuleScript") then
+		warn("[Club Neon Security][Kohl's] ClubNeon_Config is unavailable; adapter is fail-closed.")
+		return
+	end
+	local projectConfig = require(configModule)
 	local AUTHORITY_NAME = "ClubNeonMovementAuthority"
 
 	local sanityModule = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
@@ -385,7 +391,13 @@ return function(_K: any)
 		if module and module:IsA("ModuleScript") then
 			local requireOk, exported = pcall(require, module)
 			if requireOk and typeof(exported) == "table" and type(exported.GetShared) == "function" then
-				local sharedOk, instance = pcall(exported.GetShared)
+				local sharedOk, instance = pcall(exported.GetShared, {
+					groupId = tonumber(projectConfig.Permissions.GroupId) or 0,
+					studioStaff = false,
+					staffUserIds = projectConfig.Permissions.OwnerUserIds,
+					roleUserIds = {Owner = projectConfig.Permissions.OwnerUserIds, CoOwner = projectConfig.Permissions.CoOwnerUserIds, Admin = projectConfig.Permissions.AdminUserIds, Moderator = projectConfig.Permissions.ModeratorUserIds, DJ = projectConfig.Permissions.DJUserIds},
+					thresholds = projectConfig.Permissions.RankThresholds,
+				})
 				if sharedOk and typeof(instance) == "table" and type(instance.Check) == "function" then
 					authorizationService = instance
 				else
