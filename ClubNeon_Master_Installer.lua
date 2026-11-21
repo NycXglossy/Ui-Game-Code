@@ -22,12 +22,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.0"
+local INSTALLER_VERSION = "0.4.1"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "e7324778bb8369f1fc00c92acb3e96e7bacf918b",
+    runtime = "12488973e83b062908bbd9fe8720cecb1da3a4e0",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
     globalService = "032fdc0085ac0a75db270bf569b9db19ef39b36b",
     security = "32b484bd731dbbd68555c0d74c70600c87bc462e",
@@ -106,6 +106,7 @@ addRaw("ClubNeon_Config", "ModuleScript", "ServerStorage", projectConfigSource, 
 addSource("ClubNeon_ControllerBootstrap.lua", "ModuleScript", "ServerStorage", "ClubNeon_ControllerBootstrap", RELEASE.runtime)
 addSource("ClubNeon_PurchaseDiagnostics.lua", "ModuleScript", "ServerStorage", "ClubNeon_PurchaseDiagnostics", RELEASE.runtime)
 addSource("ClubNeon_OperationalDiagnosticsFormatter.lua", "ModuleScript", "ServerStorage", "ClubNeon_OperationalDiagnosticsFormatter", RELEASE.runtime)
+addSource("ClubNeon_CatalogMutationActions.lua", "ModuleScript", "ServerStorage", "ClubNeon_CatalogMutationActions", RELEASE.runtime)
 
 -- Core controller and client UI. Validate project isolation before staging.
 local controllerSource = fetchSource("ClubNeon_UI_Server_Controller.server.lua", RELEASE.runtime)
