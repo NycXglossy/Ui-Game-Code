@@ -5403,6 +5403,12 @@ if not adminBridgeModuleSource or not adminBridgeModuleSource:IsA("ModuleScript"
 end
 local createAdminBridge = require(adminBridgeModuleSource)
 local adminBridgeModule = createAdminBridge({
+	-- Mutable primitives remain controller-owned; bridge receives live accessors, not snapshots.
+	getPlaybackPaused = function(): boolean return playbackPaused end,
+	setPlaybackPaused = function(value: boolean) playbackPaused = value == true end,
+	getRequestsLocked = function(): boolean return requestsLocked end,
+	setRequestsLocked = function(value: boolean) requestsLocked = value == true end,
+	getDJControlModeEnabled = function(): boolean return djControlModeEnabled end,
 	ControllerFunctions = ControllerFunctions,
 	Players = Players,
 	ServerStorage = ServerStorage,
