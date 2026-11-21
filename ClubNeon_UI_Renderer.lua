@@ -1,7 +1,7 @@
 --!strict
 -- UI_Renderer
 -- Place as ModuleScript: ReplicatedStorage/UI_Renderer
--- Complete native Roblox client UI for Firebeach Music Festival Club.
+-- Complete native Roblox client UI for Club Neon Club.
 -- Privileged actions are delegated to UI_Network / UI_Server_Controller.
 
 local Players = game:GetService("Players")
@@ -126,22 +126,22 @@ end
 local SHOP = {
 	{name="2x Personal XP Pass",desc="Permanently doubles your personal XP. Stacks with active global XP boosts.",price=149,rarity="Rare",kind="GamePass",passKey="personalXP2x",ownedAttribute="HasPersonalXP2xPass",id=0},
 	{name="4x Personal XP Pass",desc="Permanently quadruples your personal XP. Stacks with active global XP boosts.",price=399,rarity="Epic",kind="GamePass",passKey="personalXP4x",ownedAttribute="HasPersonalXP4xPass",id=0},
-	{name="Island Mount Pass",desc="Unlock your permanent rideable island mount.",price=299,rarity="Legendary",kind="GamePass",passKey="mount",ownedAttribute="HasIslandMountPass",id=2087955619},
+	{name="Island Mount Pass",desc="Unlock your permanent rideable island mount.",price=299,rarity="Legendary",kind="GamePass",passKey="mount",ownedAttribute="HasIslandMountPass",id=0},
 	{name="VIP Backstage Pass",desc="Backstage lounge, priority song requests, 4 queue slots and 3s request cooldown.",price=1500,rarity="Legendary",kind="GamePass",passKey="vip",id=0},
 	{name="VVIP Ocean Crown Pass",desc="Everything in VIP plus 6 queue slots, 2s cooldown and higher request priority.",price=2500,rarity="Mythic",kind="GamePass",passKey="vvip",id=0},
 	{name="Club Neon Pass",desc="Ultimate island status: 8 queue slots, 1s cooldown and highest player-request priority.",price=4500,rarity="Exclusive",kind="GamePass",passKey="elite",id=0},
-	{name="Island Companion Pass",desc="Unlock your exclusive tropical companion and an additional companion equip slot.",price=249,rarity="Epic",kind="GamePass",passKey="companion",ownedAttribute="HasIslandCompanionPass",id=2088585676},
-	{name="Stage & Club Lighting Pass",desc="Unlock the Stage & Club Lighting Controller and customize the performance atmosphere.",price=499,rarity="Mythic",kind="GamePass",passKey="stageClubLighting",ownedAttribute="HasStageClubLightingPass",id=2088315619},
+	{name="Island Companion Pass",desc="Unlock your exclusive tropical companion and an additional companion equip slot.",price=249,rarity="Epic",kind="GamePass",passKey="companion",ownedAttribute="HasIslandCompanionPass",id=0},
+	{name="Stage & Club Lighting Pass",desc="Unlock the Stage & Club Lighting Controller and customize the performance atmosphere.",price=499,rarity="Mythic",kind="GamePass",passKey="stageClubLighting",ownedAttribute="HasStageClubLightingPass",id=0},
 }
 -- Donation products are configured with live Creator Dashboard Developer Product IDs.
 local DONATIONS: {any} = {
 	{ label = "Coconut", perk = "A little tropical love", amount = 10, productId = 0 },
 	{ label = "Pineapple", perk = "A burst of island sunshine", amount = 50, productId = 0 },
-	{ label = "Tiki Torch", perk = "Light up the island", amount = 100, productId = 0 },
+	{ label = "Neon Torch", perk = "Light up the island", amount = 100, productId = 0 },
 	{ label = "Volcano", perk = "Unleash the island's fiery spirit", amount = 500, productId = 0 },
 	{ label = "Island Legend", perk = "A legendary show of support", amount = 1000, productId = 0 },
 	{ label = "Island Royalty", perk = "A royal contribution to paradise", amount = 5000, productId = 0 },
-	{ label = "Sultan's Legacy", perk = "The ultimate island contribution", amount = 10000, productId = 0 },
+	{ label = "Club Neon Legacy", perk = "The ultimate island contribution", amount = 10000, productId = 0 },
 }
 local REWARDS = {
 	{day=1,label="50 Coins"},{day=2,label="2x Glowsticks"},{day=3,label="100 Tickets"},
@@ -151,7 +151,7 @@ local TAGS = {
 	{id="vip",label="VIP",source="VIP Pass",owned=false,a=Color3.fromRGB(244,114,182),b=Color3.fromRGB(217,70,239)},
 	{id="party",label="Party Animal",source="Spend 10 hours at the festival",owned=false,a=Color3.fromRGB(251,146,60),b=Color3.fromRGB(252,211,77)},
 	{id="wave",label="Wave Rider",source="7-day login streak",owned=false,a=Color3.fromRGB(103,232,249),b=Color3.fromRGB(14,165,233)},
-	{id="tiki",label="Tiki Legend",source="400 Tickets • Festival shop",owned=false,price=400,a=Color3.fromRGB(252,211,77),b=Color3.fromRGB(239,68,68)},
+	{id="neon",label="Neon Legend",source="400 Tickets • Festival shop",owned=false,price=400,a=Color3.fromRGB(252,211,77),b=Color3.fromRGB(239,68,68)},
 	{id="sunset",label="Sunset Soul",source="250 Tickets • Festival shop",owned=false,price=250,a=Color3.fromRGB(236,72,153),b=Color3.fromRGB(253,224,71)},
 	{id="bass",label="Bass Head",source="150 Tickets • Festival shop",owned=false,price=150,a=Color3.fromRGB(167,139,250),b=Color3.fromRGB(99,102,241)},
 	{id="island",label="Island Royalty",source="Day 7 reward",owned=false,a=Color3.fromRGB(254,240,138),b=Color3.fromRGB(168,85,247)},
@@ -863,7 +863,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	-- Never destroy a live main menu just because Mount was called again.
 	-- A second renderer module instance can have a separate Lua module cache,
 	-- so the per-module activeMounts guard above is not sufficient by itself.
-	local existingMainGui = playerGui:FindFirstChild("FirebeachMusicFestivalClubUI")
+	local existingMainGui = playerGui:FindFirstChild("ClubNeonUI")
 	if existingMainGui and existingMainGui:IsA("ScreenGui") then
 		local adoptedMount = {
 			Gui = existingMainGui,
@@ -1137,7 +1137,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Position = UDim2.fromOffset(58, 7),
 		Size = UDim2.new(1, -210, 0, 12),
 		BackgroundTransparency = 1,
-		Text = "FIREBEACH  /  NOW PLAYING",
+		Text = "CLUB NEON  /  NOW PLAYING",
 		TextColor3 = C.Cyan,
 		TextSize = 8,
 		Font = BOLD,
@@ -1211,10 +1211,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
 		if now then
 			local paused = playbackIsPaused()
-			hudEyebrow.Text = if paused then "FIREBEACH  /  PLAYBACK PAUSED" else "FIREBEACH  /  NOW PLAYING"
+			hudEyebrow.Text = if paused then "CLUB NEON  /  PLAYBACK PAUSED" else "CLUB NEON  /  NOW PLAYING"
 			hudEyebrow.TextColor3 = if paused then C.Orange else C.Cyan
 			hudTitle.Text = "♫  " .. nz(now.title, "Unknown track")
-			hudArtist.Text = nz(now.artist, "Firebeach Music Festival")
+			hudArtist.Text = nz(now.artist, "Club Neon")
 			local duration = math.max(1, tonumber(now.duration) or 1)
 			local elapsed = interpolatedElapsed(duration)
 			hudFill.Size = UDim2.fromScale(math.clamp(elapsed / duration, 0, 1), 1)
@@ -1222,10 +1222,10 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			hudTime.TextColor3 = if paused then C.Orange else C.Gold
 			hudFill.BackgroundColor3 = if paused then C.Orange else C.Gold
 		else
-			hudEyebrow.Text = "FIREBEACH  /  STAGE STANDBY"
+			hudEyebrow.Text = "CLUB NEON  /  STAGE STANDBY"
 			hudEyebrow.TextColor3 = C.Muted
 			hudTitle.Text = "♫  The stage is warming up"
-			hudArtist.Text = "Sunset Stage Club"
+			hudArtist.Text = "Club Neon"
 			hudFill.Size = UDim2.fromScale(0, 1)
 			hudTime.Text = ""
 			hudTime.TextColor3 = C.Gold
@@ -1330,7 +1330,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local title = make("TextLabel", {
 		Name = "FestivalTitle", Position = UDim2.fromOffset(66, 10),
 		Size = UDim2.new(1, -154, 0, 30), BackgroundTransparency = 1,
-		Text = "FIREBEACH MUSIC FESTIVAL", TextColor3 = C.White,
+		Text = "CLUB NEON MUSIC FESTIVAL", TextColor3 = C.White,
 		TextSize = 20, TextScaled = true, Font = BOLD,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
 	}, header) :: TextLabel
@@ -1860,7 +1860,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local liveBadgeStroke = stroke(liveBadge, liveColor, 1)
 		liveBadgeStroke.Transparency = 0.55
 		make("Frame", {Name="PlayerAccent", Position=if stackedArtwork then UDim2.fromOffset(12, 184) else UDim2.fromOffset(leftInset, 58), Size=UDim2.new(1, -(leftInset + 14), 0, 2), BackgroundColor3=C.Gold, BackgroundTransparency=0.48, BorderSizePixel=0}, nowCard)
-		local detail = nz(now.artist, "Firebeach Music Festival")
+		local detail = nz(now.artist, "Club Neon")
 		if now.source == "player" and nz(now.requestedBy, "") ~= "" then
 			detail ..= "  •  requested by " .. tostring(now.requestedBy)
 		end
@@ -3746,7 +3746,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			local userId = tonumber(p.userId) or 0
 			local currentTier = math.clamp(math.floor(tonumber(p.passTier) or 0), 0, 3)
 			local rewardedTier = math.clamp(math.floor(tonumber(p.rewardedPassTier) or 0), 0, 3)
-			local tierNames = {"GUEST", "VIP", "VVIP", "TIKI TIDE"}
+			local tierNames = {"GUEST", "VIP", "VVIP", "CLUB NEON"}
 			pcard:SetAttribute("RosterSearchKey", string.lower(displayName .. " " .. username .. " " .. tostring(userId)))
 			label(pcard, displayName, UDim2.fromOffset(13,7), UDim2.new(1,-26,0,20), C.White, 13, true)
 			label(pcard, "@" .. username .. "   •   ID " .. tostring(userId), UDim2.fromOffset(13,27), UDim2.new(1,-26,0,15), C.Muted, 9, false)
@@ -4197,9 +4197,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function renderTitleEditor()
 		if state.customTitleUnlocked ~= true then
-			sectionLabel("CUSTOM TITLE  •  TIKI TIDE EXCLUSIVE")
+			sectionLabel("CUSTOM TITLE  •  CLUB NEON EXCLUSIVE")
 			local locked = card(112)
-			label(locked, "🔒  TIKI TIDE ACCESS REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
+			label(locked, "🔒  CLUB NEON ACCESS REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
 			label(locked, "Unlock the Club Neon pass to create, style, and display your own overhead title.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
 			return
 		end
@@ -4557,9 +4557,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 
 	local function renderTitleManage()
 		if state.customTitleUnlocked ~= true then
-			sectionLabel("MANAGE TITLES  •  TIKI TIDE EXCLUSIVE")
+			sectionLabel("MANAGE TITLES  •  CLUB NEON EXCLUSIVE")
 			local locked = card(112)
-			label(locked, "🔒  TIKI TIDE ACCESS REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
+			label(locked, "🔒  CLUB NEON ACCESS REQUIRED", UDim2.fromOffset(12, 12), UDim2.new(1, -24, 0, 24), C.Gold, 14, true)
 			label(locked, "Custom title slots and overhead title controls are exclusive to Club Neon members.", UDim2.fromOffset(12, 43), UDim2.new(1, -24, 0, 42), C.Muted, 11, false)
 			return
 		end
@@ -4664,7 +4664,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	end
 
 	local function renderCommunity()
-		sectionLabel("FIREBEACH MUSIC FESTIVAL COMMUNITY")
+		sectionLabel("CLUB NEON MUSIC FESTIVAL COMMUNITY")
 		local groupId = tonumber(state.groupId) or 0
 		if groupId <= 0 then
 			local config = ReplicatedStorage:FindFirstChild("ClubMusicConfig")
@@ -4674,7 +4674,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		local groupCard = card(108)
 		label(groupCard, "JOIN THE CLUB", UDim2.fromOffset(12, 9), UDim2.new(1, -24, 0, 22), C.Gold, 14, true)
-		label(groupCard, "Join the Roblox group to connect with the Sunset Stage community.", UDim2.fromOffset(12, 36), UDim2.new(1, -24, 0, 34), C.Muted, 10, false)
+		label(groupCard, "Join the Roblox group to connect with the Club Neon community.", UDim2.fromOffset(12, 36), UDim2.new(1, -24, 0, 34), C.Muted, 10, false)
 		actionButton(groupCard, "OPEN GROUP", UDim2.fromOffset(12, 72), UDim2.new(1, -24, 0, 26), function()
 			if groupId <= 0 then notify("Configure CONFIG.GroupId on the server first.", C.Red); return end
 			local ok, err = pcall(function()
@@ -4705,7 +4705,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		local elitePassId = tonumber(state.eliteGamePassId) or 0
 		local passCard = card(244)
 		label(passCard, "ISLAND MEMBERSHIP", UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 22), C.Gold, 14, true)
-		label(passCard, "Current tier: " .. nz(state.passName, if tier >= 3 then "TIKI TIDE" elseif tier == 2 then "VVIP" elseif tier == 1 then "VIP" else "GUEST"),
+		label(passCard, "Current tier: " .. nz(state.passName, if tier >= 3 then "CLUB NEON" elseif tier == 2 then "VVIP" elseif tier == 1 then "VIP" else "GUEST"),
 			UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 20), C.White, 11, true)
 		local baseSlots = tonumber(perks.baseSlots) or 2
 		local baseCooldown = tonumber(perks.baseCooldown) or 8
@@ -4720,7 +4720,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			type(vvip.slots) == "number" and vvip.slots or 6,
 			type(vvip.cooldown) == "number" and vvip.cooldown or 2),
 			UDim2.fromOffset(12, 84), UDim2.new(1, -24, 0, 22), C.Cyan, 10, false)
-		label(passCard, string.format("TIKI TIDE  •  %d slots  •  %ds cooldown  •  highest priority",
+		label(passCard, string.format("CLUB NEON  •  %d slots  •  %ds cooldown  •  highest priority",
 			type(elite.slots) == "number" and elite.slots or 8,
 			type(elite.cooldown) == "number" and elite.cooldown or 1),
 			UDim2.fromOffset(12, 110), UDim2.new(1, -24, 0, 22), C.Gold, 10, true)
