@@ -467,7 +467,7 @@ print("======================================================")
 local MAX_SOURCE_CHARS = 199999
 local oversizedSources = {}
 for _, entry in ipairs(entries) do
-    if #entry.source >= 200000 then
+    if type(entry.source) == "string" and #entry.source > MAX_SOURCE_CHARS then
         table.insert(oversizedSources, entry.name .. " (" .. #entry.source .. " chars; limit is < 200000)")
     end
 end
