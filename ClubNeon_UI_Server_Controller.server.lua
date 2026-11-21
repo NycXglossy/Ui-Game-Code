@@ -41,6 +41,13 @@ local permissions = projectConfig.Permissions
 local passes = projectConfig.Monetization.GamePasses
 local products = projectConfig.Monetization.DeveloperProducts
 local storage = projectConfig.Storage
+local monetizationEnabled = projectConfig.Monetization.Enabled == true
+local function paidId(value: any): number
+	if not monetizationEnabled then return 0 end
+	local id = tonumber(value) or 0
+	return if id > 0 and id % 1 == 0 then id else 0
+end
+local rawDonations = if typeof(products.Donations) == "table" then products.Donations else {}
 local CONFIG = {
 	GroupId = tonumber(permissions.GroupId) or 0,
 	RankThresholds = permissions.RankThresholds,
@@ -50,9 +57,9 @@ local CONFIG = {
 		Admin = permissions.AdminUserIds, Moderator = permissions.ModeratorUserIds, DJ = permissions.DJUserIds,
 	},
 	StudioStaff = permissions.StudioOwnerBypass == true,
-	VipGamePassId = tonumber(passes.VIP) or 0,
-	VvipGamePassId = tonumber(passes.VVIP) or 0,
-	ClubNeonPassId = tonumber(passes.Elite) or 0,
+	VipGamePassId = paidId(passes.VIP),
+	VvipGamePassId = paidId(passes.VVIP),
+	ClubNeonPassId = paidId(passes.Elite),
 	VipPriority = true,
 	MaxRequestsPerPlayer = 2, VipMaxRequestsPerPlayer = 4, VvipMaxRequestsPerPlayer = 6,
 	ClubNeonMaxRequestsPerPlayer = 8, RequestCooldownSeconds = 8, VipCooldownSeconds = 3,
@@ -69,16 +76,22 @@ local CONFIG = {
 	PerPlayerActionRefillPerSecond = 12, GlobalAudioBurst = 3, GlobalAudioRefillPerSecond = 0.25,
 	GlobalStateMinIntervalSeconds = 0.2, ProfileWriteLockTimeoutSeconds = 12,
 	ProfileSaveQueueDelaySeconds = 0.25, XPPerMinute = 10, XPPerLevel = 100,
-	XPBoost2xProductId = tonumber(products.XPBoost2x) or 0,
-	XPBoost4xProductId = tonumber(products.XPBoost4x) or 0,
-	PersonalXP2xPassId = tonumber(passes.PersonalXP2x) or 0,
-	PersonalXP4xPassId = tonumber(passes.PersonalXP4x) or 0,
-	MountPassId = tonumber(passes.IslandMount) or 0,
-	CompanionPassId = tonumber(passes.Companion) or 0,
-	StageClubLightingPassId = tonumber(passes.StageLighting) or 0,
+	XPBoost2xProductId = paidId(products.XPBoost2x),
+	XPBoost4xProductId = paidId(products.XPBoost4x),
+	PersonalXP2xPassId = paidId(passes.PersonalXP2x),
+	PersonalXP4xPassId = paidId(passes.PersonalXP4x),
+	MountPassId = paidId(passes.IslandMount),
+	CompanionPassId = paidId(passes.Companion),
+	StageClubLightingPassId = paidId(passes.StageLighting),
 	GlobalDataStoreBurst = 30, GlobalDataStoreRefillPerSecond = 3,
 	RestrictAudioToAllowlist = false, AllowedAudioAssetIds = {} :: {number},
-	TitleSlotProductIds = { [2] = tonumber(products.TitleSlot2) or 0, [3] = tonumber(products.TitleSlot3) or 0 } :: {[number]: number},
+	TitleSlotProductIds = { [2] = paidId(products.TitleSlot2), [3] = paidId(products.TitleSlot3) } :: {[number]: number},
+	DonationProductIds = {
+		Coconut = paidId(rawDonations.Coconut), Pineapple = paidId(rawDonations.Pineapple),
+		NeonTorch = paidId(rawDonations.NeonTorch), Volcano = paidId(rawDonations.Volcano),
+		IslandLegend = paidId(rawDonations.IslandLegend), IslandRoyalty = paidId(rawDonations.IslandRoyalty),
+		ClubNeonLegacy = paidId(rawDonations.ClubNeonLegacy),
+	},
 	TitleSlotPrices = { [2] = 99, [3] = 199 } :: {[number]: number},
 }
 
@@ -3888,6 +3901,12 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		vipGamePassId = CONFIG.VipGamePassId,
 		vvipGamePassId = CONFIG.VvipGamePassId,
 		eliteGamePassId = CONFIG.ClubNeonPassId,
+		personalXP2xGamePassId = CONFIG.PersonalXP2xPassId,
+		personalXP4xGamePassId = CONFIG.PersonalXP4xPassId,
+		mountGamePassId = CONFIG.MountPassId,
+		companionGamePassId = CONFIG.CompanionPassId,
+		stageClubLightingGamePassId = CONFIG.StageClubLightingPassId,
+		donationProductIds = table.clone(CONFIG.DonationProductIds),
 		passTier = ControllerFunctions.passTier(player),
 		passName = if ControllerFunctions.hasClubNeonAccess(player) then "CLUB NEON" elseif ControllerFunctions.isVvip(player) then "VVIP" elseif ControllerFunctions.isVip(player) then "VIP" else "GUEST",
 		passPerks = {
@@ -4036,13 +4055,13 @@ end
 -- A zero ID is intentionally ignored so unconfigured products cannot collide.
 local PRODUCT_IDS = {
 	-- Donations / Tips
-	Coconut = 0,
-	Pineapple = 0,
-	NeonTorch = 0,
-	Volcano = 0,
-	IslandLegend = 0,
-	IslandRoyalty = 0,
-	ClubNeonLegacy = 0,
+	Coconut = CONFIG.DonationProductIds.Coconut,
+	Pineapple = CONFIG.DonationProductIds.Pineapple,
+	NeonTorch = CONFIG.DonationProductIds.NeonTorch,
+	Volcano = CONFIG.DonationProductIds.Volcano,
+	IslandLegend = CONFIG.DonationProductIds.IslandLegend,
+	IslandRoyalty = CONFIG.DonationProductIds.IslandRoyalty,
+	ClubNeonLegacy = CONFIG.DonationProductIds.ClubNeonLegacy,
 
 	-- Shop Items
 	Glowsticks = 0,
