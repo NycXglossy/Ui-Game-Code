@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.3.2
+-- CLUB NEON MASTER INSTALLER v0.3.3
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.3.2"
+local INSTALLER_VERSION = "0.3.3"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -34,6 +34,7 @@ local RELEASE = {
     threat = "32b484bd731dbbd68555c0d74c70600c87bc462e",
     phase32 = "32b484bd731dbbd68555c0d74c70600c87bc462e",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
+    integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
 }
 
 if RunService:IsRunning() then
@@ -183,7 +184,13 @@ addSource("ClubNeonStaffActions.server.lua", "Script", "ServerScriptService", "C
 addSource("ClubNeon_SecurityClient.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonSecurityClient")
 addSource("ClubNeon_SecurityConsole.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonSecurityConsole")
 addSource("ClubNeon_StaffSpectatorCamera.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonStaffSpectatorCamera", RELEASE.security)
-addSource("ClubNeonClientIntegrityTelemetry.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonClientIntegrityTelemetry", RELEASE.security)
+local integrityTelemetrySource = fetchSource("ClubNeonClientIntegrityTelemetry.client.lua", RELEASE.integrityClient)
+if not string.find(integrityTelemetrySource, 'FindFirstChild("ClubNeon_UI_Network")', 1, true)
+	or not string.find(integrityTelemetrySource, 'FindFirstChild("ClubNeon_UI_Renderer")', 1, true) then
+	error("Client integrity telemetry module paths do not match the staged Club Neon UI modules.")
+end
+addRaw("ClubNeonClientIntegrityTelemetry", "LocalScript", "StarterPlayerScripts", integrityTelemetrySource,
+	"ClubNeonClientIntegrityTelemetry.client.lua@" .. RELEASE.integrityClient)
 addSource("ClubNeonAdaptiveVisualQuality.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonAdaptiveVisualQuality", RELEASE.security)
 
 -- Client-local diagnostics are independently pinned and are not the server
@@ -291,7 +298,8 @@ addValue("InstallManifest", "StringValue", "SecurityCore", securityManifest, "ge
 addValue("ClubNeonMasterInstallManifest", "StringValue", "ServerStorage",
     "runtime=" .. RELEASE.runtime .. ";audio=" .. RELEASE.audio .. ";globalService=" .. RELEASE.globalService
     .. ";security=" .. RELEASE.security .. ";threat=" .. RELEASE.threat .. ";phase32=" .. RELEASE.phase32
-    .. ";diagnostics=" .. RELEASE.diagnostics .. ";playbackSync=DISABLED;localQueues=ENFORCED",
+    .. ";diagnostics=" .. RELEASE.diagnostics .. ";integrityClient=" .. RELEASE.integrityClient
+        .. ";playbackSync=DISABLED;localQueues=ENFORCED",
     "generated:ClubNeonMasterInstallManifest")
 
 -- Destination folders are deterministic and only created when absent.
@@ -521,6 +529,7 @@ print("Security Core release: " .. RELEASE.security)
 print("Threat Intelligence release: " .. RELEASE.threat)
 print("Phase 32 release: " .. RELEASE.phase32)
 print("Client diagnostics release: " .. RELEASE.diagnostics)
+print("Client integrity telemetry release: " .. RELEASE.integrityClient)
 print("Instances promoted: " .. #promoted)
 print("Prior instances and retired playback authority archived under ServerStorage/" .. backupRoot.Name .. "/" .. backupRelease.Name)
 print("Playback synchronization: DISABLED. No leader lease or shared playback snapshots are installed.")
