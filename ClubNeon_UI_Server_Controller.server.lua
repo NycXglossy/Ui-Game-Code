@@ -975,55 +975,26 @@ ControllerFunctions.globalInvoke = function(name: string, ...: any): any
 	return table.unpack(results, 1, results.n)
 end
 
-local cachedGlobalXpMultiplier = 1
-local cachedGlobalXpExpiresAt = 0
-local cachedGlobalXpLowerExpiresAt = 0
 local studioXpBoostMultiplier = 1
 local studioXpBoostExpiresAt = 0
-local xpLastAwardAt: {[number]: number} = {}
-local xpFractional: {[number]: number} = {}
-local xpLastSaveAt: {[number]: number} = {}
-local settleAllXP: (() -> ())? = nil
-local xpStateDirty = false
 
-ControllerFunctions.setGlobalXPState = function(multiplier: number, expiresAt: number, lowerExpiresAt: number?)
-	if multiplier ~= 1 and multiplier ~= 2 and multiplier ~= 4 then return end
-	if typeof(expiresAt) ~= "number" or expiresAt ~= expiresAt
-		or expiresAt == math.huge or expiresAt == -math.huge or expiresAt < 0 then return end
-	local cleanExpiry = if multiplier == 1 or expiresAt <= os.time() then 0 else math.floor(expiresAt)
-	local cleanMultiplier = if cleanExpiry == 0 then 1 else multiplier
-	local lowerIsFinite = typeof(lowerExpiresAt) == "number" and lowerExpiresAt == lowerExpiresAt
-		and lowerExpiresAt ~= math.huge and lowerExpiresAt ~= -math.huge
-	local cleanLowerExpiry = if cleanMultiplier == 4 and lowerIsFinite
-		and (lowerExpiresAt :: number) > os.time() then math.floor(lowerExpiresAt :: number) else 0
-	if cleanMultiplier == cachedGlobalXpMultiplier and cleanExpiry == cachedGlobalXpExpiresAt
-		and cleanLowerExpiry == cachedGlobalXpLowerExpiresAt then return end
-	if settleAllXP then settleAllXP() end
-	cachedGlobalXpMultiplier = cleanMultiplier
-	cachedGlobalXpExpiresAt = cleanExpiry
-	cachedGlobalXpLowerExpiresAt = cleanLowerExpiry
-	xpStateDirty = true
-end
 
-ControllerFunctions.refreshGlobalXPBoost = function()
-	if RunService:IsStudio() then
-		ControllerFunctions.setGlobalXPState(studioXpBoostMultiplier, studioXpBoostExpiresAt)
-		return
-	end
-	local callOk, multiplier, expiresAt, lowerExpiresAt = ControllerFunctions.globalInvoke("GetGlobalXPBoost")
-	if callOk and typeof(multiplier) == "number" and multiplier == multiplier
-		and typeof(expiresAt) == "number" and expiresAt == expiresAt
-		and (multiplier == 1 or multiplier == 2 or multiplier == 4) then
-		ControllerFunctions.setGlobalXPState(multiplier, expiresAt, lowerExpiresAt)
-	end
-	if cachedGlobalXpExpiresAt > 0 and cachedGlobalXpExpiresAt <= os.time() then
-		if cachedGlobalXpLowerExpiresAt > os.time() then
-			ControllerFunctions.setGlobalXPState(2, cachedGlobalXpLowerExpiresAt)
-		else
-			ControllerFunctions.setGlobalXPState(1, 0)
-		end
-	end
+local xpServiceModule = ServerStorage:FindFirstChild("ClubNeon_XPService")
+if not xpServiceModule or not xpServiceModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_XPService; controller will not start.")
 end
+local xpService = require(xpServiceModule)({
+	Players = Players,
+	CONFIG = CONFIG,
+	RunService = RunService,
+	ControllerFunctions = ControllerFunctions,
+	profiles = profiles,
+	publishState = function(player: Player?) publishState(player) end,
+	getStudioBoostState = function() return studioXpBoostMultiplier, studioXpBoostExpiresAt end,
+})
+ControllerFunctions.setGlobalXPState = xpService.SetGlobalXPState
+ControllerFunctions.refreshGlobalXPBoost = xpService.RefreshGlobalXPBoost
+ControllerFunctions.settlePlayerXP = xpService.SettlePlayerXP
 
 local configFolder = ControllerFunctions.getOrCreate(ReplicatedStorage, "Folder", "ClubMusicConfig") :: Folder
 configFolder:SetAttribute("GroupId", CONFIG.GroupId)
@@ -3007,6 +2978,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		productsOut[tostring(i)] = CONFIG.TitleSlotProductIds[i] or 0
 	end
 	local activeSlotData = profile.titleSlots[profile.activeSlot]
+	local xpClientState = xpService.GetClientState()
 	-- The rotation cursor points beyond tracks already prefetched into the queue.
 	-- Derive the visible position from the authoritative current track instead.
 	local playlistPosition: number? = nil
@@ -3106,10 +3078,8 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		xp = profile.xp,
 		level = math.floor(profile.xp / CONFIG.XPPerLevel) + 1,
 		xpToNextLevel = CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel),
-		xpMultiplier = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpMultiplier
-			elseif cachedGlobalXpLowerExpiresAt > os.time() then 2 else 1,
-		xpBoostExpiresAt = if cachedGlobalXpExpiresAt > os.time() then cachedGlobalXpExpiresAt
-			elseif cachedGlobalXpLowerExpiresAt > os.time() then cachedGlobalXpLowerExpiresAt else 0,
+		xpMultiplier = xpClientState.multiplier,
+		xpBoostExpiresAt = xpClientState.expiresAt,
 		xpBoostProductIds = { twoX = CONFIG.XPBoost2xProductId, fourX = CONFIG.XPBoost4xProductId },
 		groupId = CONFIG.GroupId,
 		players = nil :: any,
@@ -5070,9 +5040,7 @@ ControllerFunctions.onJoin = function(player: Player)
 	ControllerFunctions.applyVipAttribute(player)
 	ControllerFunctions.syncTitleTagUnlocks(player)
 	player:SetAttribute("ClubRank", ControllerFunctions.getRank(player))
-	xpLastAwardAt[player.UserId] = os.clock()
-	xpFractional[player.UserId] = 0
-	xpLastSaveAt[player.UserId] = os.clock()
+	xpService.InitializePlayer(player.UserId)
 	publishState(nil) -- also refreshes the staff roster for everyone with access
 end
 
@@ -5462,74 +5430,7 @@ task.spawn(function()
 	end
 end)
 
-ControllerFunctions.settlePlayerXP = function(player: Player, nowClock: number): boolean
-	local userId = player.UserId
-	local profile = profiles[userId]
-	local lastClock = xpLastAwardAt[userId]
-	if not profile then return false end
-	if not lastClock then xpLastAwardAt[userId] = nowClock; return false end
-	local elapsed = math.max(0, nowClock - lastClock)
-	xpLastAwardAt[userId] = nowClock
-	if elapsed <= 0 then return false end
-	local boostedFourSeconds = 0
-	local boostedTwoSeconds = 0
-	if cachedGlobalXpMultiplier == 4 and cachedGlobalXpExpiresAt > 0 then
-		local fourExpiryClock = nowClock + (cachedGlobalXpExpiresAt - os.time())
-		boostedFourSeconds = math.clamp(fourExpiryClock - lastClock, 0, elapsed)
-		if cachedGlobalXpLowerExpiresAt > cachedGlobalXpExpiresAt then
-			local twoExpiryClock = nowClock + (cachedGlobalXpLowerExpiresAt - os.time())
-			boostedTwoSeconds = math.clamp(twoExpiryClock - math.max(lastClock, fourExpiryClock), 0, elapsed - boostedFourSeconds)
-		end
-	elseif cachedGlobalXpMultiplier == 2 and cachedGlobalXpExpiresAt > 0 then
-		local twoExpiryClock = nowClock + (cachedGlobalXpExpiresAt - os.time())
-		boostedTwoSeconds = math.clamp(twoExpiryClock - lastClock, 0, elapsed)
-	end
-	local weightedSeconds = elapsed + boostedFourSeconds * 3 + boostedTwoSeconds
-	-- Permanent personal XP ownership multiplies the globally boosted award.
-	-- The client never supplies this value; it comes from server-verified pass ownership.
-	local personalMultiplier = math.clamp(tonumber(player:GetAttribute("PersonalXPMultiplier")) or 1, 1, 4)
-	local fractional = (xpFractional[userId] or 0) + weightedSeconds * personalMultiplier * (CONFIG.XPPerMinute / 60)
-	local gain = math.floor(fractional + 1e-7)
-	xpFractional[userId] = fractional - gain
-	if gain <= 0 then return false end
-	profile.xp = math.min(9007199254740000, profile.xp + gain)
-	player:SetAttribute("XP", profile.xp)
-	player:SetAttribute("Level", math.floor(profile.xp / CONFIG.XPPerLevel) + 1)
-	player:SetAttribute("XPToNextLevel", CONFIG.XPPerLevel - (profile.xp % CONFIG.XPPerLevel))
-	local lastSavedAt = xpLastSaveAt[userId] or nowClock
-	if nowClock - lastSavedAt >= 60 then
-		xpLastSaveAt[userId] = nowClock
-		ControllerFunctions.scheduleProfileSave(player)
-	end
-	return true
-end
-
-settleAllXP = function()
-	local nowClock = os.clock()
-	for _, player in ipairs(Players:GetPlayers()) do ControllerFunctions.settlePlayerXP(player, nowClock) end
-end
-
-task.spawn(function()
-	ControllerFunctions.refreshGlobalXPBoost()
-	while true do
-		-- MessagingService is primary; staggered durable reads reconcile missed notifications.
-		task.wait(45 + random:NextNumber(0, 15))
-		ControllerFunctions.refreshGlobalXPBoost()
-	end
-end)
-
-task.spawn(function()
-	while true do
-		task.wait(5)
-		local nowClock = os.clock()
-		local changed = xpStateDirty
-		xpStateDirty = false
-		for _, player in ipairs(Players:GetPlayers()) do
-			if ControllerFunctions.settlePlayerXP(player, nowClock) then changed = true end
-		end
-		if changed then publishState(nil) end
-	end
-end)
+xpService.Start(script)
 
 Players.PlayerAdded:Connect(function(player)
 	task.spawn(ControllerFunctions.onJoin, player)
@@ -5553,10 +5454,7 @@ Players.PlayerRemoving:Connect(function(player)
 		local endedSession = djSessionManager:EndForDeparture(userId)
 		if endedSession then player:SetAttribute("ClubMusicActiveDJSession", false) end
 	end
-	if settleAllXP then ControllerFunctions.settlePlayerXP(player, os.clock()) end
-	xpLastAwardAt[userId] = nil
-	xpFractional[userId] = nil
-	xpLastSaveAt[userId] = nil
+	xpService.RemovePlayer(player)
 	local finalSaveOk = if serverShuttingDown
 		then ControllerFunctions.saveProfile(player, 8, 6)
 		else ControllerFunctions.saveProfile(player)
