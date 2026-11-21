@@ -689,7 +689,7 @@ local SECURITY_MODULE_EXPORTS: {[string]: string} = {
 }
 local cachedSecurityBundle: any = nil
 local securityBundleLoadAttempted = false
-local EXPECTED_SECURITY_CORE_RELEASE = "7ebc71e3a6fa9ef04e80d5f332e5f72617c8d288"
+local EXPECTED_SECURITY_CORE_RELEASE = "32b484bd731dbbd68555c0d74c70600c87bc462e"
 local securityCoreInstallStatus: {[string]: any} = {
  state = "NotChecked",
  expectedRelease = EXPECTED_SECURITY_CORE_RELEASE,
@@ -717,7 +717,7 @@ local function loadOptionalGlobalModule(moduleName: string): any?
 					warn("[ClubMusic Global] Security Core install manifest has the wrong class.")
 					return nil
 				end
-				local installedRelease = string.match(manifest.Value, "[Rr]elease=([%w]+)")
+				local installedRelease = string.match(manifest.Value, "securityCoreRelease=([%w]+)")
 				securityCoreInstallStatus.manifestPresent = true
 				securityCoreInstallStatus.installedRelease = installedRelease
 				if installedRelease ~= EXPECTED_SECURITY_CORE_RELEASE then
