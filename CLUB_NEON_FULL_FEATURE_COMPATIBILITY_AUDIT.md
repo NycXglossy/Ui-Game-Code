@@ -2,7 +2,7 @@
 
 **Decision:** Owner selected the full feature set on 2026-11-20.
 **Target:** Club Neon | **Branch:** integration/tiki-tide-system-consolidation
-**Status:** configuration contract created; runtime adaptation and installation remain gated.
+**Status:** project-specific runtime variants and installer v0.3.0 committed; live installation remains gated on owner configuration and Studio regression testing.
 
 ## Approved feature scope
 - ClubMusic requests, per-server queue, Auto DJ, playlists, DJ booth and playback controls.
@@ -72,3 +72,37 @@ This list is not a complete dependency graph. Exact source pins, package extract
 7. Only then enable transactional install; never remove legacy audio until modern playback is stable.
 
 **Current release state:** configuration contract and compatibility audit are committed artifacts; this does not install runtime scripts or modify the Club Neon place.
+
+## Runtime adaptation delivered
+
+The full-feature source variants are now committed, without overwriting the Tiki Tide originals:
+
+- Core UI: `ClubNeon_UI_Server_Controller.server.lua`, `ClubNeon_UI_Renderer.lua`, `ClubNeon_UI_Network.lua`, and `ClubNeonBootstrap.client.lua`.
+- Modern audio: the pinned shared AudioPlayer/crossfade modules, MusicCoreService, MusicPlaylistService, and client preferences.
+- Security: a dedicated `ClubNeonSecurityCore/` package (32 runtime modules), Club Neon security server/staff scripts, client telemetry, security console, spectator camera, adaptive visual client, and a dedicated staged Security Core installer.
+- Global operations: `ClubNeon_Global_Service.server.lua` and the shared operational modules, using Club Neon-specific stores/topics and the Club Neon Security Core authorization singleton.
+- Settings/social: Club Neon settings client/server, social actions client/server plus its nested AnimationConfig, and the unified launcher.
+- Utility bar: Club Neon client/server variants, including dynamic server-configured pass IDs and a Club Neon Tool Shop DataStore.
+- Optional Kohl's Admin adapters: separate Club Neon variants only. The installer will add them only if the expected add-on folders exist; it never creates or replaces Kohl's Admin.
+
+## Isolation and safety checks in the current source
+
+- Controller and global services load `ServerStorage.ClubNeon_Config`; missing or malformed configuration stops startup.
+- Controller purchase IDs are zero unless `Monetization.Enabled = true`; pass/product IDs are then read from the Club Neon config. The renderer and utility bar receive server-configured IDs instead of embedding Tiki Tide IDs.
+- Owner, co-owner, admin, moderator, and DJ UserId lists are supported by the Club Neon Authorization module. Studio owner bypass defaults off.
+- Global authorization, settings, staff actions, and the optional Kohl's adapter use the same role lists and rank thresholds.
+- Playback sync is hard-disabled in the controller and global service. Queue, playback clock, Auto DJ cursor, and skip votes remain per-server.
+- The master installer checks for inherited Tiki Tide product/group IDs, checks the local-only playback marker and remote folder contract, and pins all runtime source fetches to immutable commits.
+- The master installer is v0.3.0, source-based, transactional, and defaults to `DRY_RUN = true`. It backs up replaced repository-owned instances and preserves unknown descendants. It does not require an .rbxl export.
+
+## Remaining release blockers
+
+1. Populate `OwnerUserIds` with the actual Club Neon owner UserId(s). Optional direct staff lists and GroupId can be added at the same time.
+2. Keep monetization disabled, or add verified Club Neon pass/product IDs and explicitly set `Monetization.Enabled = true`.
+3. Run installer v0.3.0 in Club Neon Studio with `DRY_RUN = true`; review every planned destination and skipped optional adapter.
+4. Only after review, use a backed-up unpublished copy and set `DRY_RUN = false` for transactional promotion.
+5. Run the complete compile/startup, UI, modern playback/crossfade, queue, staff/security, purchase, DataStore isolation, global moderation/announcement, and mobile/desktop regression suite.
+
+The audited Kohl's Admin package is under `Workspace` in the supplied inventory, while the installer checks the documented server-side add-on locations under `ServerScriptService`. Therefore the optional adapters will be skipped unless a supported add-on path is verified; the existing package remains untouched.
+
+**Current release state:** source variants and installer are committed to the repository. No Club Neon place has been modified, and runtime behavior has not yet been verified in Roblox Studio.
