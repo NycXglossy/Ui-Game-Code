@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.3.5
+-- CLUB NEON MASTER INSTALLER v0.3.6
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.3.5"
+local INSTALLER_VERSION = "0.3.6"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -325,6 +325,15 @@ end
 if #kohlsRoots == 1 and configAddons then
     addSource("KohlsAdmin_ClubNeon_Addon.lua", "ModuleScript", "KohlsConfigAddons", "ClubNeon")
     addSource("ClubNeonRegularCommandsSecurityServer.lua", "ModuleScript", "KohlsConfigAddons", "ClubNeonRegularCommandsSecurityServer")
+
+    -- Observational-only Kohl's audit addon. Keep "Server" in its ModuleScript
+    -- name so Kohl's loads it server-side; it never changes roles or permissions.
+    local kohlsAuditSource = fetchSource("ClubMusicKohlsAuditServer.lua", RELEASE.runtime)
+    kohlsAuditSource = kohlsAuditSource
+        :gsub("Firebeach Music Festival Club", "Club Neon")
+        :gsub("ClubMusic Kohl's Audit", "Club Neon Kohl's Audit")
+    addRaw("ClubNeonKohlsAuditServer", "ModuleScript", "KohlsConfigAddons", kohlsAuditSource,
+        "ClubMusicKohlsAuditServer.lua@" .. RELEASE.runtime)
 else
     table.insert(skippedOptional, "Kohl's Admin adapters — unique Config/Addons folder not found under the unique Kohl's Admin package")
 end
