@@ -1,6 +1,6 @@
 --!strict
 -- UtilityBarPanels.client.lua
--- Separate control panels for Mount, Clone Companion, Lighting Control, Size and Aura.
+-- Unified control panels for Mount, Clone Companion, Lighting Control, Size, Aura and Tool Shop.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,6 +14,8 @@ local playerGui = player:WaitForChild("PlayerGui")
 local actionEvent = playerGui:WaitForChild("UtilityBarAction") :: BindableEvent
 local remoteFolder = ReplicatedStorage:WaitForChild("UtilityBarRemotes")
 local execute = remoteFolder:WaitForChild("ExecuteUtility") :: RemoteFunction
+local toolShopRemoteInstance = remoteFolder:WaitForChild("ToolShop", 10)
+local toolShopRemote: RemoteFunction? = if toolShopRemoteInstance and toolShopRemoteInstance:IsA("RemoteFunction") then toolShopRemoteInstance else nil
 
 local C = {
 	bg=Color3.fromRGB(13,16,24), surface=Color3.fromRGB(24,29,41),
@@ -97,22 +99,27 @@ local function open(name: string)
 	title.Text=string.upper(name) .. " CONTROL"
 	status.Text=""
 	clearBody()
+
 	if name=="Aura" then
 		local styleNames={"TEAL GLOW","ROYAL GOLD","TIKI TIDE"}
 		local presets={"Teal Glow","Royal Gold","Tiki Tide"}
 		local targetNames={"CHARACTER","TOOLS","ACCESSORIES"}
 		local targets={"Character","Tools","Accessories"}
 		local activeStyle,activeTarget=1,1
-		local styleRow=make("Frame",{BackgroundTransparency=1,Size=UDim2.new(1,0,0,42)},body)
-		local targetRow=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,46),Size=UDim2.new(1,0,0,42)},body)
-		local content=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,94),Size=UDim2.new(1,0,1,-94)},body)
+		local activeSection=if name=="ToolShop" then "Shop" else "Aura"
+		local sectionRow=make("Frame",{BackgroundTransparency=1,Size=UDim2.new(1,0,0,38)},body)
+		local styleRow=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,0,42)},body)
+		local targetRow=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,88),Size=UDim2.new(1,0,0,42)},body)
+		local content=make("Frame",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,132),Size=UDim2.new(1,0,1,-132)},body)
 		local function drawAura()
+			styleRow.Visible=true
+			targetRow.Visible=true
 			for _,child in ipairs(styleRow:GetChildren()) do child:Destroy() end
 			for _,child in ipairs(targetRow:GetChildren()) do child:Destroy() end
 			for _,child in ipairs(content:GetChildren()) do child:Destroy() end
 			for i,label in ipairs(styleNames) do
 				local tab=button(styleRow,label,if i==activeStyle then C.gold else C.muted,UDim2.new((i-1)/3,2,0,1),UDim2.new(1/3,-4,0,38))
-				 tab.TextSize=9
+				tab.TextSize=9
 				tab.Activated:Connect(function() activeStyle=i; drawAura() end)
 			end
 			for i,label in ipairs(targetNames) do
@@ -126,7 +133,52 @@ local function open(name: string)
 			local clear=button(content,"CLEAR AURA",C.gold,UDim2.new(.08,0,0,88),UDim2.new(.84,0,0,38))
 			clear.Activated:Connect(function() invoke("ClearAura") end)
 		end
-		drawAura()
+		local function drawShop()
+			styleRow.Visible=false
+			targetRow.Visible=false
+			for _,child in ipairs(content:GetChildren()) do child:Destroy() end
+			local balance=make("TextLabel",{Name="CoinBalance",BackgroundColor3=Color3.fromRGB(35,53,59),Position=UDim2.fromOffset(0,0),Size=UDim2.new(1,0,0,30),Font=Enum.Font.GothamBold,Text="LOADING COINS",TextColor3=C.teal,TextSize=11},content) :: TextLabel
+			rounded(balance,9)
+			make("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(0,34),Size=UDim2.new(1,0,0,28),Font=Enum.Font.GothamMedium,Text="Tool stock will appear here when configured.",TextColor3=C.muted,TextSize=10,TextWrapped=true},content)
+			local list=make("ScrollingFrame",{Name="ShopItems",Position=UDim2.fromOffset(0,64),Size=UDim2.new(1,0,1,-64),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.new()},content) :: ScrollingFrame
+			make("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder},list)
+			for index=1,3 do
+				local card=make("Frame",{Name="ComingSoon_"..index,Size=UDim2.new(1,-5,0,54),BackgroundColor3=C.surface,BorderSizePixel=0,LayoutOrder=index},list)
+				rounded(card,10)
+				make("UIStroke",{Color=C.teal,Transparency=.84,Thickness=1},card)
+				make("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(12,5),Size=UDim2.new(1,-116,0,20),Font=Enum.Font.GothamBold,Text="TOOL SLOT "..string.format("%02d",index),TextColor3=C.text,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left},card)
+				make("TextLabel",{BackgroundTransparency=1,Position=UDim2.fromOffset(12,26),Size=UDim2.new(1,-116,0,18),Font=Enum.Font.Gotham,Text="Details and price coming soon",TextColor3=C.muted,TextSize=9,TextXAlignment=Enum.TextXAlignment.Left},card)
+				local badge=make("TextLabel",{AnchorPoint=Vector2.new(1,.5),Position=UDim2.new(1,-9,.5,0),Size=UDim2.fromOffset(94,24),BackgroundColor3=Color3.fromRGB(54,48,37),BorderSizePixel=0,Font=Enum.Font.GothamBold,Text="COMING SOON",TextColor3=C.gold,TextSize=8},card)
+				rounded(badge,7)
+			end
+			if not toolShopRemote then
+				balance.Text="COINS UNAVAILABLE"
+				status.Text="Install ToolShop.server.lua to load the saved coin balance."
+				return
+			end
+			task.spawn(function()
+				local ok,data=pcall(function() return (toolShopRemote :: RemoteFunction):InvokeServer("GetShop") end)
+				if not panel.Visible or activeSection~="Shop" or not balance.Parent then return end
+				if ok and typeof(data)=="table" and data.ok==true then
+					balance.Text=tostring(math.max(0,math.floor(tonumber(data.coins) or 0))).." COINS"
+				elseif ok and typeof(data)=="table" then
+					balance.Text="LOADING COINS"
+					status.Text=if typeof(data.message)=="string" then data.message else "Coin balance is not ready yet."
+				else
+					balance.Text="COINS —"
+					status.Text="Could not load the saved coin balance."
+				end
+			end)
+		end
+		local function drawSectionTabs()
+			for _,child in ipairs(sectionRow:GetChildren()) do child:Destroy() end
+			local auraTab=button(sectionRow,"AURA",if activeSection=="Aura" then C.gold else C.muted,UDim2.new(0,0,0,0),UDim2.new(.5,-4,1,0))
+			local shopTab=button(sectionRow,"TOOL SHOP",if activeSection=="Shop" then C.gold else C.muted,UDim2.new(.5,4,0,0),UDim2.new(.5,-4,1,0))
+			auraTab.Activated:Connect(function() activeSection="Aura"; drawSectionTabs(); drawAura() end)
+			shopTab.Activated:Connect(function() activeSection="Shop"; drawSectionTabs(); drawShop() end)
+		end
+		drawSectionTabs()
+		if activeSection=="Shop" then drawShop() else drawAura() end
 	elseif name=="Size" then
 		local value=1.0
 		local valueLabel=make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,4),Size=UDim2.new(1,0,0,34),Font=Enum.Font.GothamBold,Text="1.00×",TextColor3=C.gold,TextSize=22},body) :: TextLabel
@@ -224,7 +276,7 @@ actionEvent.Event:Connect(function(actionName: string)
 	if actionName=="Mount" and player:GetAttribute("HasIslandMountPass") ~= true then return end
 	if actionName=="Clone" and player:GetAttribute("HasIslandCompanionPass") ~= true then return end
 	if actionName=="LightingControl" and player:GetAttribute("HasStageClubLightingPass") ~= true then return end
-	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" or actionName=="LightingControl" then
+	if actionName=="Mount" or actionName=="Size" or actionName=="Clone" or actionName=="Aura" or actionName=="ToolShop" or actionName=="LightingControl" then
 		open(actionName)
 	end
 end)

@@ -40,6 +40,7 @@ local CONFIG = {
 		Moderation = "ClubMusic_Global_Moderation_v1",
 		XPBoost = "ClubMusic_Global_XPBoost_v1",
 		Catalog = "ClubMusic_Global_Catalog_v1",
+		Playback = "ClubMusic_Global_Playback_v1",
 	},
 	ModerationStoreName = "ClubMusic_GlobalModeration_v1",
 	GlobalControlStoreName = "ClubMusic_GlobalControl_v1",
@@ -610,13 +611,11 @@ bindFunction("IsEnabled", function()
 	return SERVICE_ENABLED
 end)
 
--- Global playback synchronization is retired. Every server owns its own Now Playing
--- state and request queue; global moderation, announcements, catalog invalidation,
--- and XP boost coordination remain independent services.
+-- Cross-server playback synchronization is retired in this release.
 local function getGlobalSyncStatus(): {[string]: any}
 	return {
 		state = "LocalOnly",
-		detail = "Global playback sync is retired. Each server owns its own playback and request queue.",
+		detail = "Cross-server playback synchronization is disabled; each server owns its own playback clock, Now Playing state, and request queue.",
 		playbackSyncEnabled = false,
 		localQueueIsolated = true,
 		peerCount = 0,
@@ -683,7 +682,7 @@ local SECURITY_MODULE_EXPORTS: {[string]: string} = {
 }
 local cachedSecurityBundle: any = nil
 local securityBundleLoadAttempted = false
-local EXPECTED_SECURITY_CORE_RELEASE = "ac2cae06872f506355790213a7ffc2c42f65539e"
+local EXPECTED_SECURITY_CORE_RELEASE = "7ebc71e3a6fa9ef04e80d5f332e5f72617c8d288"
 local securityCoreInstallStatus: {[string]: any} = {
  state = "NotChecked",
  expectedRelease = EXPECTED_SECURITY_CORE_RELEASE,
@@ -818,13 +817,16 @@ if safeCallModule then
 end
 if globalSafeCall then
 	bindFunction("GetGlobalMemoryStoreStatus", function()
+		local playbackLeaseEnabled = false
 		return {
 			sharedRateLimitsEnabled = false,
 			capacityLimited = false,
 			lastCapacityError = nil,
-			playbackLeaseEnabled = false,
-			mode = "LocalOnly",
-			detail = "MemoryStore is not used for playback synchronization; playback and request queues are server-local.",
+			playbackLeaseEnabled = playbackLeaseEnabled,
+			mode = if playbackLeaseEnabled then "PlaybackOnlyLease" else "LocalOnly",
+			detail = if playbackLeaseEnabled
+				then "MemoryStore is used only for the optional fenced playback leader lease; request queues remain local."
+				else "Bounded per-server rate limits are active; optional playback leadership is disabled.",
 		}
 	end)
 
@@ -1314,6 +1316,54 @@ local function ownThread(thread)
 	if lifecycleJanitor then lifecycleJanitor:Add(thread,"Cancel") end
 	return thread
 end
+
+-- Cross-server playback authority and its leader lease are intentionally not
+-- loaded in this release. Playback clocks, Now Playing, and queues are server-local.
+local playbackSyncEnabled = false
+
+bindFunction("GetGlobalPlaybackSyncStatus", function()
+	return true, {
+		enabled = false,
+		syncEnabled = false,
+		state = "LocalOnly",
+		detail = "Cross-server playback synchronization is disabled in this release.",
+		localQueueIsolated = true,
+		lastServiceError = nil,
+	}
+end)
+
+bindFunction("GetGlobalPlaybackSnapshot", function()
+	return false, nil, "Cross-server playback synchronization is disabled in this release."
+end)
+
+bindFunction("AcquireGlobalPlaybackLeadership", function()
+	return false, nil, "Cross-server playback synchronization is disabled in this release."
+end)
+
+bindFunction("CommitGlobalPlaybackSnapshot", function()
+	return false, nil, "Cross-server playback synchronization is disabled in this release."
+end)
+
+bindFunction("SetGlobalPlaybackSyncEnabled", function(enabled: any, actorUserId: any)
+	if typeof(enabled) ~= "boolean" then return false, "Invalid playback sync setting." end
+	if enabled then
+		return false, "Cross-server playback synchronization is disabled in this release."
+	end
+	if not finiteNumber(actorUserId) or actorUserId < 1 or actorUserId % 1 ~= 0
+		or actorUserId > 9007199254740991 then return false, "Invalid authorization actor." end
+	if not authorizeGlobalActor(math.floor(actorUserId), "GlobalConfig") then
+		return false, "Global playback sync authorization failed."
+	end
+	if globalConfigService then
+		local ok, result = globalConfigService:Set("playbackSyncEnabled", false, math.floor(actorUserId))
+		if not ok then return false, result end
+	end
+	playbackSyncEnabled = false
+	return true, "Cross-server playback synchronization remains disabled."
+end)
+
+
+
 if lifecycleJanitor then
 	lifecycleJanitor:Add(function()
 		for _,service in pairs({
@@ -1732,6 +1782,13 @@ local function onCatalog(message)
 	end
 end
 
+local function onPlaybackChanged(_message)
+	-- Ignore retained/legacy Playback topic messages. They must never alter a
+	-- server's local playback state or advertise a shared playback mode.
+	return
+end
+
+
 local function subscribeWithRetry(topic: string, callback: (any) -> ())
 	subscriptionStatus[topic] = "Subscribing"
 	ownThread(task.spawn(function()
@@ -1784,6 +1841,7 @@ if SERVICE_ENABLED then
 	subscribeWithRetry(CONFIG.Topics.Moderation, onModeration)
 	subscribeWithRetry(CONFIG.Topics.XPBoost, onXPBoost)
 	subscribeWithRetry(CONFIG.Topics.Catalog, onCatalog)
+	subscribeWithRetry(CONFIG.Topics.Playback, onPlaybackChanged)
 else
 	if not CONFIG.Enabled then
 		warn("[ClubMusic Global] Cross-server service is disabled by CONFIG.Enabled=false; local UI controller remains fully functional.")
