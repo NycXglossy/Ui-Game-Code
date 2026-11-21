@@ -1,7 +1,7 @@
 --!strict
 -- Formats the detailed read-only operational diagnostics response for the admin bridge.
 -- Inputs are injected so this module owns no controller state or service connections.
-return function(globalCall: (...any) -> (boolean, any, any), purchaseEntries: {any}, snapshot: any): (boolean, string)
+return function(globalCall: any, purchaseEntries: {any}): (boolean, string)
 		local ok, snapshot = globalCall("GetGlobalDiagnostics")
 		if not ok or typeof(snapshot) ~= "table" then return false, tostring(snapshot or "Diagnostic snapshot is unavailable.") end
 		local health = if typeof(snapshot.health) == "table" then snapshot.health else {}
