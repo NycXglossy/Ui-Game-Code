@@ -1179,12 +1179,17 @@ if globalMaintenanceService and not startOperationalService("ClubMusic_Global_Ma
 
 -- Authorization is owned by the installed SecurityCore module. There is no
 -- controller BindableFunction resolver or legacy authorization fallback.
-local authorizationModule = loadOptionalGlobalModule("ClubMusic_Global_Authorization_Service")
+local authorizationCore = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
+local authorizationModule = authorizationCore and authorizationCore:IsA("Folder")
+	and authorizationCore:FindFirstChild("Authorization") or nil
 if authorizationModule and type(authorizationModule.GetShared) == "function" then
 	local createOk, instance = pcall(function()
 		return authorizationModule.GetShared({
 			groupId = tonumber(projectConfig.Permissions.GroupId) or 0,
-			studioStaff = true,
+			studioStaff = false,
+			staffUserIds = projectConfig.Permissions.OwnerUserIds,
+			roleUserIds = {Owner = projectConfig.Permissions.OwnerUserIds, CoOwner = projectConfig.Permissions.CoOwnerUserIds, Admin = projectConfig.Permissions.AdminUserIds, Moderator = projectConfig.Permissions.ModeratorUserIds, DJ = projectConfig.Permissions.DJUserIds},
+			thresholds = projectConfig.Permissions.RankThresholds,
 			onDenied = function(actorUserId, permission, count)
 				if globalAuditService then
 					pcall(globalAuditService.Record, globalAuditService, "SecurityEvent", actorUserId,
