@@ -14,7 +14,7 @@ local Config = {
   },
   Monetization = {
     Enabled = false,
-    GamePasses = { VIP = 0, VVIP = 0, Elite = 0, IslandMount = 0, Companion = 0, StageLighting = 0 },
+    GamePasses = { VIP = 0, VVIP = 0, Elite = 0, PersonalXP2x = 0, PersonalXP4x = 0, IslandMount = 0, Companion = 0, StageLighting = 0 },
     DeveloperProducts = { XPBoost2x = 0, XPBoost4x = 0, TitleSlot2 = 0, TitleSlot3 = 0, Donations = {} },
   },
   Features = {
