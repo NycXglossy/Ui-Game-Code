@@ -1764,10 +1764,10 @@ end
 -- Optional cross-server service bridge. The UI remains functional if this separate
 -- service is disabled or temporarily unavailable; the server's local security remains active.
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
-local receiptSecurityCore = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+local receiptSecurityCore = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 local receiptHashModule = receiptSecurityCore and receiptSecurityCore:FindFirstChild("ReceiptHash")
 if not receiptHashModule or not receiptHashModule:IsA("ModuleScript") then
-	remotes:SetAttribute("StartupError", "Missing ServerStorage.ClubMusicSecurityCore.ReceiptHash ModuleScript.")
+	remotes:SetAttribute("StartupError", "Missing ServerStorage.ClubNeonSecurityCore.ReceiptHash ModuleScript.")
 	error("[ClubMusic] Security Core ReceiptHash module is required.")
 end
 local receiptHashOk, receiptHashResult = pcall(require, receiptHashModule)
@@ -2141,7 +2141,7 @@ local recentTracks: {string} = {}
 local lastAutoGenre = ""
 
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("SanityValidation") else nil
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
@@ -2167,7 +2167,7 @@ end
 
 local authorizationService: any = nil
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("Authorization") else nil
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
@@ -2202,7 +2202,7 @@ end
 -- No client remote is created; the Kohl's Admin server bridge is the only staff entry point.
 local phase32Services: any = nil
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("Phase32ServiceBundle") else nil
 	if module and module:IsA("ModuleScript") and authorizationService then
 		local requireOk, exported = pcall(require, module)
@@ -2247,7 +2247,7 @@ end
 -- Membership entitlement decisions are centralized separately from staff authorization.
 -- This service reuses Authorization's group cache and keeps bounded, session-only pass results.
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("EntitlementAuthority") else nil
 	if module and module:IsA("ModuleScript") and authorizationService then
 		local requireOk, exported = pcall(require, module)
@@ -2277,7 +2277,7 @@ end
 -- and never removes accessories or applies moderation actions.
 local avatarAccessoryValidation: any = nil
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("AvatarAccessoryValidationService") else nil
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
@@ -2332,7 +2332,7 @@ end)
 local animationIntegrityService: any = nil
 local animationIntegrityStatus: BindableFunction? = nil
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("AnimationIntegrityService") else nil
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
@@ -4126,7 +4126,7 @@ end
 -- Durable receipt journal ownership is in Security Core. This controller only
 -- supplies the existing profile/session adapters and product reward mutators.
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("ReceiptTransactionService") else nil
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
@@ -4284,7 +4284,7 @@ end
 
 local receiptAuthority: any = nil
 do
-	local core = ServerStorage:FindFirstChild("ClubMusicSecurityCore")
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("ReceiptAuthority") else nil
 	if module and module:IsA("ModuleScript") then
 		local requireOk, exported = pcall(require, module)
