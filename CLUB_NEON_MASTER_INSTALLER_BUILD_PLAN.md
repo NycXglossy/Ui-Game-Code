@@ -3,9 +3,9 @@
 Target: Club Neon
 Repository: NycXglossy/Ui-Game-Code
 Branch: integration/tiki-tide-system-consolidation
-Current installer: ClubNeon_Master_Installer.lua (v0.2.0)
-Current mode: read-only preflight only
-Feature decision: FULL TIKI TIDE FEATURE SCOPE APPROVED; Club Neon-specific adaptation required.
+Current installer: ClubNeon_Master_Installer.lua (v0.3.0)
+Current mode: source-based transactional installer; DRY_RUN=true by default
+Feature decision: FULL FEATURE SET APPROVED; Club Neon-specific runtime variants are committed.
 Configuration contract: ClubNeon_Config.lua
 Compatibility audit: CLUB_NEON_FULL_FEATURE_COMPATIBILITY_AUDIT.md
 
@@ -102,4 +102,10 @@ The owner selected the full feature set. The following target-specific artifacts
 - ClubNeon_Config.lua — isolated identity, permissions, monetization, feature flags, local playback policy, and datastore namespace. Safe defaults disable monetization and require explicit owner configuration.
 - CLUB_NEON_FULL_FEATURE_COMPATIBILITY_AUDIT.md — source-level blockers, adaptation scope, preserve/exclude rules, and release gates.
 
-Installer v0.2.0 corrects script class counting to use exact ClassName comparisons and adds a scan for ClubNeon_Config. It remains read-only; it does not install the config or runtime sources.
+Installer v0.2.0 corrected exact ClassName counting. Installer v0.3.0 is now the source-based full-feature installer with immutable source pins, config/ID/playback-isolation checks, backup and rollback behavior, and DRY_RUN=true by default.
+
+The project-specific source variants now committed include the controller, renderer, network bridge, bootstrap, global service, 32-module Security Core, settings, social actions, unified launcher, utility bar, Tool Shop, and optional Kohl's Admin adapters. The full inventory and release gates are recorded in CLUB_NEON_FULL_FEATURE_COMPATIBILITY_AUDIT.md.
+
+The installer source has been checked against its pinned repository tree: all 39 static source paths and all 32 Security Core modules exist at the pinned runtime revision. This verifies repository path availability only; it is not a Luau compile or a Roblox Studio runtime test.
+
+Live install remains blocked until ClubNeon_Config.lua contains at least one actual OwnerUserId. Monetization remains disabled by default. Run the installer with DRY_RUN=true first, then review it in Studio. Only use DRY_RUN=false in a backed-up unpublished copy after that review.
