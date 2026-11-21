@@ -232,6 +232,11 @@ function Service:Refresh(player: Player): boolean
 	elseif directLevel then
 		level = directLevel
 		groupRank = 0
+	elseif self.groupId <= 0 then
+		-- Group integration is explicitly disabled; cache a normal guest result
+		-- instead of calling Roblox with an invalid placeholder group ID.
+		level = 0
+		groupRank = 0
 	else
 		local ok, rank = pcall(function()
 			return player:GetRankInGroup(self.groupId)
