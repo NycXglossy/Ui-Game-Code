@@ -11,15 +11,15 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local RELEASE_COMMIT = "1314c10dba2f7fb656cd42e3e80551af686cb652"
+local RELEASE_COMMIT = "356b48891906d3e4e1b0a95f12ccf48bb63d28b4"
 local BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. RELEASE_COMMIT .. "/ClubNeonSecurityCore/"
 -- Threat Intelligence alone is sourced from the hardened Phase 15 snapshot.
 -- All other SecurityCore modules, including receipt modules, keep the current release pin.
-local THREAT_INTELLIGENCE_COMMIT = "1314c10dba2f7fb656cd42e3e80551af686cb652"
+local THREAT_INTELLIGENCE_COMMIT = "356b48891906d3e4e1b0a95f12ccf48bb63d28b4"
 local THREAT_INTELLIGENCE_BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. THREAT_INTELLIGENCE_COMMIT .. "/ClubNeonSecurityCore/"
 -- Phase 32 is pinned independently so the previously certified SecurityCore
 -- module snapshot is not silently changed by later commits.
-local PHASE32_COMMIT = "1314c10dba2f7fb656cd42e3e80551af686cb652"
+local PHASE32_COMMIT = "356b48891906d3e4e1b0a95f12ccf48bb63d28b4"
 local PHASE32_BASE_URL = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/" .. PHASE32_COMMIT .. "/ClubNeonSecurityCore/"
 local MODULE_NAMES = {"StorageGuard", "ResourceGuard", "ConnectionJanitor", "Authorization", "EntitlementAuthority", "AvatarAccessoryValidationService", "AnimationIntegrityService", "RateLimit", "MessageValidation", "Idempotency", "SecurityMonitor", "SecurityPolicy", "Audit", "EventLog", "IncidentResponse", "MovementAuthority", "CharacterPhysicsGuard", "SanityValidation", "TeleportValidationService", "StaffSpectatorService", "SecurityReplayService", "AdaptiveSecurityLoadManager", "SecurityThreatIntelligence", "HoneypotManager", "ClientIntegrityTelemetry", "ReceiptAuthority", "ReceiptHash", "ReceiptTransactionService"}
 local PHASE32_MODULE_NAMES = {"ModerationPunishmentService", "AccountRiskSignalService", "ChatAbuseDetectionService", "Phase32ServiceBundle"}
