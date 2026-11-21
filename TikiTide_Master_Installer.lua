@@ -189,11 +189,11 @@ while true do
     local block = string.sub(packageXml, itemStart, itemEnd + 6)
     local moduleName = string.match(block, '<string name="Name">(.-)</string>')
     if moduleName and packageAllowlist[moduleName] then
-        local sourceMarker = '<ProtectedString name="Source"><![CDATA['
-        local sourceStart = string.find(block, sourceMarker, 1, true)
-        local sourceEnd = sourceStart and string.find(block, "]]></ProtectedString>", sourceStart + #sourceMarker, true)
-        if not sourceStart or not sourceEnd then error("Missing embedded Source for " .. moduleName) end
-        local moduleSource = string.sub(block, sourceStart + #sourceMarker, sourceEnd - 1)
+        local protectedStart = string.find(block, '<ProtectedString name="Source">', 1, true)
+        local cdataMarker = protectedStart and string.find(block, "<![CDATA[", protectedStart, true)
+        local sourceEnd = cdataMarker and string.find(block, "]]></ProtectedString>", cdataMarker + 9, true)
+        if not protectedStart or not cdataMarker or not sourceEnd then error("Missing embedded Source for " .. moduleName) end
+        local moduleSource = string.sub(block, cdataMarker + 9, sourceEnd - 1)
         if #moduleSource < 100 then error("Embedded module source is too short: " .. moduleName) end
         extracted[moduleName] = moduleSource
     end
@@ -281,15 +281,27 @@ local parents: {[string]: Instance} = {
     ReplicatedStorage = ReplicatedStorage,
     ServerStorage = ServerStorage,
     StarterPlayerScripts = StarterPlayerScripts,
-    AudioModules = ensureFolder(ServerStorage, "ClubMusicAudioModules"),
-    ClientAudioModules = ensureFolder(ReplicatedStorage, "ClubMusicClientAudioModules"),
-    GlobalOptional = ensureFolder(ServerStorage, "ClubMusic_Global_Optional_Services"),
-    SecurityCore = ensureFolder(ServerStorage, "ClubMusicSecurityCore"),
 }
 if configAddons and configAddons:IsA("Folder") then parents.KohlsConfigAddons = configAddons end
 if regularAddons and regularAddons:IsA("Folder") then parents.KohlsRegularAddons = regularAddons end
 
+local function peekParent(parentKey: string): Instance?
+    if parentKey == "AudioModules" then return ServerStorage:FindFirstChild("ClubMusicAudioModules") end
+    if parentKey == "ClientAudioModules" then return ReplicatedStorage:FindFirstChild("ClubMusicClientAudioModules") end
+    if parentKey == "GlobalOptional" then return ServerStorage:FindFirstChild("ClubMusic_Global_Optional_Services") end
+    if parentKey == "SecurityCore" then return ServerStorage:FindFirstChild("ClubMusicSecurityCore") end
+    if parentKey == "SocialConfig" then
+        local socialScript = ServerScriptService:FindFirstChild("TikiTideSocialActionsServer")
+        return socialScript and socialScript:FindFirstChild("TikiTideSocialActions") or nil
+    end
+    return parents[parentKey]
+end
+
 local function resolveParent(parentKey: string): Instance
+    if parentKey == "AudioModules" then return ensureFolder(ServerStorage, "ClubMusicAudioModules") end
+    if parentKey == "ClientAudioModules" then return ensureFolder(ReplicatedStorage, "ClubMusicClientAudioModules") end
+    if parentKey == "GlobalOptional" then return ensureFolder(ServerStorage, "ClubMusic_Global_Optional_Services") end
+    if parentKey == "SecurityCore" then return ensureFolder(ServerStorage, "ClubMusicSecurityCore") end
     if parentKey == "SocialConfig" then
         local socialScript = ServerScriptService:FindFirstChild("TikiTideSocialActionsServer")
         if not socialScript or not socialScript:IsA("Script") then error("Social Actions server Script was not staged before its config folder.") end
@@ -304,16 +316,23 @@ end
 -- moving any existing instance.
 local destinationKeys = {}
 for _, entry in ipairs(entries) do
-    local parent = resolveParent(entry.parentKey)
-    local key = parent:GetFullName() .. "/" .. entry.name
+    local key = entry.parentKey .. "/" .. entry.name
     if destinationKeys[key] then error("Duplicate manifest destination: " .. key) end
     destinationKeys[key] = true
-    local existing = parent:FindFirstChild(entry.name)
-    if existing and not existing:IsA(entry.className) then
-        error(key .. " has class " .. existing.ClassName .. "; expected " .. entry.className .. ". No scripts were replaced.")
-    end
-    if existing and not existing.Archivable then
-        error(key .. " is not Archivable and cannot be safely backed up. No scripts were replaced.")
+    local parent = peekParent(entry.parentKey)
+    if parent then
+        if not parent:IsA("Folder") and (entry.parentKey == "AudioModules" or entry.parentKey == "ClientAudioModules"
+            or entry.parentKey == "GlobalOptional" or entry.parentKey == "SecurityCore") then
+            error(parent:GetFullName() .. " exists but is not a Folder.")
+        end
+        local existing = parent:FindFirstChild(entry.name)
+        if existing and not existing:IsA(entry.className) then
+            error(parent:GetFullName() .. "/" .. entry.name .. " has class " .. existing.ClassName
+                .. "; expected " .. entry.className .. ". No scripts were replaced.")
+        end
+        if existing and not existing.Archivable then
+            error(parent:GetFullName() .. "/" .. entry.name .. " is not Archivable and cannot be safely backed up.")
+        end
     end
 end
 
