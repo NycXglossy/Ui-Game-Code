@@ -29,6 +29,13 @@ if not receiptHashOk or typeof(receiptHashResult) ~= "table" or type(receiptHash
 	error("[ClubMusic Global] Security Core ReceiptHash failed to load: " .. tostring(receiptHashResult))
 end
 local ReceiptHash = receiptHashResult
+local projectConfigModule = ServerStorage:WaitForChild("ClubNeon_Config", 20)
+if not projectConfigModule or not projectConfigModule:IsA("ModuleScript") then
+	error("[Club Neon Global] Missing ServerStorage.ClubNeon_Config; global services will not start.")
+end
+local projectConfig = require(projectConfigModule)
+assert(typeof(projectConfig) == "table" and typeof(projectConfig.Permissions) == "table"
+	and typeof(projectConfig.Storage) == "table", "[Club Neon Global] Invalid project configuration.")
 
 local CONFIG = {
 	Enabled = true,
@@ -36,14 +43,14 @@ local CONFIG = {
 	EnableInStudio = false,
 
 	Topics = {
-		Announcements = "ClubMusic_Global_Announcements_v1",
-		Moderation = "ClubMusic_Global_Moderation_v1",
-		XPBoost = "ClubMusic_Global_XPBoost_v1",
-		Catalog = "ClubMusic_Global_Catalog_v1",
-		Playback = "ClubMusic_Global_Playback_v1",
+		Announcements = "ClubNeon_Global_Announcements_v1",
+		Moderation = "ClubNeon_Global_Moderation_v1",
+		XPBoost = "ClubNeon_Global_XPBoost_v1",
+		Catalog = "ClubNeon_Global_Catalog_v1",
+		Playback = "ClubNeon_Global_Playback_v1",
 	},
-	ModerationStoreName = "ClubNeon_v1_GlobalModeration",
-	GlobalControlStoreName = "ClubNeon_v1_GlobalControls",
+	ModerationStoreName = projectConfig.Storage.ModerationStore,
+	GlobalControlStoreName = projectConfig.Storage.GlobalControlStore,
 	-- Bounded per-server budgets; no shared MemoryStore limiter.
 	FallbackPlayerCapacity = 20,
 	FallbackPlayerRefillPerSecond = 5,
@@ -94,8 +101,8 @@ local authorizeGlobalActor: (any, string) -> boolean
 local moderationStore: any = nil
 local globalControlStore: any = nil
 local globalConfigStore: any = nil
-local GLOBAL_XP_BOOST_KEY = "globalXPBoost_v1" -- Preserve existing active timers.
-local XP_RECEIPT_STORE_NAME = "ClubMusic_XPBoostReceipts_v1"
+local GLOBAL_XP_BOOST_KEY = "ClubNeon_globalXPBoost_v1" -- Preserve existing active timers.
+local XP_RECEIPT_STORE_NAME = "ClubNeon_v1_XPBoostReceipts"
 local MAX_GLOBAL_XP_BOOST_SECONDS = 30 * 24 * 60 * 60
 local xpReceiptStore: any = nil
 local MAX_PURCHASE_ID_LENGTH = 128
@@ -106,7 +113,7 @@ if SERVICE_ENABLED then
 	local storesOk, storesError = pcall(function()
 		moderationStore = DataStoreService:GetDataStore(CONFIG.ModerationStoreName)
 		globalControlStore = DataStoreService:GetDataStore(CONFIG.GlobalControlStoreName)
-		globalConfigStore = DataStoreService:GetDataStore("ClubNeon_v1_GlobalConfig")
+		globalConfigStore = DataStoreService:GetDataStore(projectConfig.Storage.GlobalConfigStore)
 		xpReceiptStore = DataStoreService:GetDataStore(XP_RECEIPT_STORE_NAME)
 	end)
 	if not storesOk then
@@ -1176,7 +1183,7 @@ local authorizationModule = loadOptionalGlobalModule("ClubMusic_Global_Authoriza
 if authorizationModule and type(authorizationModule.GetShared) == "function" then
 	local createOk, instance = pcall(function()
 		return authorizationModule.GetShared({
-			groupId = 0,
+			groupId = tonumber(projectConfig.Permissions.GroupId) or 0,
 			studioStaff = true,
 			onDenied = function(actorUserId, permission, count)
 				if globalAuditService then
