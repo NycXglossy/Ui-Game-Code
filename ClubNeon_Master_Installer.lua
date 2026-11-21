@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.3.0
+-- CLUB NEON MASTER INSTALLER v0.3.1
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.3.0"
+local INSTALLER_VERSION = "0.3.1"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -457,9 +457,9 @@ local ok, failure = pcall(function()
     -- consumers, then enable the remaining scripts.
     local priority = {
         ClubMusic_Global_Service = 1,
-        SecurityServer = 2,
+        ClubNeonSecurityServer = 2,
         ClubNeonCharacterPhysicsGuardBootstrap = 3,
-        StaffActions = 4,
+        ClubNeonStaffActions = 4,
         UI_Server_Controller = 5,
         ClubNeonSettingsService = 6,
         ClubNeonSocialActionsServer = 7,
