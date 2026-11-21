@@ -380,7 +380,7 @@ for _, entry in ipairs(entries) do
             table.insert(plannedNew, parent:GetFullName() .. "/" .. entry.name .. " [" .. entry.className .. "]")
         end
     else
-        table.insert(plannedNew, parentKey .. "/" .. entry.name .. " [" .. entry.className .. "] (parent folder will be created)")
+        table.insert(plannedNew, entry.parentKey .. "/" .. entry.name .. " [" .. entry.className .. "] (parent folder will be created)")
     end
 end
 
