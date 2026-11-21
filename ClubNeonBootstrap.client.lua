@@ -2,7 +2,7 @@
 -- ClubMusicBootstrap (Security / Reliability Hardened)
 -- Place as LocalScript: StarterPlayer > StarterPlayerScripts
 -- Requires:
---   ReplicatedStorage/UI_Network (ModuleScript)
+--   ReplicatedStorage/ClubNeon_UI_Network (ModuleScript)
 --   ReplicatedStorage/ClubNeon_UI_Renderer (ModuleScript)
 -- Server:
 --   ServerScriptService/UI_Server_Controller (Script)
@@ -103,11 +103,11 @@ sessionMarker = Instance.new("Folder")
 sessionMarker.Name = SESSION_MARKER_NAME
 sessionMarker.Parent = playerGui
 
-local networkInstance = ReplicatedStorage:WaitForChild("UI_Network", MODULE_TIMEOUT)
+local networkInstance = ReplicatedStorage:WaitForChild("ClubNeon_ClubNeon_UI_Network", MODULE_TIMEOUT)
 local rendererInstance = ReplicatedStorage:WaitForChild("UI_Renderer", MODULE_TIMEOUT)
 
 if not networkInstance or not networkInstance:IsA("ModuleScript") then
-	fail("ReplicatedStorage.UI_Network is missing or is not a ModuleScript.")
+	fail("ReplicatedStorage.ClubNeon_UI_Network is missing or is not a ModuleScript.")
 	return
 end
 if not rendererInstance or not rendererInstance:IsA("ModuleScript") then
@@ -118,7 +118,7 @@ end
 -- Protect startup from a module load error while retaining clear diagnostics.
 local networkOk, networkResult = pcall(require, networkInstance)
 if not networkOk or typeof(networkResult) ~= "table" then
-	fail("UI_Network failed to load or did not return a table: " .. string.sub(tostring(networkResult), 1, 300))
+	fail("ClubNeon_UI_Network failed to load or did not return a table: " .. string.sub(tostring(networkResult), 1, 300))
 	return
 end
 Network = networkResult
@@ -131,7 +131,7 @@ end
 local Renderer: any = rendererResult
 
 if typeof(Network.Init) ~= "function" then
-	fail("UI_Network is missing Network.Init().")
+	fail("ClubNeon_UI_Network is missing Network.Init().")
 	return
 end
 if typeof(Renderer.Mount) ~= "function" then
