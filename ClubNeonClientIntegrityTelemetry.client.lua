@@ -91,13 +91,13 @@ end)
 task.delay(CHECK_DELAY_SECONDS, function()
 	if not script.Parent then return end
 
-	local network = ReplicatedStorage:FindFirstChild("UI_Network")
+	local network = ReplicatedStorage:FindFirstChild("ClubNeon_UI_Network")
 	if not network or not network:IsA("ModuleScript") then
 		report("client_integrity_ui_network_missing")
 		task.wait(1.1)
 	end
 
-	local renderer = ReplicatedStorage:FindFirstChild("UI_Renderer")
+	local renderer = ReplicatedStorage:FindFirstChild("ClubNeon_UI_Renderer")
 	if not renderer or not renderer:IsA("ModuleScript") then
 		report("client_integrity_ui_renderer_missing")
 		task.wait(1.1)
