@@ -2532,6 +2532,9 @@ ControllerFunctions.refreshPersonalPasses = function(player: Player)
 	player:SetAttribute("HasIslandMountPass", ownsMount)
 	player:SetAttribute("HasIslandCompanionPass", ownsCompanion)
 	player:SetAttribute("HasStageClubLightingPass", ownsStageClubLighting)
+	player:SetAttribute("ClubNeonMountPassId", CONFIG.MountPassId)
+	player:SetAttribute("ClubNeonCompanionPassId", CONFIG.CompanionPassId)
+	player:SetAttribute("ClubNeonStageLightingPassId", CONFIG.StageClubLightingPassId)
 	player:SetAttribute("PersonalXPMultiplier", if ownsPersonal4x then 4 elseif ownsPersonal2x then 2 else 1)
 end
 
