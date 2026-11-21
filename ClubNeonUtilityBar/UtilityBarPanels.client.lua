@@ -101,7 +101,7 @@ local function open(name: string)
 	clearBody()
 
 	if name=="Aura" then
-		local styleNames={"TEAL GLOW","ROYAL GOLD","TIKI TIDE"}
+		local styleNames={"TEAL GLOW","ROYAL GOLD","CLUB NEON"}
 		local presets={"Teal Glow","Royal Gold","Club Neon"}
 		local targetNames={"CHARACTER","TOOLS","ACCESSORIES"}
 		local targets={"Character","Tools","Accessories"}
