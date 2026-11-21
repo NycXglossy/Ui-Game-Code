@@ -16,7 +16,7 @@ return function(ctx: {[string]: any}, player: Player, action: string, payload: a
 	local globalAudioBucket = ctx.globalAudioBucket
 	local nowPlaying = ctx.nowPlaying
 	local queue = ctx.queue
-	local activePlaylistId = ctx.activePlaylistId
+	local activePlaylistId = ctx.getActivePlaylistId()
 	local activePlaylistTracks = ctx.activePlaylistTracks
 	local activePlaylistCursor = ctx.activePlaylistCursor
 	local publishState = ctx.publishState
@@ -161,7 +161,7 @@ return function(ctx: {[string]: any}, player: Player, action: string, payload: a
 			for index = #activePlaylistTracks, 1, -1 do
 				if activePlaylistTracks[index].id == trackId then table.remove(activePlaylistTracks, index) end
 			end
-			activePlaylistCursor = math.clamp(activePlaylistCursor, 1, math.max(1, #activePlaylistTracks))
+			ctx.setActivePlaylistCursor(math.clamp(ctx.getActivePlaylistCursor(), 1, math.max(1, #activePlaylistTracks)))
 			ControllerFunctions.clearAutomaticQueue()
 			ControllerFunctions.topUpAuto()
 		end
