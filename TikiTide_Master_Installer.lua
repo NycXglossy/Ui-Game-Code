@@ -321,8 +321,9 @@ for _, entry in ipairs(entries) do
     destinationKeys[key] = true
     local parent = peekParent(entry.parentKey)
     if parent then
-        if not parent:IsA("Folder") and (entry.parentKey == "AudioModules" or entry.parentKey == "ClientAudioModules"
-            or entry.parentKey == "GlobalOptional" or entry.parentKey == "SecurityCore") then
+        if (entry.parentKey == "AudioModules" or entry.parentKey == "ClientAudioModules"
+            or entry.parentKey == "GlobalOptional" or entry.parentKey == "SecurityCore"
+            or entry.parentKey == "SocialConfig") and not parent:IsA("Folder") then
             error(parent:GetFullName() .. " exists but is not a Folder.")
         end
         local existing = parent:FindFirstChild(entry.name)
