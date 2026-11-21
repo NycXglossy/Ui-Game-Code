@@ -1,5 +1,5 @@
 --!strict
--- TIKI TIDE MASTER INSTALLER
+-- CLUB NEON MASTER INSTALLER v0.3.0
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,6 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
+local INSTALLER_VERSION = "0.3.0"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -388,7 +389,7 @@ for _, entry in ipairs(entries) do
     end
 end
 print("======================================================")
-print("[ClubNeon Master Installer] Source staging and preflight passed.")
+print("[ClubNeon Master Installer] v" .. INSTALLER_VERSION .. " source staging and preflight passed.")
 print("Runtime source instances: " .. sourceScriptCount)
 print("Security Core modules: " .. (#securityModules + 5))
 print("Embedded global modules: " .. #({ "ClubMusic_Global_Event_Log_Service", "ClubMusic_Global_RateLimit_Service", "ClubMusic_Global_Authorization_Service" }))
