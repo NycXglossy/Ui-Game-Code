@@ -9,7 +9,7 @@ local Config = {
     OwnerUserIds = {}, -- REQUIRED: add actual Club Neon owner UserId(s) before live installation.
     CoOwnerUserIds = {}, AdminUserIds = {}, ModeratorUserIds = {}, DJUserIds = {},
     GroupId = 0, -- 0 disables group-rank integration until Club Neon supplies its group ID.
-    RankThresholds = { Owner = 255, CoOwner = 254, Admin = 200, Moderator = 150, DJ = 100 },
+    RankThresholds = { Owner = 255, CoOwner = 254, Admin = 200, Moderator = 150, GroupDJ = 100 },
     StudioOwnerBypass = false,
   },
   Monetization = {
