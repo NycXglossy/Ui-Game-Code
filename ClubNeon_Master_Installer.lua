@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.3.3"
+local INSTALLER_VERSION = "0.3.4"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -270,21 +270,54 @@ for _, item in ipairs({
     addSource(item[1], item[2], parentKey, item[3])
 end
 
--- Optional Kohl's Admin adapters are installed only into existing external
--- package folders. The installer never creates/replaces Kohl's Admin itself.
-local kohlsRoot = ServerScriptService:FindFirstChild("Kohl's Admin")
-local configFolder = kohlsRoot and kohlsRoot:FindFirstChild("Config")
-local configAddons = configFolder and configFolder:FindFirstChild("Addons")
-local regularAddons = kohlsRoot and kohlsRoot:FindFirstChild("Addons")
-if configAddons and configAddons:IsA("Folder") then
+-- Discover the existing Kohl's Admin package wherever it is parented in the
+-- place. Its Addons folders are the only supported destinations; never create,
+-- relocate, or modify the third-party admin package itself.
+local function normalizeAdminName(value: string): string
+    return string.lower((string.gsub(value, "[^%w]", "")))
+end
+
+local function isKohlsAdminContainer(instance: Instance): boolean
+    if not (instance:IsA("Folder") or instance:IsA("Model")) then return false end
+    local normalized = normalizeAdminName(instance.Name)
+    return string.find(normalized, "kohl", 1, true) ~= nil
+        and string.find(normalized, "admin", 1, true) ~= nil
+end
+
+local kohlsRoots = {}
+for _, descendant in ipairs(game:GetDescendants()) do
+    if isKohlsAdminContainer(descendant) then
+        table.insert(kohlsRoots, descendant)
+    end
+end
+
+local kohlsRoot: Instance? = nil
+local configAddons: Instance? = nil
+local regularAddons: Instance? = nil
+local kohlsDiscoveryStatus = "not found"
+if #kohlsRoots == 1 then
+    kohlsRoot = kohlsRoots[1]
+    kohlsDiscoveryStatus = "found at " .. kohlsRoot:GetFullName()
+    local configFolder = kohlsRoot:FindFirstChild("Config")
+    if configFolder and (configFolder:IsA("Folder") or configFolder:IsA("Model")) then
+        local candidate = configFolder:FindFirstChild("Addons")
+        if candidate and candidate:IsA("Folder") then configAddons = candidate end
+    end
+    local candidate = kohlsRoot:FindFirstChild("Addons")
+    if candidate and candidate:IsA("Folder") then regularAddons = candidate end
+elseif #kohlsRoots > 1 then
+    kohlsDiscoveryStatus = "ambiguous: found " .. #kohlsRoots .. " Kohl's Admin-like containers"
+end
+
+if #kohlsRoots == 1 and configAddons then
     addSource("KohlsAdmin_ClubNeon_Addon.lua", "ModuleScript", "KohlsConfigAddons", "ClubNeon")
 else
-    table.insert(skippedOptional, "KohlsAdmin_ClubNeon_Addon.lua — Kohl's Admin Config/Addons folder not found")
+    table.insert(skippedOptional, "KohlsAdmin_ClubNeon_Addon.lua — Config/Addons not found under a unique Kohl's Admin package")
 end
-if regularAddons and regularAddons:IsA("Folder") then
+if #kohlsRoots == 1 and regularAddons then
     addSource("ClubNeonRegularCommandsSecurityServer.lua", "ModuleScript", "KohlsRegularAddons", "ClubNeonRegularCommandsSecurityServer")
 else
-    table.insert(skippedOptional, "ClubNeonRegularCommandsSecurityServer.lua — Kohl's Admin Addons folder not found")
+    table.insert(skippedOptional, "ClubNeonRegularCommandsSecurityServer.lua — root Addons folder not found under a unique Kohl's Admin package")
 end
 
 -- Security manifest is consumed by the Global Service to reject mixed releases.
@@ -328,8 +361,8 @@ local parents: {[string]: Instance} = {
     ServerStorage = ServerStorage,
     StarterPlayerScripts = StarterPlayerScripts,
 }
-if configAddons and configAddons:IsA("Folder") then parents.KohlsConfigAddons = configAddons end
-if regularAddons and regularAddons:IsA("Folder") then parents.KohlsRegularAddons = regularAddons end
+if configAddons then parents.KohlsConfigAddons = configAddons end
+if regularAddons then parents.KohlsRegularAddons = regularAddons end
 
 local function peekParent(parentKey: string): Instance?
     if parentKey == "AudioModules" then return ServerStorage:FindFirstChild("ClubMusicAudioModules") end
@@ -421,6 +454,9 @@ for _, path in ipairs(plannedReplacements) do print("[REPLACE/BACKUP] " .. path)
 print("New destination instances: " .. #plannedNew)
 for _, path in ipairs(plannedNew) do print("[CREATE] " .. path) end
 print("Playback synchronization: DISABLED; per-server Now Playing and request queues.")
+print("Kohl's Admin discovery: " .. kohlsDiscoveryStatus)
+if configAddons then print("[Kohl's Admin] Config addon destination: " .. configAddons:GetFullName()) end
+if regularAddons then print("[Kohl's Admin] Regular-command addon destination: " .. regularAddons:GetFullName()) end
 print("Kohl's Admin adapters pending: " .. #skippedOptional)
 for _, message in ipairs(skippedOptional) do print("[ClubNeon Master Installer] OPTIONAL: " .. message) end
 if DRY_RUN then
