@@ -22,6 +22,7 @@ return function(context: {[string]: any})
 	local service = {}
 
 	function service.SettlePlayerXP(player: Player, nowClock: number): boolean
+		if stopped then return false end
 		local userId = player.UserId
 		local profile = profiles[userId]
 		local lastClock = xpLastAwardAt[userId]
@@ -70,6 +71,7 @@ return function(context: {[string]: any})
 	end
 
 	function service.SetGlobalXPState(multiplier: number, expiresAt: number, lowerExpiresAt: number?)
+		if stopped then return end
 		if multiplier ~= 1 and multiplier ~= 2 and multiplier ~= 4 then return end
 		if typeof(expiresAt) ~= "number" or expiresAt ~= expiresAt
 			or expiresAt == math.huge or expiresAt == -math.huge or expiresAt < 0 then return end
@@ -89,12 +91,14 @@ return function(context: {[string]: any})
 	end
 
 	function service.RefreshGlobalXPBoost()
+		if stopped then return end
 		if RunService:IsStudio() then
 			local multiplier, expiresAt = getStudioBoostState()
 			service.SetGlobalXPState(multiplier, expiresAt)
 			return
 		end
 		local callOk, multiplier, expiresAt, lowerExpiresAt = ControllerFunctions.globalInvoke("GetGlobalXPBoost")
+		if stopped then return end
 		if callOk and typeof(multiplier) == "number" and multiplier == multiplier
 			and typeof(expiresAt) == "number" and expiresAt == expiresAt
 			and (multiplier == 1 or multiplier == 2 or multiplier == 4) then
@@ -135,8 +139,8 @@ return function(context: {[string]: any})
 
 	function service.StopAndSettle()
 		if stopped then return end
-		stopped = true
 		service.SettleAll()
+		stopped = true
 	end
 
 	function service.Start(controllerScript: Instance)
