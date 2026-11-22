@@ -126,6 +126,8 @@ for _, forbiddenId in ipairs({500470662,2089785323,2089263330,2087955353,2088891
 end
 addRaw("UI_Server_Controller", "Script", "ServerScriptService", controllerSource, "ClubNeon_UI_Server_Controller.server.lua@" .. RELEASE.runtime)
 
+addRaw("ClubNeon_UI_Renderer_Config", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Config.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Config.lua@" .. RELEASE.runtime)
+
 local rendererSource = fetchSource("ClubNeon_UI_Renderer.lua", RELEASE.runtime)
 for _, forbiddenId in ipairs({2089785323,2089263330,2087955353,2088891595,2089053637,2087955619,2088585676,2088315619,3731386650,3731387153,3731392651,3731394060,3731488823,3731489572,3731490154,3731490513,3731490937,3731491257,3731491679}) do
     if string.find(rendererSource, tostring(forbiddenId), 1, true) then
