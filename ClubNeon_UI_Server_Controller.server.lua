@@ -3304,8 +3304,8 @@ do
 				acquireProfileWriteLock = function(userId: number)
 					return ControllerFunctions.acquireProfileWriteLock(userId)
 				end,
-				releaseProfileWriteLock = function(userId: number)
-					return ControllerFunctions.releaseProfileWriteLock(userId)
+				releaseProfileWriteLock = function(userId: number, lockToken: any)
+					return ControllerFunctions.releaseProfileWriteLock(userId, lockToken)
 				end,
 				applyReceiptToStoredData = function(data: {[string]: any}, productData: {[string]: any})
 					return ControllerFunctions.applyReceiptToStoredData(data, productData)
