@@ -101,6 +101,20 @@ end
 local function collectHeads()
 	local list = {}
 	if not rig then return list end
+	-- Use the actual emitter perimeter for wall classification. The venue trim
+	-- can extend beyond the CeilingFX dance-floor panels, so comparing fixture
+	-- positions directly with floor bounds can label every fixture as one side.
+	local rigMinX, rigMaxX, rigMinZ, rigMaxZ = math.huge, -math.huge, math.huge, -math.huge
+	for _, part in rig:GetChildren() do
+		local prefix = "Head"
+		if part:IsA("BasePart") and part.Name:match("^" .. prefix .. "%d+_Lens$") then
+			rigMinX = math.min(rigMinX, part.Position.X)
+			rigMaxX = math.max(rigMaxX, part.Position.X)
+			rigMinZ = math.min(rigMinZ, part.Position.Z)
+			rigMaxZ = math.max(rigMaxZ, part.Position.Z)
+		end
+	end
+	if rigMinX == math.huge or rigMaxX <= rigMinX or rigMaxZ <= rigMinZ then return list end
 	for _, d in rig:GetChildren() do
 		local n = d.Name:match("^Head(%d+)_Lens$")
 		if n and d:IsA("BasePart") then
@@ -114,18 +128,18 @@ local function collectHeads()
 				-- Classify by actual wall position, not fixture number. This remains
 				-- correct if the rig is rotated or its numbering changes later.
 				local wallDistances = {
-					north = math.abs(headPos.Z - minZ),
-					east = math.abs(headPos.X - maxX),
-					south = math.abs(headPos.Z - maxZ),
-					west = math.abs(headPos.X - minX),
+					north = math.abs(headPos.Z - rigMinZ),
+					east = math.abs(headPos.X - rigMaxX),
+					south = math.abs(headPos.Z - rigMaxZ),
+					west = math.abs(headPos.X - rigMinX),
 				}
 				local side, nearest = "north", math.huge
 				for wall, distance in pairs(wallDistances) do
 					if distance < nearest then side, nearest = wall, distance end
 				end
 				local along = if side == "north" or side == "south"
-					then (headPos.X - minX) / math.max(1, maxX - minX)
-					else (headPos.Z - minZ) / math.max(1, maxZ - minZ)
+					then (headPos.X - rigMinX) / math.max(1, rigMaxX - rigMinX)
+				else (headPos.Z - rigMinZ) / math.max(1, rigMaxZ - rigMinZ)
 				table.insert(list, {
 					idx = idx, head = d, target = target, pool = pool,
 					beam = beam, spot = spot, pos = headPos, side = side,
