@@ -169,10 +169,7 @@ local function collectHeads()
 			if H then
 				coverageIndex += 1
 				H.coverageIndex = coverageIndex
-				-- Each wall cycles its own fixtures through all four floor quadrants.
-				H.coverageQuadrant = (laneIndex + sideIndex - 2) % 4
-				H.anchor = wallBalancedFloorSpot(laneIndex, sideIndex, H.idx * 29.7, floorY + 1)
-				H.currentTarget = H.anchor
+				-- The wall and slot define the full-floor crosshatch lane.
 			end
 		end
 	end
