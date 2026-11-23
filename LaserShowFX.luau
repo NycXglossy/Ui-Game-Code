@@ -97,6 +97,25 @@ local function clampFloorPoint(x, z, y)
 	)
 end
 
+-- Stratified coverage assigns each laser a distinct floor cell. Per-beat
+-- variation stays inside that cell, preventing random pileups in one hotspot.
+local function distributedFloorSpot(index, total, seed, y)
+	local columns = math.max(1, math.ceil(math.sqrt(total * ((maxX - minX) / math.max(1, maxZ - minZ)))))
+	local rows = math.max(1, math.ceil(total / columns))
+	local cell = (index - 1) % total
+	local column = cell % columns
+	local row = math.floor(cell / columns)
+	local cellWidth = (maxX - minX) / columns
+	local cellDepth = (maxZ - minZ) / rows
+	local jitterX = (seededUnit(seed) - 0.5) * cellWidth * 0.42
+	local jitterZ = (seededUnit(seed + 1) - 0.5) * cellDepth * 0.42
+	return clampFloorPoint(
+		minX + (column + 0.5) * cellWidth + jitterX,
+		minZ + (row + 0.5) * cellDepth + jitterZ,
+		y
+	)
+end
+
 local function collectLasers()
 	local list = {}
 	if not rig then return list end
@@ -126,6 +145,10 @@ local function collectLasers()
 		end
 	end
 	table.sort(list, function(a, b) return a.idx < b.idx end)
+	for i, L in ipairs(list) do
+		L.anchor = distributedFloorSpot(i, #list, L.idx * 31.9, floorY + 0.5)
+		L.currentTarget = L.anchor
+	end
 	return list
 end
 
@@ -255,10 +278,10 @@ RunService.Heartbeat:Connect(function()
 	-- Per-frame glow: everything swells with the kick and settles after
 	if orb and orbLight then
 		orb.Size = Vector3.new(3.5, 3.5, 3.5) * (1 + flareKick * 0.25)
-		orbLight.Brightness = 2 + flareKick * 6
+		orbLight.Brightness = 1.2 + flareKick * 2.5
 	end
-	local poolScale = 1 + flareKick * 0.8
-	local poolFade = 0.55 - flareKick * 0.3
+	local poolScale = 1 + flareKick * 0.3
+	local poolFade = 0.68 - flareKick * 0.12
 	for i, ring in ipairs(orbRings) do
 		-- Rings spin around the orb at different speeds and axes
 		ring.CFrame = CFrame.new(orb.Position)
@@ -284,7 +307,7 @@ RunService.Heartbeat:Connect(function()
 		elseif pattern == 2 then
 			-- Beat destinations are independently randomized across the floor.
 			local function spotForBeat(n)
-				return randomFloorSpot(n * 211 + L.idx * 1877, floorY + 0.5)
+				return distributedFloorSpot(i, #lasers, n * 211 + L.idx * 1877, floorY + 0.5)
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
@@ -300,7 +323,7 @@ RunService.Heartbeat:Connect(function()
 		else
 			-- Blizzard: randomized full-floor spots on each beat, no center snap.
 			local function spotForBeat(n)
-				return randomFloorSpot(n * 307 + L.idx * 2371, floorY + 0.5)
+				return distributedFloorSpot(i, #lasers, n * 307 + L.idx * 2371, floorY + 0.5)
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		end
@@ -313,7 +336,7 @@ RunService.Heartbeat:Connect(function()
 		L.pool.CFrame = CFrame.new(smoothTarget + Vector3.new(0, 0.3, 0)) * CFrame.Angles(0, 0, math.pi / 2)
 		L.pool.Size = Vector3.new(0.1, 3.5 * poolScale, 3.5 * poolScale)
 		L.pool.Transparency = poolFade
-		L.spot.Brightness = 1.5 + flareKick * 5
+		L.spot.Brightness = 0.9 + flareKick * 2.2
 		L.spot.Enabled = true
 	end
 end)
