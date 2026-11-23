@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.43
+-- CLUB NEON MASTER INSTALLER v0.4.44
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.43"
+local INSTALLER_VERSION = "0.4.44"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -35,7 +35,7 @@ local RELEASE = {
     phase32 = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
-    fx = "2230a229910472a06c3e7a6a834adfc0379fccac",
+    fx = "09fccd6f12e651883ff87fc699370aa2cfe992c7",
     utility = "77c506441162da3e8d0e9009330766003210c7a9",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
@@ -317,6 +317,7 @@ for _, item in ipairs({
     {"BarNeonScript.luau", "Script", "ServerScriptService", "BarNeonScript"},
     {"BeatImpactFX.luau", "LocalScript", "StarterPlayerScripts", "BeatImpactFX"},
     {"CeilingFXScript.luau", "Script", "ServerScriptService", "CeilingFXScript"},
+    {"PixelMatrixFX.luau", "LocalScript", "StarterPlayerScripts", "PixelMatrixFX"},
     {"CeilingPillarFX.luau", "LocalScript", "StarterPlayerScripts", "CeilingPillarFX"},
     {"FXWatchdogClient.luau", "LocalScript", "StarterPlayerScripts", "FXWatchdogClient"},
     {"GlowFloorFXScript.luau", "Script", "ServerScriptService", "GlowFloorFXScript"},
