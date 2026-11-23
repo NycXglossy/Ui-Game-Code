@@ -110,9 +110,26 @@ local function collectHeads()
 			local beam = d:FindFirstChildOfClass("Beam")
 			local spot = d:FindFirstChildOfClass("SpotLight")
 			if target and pool and beam and spot then
+				local headPos = d.CFrame.Position
+				-- Classify by actual wall position, not fixture number. This remains
+				-- correct if the rig is rotated or its numbering changes later.
+				local wallDistances = {
+					north = math.abs(headPos.Z - minZ),
+					east = math.abs(headPos.X - maxX),
+					south = math.abs(headPos.Z - maxZ),
+					west = math.abs(headPos.X - minX),
+				}
+				local side, nearest = "north", math.huge
+				for wall, distance in pairs(wallDistances) do
+					if distance < nearest then side, nearest = wall, distance end
+				end
+				local along = if side == "north" or side == "south"
+					then (headPos.X - minX) / math.max(1, maxX - minX)
+					else (headPos.Z - minZ) / math.max(1, maxZ - minZ)
 				table.insert(list, {
 					idx = idx, head = d, target = target, pool = pool,
-					beam = beam, spot = spot, pos = d.CFrame.Position,
+					beam = beam, spot = spot, pos = headPos, side = side,
+					sideSlot = math.clamp(along, 0.08, 0.92),
 					currentTarget = randomFloorSpot(idx * 17.31, floorY + 1),
 					anchor = randomFloorSpot(idx * 17.31 + 7, floorY + 1),
 					phase = seededUnit(idx * 17.31 + 2) * math.pi * 2,
@@ -284,14 +301,23 @@ RunService.Heartbeat:Connect(function()
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
-			-- Opposing-side cross-room sweeps. Each fixture traverses a dedicated
-			-- lane from its wall toward the opposite half, keeping all four sides active.
-			local lane = (i - 0.5) / #heads
-			local direction = if H.idx <= #heads / 2 then 1 else -1
-			local sweep = (math.sin(showTime * 0.62 * speed + phase) + 1) * 0.5
-			local x = minX + (maxX - minX) * ((lane + sweep * 0.34) % 1)
-			local zBase = if H.idx % 4 == 1 or H.idx % 4 == 2 then minZ + (maxZ - minZ) * 0.28 else minZ + (maxZ - minZ) * 0.72
-			local z = zBase + direction * math.sin(showTime * 0.48 * speed + phase) * (maxZ - minZ) * 0.22
+			-- Four-side cross-hatch: north/south heads own distinct X lanes and
+			-- sweep the full depth; east/west heads own distinct Z lanes and sweep
+			-- the full width. This guarantees coverage on both camera-left/right
+			-- halves instead of tying movement to arbitrary fixture numbering.
+			local sweep = (math.sin(showTime * 0.58 * speed + phase) + 1) * 0.5
+			local marginX = math.min(2, (maxX - minX) * 0.06)
+			local marginZ = math.min(2, (maxZ - minZ) * 0.06)
+			local x, z
+			if H.side == "north" or H.side == "south" then
+				x = minX + marginX + H.sideSlot * (maxX - minX - marginX * 2)
+				local depth = if H.side == "north" then sweep else 1 - sweep
+				z = minZ + marginZ + depth * (maxZ - minZ - marginZ * 2)
+			else
+				z = minZ + marginZ + H.sideSlot * (maxZ - minZ - marginZ * 2)
+				local width = if H.side == "west" then sweep else 1 - sweep
+				x = minX + marginX + width * (maxX - minX - marginX * 2)
+			end
 			targetPos = clampFloorPoint(x, z, floorY + 1)
 		elseif pattern == 4 then
 			-- Ceiling rake with each beam crossing a different randomized lane.
