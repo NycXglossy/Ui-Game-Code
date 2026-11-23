@@ -10,7 +10,10 @@ local Lighting = game:GetService("Lighting")
 local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
 
 local player = Players.LocalPlayer
-local camera = workspace.CurrentCamera
+local camera: Camera? = nil
+local baseFOV = 70
+local trackedHumanoid: Humanoid? = nil
+local baseCameraOffset = Vector3.zero
 
 -- Tunables
 local BASE_FOV = 70
@@ -44,7 +47,12 @@ local shake = Vector3.zero
 local clock = os.clock
 local lastT = clock()
 
-RunService.Heartbeat:Connect(function()
+local heartbeatConnection = RunService.Heartbeat:Connect(function()
+	local currentCamera = workspace.CurrentCamera
+	if currentCamera ~= camera then
+		camera = currentCamera
+		if camera then baseFOV = camera.FieldOfView end
+	end
 	local now = clock()
 	local dt = math.min(now - lastT, 0.1)
 	lastT = now
@@ -91,12 +99,19 @@ RunService.Heartbeat:Connect(function()
 	local beatGlow = math.exp(-beatAge * 5) * beatPower * effectScale
 
 	-- FOV punch
-	camera.FieldOfView = BASE_FOV + fovPunch * effectScale
+	if camera then
+		camera.FieldOfView = baseFOV + fovPunch * effectScale
+	end
 
 	-- Camera shake through the humanoid so it layers cleanly on the camera
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if humanoid ~= trackedHumanoid then
+		if trackedHumanoid then trackedHumanoid.CameraOffset = baseCameraOffset end
+		trackedHumanoid = humanoid
+		baseCameraOffset = if humanoid then humanoid.CameraOffset else Vector3.zero
+	end
 	if humanoid then
-		humanoid.CameraOffset = shake * effectScale
+		humanoid.CameraOffset = baseCameraOffset + shake * effectScale
 	end
 
 	-- Bloom flare on the kick (base glow also switches off with the setting)
@@ -109,4 +124,12 @@ RunService.Heartbeat:Connect(function()
 
 	-- Loud parts of the track push a gentle brightness lift
 	colorFx.Brightness = beat.energy * 0.05 * effectScale
+end)
+
+script.Destroying:Connect(function()
+	heartbeatConnection:Disconnect()
+	if camera then camera.FieldOfView = baseFOV end
+	if trackedHumanoid then trackedHumanoid.CameraOffset = baseCameraOffset end
+	bloom:Destroy()
+	colorFx:Destroy()
 end)
