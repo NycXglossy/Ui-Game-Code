@@ -37,6 +37,7 @@ end
 
 local audioPlayer: AudioPlayer? = nil
 local lastBeatPlayer: AudioPlayer? = nil
+local lastBeatAssetId: string? = nil
 local lastScan = 0
 
 -- Live beat-clock state (updated lazily whenever getBeatState is called)
@@ -88,28 +89,72 @@ function ClubAudioSync.getAudioPlayer(): AudioPlayer?
 	return audioPlayer
 end
 
+local function getActiveAssetId(player: AudioPlayer?): string?
+	if not player then return nil end
+	local asset = ""
+	pcall(function() asset = player.Asset end)
+	local id = if typeof(asset) == "string" then string.match(asset, "^rbxassetid://(%d+)$") else nil
+	if not id then
+		local attribute = player:GetAttribute("ClubMusicAssetId")
+		if typeof(attribute) == "number" and attribute > 0 and attribute % 1 == 0 then
+			id = string.format("%.0f", attribute)
+		elseif typeof(attribute) == "string" and string.match(attribute, "^%d+$") then
+			id = attribute
+		end
+	end
+	return id
+end
+
+local function resolveAssetBPM(player: AudioPlayer?, root: Instance?, assetId: string?): number?
+	if not player or not assetId then return nil end
+	-- Prefer explicitly asset-keyed metadata so a previous song's tempo cannot
+	-- be mistaken for the newly selected AudioPlayer asset.
+	for _, key in ipairs({"BPM_" .. assetId, "ClubMusicBPM_" .. assetId}) do
+		local value = sanitizeBPM(player:GetAttribute(key))
+		if value then return value end
+	end
+	if root then
+		for _, key in ipairs({"ClubMusicBPM_" .. assetId, "BPM_" .. assetId}) do
+			local value = sanitizeBPM(root:GetAttribute(key))
+			if value then return value end
+		end
+	end
+	local playerBPMAsset = player:GetAttribute("BPMAssetId")
+	local playerBPMAssetText = if typeof(playerBPMAsset) == "number"
+		then string.format("%.0f", playerBPMAsset) else tostring(playerBPMAsset or "")
+	if playerBPMAssetText == assetId then
+		local value = sanitizeBPM(player:GetAttribute("BPM"))
+		if value then return value end
+	end
+	if root then
+		local rootBPMAsset = root:GetAttribute("ClubMusicBPMAssetId")
+		local rootBPMAssetText = if typeof(rootBPMAsset) == "number"
+			then string.format("%.0f", rootBPMAsset) else tostring(rootBPMAsset or "")
+		if rootBPMAssetText == assetId then
+			local value = sanitizeBPM(root:GetAttribute("ClubMusicBPM"))
+			if value then return value end
+			value = sanitizeBPM(root:GetAttribute("BPM"))
+			if value then return value end
+		end
+	end
+	return nil
+end
+
 local function resolveBPMTarget()
 	local target = bpmOverride
 	local player = ClubAudioSync.getAudioPlayer()
+	local root = backendRootFor(player)
+	local assetId = getActiveAssetId(player)
 	if sanitizeBPM(target) == nil then
-		-- Per-track tempo published directly on the AudioPlayer wins first.
-		target = player and player:GetAttribute("BPM")
-	end
-	if sanitizeBPM(target) == nil then
-		local root = backendRootFor(player)
-		if root then
-			target = root:GetAttribute("ClubMusicBPM")
-			if sanitizeBPM(target) == nil then
-				target = root:GetAttribute("BPM")
-			end
-		end
+		target = resolveAssetBPM(player, root, assetId)
 	end
 	local validTarget = sanitizeBPM(target)
 	if validTarget ~= nil then
 		bpmLastKnown = validTarget
 		bpmTarget = validTarget
 	else
-		-- No metadata right now: keep grooving at the last known tempo.
+		-- An asset ID alone does not expose musical tempo. Keep the last
+		-- verified BPM until metadata matching the active asset is available.
 		bpmTarget = bpmLastKnown
 	end
 end
@@ -149,6 +194,12 @@ function ClubAudioSync.getBeatState(): BeatState
 	local player = ClubAudioSync.getAudioPlayer()
 	if player ~= lastBeatPlayer then
 		lastBeatPlayer = player
+		lastBeatAssetId = nil
+		lastBeatIndex = -1
+	end
+	local assetId = getActiveAssetId(player)
+	if assetId ~= lastBeatAssetId then
+		lastBeatAssetId = assetId
 		lastBeatIndex = -1
 	end
 	local playing = player ~= nil and player.IsPlaying
@@ -198,6 +249,7 @@ function ClubAudioSync.getBeatState(): BeatState
 
 	return {
 		playing = playing,
+		assetId = assetId or "",
 		timePosition = timePosition,
 		bpm = bpm,
 		beatIndex = math.floor(beats),
