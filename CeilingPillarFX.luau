@@ -30,6 +30,7 @@ end
 local GRID = 5
 local function collectPillars()
 	local found = {}
+	if not pillarsModel then return found end
 	for _, fixture in ipairs(pillarsModel:GetDescendants()) do
 		if not (fixture:IsA("Model") or fixture:IsA("Folder")) then continue end
 		local col, row = fixture.Name:match("^P(%d+)_(%d+)$")
