@@ -226,7 +226,8 @@ local function open(name: string)
 		act.Activated:Connect(function() invoke("Clone") end)
 	elseif name=="LightingControl" then
 		make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.05,0,0,0),Size=UDim2.new(.9,0,0,42),Font=Enum.Font.GothamMedium,Text="Optional pass feature. Sync only explicitly tagged stage and club fixtures to the live music beat.",TextWrapped=true,TextColor3=C.muted,TextSize=11},body)
-		local intensity = 0.75
+		local sharedIntensity = ReplicatedStorage:GetAttribute("ClubNeonLiveShowIntensity")
+		local intensity = if typeof(sharedIntensity) == "number" then math.clamp(sharedIntensity, 0.1, 1.5) else 0.75
 		local syncLabel = make("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(.08,0,0,48),Size=UDim2.new(.84,0,0,22),Font=Enum.Font.GothamBold,Text="LIVE MUSIC SYNC",TextColor3=C.teal,TextSize=12},body)
 		local on = button(body,"SYNC ON",C.teal,UDim2.new(.06,0,0,74),UDim2.new(.42,0,0,38))
 		on.Activated:Connect(function() invoke("LightingControl",{preset="LiveShow",intensity=intensity}) end)
