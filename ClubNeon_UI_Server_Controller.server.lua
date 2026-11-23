@@ -693,7 +693,7 @@ if typeof(MusicQueueManager) ~= "table" or typeof(MusicQueueManager.new) ~= "fun
 	ControllerFunctions.reportStartupError("ModuleLoader", "Validate MusicCoreService queue", detail, coreModule)
 	error("[ClubMusic] " .. detail)
 end
-local autoQueueHold = false
+local autoQueueHold = false; ControllerFunctions.autoQueueHold = false
 -- Queue mutations have their own revision, independent of playback transitions.
 -- This prevents delayed MessagingService snapshots from restoring an older queue.
 -- Catalog revision fences every shared enqueue/advance against stale local caches.
@@ -1509,8 +1509,7 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	end
 end
 
--- Playback-only sync shares Now Playing and its playhead. Every server keeps
--- its own queue, playlist cursor, Auto DJ refill, request locks, and skip votes.
+-- Playback-only sync shares Now Playing; queues remain server-local.
 ControllerFunctions.globalPlaybackSyncState = {
 	enabled = false, isLeader = false, revision = 0, trackRevision = 0,
 	lastAppliedRevision = -1, lastSyncAppliedAt = 0, lastErrorAt = 0, leaderJobId = nil, authorityReady = false, statusError = nil,
@@ -1646,9 +1645,7 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 end
 
 
--- Queue state and playback transitions are owned by this server.
-
-
+-- Local queue and playback transitions.
 ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, string?)
 	-- Server-local queue only. Generation checks prevent the playback clock and
 	-- watchdog from advancing the same track twice.
@@ -2746,7 +2743,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.isDJBoothController(player) then return false, "The DJ Booth is restricted to the Owner and Co-Owner." end
 		ControllerFunctions.cancelAudioTransition("queue-clear")
 		queueManager:Clear(true)
-		autoQueueHold = true
+		autoQueueHold = true; ControllerFunctions.autoQueueHold = true
 		notify(player, "This server's queue was cleared.", "ok")
 		publishState(nil)
 		return true, "This server's queue was cleared."
