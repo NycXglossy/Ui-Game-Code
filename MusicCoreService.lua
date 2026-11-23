@@ -75,6 +75,7 @@ local CATALOG: {Track} = {
 	{id="custom-100919684616729",genreId="exclusive",title="CROWN OF THE NIGHT",artist="DJ Doom",duration=415,genre="Club Exclusives",assetId=100919684616729,soundId="rbxassetid://100919684616729",bpm=127},
 	{id="custom-99973341792058",genreId="exclusive",title="Midnight Lucid",artist="DJ Doom",duration=252,genre="Club Exclusives",assetId=99973341792058,soundId="rbxassetid://99973341792058",bpm=113},
 	{id="custom-137104933242988",genreId="exclusive",title="Empire of Stone",artist="DJ Doom",duration=248,genre="Club Exclusives",assetId=137104933242988,soundId="rbxassetid://137104933242988",bpm=140},
+	-- Display title uses spaces; the stable track ID, asset ID, and BPM remain unchanged.
 	{id="custom-84266261446965",genreId="exclusive",title="Anvil of Ruin",artist="DJ Doom",duration=190,genre="Club Exclusives",assetId=84266261446965,soundId="rbxassetid://84266261446965",bpm=127},
 	{id="custom-85420661204078",genreId="exclusive",title="Code in the Smoke",artist="DJ Doom",duration=184,genre="Club Exclusives",assetId=85420661204078,soundId="rbxassetid://85420661204078",bpm=137},
 	{id="custom-134987433423089",genreId="exclusive",title="Rich Lifestyle",artist="DJ Doom",duration=212,genre="Club Exclusives",assetId=134987433423089,soundId="rbxassetid://134987433423089",bpm=129},
