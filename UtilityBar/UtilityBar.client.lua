@@ -197,7 +197,7 @@ end
 
 local definitions = {
 	{key = "RefreshOutfit", label = "Refresh", compactLabel = "Reset", tint = COLORS.cyan},
-	{key = "TikiTideSettings", label = "Club Neon", compactLabel = "Neon", tint = COLORS.gold},
+	{key = "TikiTideSettings", label = "Tiki Tide", compactLabel = "Tiki", tint = COLORS.gold},
 	{key = "Mount", label = "Mount", tint = COLORS.cyan, passAttribute = "HasIslandMountPass"},
 	{key = "Size", label = "Size", tint = COLORS.gold},
 	{key = "Clone", label = "Clone Companion", compactLabel = "Clone", tint = COLORS.cyan, passAttribute = "HasIslandCompanionPass"},
