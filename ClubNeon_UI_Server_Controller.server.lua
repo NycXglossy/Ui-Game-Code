@@ -167,28 +167,11 @@ else
 	warn("[ClubMusic][Diagnostics] Optional ServerStorage.ClubMusicErrorHandler ModuleScript is not installed; using built-in startup diagnostics.")
 end
 
-ControllerFunctions.reportStartupError = function(subsystem: string, operation: string, message: string, context: Instance?): string
-	local errorId = "CM-STARTUP"
-	local handler = ControllerFunctions.ErrorHandler
-	if handler then
-		local reportOk, reportResult = pcall(handler.Report, subsystem, operation, message, context)
-		if reportOk and typeof(reportResult) == "string" then
-			errorId = reportResult
-		else
-			warn("[ClubMusic][Diagnostics] Error handler reporting failed: " .. tostring(reportResult))
-		end
-	else
-		warn("[ClubMusic][Error][" .. errorId .. "] " .. subsystem .. " / " .. operation .. ": " .. message)
-		if context then
-			warn("[ClubMusic][Diagnostics] Context=" .. context:GetFullName())
-		end
-	end
-	local startupMessage = "[" .. errorId .. "] " .. string.sub(message, 1, 850)
-	pcall(function()
-		remotes:SetAttribute("StartupError", startupMessage)
-	end)
-	return errorId
+local startupErrorReporterModule = ServerStorage:FindFirstChild("ClubNeon_StartupErrorReporter")
+if not startupErrorReporterModule or not startupErrorReporterModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_StartupErrorReporter; controller will not start.")
 end
+require(startupErrorReporterModule).initialize(ControllerFunctions, remotes)
 
 -- Resolve canonical ServerStorage modules from either direct-child installation
 -- or the bundled ClubMusic_ServerStorage_Modules folder.
