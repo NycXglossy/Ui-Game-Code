@@ -1068,7 +1068,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		corner(fill, 3)
 		local timeLabel = label(nowCard, "0:00 / 0:00", UDim2.fromOffset(leftInset, if stackedArtwork then 207 else 78), UDim2.new(1, if stackedArtwork then -120 else -220, 0, 22), C.Gold, 10, true)
 		progressRefs = { fill = fill, timeLabel = timeLabel, duration = math.max(1, tonumber(now.duration) or 1) }
-		updateProgress()
+		-- Progress refs are initialized here; the renderer's state callback updates them after mount.
 
 		-- Reload song button
 		actionButton(nowCard, "↻ RELOAD", UDim2.new(1, -116, 0, if stackedArtwork then 204 else 75), UDim2.fromOffset(104, 26), reloadSong, Color3.fromRGB(66, 54, 91))
