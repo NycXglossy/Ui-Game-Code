@@ -260,11 +260,11 @@ RunService.Heartbeat:Connect(function()
 		-- Lights: glow scales with drop depth; beams strobe on the kick
 		if entry.glow then
 			entry.glow.Color = shaftColor
-			entry.glow.Brightness = 1.5 * (h / MAX_H) + beatGlow * 2 + strobe * 3
+			entry.glow.Brightness = 1.15 * (h / MAX_H) + beatGlow * 1.35 + strobe * 2
 		end
 		if entry.beam then
 			entry.beam.Color = shaftColor
-			entry.beam.Brightness = beatGlow * 6 * (h / MAX_H + 0.2) + strobe * 5
+			entry.beam.Brightness = beatGlow * 4.2 * (h / MAX_H + 0.2) + strobe * 3.5
 		end
 	end
 end)
