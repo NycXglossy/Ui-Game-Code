@@ -19,6 +19,44 @@ local function finite(value: any): boolean
 	return typeof(value) == "number" and value == value and math.abs(value) < math.huge
 end
 
+-- Resolve tempo from the canonical server-owned MusicCoreService catalog.
+-- The asset ID remains the join key; no duplicate audio-ID list is maintained here.
+local function publishCatalogBPM(self: any, asset: string)
+	local assetIdText = string.match(asset, "^rbxassetid://(%d+)$")
+	local assetId = if assetIdText then tonumber(assetIdText) else nil
+	local bpm: number? = nil
+	if assetId then
+		local ok, core = pcall(function()
+			local module = game:GetService("ServerStorage"):FindFirstChild("MusicCoreService")
+			return if module and module:IsA("ModuleScript") then require(module) else nil
+		end)
+		if ok and typeof(core) == "table" and typeof(core.Catalog) == "table" then
+			local catalogOk, tracks = pcall(function()
+				return core.Catalog:GetAllTracks()
+			end)
+			if catalogOk and typeof(tracks) == "table" then
+				for _, track in ipairs(tracks) do
+					if typeof(track) == "table" and tonumber(track.assetId) == assetId then
+						local candidate = track.bpm
+						if finite(candidate) and candidate >= 60 and candidate <= 300 then
+							bpm = candidate
+						end
+						break
+					end
+				end
+			end
+		end
+	end
+	-- ClubAudioSync verifies that the metadata asset ID matches AudioPlayer.Asset.
+	-- A missing BPM clears stale metadata but leaves its last-known tempo fallback intact.
+	pcall(function()
+		self.player:SetAttribute("BPMAssetId", assetId)
+		self.player:SetAttribute("BPM", bpm)
+		self.root:SetAttribute("ClubMusicBPMAssetId", assetId)
+		self.root:SetAttribute("ClubMusicBPM", bpm)
+	end)
+end
+
 
 function Backend.new(config: Config?)
 	config = config or {}
@@ -119,6 +157,7 @@ function Backend:SetAsset(asset: string): (boolean, string?)
 	self.currentAsset = asset
 	self.paused = false
 	self.pausedAt = 0
+	publishCatalogBPM(self, asset)
 	return true, nil
 end
 
