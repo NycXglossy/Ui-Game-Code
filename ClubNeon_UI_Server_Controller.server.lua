@@ -121,6 +121,10 @@ local bootstrapHelpers = require(bootstrapHelpersModule)(ServerStorage)
 ControllerFunctions.getOrCreate = bootstrapHelpers.getOrCreate
 ControllerFunctions.findAudioModule = bootstrapHelpers.findAudioModule
 ControllerFunctions.findServerStorageModule = bootstrapHelpers.findServerStorageModule
+ControllerFunctions.initializeStorageWithRetries = function(service: any, serviceName: string): boolean
+	return bootstrapHelpers.initializeStorageWithRetries(service, serviceName, CONFIG.StudioUseDataStore,
+		function() return ControllerFunctions.waitForDataStoreBudget(5) end)
+end
 
 local remotes = ControllerFunctions.getOrCreate(ReplicatedStorage, "Folder", "ClubMusicRemotes") :: Folder
 remotes:SetAttribute("Ready", false)
