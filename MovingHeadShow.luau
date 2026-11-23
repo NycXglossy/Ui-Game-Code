@@ -11,9 +11,9 @@ if not fx then return end
 local floorY = -math.huge
 local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
 for _, p in fx:GetChildren() do
-	if p:IsA("BasePart") then
+	if p:IsA("BasePart") and p.Name == "FloorPanel" then
 		local pos = p.Position
-		if pos.Y < 40 then floorY = math.max(floorY, pos.Y) end
+		floorY = math.max(floorY, pos.Y)
 		minX = math.min(minX, pos.X); maxX = math.max(maxX, pos.X)
 		minZ = math.min(minZ, pos.Z); maxZ = math.max(maxZ, pos.Z)
 	end
