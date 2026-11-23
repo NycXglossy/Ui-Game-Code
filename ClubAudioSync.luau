@@ -19,6 +19,12 @@ local ROOT_NAME = "ClubMusicModernAudio"
 local BPM_MIN = 60
 local BPM_MAX = 300
 local BPM_SEED = 128
+-- Optional per-asset BPM catalogue. Keys are the numeric Roblox audio asset IDs
+-- as strings; add a verified tempo here when one is known. The asset ID itself
+-- does not encode BPM, so unknown tracks deliberately retain last-known tempo.
+local ASSET_BPM_BY_ID: {[string]: number} = {
+	-- ["100919684616729"] = 124,
+}
 local bpmOverride: number? = nil -- pushed via ClubAudioSync.setBPM
 local bpmTarget = BPM_SEED
 local bpmCurrent = BPM_SEED
@@ -107,6 +113,8 @@ end
 
 local function resolveAssetBPM(player: AudioPlayer?, root: Instance?, assetId: string?): number?
 	if not player or not assetId then return nil end
+	local catalogBPM = sanitizeBPM(ASSET_BPM_BY_ID[assetId])
+	if catalogBPM then return catalogBPM end
 	-- Prefer explicitly asset-keyed metadata so a previous song's tempo cannot
 	-- be mistaken for the newly selected AudioPlayer asset.
 	for _, key in ipairs({"BPM_" .. assetId, "ClubMusicBPM_" .. assetId}) do
