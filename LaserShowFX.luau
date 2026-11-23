@@ -1,7 +1,7 @@
 -- LaserShowFX (client half of the dual-script laser show):
 -- animates the wall-mounted laser projector rig built by the server
 -- script. Uses the shared ClubAudioSync beat clock, hue cadence
--- (0.045/beat) and 16-beat pattern rotation so the whole club hits
+-- (0.045/beat) and independent quadrant trajectories driven by shared
 -- together, synced to the club's ClubMusic AudioPlayer backend.
 -- Heavy kicks fire hard flare bursts across the rig. Runs client-side
 -- for 60fps beam sweeps.
@@ -354,7 +354,7 @@ RunService.Heartbeat:Connect(function()
 			floorY + 0.5
 		)
 
-		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
+		-- Smooth adaptive target motion rather than snapping fixtures.
 		local motionAlpha = 1 - math.exp(-dt * 10)
 		L.currentTarget = L.currentTarget:Lerp(targetPos, motionAlpha)
 		local smoothTarget = L.currentTarget
