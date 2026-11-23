@@ -1484,7 +1484,7 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	pendingCrossfadeToken = -1
 				crossfadeAttemptedGeneration = -1
 	crossfadeBoundaryWaitGeneration = -1
-	autoQueueHold = false
+	autoQueueHold = false; ControllerFunctions.autoQueueHold = false
 	nowPlaying.trackId = entry.trackId
 	nowPlaying.title = entry.title
 	nowPlaying.artist = entry.artist
