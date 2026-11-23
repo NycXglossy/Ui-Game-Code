@@ -44,15 +44,15 @@ RunService.Heartbeat:Connect(function()
 	local beat = ClubAudioSync.getBeatState()
 	if beat.beatCount ~= lastBeat then
 		lastBeat = beat.beatCount
-		kick = math.clamp(0.35 + beat.energy * 0.9, 0.25, 1)
 		hueOffset = (beat.beatCount * 0.035) % 1
 	end
-	kick *= math.max(0, 1 - dt * 3.8)
-	local pulse = 1 + kick * 0.18 + math.sin(now * 1.7) * 0.035
-	local color = Color3.fromHSV((hueOffset + now * 0.018) % 1, 0.88, 1)
+	local tempoTime = now * (beat.bpm / 128)
+	kick = math.exp(-beat.beatPhase * 5) * math.clamp(0.35 + beat.energy * 0.9, 0.25, 1)
+	local pulse = 1 + kick * 0.18 + math.sin(tempoTime * 1.7) * 0.035
+	local color = Color3.fromHSV((hueOffset + tempoTime * 0.018) % 1, 0.88, 1)
 	orb.Size = baseOrbSize * pulse
 	orb.Color = color
-	orb.CFrame = CFrame.new(center) * CFrame.Angles(0, now * 0.28, math.sin(now * 0.65) * 0.08)
+	orb.CFrame = CFrame.new(center) * CFrame.Angles(0, tempoTime * 0.28, math.sin(tempoTime * 0.65) * 0.08)
 	if glow and glow.Parent then
 		glow.Color = color
 		glow.Brightness = 2.2 + kick * 4.5
@@ -61,8 +61,8 @@ RunService.Heartbeat:Connect(function()
 	for _, ring in ipairs(rings) do
 		if ring.part.Parent then
 			local speed = 0.18 + ring.index * 0.11
-			local tilt = math.sin(now * 0.42 + ring.index) * 0.16
-			ring.part.CFrame = CFrame.new(center) * CFrame.Angles(tilt, now * speed * (if ring.index % 2 == 0 then -1 else 1), ring.index * 0.6 + now * 0.08)
+			local tilt = math.sin(tempoTime * 0.42 + ring.index) * 0.16
+			ring.part.CFrame = CFrame.new(center) * CFrame.Angles(tilt, tempoTime * speed * (if ring.index % 2 == 0 then -1 else 1), ring.index * 0.6 + tempoTime * 0.08)
 			ring.part.Size = ring.size * (1 + kick * 0.035)
 			ring.part.Color = color:Lerp(Color3.fromRGB(255, 255, 255), kick * 0.28)
 		end
