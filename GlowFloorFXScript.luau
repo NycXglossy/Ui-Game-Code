@@ -1,7 +1,7 @@
--- GlowFloorFXScript: animates the neon perimeter strips around the dance
+-- GlowFloorFXScript: client-local animation for the neon perimeter strips around the dance
 -- floor, color-cycling and beat-flashing in sync with the music. Syncs to
 -- the club's ClubMusic AudioPlayer backend through the shared ClubAudioSync
--- module (beat clock derived from TimePosition).
+-- module (beat clock derived from TimePosition). Runs locally to avoid replicated color churn.
 
 local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
 
@@ -52,7 +52,6 @@ while true do
 	if beatCount ~= lastBeatCount then
 		lastBeatCount = beatCount
 		hueShift = (hueShift + 1) % #PALETTE
-		local color = PALETTE[hueShift + 1]
 		for i, strip in ipairs(strips) do
 			-- Slight per-strip offset so edges chase each other
 			local c = PALETTE[((hueShift + i - 1) % #PALETTE) + 1]
@@ -60,15 +59,15 @@ while true do
 			local pl = lights[i]
 			if pl then
 				pl.Color = c
-				pl.Brightness = 0.72 -- soft perimeter fill; pixel floor carries detailed patterns
+				pl.Brightness = 0.48 -- architectural edge fill; pixel floor carries detailed patterns
 			end
 		end
 	end
 
 	-- Decay the flash between beats
 	for _, pl in ipairs(lights) do
-		if pl.Brightness > 0.38 then
-			pl.Brightness = math.max(0.38, pl.Brightness - dt * 4.5 * (beat.bpm / 128))
+		if pl.Brightness > 0.28 then
+			pl.Brightness = math.max(0.28, pl.Brightness - dt * 3.2 * (beat.bpm / 128))
 		end
 	end
 end
