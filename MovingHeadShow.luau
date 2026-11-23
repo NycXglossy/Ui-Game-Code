@@ -146,7 +146,7 @@ end
 local ORIGINAL_HEADS = 16
 local SUPPLEMENTAL_HEADS = 16
 local HEADS = ORIGINAL_HEADS + SUPPLEMENTAL_HEADS
-local function makeHead(i, pos)
+local function makeHead(i, pos, wallSide, wallSlot)
 	local color = Color3.fromHSV(i / HEADS, 1, 1)
 
 	-- Clamp block bolted under the truss rail
@@ -211,6 +211,8 @@ local function makeHead(i, pos)
 	head.Material = Enum.Material.Neon
 	head.Color = color
 	head.CFrame = CFrame.new(pos.X, TRUSS_Y - 3.2, pos.Z) * CFrame.Angles(0, 0, math.pi / 2)
+	head:SetAttribute("WallSide", wallSide)
+	head:SetAttribute("WallSlot", wallSlot)
 	head.Parent = rig
 
 	-- Invisible target the beam chases; the choreography moves this
@@ -281,6 +283,7 @@ local h = tz1 - tz0
 local PER_WALL_PER_SET = ORIGINAL_HEADS / 4
 local function placeWallFixture(index, slot, supplemental)
 	local side = math.floor((index - 1) / PER_WALL_PER_SET)
+	local wallSide = ({ "north", "east", "south", "west" })[side + 1]
 	local px, pz
 	if side == 0 then -- North wall: west to east
 		px, pz = tx0 + w * slot, tz0
@@ -291,7 +294,7 @@ local function placeWallFixture(index, slot, supplemental)
 	else -- West wall: south to north
 		px, pz = tx0, tz1 - h * slot
 	end
-	makeHead(index + (supplemental and ORIGINAL_HEADS or 0), { X = px, Z = pz })
+	makeHead(index + (supplemental and ORIGINAL_HEADS or 0), { X = px, Z = pz }, wallSide, slot)
 end
 
 for i = 1, ORIGINAL_HEADS do
