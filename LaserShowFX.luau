@@ -96,7 +96,7 @@ local function collectLasers()
 				table.insert(list, {
 					idx = idx, lens = d, target = target, pool = pool,
 					spot = spot, beams = beams,
-					currentTarget = target.Position,
+					currentTarget = CENTER,
 				})
 			end
 		end
@@ -258,31 +258,34 @@ RunService.Heartbeat:Connect(function()
 
 	-- Laser choreography: a new pattern every 16 beats (one musical phrase)
 	for i, L in ipairs(lasers) do
-		local ang = i / #lasers * math.pi * 2
+		local motionSeed = L.idx * 23.17
+		local phase = seededUnit(motionSeed) * math.pi * 2
+		local speed = 0.78 + seededUnit(motionSeed + 1) * 0.44
+		local ang = i / #lasers * math.pi * 2 + phase * 0.22
 		local targetPos
 		if pattern == 0 then
 			-- Orbiting spotlights circling the floor
-			local spin = showTime * 0.6
-			local r = RADIUS * (0.15 + 0.3 * (0.5 + 0.5 * math.sin(showTime * 0.25)))
+			local spin = showTime * 0.6 * speed + phase
+			local r = RADIUS * (0.15 + 0.3 * (0.5 + 0.5 * math.sin(showTime * 0.25 * speed + phase)))
 			targetPos = CENTER + Vector3.new(math.cos(ang + spin) * r, 0.5, math.sin(ang + spin) * r)
 		elseif pattern == 1 then
 			-- Criss-cross sweeps slashing across the crowd
-			local sweep = math.sin(showTime * 1.5 + i * math.pi / 4)
+			local sweep = math.sin(showTime * 1.5 * speed + phase)
 			targetPos = CENTER + Vector3.new(sweep * RADIUS * 0.7, 0.5, math.cos(ang) * RADIUS * 0.45)
 		elseif pattern == 2 then
 			-- Beat pulse: beams snap to the center on the kick, then burst outward
-			local r = RADIUS * (0.05 + 0.6 * (1 - kick))
+			local r = RADIUS * (0.05 + (0.45 + seededUnit(motionSeed + 2) * 0.3) * (1 - kick))
 			targetPos = CENTER + Vector3.new(math.cos(ang) * r, 0.5, math.sin(ang) * r)
 		elseif pattern == 3 then
 			-- Tunnel: every beam fans outward from the center, rotating like
 			-- a spinning tunnel of light around the crowd
-			local spin = showTime * 0.35
+			local spin = showTime * 0.35 * speed + phase
 			local r = RADIUS * 0.95
 			targetPos = CENTER + Vector3.new(math.cos(ang + spin) * r, 0.5, math.sin(ang + spin) * r)
 		elseif pattern == 4 then
 			-- Wall crawl: beams rake along the walls themselves, tracing
 			-- light around the whole perimeter of the venue
-			local t = (showTime * 0.02 + i / #lasers) % 1
+			local t = (showTime * 0.02 * speed + i / #lasers + phase / (math.pi * 2)) % 1
 			targetPos = wallPoint(t) + Vector3.new(0, 0.5, 0)
 		else
 			-- Blizzard: beams snap to random floor spots every beat, strobing
