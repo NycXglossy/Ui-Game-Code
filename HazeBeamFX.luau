@@ -20,7 +20,11 @@ local function floorBounds()
 end
 
 local bounds
-while not bounds do task.wait(0.5); bounds = table.pack(floorBounds()) end
+while true do
+	local found = table.pack(floorBounds())
+	if found[1] ~= nil then bounds = found; break end
+	task.wait(0.5)
+end
 local minX, maxX, minZ, maxZ, floorY = table.unpack(bounds, 1, bounds.n)
 local hazeFolder = workspace:FindFirstChild("ClientStageHaze")
 if hazeFolder then hazeFolder:Destroy() end
