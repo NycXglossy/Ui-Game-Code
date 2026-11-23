@@ -1711,27 +1711,16 @@ end
 
 -- Skip voting ---------------------------------------------------------------------
 
-ControllerFunctions.skipStatus = function(player: Player?): (number, number, boolean)
-	local list = Players:GetPlayers()
-	local count = #list
-	local votes = 0
-	for _, p in ipairs(list) do
-		if skipVotes[p.UserId] then votes += 1 end
-	end
-	local needed = math.min(count, math.max(CONFIG.SkipVoteMin, math.ceil(count * CONFIG.SkipVoteRatio)))
-	needed = math.max(needed, 1)
-	local voted = if player then skipVotes[player.UserId] == true else false
-	return votes, needed, voted
+local skipVotingModule = ServerStorage:FindFirstChild("ClubNeon_SkipVoting")
+if not skipVotingModule or not skipVotingModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_SkipVoting; controller will not start.")
 end
-
-ControllerFunctions.checkSkipVotes = function(): boolean
-	local votes, needed = ControllerFunctions.skipStatus(nil)
-	if votes > 0 and votes >= needed then
-		ControllerFunctions.advance()
-		return true
-	end
-	return false
-end
+require(skipVotingModule).initialize({
+	Players = Players,
+	CONFIG = CONFIG,
+	skipVotes = skipVotes,
+	ControllerFunctions = ControllerFunctions,
+})
 
 -- State publishing ------------------------------------------------------------------
 
