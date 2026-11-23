@@ -109,7 +109,7 @@ for i = 1, WALL_HEADS do
 		local pool = mkPart("Laser" .. i .. "_Pool", Vector3.new(0.1, 3, 3),
 			Enum.Material.Neon, color,
 			CFrame.new(target.Position + Vector3.new(0, 0.1, 0)) * CFrame.Angles(0, 0, math.pi / 2))
-		pool.Transparency = 0.35
+		pool.Transparency = 0.58
 
 		-- Fan of five beams per head: the center beam is straight, the side
 		-- beams bow outward via CurveSize for a wide sweeping laser fan effect
@@ -123,13 +123,13 @@ for i = 1, WALL_HEADS do
 			beam.LightEmission = 1
 			beam.LightInfluence = 0
 			beam.FaceCamera = true
-			beam.Width0 = 0.1
-			beam.Width1 = 1.1 - (b - 1) * 0.14
-			beam.CurveSize0 = (b - 3) * 2.75
-			beam.CurveSize1 = (b - 3) * -1
+			beam.Width0 = 0.065
+			beam.Width1 = 0.76 - (b - 1) * 0.11
+			beam.CurveSize0 = (b - 3) * 1.9
+			beam.CurveSize1 = (b - 3) * -0.7
 			beam.Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 0.08),
-				NumberSequenceKeypoint.new(0.6, 0.25),
+				NumberSequenceKeypoint.new(0, 0.18),
+				NumberSequenceKeypoint.new(0.6, 0.38),
 				NumberSequenceKeypoint.new(1, 1),
 			})
 			beam.Color = ColorSequence.new(color)
@@ -139,11 +139,11 @@ for i = 1, WALL_HEADS do
 		local spot = Instance.new("SpotLight")
 		spot.Name = "Spot"
 		spot.Angle = 25
-		spot.Brightness = 2
-		spot.Range = 30
+		spot.Brightness = 0.65
+		spot.Range = 24
 		spot.Color = color
 		spot.Face = Enum.NormalId.Bottom
-		spot.Shadows = true
+		spot.Shadows = false
 		spot.Parent = lens
 	end
 end
@@ -155,8 +155,8 @@ local orb = mkPart("CenterOrb", Vector3.new(3.5, 3.5, 3.5),
 orb.Shape = Enum.PartType.Ball
 local orbLight = Instance.new("PointLight")
 orbLight.Name = "Glow"
-orbLight.Brightness = 3
-orbLight.Range = 50
+orbLight.Brightness = 1.4
+orbLight.Range = 32
 orbLight.Color = orb.Color
 orbLight.Parent = orb
 
