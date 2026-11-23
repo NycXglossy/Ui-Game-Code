@@ -133,9 +133,23 @@ local function collectHeads()
 		end
 	end
 	table.sort(list, function(a, b) return a.idx < b.idx end)
-	for i, H in ipairs(list) do
-		H.anchor = distributedFloorSpot(i, #list, H.idx * 29.7, floorY + 1)
-		H.currentTarget = H.anchor
+	local sideOrder = {"north", "east", "south", "west"}
+	local sideGroups = {north = {}, east = {}, south = {}, west = {}}
+	for _, fixture in ipairs(list) do
+		local group = sideGroups[fixture.side]
+		if group then table.insert(group, fixture) end
+	end
+	for sideIndex, sideName in ipairs(sideOrder) do
+		local group = sideGroups[sideName]
+		table.sort(group, function(a, b) return a.sideSlot < b.sideSlot end)
+		for laneIndex, H in ipairs(group) do
+			-- Interleave wall lanes across the grid so every wall contributes
+			-- beams to every floor region instead of one contiguous block.
+			local coverageIndex = ((laneIndex - 1) * 4 + sideIndex - 1) % math.max(1, #list) + 1
+			H.coverageIndex = coverageIndex
+			H.anchor = distributedFloorSpot(coverageIndex, #list, H.idx * 29.7, floorY + 1)
+			H.currentTarget = H.anchor
+		end
 	end
 	return list
 end
@@ -218,7 +232,7 @@ RunService.Heartbeat:Connect(function()
 
 	-- Beat clock from the shared ClubAudioSync module
 	local beat = ClubAudioSync.getBeatState()
-	showTime += dt * (beat.bpm / 128) * beat.movementSpeed
+	showTime += dt * beat.movementSpeed
 	if beat.beatCount ~= lastBeatCount then
 		lastBeatCount = beat.beatCount
 		beatCount = beat.beatCount
@@ -292,7 +306,7 @@ RunService.Heartbeat:Connect(function()
 		elseif pattern == 2 then
 			-- Every head selects independent full-floor destinations each beat.
 			local function spotForBeat(n)
-				return distributedFloorSpot(i, #heads, n * 131 + H.idx * 911, floorY + 1)
+				return distributedFloorSpot(H.coverageIndex or i, #heads, n * 131 + H.idx * 911, floorY + 1)
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
