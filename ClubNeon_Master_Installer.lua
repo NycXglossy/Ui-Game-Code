@@ -35,7 +35,7 @@ local RELEASE = {
     phase32 = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
-    fx = "430b44dabcdb6412f5c915f69ed601612fedcc51",
+    fx = "2d2602ebd08bfdefd16edf95645560dc91124fea",
     utility = "77c506441162da3e8d0e9009330766003210c7a9",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
