@@ -166,16 +166,3 @@ return function(globalCall: any, purchaseEntries: {any}): (boolean, string)
 		end
 		return true, string.sub(table.concat(lines, "\n"), 1, 1900)
 	end
-	if operation == "OperationalServices" then
-		local ok, services = globalCall("GetGlobalOperationalStatus")
-		if not ok or typeof(services) ~= "table" then return false, tostring(services or "Operational service status is unavailable.") end
-		local keys = {}
-		for key in pairs(services) do table.insert(keys, tostring(key)) end
-		table.sort(keys)
-		local lines = {"ClubMusic Service Status:"}
-		for _, key in ipairs(keys) do
-			local item = services[key]
-			table.insert(lines, key .. ": " .. tostring(if typeof(item) == "table" then item.state or "Unknown" else "Unavailable"))
-		end
-		return true, string.sub(table.concat(lines, "\n"), 1, 1500)
-end
