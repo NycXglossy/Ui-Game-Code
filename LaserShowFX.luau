@@ -128,14 +128,27 @@ local function collectLasers()
 			local spot = d:FindFirstChildOfClass("SpotLight")
 			if target and pool and spot then
 				local beams = {}
-			for _, child in d:GetChildren() do
-				if child:IsA("Beam") then
-					table.insert(beams, child)
+				for _, child in d:GetChildren() do
+					if child:IsA("Beam") then table.insert(beams, child) end
 				end
-			end
+				local headPos = d.Position
+				local wallDistances = {
+					north = math.abs(headPos.Z - minZ),
+					east = math.abs(headPos.X - maxX),
+					south = math.abs(headPos.Z - maxZ),
+					west = math.abs(headPos.X - minX),
+				}
+				local side, nearest = "north", math.huge
+				for wall, distance in pairs(wallDistances) do
+					if distance < nearest then side, nearest = wall, distance end
+				end
+				local along = if side == "north" or side == "south"
+					then (headPos.X - minX) / math.max(1, maxX - minX)
+					else (headPos.Z - minZ) / math.max(1, maxZ - minZ)
 				table.insert(list, {
 					idx = idx, lens = d, target = target, pool = pool,
-					spot = spot, beams = beams,
+					spot = spot, beams = beams, side = side,
+					sideSlot = math.clamp(along, 0.08, 0.92),
 					currentTarget = randomFloorSpot(idx * 17.31, floorY + 1),
 					anchor = randomFloorSpot(idx * 17.31 + 7, floorY + 1),
 					phase = seededUnit(idx * 17.31 + 2) * math.pi * 2,
@@ -254,8 +267,9 @@ RunService.Heartbeat:Connect(function()
 	end
 
 	-- Laser floor-pool choreography; the centerpiece has its own client animator.
-	local poolScale = 1 + flareKick * 0.18
-	local poolFade = 0.75 - flareKick * 0.07
+	-- Keep floor pools readable without washing out nearby panels.
+	local poolScale = 1 + math.clamp(flareKick, 0, 1.5) * 0.08
+	local poolFade = math.clamp(0.86 - math.clamp(flareKick, 0, 1.5) * 0.025, 0.82, 0.86)
 
 	-- Laser choreography: a new pattern every 16 beats (one musical phrase)
 	for i, L in ipairs(lasers) do
@@ -280,11 +294,23 @@ RunService.Heartbeat:Connect(function()
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
-			-- Fan sweeps across individual lanes, not a center-origin tunnel.
-			local sweep = math.sin(showTime * 0.35 * speed + phase)
-			local cross = math.cos(showTime * 0.55 * speed + phase)
-			targetPos = clampFloorPoint(anchor.X + sweep * RADIUS * 0.38,
-				anchor.Z + cross * RADIUS * 0.38, floorY + 0.5)
+			-- Balanced four-wall cross-hatch: each wall owns evenly spaced lanes.
+			-- Opposing walls sweep in opposite directions so the whole floor is
+			-- crossed without repeatedly piling every beam into the center.
+			local sweep = (math.sin(showTime * 0.42 * speed + phase) + 1) * 0.5
+			local marginX = math.min(3, (maxX - minX) * 0.045)
+			local marginZ = math.min(3, (maxZ - minZ) * 0.045)
+			local x, z
+			if L.side == "north" or L.side == "south" then
+				x = minX + marginX + L.sideSlot * (maxX - minX - marginX * 2)
+				local depth = if L.side == "north" then sweep else 1 - sweep
+				z = minZ + marginZ + depth * (maxZ - minZ - marginZ * 2)
+			else
+				z = minZ + marginZ + L.sideSlot * (maxZ - minZ - marginZ * 2)
+				local width = if L.side == "west" then 1 - sweep else sweep
+				x = minX + marginX + width * (maxX - minX - marginX * 2)
+			end
+			targetPos = clampFloorPoint(x, z, floorY + 0.5)
 		elseif pattern == 4 then
 			-- Wall crawl remains perimeter-based with per-laser phase offsets.
 			local t = (showTime * 0.02 * speed + i / #lasers + phase / (math.pi * 2)) % 1
@@ -303,9 +329,9 @@ RunService.Heartbeat:Connect(function()
 		L.target.CFrame = CFrame.new(smoothTarget)
 		-- Light pool chases the smoothed beam and pulses with the kick
 		L.pool.CFrame = CFrame.new(smoothTarget + Vector3.new(0, 0.3, 0)) * CFrame.Angles(0, 0, math.pi / 2)
-		L.pool.Size = Vector3.new(0.1, 3.5 * poolScale, 3.5 * poolScale)
+		L.pool.Size = Vector3.new(0.1, 2.7 * poolScale, 2.7 * poolScale)
 		L.pool.Transparency = poolFade
-		L.spot.Brightness = 0.55 + flareKick * 1.1
+		L.spot.Brightness = 0.28 + math.clamp(flareKick, 0, 1.5) * 0.38
 		L.spot.Enabled = true
 	end
 end)
