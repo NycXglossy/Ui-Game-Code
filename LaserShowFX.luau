@@ -10,7 +10,6 @@ local RunService = game:GetService("RunService")
 local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
 
 -- Tunables
-local IDLE_BPM = 128 -- keeps the show gently cycling when no track plays
 local FLARE_BURST = 1.0 -- seconds a heavy-kick flare lasts
 local FLARE_HZ = 12 -- hard on/off flashes per second during a flare
 
