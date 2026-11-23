@@ -60,15 +60,15 @@ while true do
 			local pl = lights[i]
 			if pl then
 				pl.Color = c
-				pl.Brightness = 1.2 -- restrained edge fill; beams remain the visual focus
+				pl.Brightness = 0.72 -- soft perimeter fill; pixel floor carries detailed patterns
 			end
 		end
 	end
 
 	-- Decay the flash between beats
 	for _, pl in ipairs(lights) do
-		if pl.Brightness > 0.55 then
-			pl.Brightness = math.max(0.55, pl.Brightness - dt * 5 * (beat.bpm / 128))
+		if pl.Brightness > 0.38 then
+			pl.Brightness = math.max(0.38, pl.Brightness - dt * 4.5 * (beat.bpm / 128))
 		end
 	end
 end
