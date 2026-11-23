@@ -79,6 +79,25 @@ local function clampFloorPoint(x, z, y)
 	)
 end
 
+-- Stratified coverage: each projector owns a different floor cell instead of
+-- independently rolling anywhere on the floor (which can create hotspots).
+local function distributedFloorSpot(index, total, seed, y)
+	local columns = math.max(1, math.ceil(math.sqrt(total * ((maxX - minX) / math.max(1, maxZ - minZ)))))
+	local rows = math.max(1, math.ceil(total / columns))
+	local cell = (index - 1) % total
+	local column = cell % columns
+	local row = math.floor(cell / columns)
+	local cellWidth = (maxX - minX) / columns
+	local cellDepth = (maxZ - minZ) / rows
+	local jitterX = (seededUnit(seed) - 0.5) * cellWidth * 0.42
+	local jitterZ = (seededUnit(seed + 1) - 0.5) * cellDepth * 0.42
+	return clampFloorPoint(
+		minX + (column + 0.5) * cellWidth + jitterX,
+		minZ + (row + 0.5) * cellDepth + jitterZ,
+		y
+	)
+end
+
 local function collectHeads()
 	local list = {}
 	if not rig then return list end
@@ -103,6 +122,10 @@ local function collectHeads()
 		end
 	end
 	table.sort(list, function(a, b) return a.idx < b.idx end)
+	for i, H in ipairs(list) do
+		H.anchor = distributedFloorSpot(i, #list, H.idx * 29.7, floorY + 1)
+		H.currentTarget = H.anchor
+	end
 	return list
 end
 
@@ -229,7 +252,7 @@ RunService.Heartbeat:Connect(function()
 	end
 
 	-- Beam glow swells with the kick
-	local beamFade = math.clamp(0.5 - kick * 0.35, 0.1, 0.5)
+	local beamFade = math.clamp(0.65 - kick * 0.18, 0.35, 0.65)
 	for _, H in ipairs(heads) do
 		H.beam.Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, beamFade),
@@ -257,7 +280,7 @@ RunService.Heartbeat:Connect(function()
 		elseif pattern == 2 then
 			-- Every head selects independent full-floor destinations each beat.
 			local function spotForBeat(n)
-				return randomFloorSpot(n * 131 + H.idx * 911, floorY + 1)
+				return distributedFloorSpot(i, #heads, n * 131 + H.idx * 911, floorY + 1)
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
@@ -284,7 +307,7 @@ RunService.Heartbeat:Connect(function()
 		else
 			-- Randomized wandering destinations; never converge on the center.
 			local function spotForBeat(n)
-				return randomFloorSpot(n * 197 + H.idx * 1297, floorY + 1)
+				return distributedFloorSpot(i, #heads, n * 197 + H.idx * 1297, floorY + 1)
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		end
@@ -299,13 +322,13 @@ RunService.Heartbeat:Connect(function()
 
 		-- Light pool follows the beam when it lands on the floor
 		local onFloor = smoothTarget.Y < floorY + 4
-		H.pool.Transparency = onFloor and (0.55 - kick * 0.3) or 1
+		H.pool.Transparency = onFloor and (0.68 - kick * 0.12) or 1
 		if onFloor then
-			local poolScale = 1 + kick * 0.5
+			local poolScale = 1 + kick * 0.25
 			H.pool.Size = Vector3.new(0.1, 4 * poolScale, 4 * poolScale)
 			H.pool.CFrame = CFrame.new(smoothTarget.X, floorY + 0.2, smoothTarget.Z)
 				* CFrame.Angles(0, 0, math.pi / 2)
 		end
-		H.spot.Brightness = 1.5 + kick * 5
+		H.spot.Brightness = 0.9 + kick * 2.2
 	end
 end)
