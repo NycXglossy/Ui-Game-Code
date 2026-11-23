@@ -1,7 +1,7 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.51
+-- CLUB NEON MASTER INSTALLER v0.4.52
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.51 pins the corrected four-wall laser and moving-head fixture-perimeter classification releases separately.
+-- v0.4.52 derives fixture and beam bounds from FloorPanel only, excluding ceiling panels and raised venue geometry.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
 --
@@ -23,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.51"
+local INSTALLER_VERSION = "0.4.52"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -37,8 +37,10 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "df45c86a1d3e115fb17c5f5dc9c9c1905ae0a917",
-    laserFX = "4e92506f41dcbec286095f00a7a5d66874b4f472",
-    movingHeadFX = "72438515d036a8c686e8e96adbbde954bc8efbdb",
+    laserFX = "be487733a165c3d8c3a2e3053a762a045828d8ea",
+    laserRig = "4bd4651f094828c597d165b69bf760ed48d814c3",
+    movingHeadFX = "2d7636a9c0c6a0136cca618d19f2829936d07073",
+    movingHeadRig = "96f8b9f4576dd59bfd84a5aea7cbb3af70952b86",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
@@ -328,10 +330,10 @@ for _, item in ipairs({
     {"GlowFloorFXScript.luau", "LocalScript", "StarterPlayerScripts", "GlowFloorFXScript"},
     {"HazeBeamFX.luau", "LocalScript", "StarterPlayerScripts", "HazeBeamFX"},
     {"LaserShowFX.luau", "LocalScript", "StarterPlayerScripts", "LaserShowFX", RELEASE.laserFX},
-    {"LaserShowScript.luau", "Script", "ServerScriptService", "LaserShowScript"},
+    {"LaserShowScript.luau", "Script", "ServerScriptService", "LaserShowScript", RELEASE.laserRig},
     {"KineticCenterpieceFX.luau", "LocalScript", "StarterPlayerScripts", "KineticCenterpieceFX"},
     {"LightshowFX.luau", "Script", "ServerScriptService", "LightshowFX"},
-    {"MovingHeadShow.luau", "Script", "ServerScriptService", "MovingHeadShow"},
+    {"MovingHeadShow.luau", "Script", "ServerScriptService", "MovingHeadShow", RELEASE.movingHeadRig},
     {"MovingHeadShowFX.luau", "LocalScript", "StarterPlayerScripts", "MovingHeadShowFX", RELEASE.movingHeadFX},
     {"NeonSignFX.luau", "Script", "ServerScriptService", "NeonSignFX"},
     {"NeonTrimEffects.luau", "Script", "ServerScriptService", "NeonTrimEffects"},
