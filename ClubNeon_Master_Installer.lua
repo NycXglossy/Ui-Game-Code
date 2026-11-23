@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.55
+-- CLUB NEON MASTER INSTALLER v0.4.56
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- v0.4.55 centralizes adaptive BPM movement speed in ClubAudioSync for all supported FX consumers.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
@@ -23,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.55"
+local INSTALLER_VERSION = "0.4.56"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -40,7 +40,7 @@ local RELEASE = {
     audioSync = "51da329a366d03db19aeba4fb412b062187f2ed0",
     laserFX = "7151ec3caa29316879ebb606954dec3f6f7dacc0",
     laserRig = "2b525ecf949e8f5de0b15ac27914f79b98efa2fa",
-    movingHeadFX = "51a50c8cf05c0d7783a991cf8f36f3652fc29b3d",
+    movingHeadFX = "523bc871f22582db7c24c4c905bc53cfed938a6c",
     movingHeadRig = "1bb42b325678fef57ab146ad9dc79996880043c8",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
