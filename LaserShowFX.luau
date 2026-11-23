@@ -329,7 +329,7 @@ RunService.Heartbeat:Connect(function()
 		else
 			-- Blizzard: randomized full-floor spots on each beat, no center snap.
 			local function spotForBeat(n)
-				return distributedFloorSpot(i, #lasers, n * 307 + L.idx * 2371, floorY + 0.5)
+				return distributedFloorSpot(L.coverageIndex or i, #lasers, n * 307 + L.idx * 2371, floorY + 0.5)
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		end
