@@ -227,7 +227,7 @@ RunService.Heartbeat:Connect(function()
 		-- Pattern 3 spins the whole rig into a hurricane of crossing beams;
 		-- other patterns keep a slow majestic rotation with a gentle tilt.
 		local tipY = SHAFT_TOP - h - 0.3
-		local spinSpeed = if pattern == 3 or pattern == 5 then 2.4 else 0.45
+		local spinSpeed = if pattern == 3 or pattern == 5 then 1.35 else 0.38
 		local heading = now * spinSpeed + (gx * 0.7 + gz * 1.3)
 		local tilt = if pattern == 3
 			then 0.3 + 0.22 * math.sin(now * 1.3 + idx * 1.1)
@@ -260,11 +260,11 @@ RunService.Heartbeat:Connect(function()
 		-- Lights: glow scales with drop depth; beams strobe on the kick
 		if entry.glow then
 			entry.glow.Color = shaftColor
-			entry.glow.Brightness = 1.15 * (h / MAX_H) + beatGlow * 1.35 + strobe * 2
+			entry.glow.Brightness = 0.85 * (h / MAX_H) + beatGlow * 0.9 + strobe * 1.1
 		end
 		if entry.beam then
 			entry.beam.Color = shaftColor
-			entry.beam.Brightness = beatGlow * 4.2 * (h / MAX_H + 0.2) + strobe * 3.5
+			entry.beam.Brightness = beatGlow * 2.8 * (h / MAX_H + 0.2) + strobe * 2
 		end
 	end
 end)
