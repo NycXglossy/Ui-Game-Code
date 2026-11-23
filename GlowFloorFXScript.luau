@@ -68,7 +68,7 @@ while true do
 	-- Decay the flash between beats
 	for _, pl in ipairs(lights) do
 		if pl.Brightness > 1 then
-			pl.Brightness = math.max(1, pl.Brightness - dt * 8)
+			pl.Brightness = math.max(1, pl.Brightness - dt * 8 * (beat.bpm / 128))
 		end
 	end
 end
