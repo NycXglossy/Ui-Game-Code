@@ -73,7 +73,7 @@ local function collectHeads()
 				table.insert(list, {
 					idx = idx, head = d, target = target, pool = pool,
 					beam = beam, spot = spot, pos = d.CFrame.Position,
-					currentTarget = target.Position,
+					currentTarget = CENTER,
 				})
 			end
 		end
@@ -217,16 +217,19 @@ RunService.Heartbeat:Connect(function()
 
 	-- Choreography: a new pattern every 16 beats (one musical phrase)
 	for i, H in ipairs(heads) do
-		local ang = i / #heads * math.pi * 2
+		local motionSeed = H.idx * 17.31
+		local phase = seededUnit(motionSeed) * math.pi * 2
+		local speed = 0.78 + seededUnit(motionSeed + 1) * 0.44
+		local ang = i / #heads * math.pi * 2 + phase * 0.22
 		local targetPos
 		if pattern == 0 then
 			-- Classic pan sweep: beams swing side to side over the crowd,
 			-- alternating direction so they criss-cross in the air
-			local sweep = math.sin(showTime * 0.75 + (i % 2) * math.pi)
+			local sweep = math.sin(showTime * 0.75 * speed + phase + (i % 2) * math.pi)
 			targetPos = CENTER + Vector3.new(sweep * RADIUS * 0.8, 1, math.cos(ang) * RADIUS * 0.3)
 		elseif pattern == 1 then
 			-- Circle chase: targets orbit the floor in a ring
-			local spin = showTime * 0.5
+			local spin = showTime * 0.5 * speed + phase
 			local r = RADIUS * 0.75
 			targetPos = CENTER + Vector3.new(math.cos(ang + spin) * r, 1, math.sin(ang + spin) * r)
 		elseif pattern == 2 then
@@ -241,7 +244,7 @@ RunService.Heartbeat:Connect(function()
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
 			-- Wall wash: beams rake up and down the venue walls
-			local t = (showTime * 0.03 + i / #heads) % 1
+			local t = (showTime * 0.03 * speed + i / #heads + phase / (math.pi * 2)) % 1
 			local per = 2 * ((maxX - minX) + (maxZ - minZ))
 			local d2 = t * per
 			local wx, wz
@@ -254,16 +257,16 @@ RunService.Heartbeat:Connect(function()
 			else
 				wx, wz = minX, maxZ - (d2 - 2 * (maxX - minX) - (maxZ - minZ))
 		end
-			targetPos = Vector3.new(wx, floorY + 14 + math.sin(showTime * 1.2 + i) * 8, wz)
+			targetPos = Vector3.new(wx, floorY + 14 + math.sin(showTime * 1.2 * speed + phase) * 8, wz)
 		elseif pattern == 4 then
 			-- Ceiling rake: beams swing up and wash the roof itself, racing
 			-- bright cones across the ceiling over the crowd
-			local sweep = math.sin(showTime * 0.5 + i * math.pi / 3)
-			targetPos = CENTER + Vector3.new(sweep * 45, CEIL_Y - 1, math.cos(ang + showTime * 0.3) * 45)
+			local sweep = math.sin(showTime * 0.5 * speed + phase)
+			targetPos = CENTER + Vector3.new(sweep * 45, CEIL_Y - 1, math.cos(ang + showTime * 0.3 * speed) * 45)
 		else
 			-- Converging center hit: all beams pull to the middle of the
 			-- floor on the kick, then relax back outward
-			local r = RADIUS * (0.05 + 0.55 * (1 - kick))
+			local r = RADIUS * (0.05 + (0.42 + seededUnit(motionSeed + 2) * 0.26) * (1 - kick))
 			targetPos = CENTER + Vector3.new(math.cos(ang) * r, 1, math.sin(ang) * r)
 		end
 		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
