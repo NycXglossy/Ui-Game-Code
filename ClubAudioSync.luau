@@ -177,7 +177,7 @@ function ClubAudioSync.getBeatState(): BeatState
 		beatIndex = math.floor(beats),
 		beatCount = beatCount,
 		beatPhase = beatPhase,
-		barPhase = (beatCount % 4) / 4,
+		barPhase = (math.floor(beats) % 4) / 4,
 		pulse = pulse,
 		energy = energy,
 	}
