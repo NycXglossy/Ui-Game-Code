@@ -30,27 +30,30 @@ end
 local GRID = 5
 local function collectPillars()
 	local found = {}
-	for _, fixture in pillarsModel:GetChildren() do
-		if not fixture:IsA("Model") then continue end
+	for _, fixture in ipairs(pillarsModel:GetDescendants()) do
+		if not (fixture:IsA("Model") or fixture:IsA("Folder")) then continue end
 		local col, row = fixture.Name:match("^P(%d+)_(%d+)$")
-		local shaft = fixture:FindFirstChild("Shaft")
-		local tip = fixture:FindFirstChild("Tip")
-		if col and row and shaft and tip then
+		if not col or not row then continue end
+		local shaft = fixture:FindFirstChild("Shaft", true)
+		local tip = fixture:FindFirstChild("Tip", true)
+		if shaft and shaft:IsA("BasePart") and tip and tip:IsA("BasePart") then
 			table.insert(found, {
-				shaft = shaft,
-				tip = tip,
-				collar = fixture:FindFirstChild("Collar"),
-				glow = tip:FindFirstChild("Glow"),
-				beam = tip:FindFirstChild("Beam"),
-				col = tonumber(col),
-				row = tonumber(row),
-				h = MIN_H,
+				shaft = shaft, tip = tip,
+				collar = fixture:FindFirstChild("Collar", true),
+				glow = tip:FindFirstChild("Glow", true),
+				beam = tip:FindFirstChild("Beam", true),
+				col = tonumber(col), row = tonumber(row),
+				seed = tonumber(col) * 101 + tonumber(row),
+				h = math.max(MIN_H, shaft.Size.Y),
 			})
 		end
 	end
+	table.sort(found, function(a, b)
+		if a.row == b.row then return a.col < b.col end
+		return a.row < b.row
+	end)
 	return found
 end
-
 local pillars = collectPillars()
 -- StreamingEnabled: on live servers the fixtures can take a long time to
 -- replicate to the client. Keep retrying indefinitely instead of giving up
@@ -91,15 +94,22 @@ RunService.Heartbeat:Connect(function()
 
 	if now > nextHealthCheck then
 		nextHealthCheck = now + 2
-		local stale = #pillars == 0
-		for _, entry in pillars do
-			if entry.shaft.Parent == nil then
-				stale = true
-				break
+		local discovered = collectPillars()
+		local stale = #discovered ~= #pillars
+		if not stale then
+			for _, entry in ipairs(pillars) do
+				if not entry.shaft.Parent or not entry.tip.Parent
+					or (entry.collar and not entry.collar.Parent)
+					or (entry.glow and not entry.glow.Parent)
+					or (entry.beam and not entry.beam.Parent) then
+					stale = true
+					break
+				end
 			end
 		end
 		if stale then
-			pillars = collectPillars()
+			pillars = discovered
+			print("[ClubNeon][CeilingPillarFX] Fixture references refreshed; active pillars=" .. #pillars)
 		end
 	end
 
@@ -116,9 +126,11 @@ RunService.Heartbeat:Connect(function()
 		-- Pattern 2 picks a fresh random set of pillars to slam down each beat
 		if math.floor(beatCount / 12) % 6 == 2 then
 			table.clear(dropSet)
-			local picks = rng:NextInteger(4, 9)
-			for _ = 1, picks do
-				dropSet[rng:NextInteger(1, #pillars)] = true
+			local picks = math.min(rng:NextInteger(4, 9), #pillars)
+			local selected = 0
+			while selected < picks do
+				local pick = rng:NextInteger(1, #pillars)
+				if not dropSet[pick] then dropSet[pick] = true; selected += 1 end
 			end
 		end
 	else
@@ -149,10 +161,12 @@ RunService.Heartbeat:Connect(function()
 			-- Full-floor pulse: everything drops with the music's envelope
 			target = 0.04 + norm * 0.75 + beatGlow * 0.2
 		elseif pattern == 1 then
-			-- Center ripple: the drop radiates outward from the middle each beat
-			local dist = math.sqrt(gx * gx + gz * gz)
-			local ring = math.abs(dist - (1 - math.exp(-beat.beatPhase * 3)) * maxDist)
-			target = math.clamp(1 - ring * 1.6, 0, 1) * (0.3 + beatGlow * 0.7) + 0.05
+			-- Independent randomized drop timing; no center-out ripple.
+			local phaseOffset = (entry.seed * 0.173) % 1
+			local localPhase = (beat.beatPhase + phaseOffset) % 1
+			local hit = math.exp(-localPhase * 5)
+			local depth = 0.25 + ((entry.seed * 37) % 71) / 100
+			target = 0.05 + hit * depth * (0.35 + beatGlow * 0.65)
 		elseif pattern == 2 then
 			-- Random slam: chosen pillars drop hard, others idle-breathe
 			local idle = 0.06 + 0.06 * math.sin(tempoNow * 1.8 + (gx + gz) * 0.9)
@@ -175,11 +189,12 @@ RunService.Heartbeat:Connect(function()
 				target = 0.04 + norm * 0.12
 			end
 		else
-			-- Vortex: the drop spirals around the center like a hurricane
-			local ang = math.atan2(gz, gx)
-			local dist = math.sqrt(gx * gx + gz * gz) / maxDist
-			local spiral = (ang / (math.pi * 2) + dist * 0.9 + now * 0.35) % 1
-			target = math.clamp(1 - spiral * 2.4, 0, 1) * (0.35 + beatGlow * 0.65) + 0.04
+			-- Each pillar has its own phase, speed and random depth.
+			local phaseOffset = (entry.seed * 0.071) % (math.pi * 2)
+			local speed = 0.7 + ((entry.seed * 13) % 9) * 0.11
+			local variation = 0.5 + 0.5 * math.sin(tempoNow * speed + phaseOffset)
+			local randomDepth = 0.18 + ((entry.seed * 29) % 76) / 100
+			target = 0.04 + variation * randomDepth * (0.35 + beatGlow * 0.65)
 		end
 		target = math.clamp(target, 0.02, 1)
 
