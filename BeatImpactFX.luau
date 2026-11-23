@@ -75,7 +75,7 @@ local heartbeatConnection = RunService.Heartbeat:Connect(function()
 	else
 		beatAge = beat.beatPhase * (60 / beat.bpm)
 	end
-	beatPower *= math.max(0, 1 - dt * 2)
+	beatPower *= math.max(0, 1 - dt * 2 * (beat.bpm / 128))
 
 	-- Proximity: full effect on the dance floor, fading with distance
 	local char = player.Character
