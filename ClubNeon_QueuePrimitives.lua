@@ -109,7 +109,7 @@ function QueuePrimitives.create(context: any)
 				then ControllerFunctions.nextPlaylistTrack() else nil
 			local track = playlistTrack or ControllerFunctions.pickAutoTrack()
 			if not track then break end
-			local duplicate = track.id == (ControllerFunctions.currentTrackId or "")
+			local duplicate = false
 			for _, queuedEntry in ipairs(queue) do
 				if queuedEntry.trackId == track.id then duplicate = true; break end
 			end
