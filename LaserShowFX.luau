@@ -206,7 +206,7 @@ RunService.Heartbeat:Connect(function()
 	end
 	beatPower *= math.max(0, 1 - dt * 2)
 
-	local kick = math.exp(-beatAge * 5) * beatPower
+	local kick = math.exp(-beat.beatPhase * 5) * beatPower
 	local hue = (beatCount * 0.045) % 1 -- same cadence as the other FX
 	local pattern = math.floor(beatCount / 16) % 6
 	local beatBlend = math.clamp(beat.beatPhase, 0, 1)
