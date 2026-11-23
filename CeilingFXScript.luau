@@ -45,7 +45,7 @@ end
 
 local CENTER_X, CENTER_Z = maxGX / 2, maxGZ / 2
 local PATTERN_TIME = 10 -- seconds per effect
-local MAX_BRIGHTNESS = 0.72 -- cap on glow intensity (turned down a bit)
+local MAX_BRIGHTNESS = 0.54 -- keep floor and ceiling panels vivid without overpowering beams
 
 local function setPanel(p, hue, value)
 	-- Scale the effect's brightness into the dimmer range
