@@ -87,7 +87,7 @@ RunService.RenderStepped:Connect(function(dt)
 	-- Smoothly ease the visual intensity toward the audio level
 	for index, speaker in speakers do
 		-- Rainbow wave: each speaker is offset in hue and the whole pattern flows over time
-		local hue = (os.clock() * 0.12 + (index - 1) * 0.07) % 1
+		local hue = (tempoNow * 0.12 + (index - 1) * 0.07) % 1
 		local color = Color3.fromHSV(hue, 1, 1)
 
 		speaker.glow.Color = color
