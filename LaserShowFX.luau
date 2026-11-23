@@ -99,64 +99,33 @@ end
 
 -- Stratified coverage assigns each laser a distinct floor cell. Per-beat
 -- variation stays inside that cell, preventing random pileups in one hotspot.
-local function adaptiveCoverageTarget(anchor, quadrant, phase, fixtureSpeed, showTime, beat, y)
-	-- Fixtures rotate through neighboring floor quadrants on a slow independent
-	-- cycle. Their phase offsets prevent a venue-wide synchronized direction change.
-	-- BPM/energy control movement rate only; the ceiling FX never owns the path.
-	local baseQ = quadrant or 0
-	local q = (baseQ + math.floor((showTime + phase * 3) / 32)) % 4
-	local halfWidth = (maxX - minX) * 0.5
-	local halfDepth = (maxZ - minZ) * 0.5
-	local baseCenterX = minX + (baseQ % 2 + 0.5) * halfWidth
-	local baseCenterZ = minZ + (math.floor(baseQ / 2) + 0.5) * halfDepth
-	local centerX = minX + (q % 2 + 0.5) * halfWidth
-	local centerZ = minZ + (math.floor(q / 2) + 0.5) * halfDepth
-	local qMinX, qMaxX = minX + (q % 2) * halfWidth + 0.75, minX + (q % 2 + 1) * halfWidth - 0.75
-	local qMinZ, qMaxZ = minZ + math.floor(q / 2) * halfDepth + 0.75, minZ + (math.floor(q / 2) + 1) * halfDepth - 0.75
-	local tempoDrive = math.clamp((beat.bpm - 70) / 120, 0, 1)
-	local energyDrive = math.clamp(beat.energy, 0, 1)
-	local xRate = (0.34 + tempoDrive * 0.30 + energyDrive * 0.08) * fixtureSpeed
-	local zRate = (0.23 + tempoDrive * 0.24 + energyDrive * 0.12) * fixtureSpeed
-	local x = centerX + (anchor.X - baseCenterX) * 0.14 + math.sin(showTime * xRate + phase) * halfWidth * 0.43
-	local z = centerZ + (anchor.Z - baseCenterZ) * 0.14 + math.cos(showTime * zRate + phase * 0.79) * halfDepth * 0.43
-	return Vector3.new(math.clamp(x, qMinX, qMaxX), y, math.clamp(z, qMinZ, qMaxZ))
-end
-
-local function distributedFloorSpot(index, total, seed, y)
-	local columns = math.max(1, math.ceil(math.sqrt(total * ((maxX - minX) / math.max(1, maxZ - minZ)))))
-	local rows = math.max(1, math.ceil(total / columns))
-	local cell = (index - 1) % total
-	local column = cell % columns
-	local row = math.floor(cell / columns)
-	local cellWidth = (maxX - minX) / columns
-	local cellDepth = (maxZ - minZ) / rows
-	local jitterX = (seededUnit(seed) - 0.5) * cellWidth * 0.42
-	local jitterZ = (seededUnit(seed + 1) - 0.5) * cellDepth * 0.42
-	return clampFloorPoint(
-		minX + (column + 0.5) * cellWidth + jitterX,
-		minZ + (row + 0.5) * cellDepth + jitterZ,
-		y
-	)
-end
-
--- Wall-balanced floor anchors: every perimeter wall contributes targets to
--- all four floor quadrants. This avoids a whole wall's fixtures inheriting
--- neighboring cells on one side of the venue.
-local function wallBalancedFloorSpot(laneIndex, sideIndex, seed, y)
-	-- For eight fixtures per wall, each quadrant receives two lanes from
-	-- every wall. Spread those eight anchors across a 4x2 sub-grid.
-	local quadrant = (laneIndex + sideIndex - 2) % 4
-	local quadrantColumn, quadrantRow = quadrant % 2, math.floor(quadrant / 2)
-	local halfWidth, halfDepth = (maxX - minX) * 0.5, (maxZ - minZ) * 0.5
-	local lanePair = math.floor((laneIndex - 1) / 4)
-	local cell = lanePair * 4 + (sideIndex - 1)
-	local column, row = cell % 4, math.floor(cell / 4) % 2
-	local localX, localZ = (column + 0.5) / 4, (row + 0.5) / 2
-	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.035
-	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.035
-	local x = minX + quadrantColumn * halfWidth + localX * halfWidth + jitterX
-	local z = minZ + quadrantRow * halfDepth + localZ * halfDepth + jitterZ
-	return clampFloorPoint(x, z, y)
+-- Four-wall crosshatch coverage: north/south fixtures scan the full floor depth
+-- on distinct X lanes; east/west fixtures scan the full width on distinct Z lanes.
+-- Fixture phase and BPM-scaled speed remain independent; no ceiling-FX pattern clock.
+local function adaptiveCoverageTarget(side, sideSlot, phase, fixtureSpeed, showTime, beat, y)
+	local spanX, spanZ = maxX - minX, maxZ - minZ
+	local marginX = math.min(2.5, spanX * 0.035)
+	local marginZ = math.min(2.5, spanZ * 0.035)
+	local usableX = math.max(1, spanX - marginX * 2)
+	local usableZ = math.max(1, spanZ - marginZ * 2)
+	local slot = math.clamp(sideSlot or 0.5, 0.04, 0.96)
+	local tempoDrive = math.clamp((((beat and beat.bpm) or 120) - 70) / 120, 0, 1)
+	local energyDrive = math.clamp((beat and beat.energy) or 0, 0, 1)
+	local rate = (0.38 + tempoDrive * 0.32 + energyDrive * 0.12) * fixtureSpeed
+	local sweep = 0.5 - 0.5 * math.cos(showTime * rate + phase)
+	local weave = math.sin(showTime * rate * 0.53 + phase * 1.37) * 0.018
+	local x, z
+	if side == "north" or side == "south" then
+		x = minX + marginX + math.clamp(slot + weave, 0.025, 0.975) * usableX
+		local travel = if side == "south" then 1 - sweep else sweep
+		z = minZ + marginZ + travel * usableZ
+	else
+		z = minZ + marginZ + math.clamp(slot + weave, 0.025, 0.975) * usableZ
+		local travel = if side == "west" then 1 - sweep else sweep
+		x = minX + marginX + travel * usableX
+	end
+	return Vector3.new(math.clamp(x, minX + marginX, maxX - marginX), y,
+		math.clamp(z, minZ + marginZ, maxZ - marginZ))
 end
 
 local function collectLasers()
@@ -238,7 +207,7 @@ while #lasers == 0 do
 end
 local beamCount = 0
 for _, laser in ipairs(lasers) do beamCount += #laser.beams end
-print("[ClubNeon][LaserShowFX] Four-wall coverage ready; lasers=" .. #lasers
+print("[ClubNeon][LaserShowFX] Four-wall crosshatch coverage ready; lasers=" .. #lasers
 	.. ", sides=N:" .. (laserSideCounts.north or 0) .. "/E:" .. (laserSideCounts.east or 0)
 	.. "/S:" .. (laserSideCounts.south or 0) .. "/W:" .. (laserSideCounts.west or 0)
 	.. ", floorCells=" .. #lasers .. ", beams=" .. beamCount)
@@ -342,12 +311,12 @@ RunService.Heartbeat:Connect(function()
 	local poolScale = 1 + math.clamp(flareKick, 0, 1.5) * 0.08
 	local poolFade = math.clamp(0.86 - math.clamp(flareKick, 0, 1.5) * 0.025, 0.82, 0.86)
 
-	-- Adaptive coverage movement: each fixture keeps its assigned quadrant,
+	-- Full-floor crosshatch movement: each wall scans an independent axis,
 	-- while shared BPM/energy continuously modulate its sweep rate.
 	for i, L in ipairs(lasers) do
 		local targetPos = adaptiveCoverageTarget(
-			L.anchor,
-			L.coverageQuadrant,
+			L.side,
+			L.sideSlot,
 			L.phase,
 			L.speed,
 			showTime,
