@@ -480,6 +480,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		Rotation = 0,
 	}, hudFill)
 
+	local stateHelpersModule = ReplicatedStorage:WaitForChild("ClubNeon_UI_Renderer_StateHelpers")
+	local stateHelpers = require(stateHelpersModule).new({
+		getState = function() return state end,
+		formatTime = formatTime,
+		colors = C,
+	})
+	local syncElapsed = stateHelpers.syncElapsed
+	local playbackIsPaused = stateHelpers.playbackIsPaused
+	local interpolatedElapsed = stateHelpers.interpolatedElapsed
+
 	local function updateHud()
 		local now: any = if typeof(state.nowPlaying) == "table" then state.nowPlaying else nil
 		if now then
@@ -4146,15 +4156,6 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	-- rebuilding the entire mobile tab tree for elapsed-only updates causes
 	-- visible content flashes. Compare snapshots while ignoring that one
 	-- volatile field, but retain every other state change for live tab refresh.
-	local stateHelpersModule = ReplicatedStorage:WaitForChild("ClubNeon_UI_Renderer_StateHelpers")
-	local stateHelpers = require(stateHelpersModule).new({
-		getState = function() return state end,
-		formatTime = formatTime,
-		colors = C,
-	})
-	local syncElapsed = stateHelpers.syncElapsed
-	local playbackIsPaused = stateHelpers.playbackIsPaused
-	local interpolatedElapsed = stateHelpers.interpolatedElapsed
 	local updateProgress = function() stateHelpers.updateProgress(progressRefs) end
 	local mobileRenderStateChanged = stateHelpers.mobileRenderStateChanged
 
