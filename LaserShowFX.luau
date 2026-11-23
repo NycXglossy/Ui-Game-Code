@@ -137,7 +137,7 @@ local function collectLasers()
 	local rigMinX, rigMaxX, rigMinZ, rigMaxZ = math.huge, -math.huge, math.huge, -math.huge
 	local emitterCount = 0
 	for _, candidate in ipairs(rig:GetChildren()) do
-		if candidate:IsA("BasePart") and candidate.Name:match("^^Laser(%d+)_Lens$") then
+		if candidate:IsA("BasePart") and candidate.Name:match("^Laser(%d+)_Lens$") then
 			emitterCount += 1
 			rigMinX = math.min(rigMinX, candidate.Position.X)
 			rigMaxX = math.max(rigMaxX, candidate.Position.X)
@@ -254,9 +254,27 @@ local function collectLasers()
 end
 
 local lasers, laserSideCounts = collectLasers()
-while #lasers == 0 do
-	task.wait(0.5)
-	lasers, laserSideCounts = collectLasers()
+-- A replicated rig Folder can arrive before all fixture parts and their
+-- attachments/targets. Wait for the ready-fixture count to settle before
+-- taking the one-time controller snapshot.
+local stableCount = #lasers
+local stableSince = os.clock()
+local replicationDeadline = os.clock() + 20
+while os.clock() < replicationDeadline do
+	task.wait(0.25)
+	local nextFixtures, nextCounts = collectLasers()
+	if #nextFixtures ~= stableCount then
+		stableCount = #nextFixtures
+		stableSince = os.clock()
+	end
+	lasers, laserSideCounts = nextFixtures, nextCounts
+	if #lasers > 0 and os.clock() - stableSince >= 3 then
+		break
+	end
+end
+if #lasers == 0 then
+	warn("[ClubNeon][FX] No complete fixtures replicated within 20 seconds; controller will not start.")
+	return
 end
 local beamCount = 0
 for _, laser in ipairs(lasers) do beamCount += #laser.beams end
