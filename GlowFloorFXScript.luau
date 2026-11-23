@@ -60,7 +60,7 @@ while true do
 			local pl = lights[i]
 			if pl then
 				pl.Color = c
-				pl.Brightness = 2 -- flash on the beat
+				pl.Brightness = 1.2 -- restrained edge fill; beams remain the visual focus
 			end
 		end
 	end
