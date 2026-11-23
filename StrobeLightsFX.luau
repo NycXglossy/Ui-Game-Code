@@ -82,7 +82,7 @@ RunService.Heartbeat:Connect(function()
 	end
 	beatPower *= math.max(0, 1 - dt * 2)
 
-	local beatGlow = math.exp(-beatAge * 5) * beatPower
+	local beatGlow = math.exp(-beat.beatPhase * 5) * beatPower
 	local hue = (beatCount * 0.045) % 1
 	local pattern = math.floor(beatCount / 16) % 3
 	local bursting = now < burstUntil
