@@ -73,6 +73,7 @@ local function collectHeads()
 				table.insert(list, {
 					idx = idx, head = d, target = target, pool = pool,
 					beam = beam, spot = spot, pos = d.CFrame.Position,
+					currentTarget = target.Position,
 				})
 			end
 		end
@@ -110,15 +111,23 @@ local lastColorBeat = -1
 local burstUntil = 0
 
 local clock = os.clock
-local lastT = clock()
+local startTime = clock()
+local lastT = startTime
 local showTime = 0
+
+-- Stable deterministic values avoid allocating a Random object for every fixture on every frame.
+local function seededUnit(seed)
+	local value = math.sin(seed * 12.9898) * 43758.5453
+	return value - math.floor(value)
+end
 local frameCount = 0
 
 RunService.Heartbeat:Connect(function()
 	local now = clock()
 	local dt = math.min(now - lastT, 0.1)
 	lastT = now
-	showTime += dt
+	-- Use elapsed wall time so a long frame does not permanently slow the choreography.
+	showTime = now - startTime
 	beatAge += dt
 	frameCount += 1
 	if frameCount == 120 then print("[ClubNeon][MovingHeadShowFX] Heartbeat active; frames=" .. frameCount) end
@@ -205,9 +214,9 @@ RunService.Heartbeat:Connect(function()
 			targetPos = CENTER + Vector3.new(math.cos(ang + spin) * r, 1, math.sin(ang + spin) * r)
 		elseif pattern == 2 then
 			-- Beat snap: beams jump to a new spot every beat, strobing motion
-			local snap = Random.new(beatCount + i * 131)
-			local r = RADIUS * (0.15 + snap:NextNumber() * 0.8)
-			local a = ang + snap:NextNumber() * math.pi
+			local seed = beatCount + i * 131
+			local r = RADIUS * (0.15 + seededUnit(seed) * 0.8)
+			local a = ang + seededUnit(seed + 1) * math.pi
 			targetPos = CENTER + Vector3.new(math.cos(a) * r, 1, math.sin(a) * r)
 		elseif pattern == 3 then
 			-- Wall wash: beams rake up and down the venue walls
@@ -236,18 +245,22 @@ RunService.Heartbeat:Connect(function()
 			local r = RADIUS * (0.05 + 0.55 * (1 - kick))
 			targetPos = CENTER + Vector3.new(math.cos(ang) * r, 1, math.sin(ang) * r)
 		end
-		H.target.CFrame = CFrame.new(targetPos)
+		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
+		local motionAlpha = 1 - math.exp(-dt * 9)
+		H.currentTarget = H.currentTarget:Lerp(targetPos, motionAlpha)
+		local smoothTarget = H.currentTarget
+		H.target.CFrame = CFrame.new(smoothTarget)
 
-		-- Head visibly aims at its target: pan and tilt like a real moving head
-		H.head.CFrame = CFrame.lookAt(H.pos, targetPos) * CFrame.Angles(0, 0, math.pi / 2)
+		-- Head visibly aims at its smoothed target: pan and tilt like a real moving head
+		H.head.CFrame = CFrame.lookAt(H.pos, smoothTarget) * CFrame.Angles(0, 0, math.pi / 2)
 
 		-- Light pool follows the beam when it lands on the floor
-		local onFloor = targetPos.Y < floorY + 4
+		local onFloor = smoothTarget.Y < floorY + 4
 		H.pool.Transparency = onFloor and (0.55 - kick * 0.3) or 1
 		if onFloor then
 			local poolScale = 1 + kick * 0.5
 			H.pool.Size = Vector3.new(0.1, 4 * poolScale, 4 * poolScale)
-			H.pool.CFrame = CFrame.new(targetPos.X, floorY + 0.2, targetPos.Z)
+			H.pool.CFrame = CFrame.new(smoothTarget.X, floorY + 0.2, smoothTarget.Z)
 				* CFrame.Angles(0, 0, math.pi / 2)
 		end
 		H.spot.Brightness = 1.5 + kick * 5
