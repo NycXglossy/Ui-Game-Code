@@ -290,7 +290,7 @@ RunService.Heartbeat:Connect(function()
 			local direction = if H.idx <= #heads / 2 then 1 else -1
 			local sweep = (math.sin(showTime * 0.62 * speed + phase) + 1) * 0.5
 			local x = minX + (maxX - minX) * ((lane + sweep * 0.34) % 1)
-			local zBase = if H.idx % 4 <= 2 then minZ + (maxZ - minZ) * 0.28 else minZ + (maxZ - minZ) * 0.72
+			local zBase = if H.idx % 4 == 1 or H.idx % 4 == 2 then minZ + (maxZ - minZ) * 0.28 else minZ + (maxZ - minZ) * 0.72
 			local z = zBase + direction * math.sin(showTime * 0.48 * speed + phase) * (maxZ - minZ) * 0.22
 			targetPos = clampFloorPoint(x, z, floorY + 1)
 		elseif pattern == 4 then
