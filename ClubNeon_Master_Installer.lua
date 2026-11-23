@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.46
+-- CLUB NEON MASTER INSTALLER v0.4.48
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- v0.4.48 rebalances moving-head sweeps by physical wall with full-width/full-depth cross-hatch coverage.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
@@ -36,7 +36,7 @@ local RELEASE = {
     phase32 = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
-    fx = "9a2d7febc3d6e11b7803b2556a5fd5325535f07b",
+    fx = "f346409ce4d293f25d5f78bf6e9a16266425c879",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
