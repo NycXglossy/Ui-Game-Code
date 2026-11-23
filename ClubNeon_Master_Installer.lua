@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.15"
+local INSTALLER_VERSION = "0.4.16"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -140,6 +140,7 @@ addRaw("UI_Server_Controller", "Script", "ServerScriptService", controllerSource
 addRaw("ClubNeon_UI_Renderer_Config", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Config.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Config.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_Helpers", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Helpers.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Helpers.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_StateHelpers", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_StateHelpers.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_StateHelpers.lua@" .. RELEASE.runtime)
+addRaw("ClubNeon_UI_Renderer_Typography", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Typography.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Typography.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_Typography", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Typography.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Typography.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_PurchasePromptDiagnostics", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_PurchasePromptDiagnostics.lua", RELEASE.runtime), "ClubNeon_UI_PurchasePromptDiagnostics.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_ClientPolicy", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_ClientPolicy.lua", RELEASE.runtime), "ClubNeon_UI_ClientPolicy.lua@" .. RELEASE.runtime)
