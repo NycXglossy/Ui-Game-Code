@@ -139,19 +139,30 @@ local function collectHeads()
 		local group = sideGroups[fixture.side]
 		if group then table.insert(group, fixture) end
 	end
-	for sideIndex, sideName in ipairs(sideOrder) do
+	local maxSideCount = 0
+	local sideCounts = {}
+	for _, sideName in ipairs(sideOrder) do
 		local group = sideGroups[sideName]
 		table.sort(group, function(a, b) return a.sideSlot < b.sideSlot end)
-		for laneIndex, H in ipairs(group) do
-			-- Interleave wall lanes across the grid so every wall contributes
-			-- beams to every floor region instead of one contiguous block.
-			local coverageIndex = ((laneIndex - 1) * 4 + sideIndex - 1) % math.max(1, #list) + 1
-			H.coverageIndex = coverageIndex
-			H.anchor = distributedFloorSpot(coverageIndex, #list, H.idx * 29.7, floorY + 1)
-			H.currentTarget = H.anchor
+		sideCounts[sideName] = #group
+		maxSideCount = math.max(maxSideCount, #group)
+	end
+	-- Assign every fixture one unique floor cell. Round-robin by lane and wall
+	-- keeps the four walls spatially interleaved even if a future venue has
+	-- unequal fixture counts on its sides; modulo-based indexing could collide.
+	local coverageIndex = 0
+	for laneIndex = 1, maxSideCount do
+		for _, sideName in ipairs(sideOrder) do
+			local H = sideGroups[sideName][laneIndex]
+			if H then
+				coverageIndex += 1
+				H.coverageIndex = coverageIndex
+				H.anchor = distributedFloorSpot(coverageIndex, #list, H.idx * 29.7, floorY + 1)
+				H.currentTarget = H.anchor
+			end
 		end
 	end
-	return list
+	return list, sideCounts
 end
 
 local function collectStrobeCells()
@@ -166,13 +177,16 @@ local function collectStrobeCells()
 	return cells
 end
 
-local heads = collectHeads()
+local heads, headSideCounts = collectHeads()
 while #heads == 0 do
 	task.wait(0.5)
-	heads = collectHeads()
+	heads, headSideCounts = collectHeads()
 end
 local strobeCells = collectStrobeCells()
-print("[ClubNeon][MovingHeadShowFX] Balanced eight-per-side animation started; heads=" .. #heads .. ", strobeCells=" .. #strobeCells)
+print("[ClubNeon][MovingHeadShowFX] Four-wall coverage ready; heads=" .. #heads
+	.. ", sides=N:" .. (headSideCounts.north or 0) .. "/E:" .. (headSideCounts.east or 0)
+	.. "/S:" .. (headSideCounts.south or 0) .. "/W:" .. (headSideCounts.west or 0)
+	.. ", floorCells=" .. #heads .. ", strobeCells=" .. #strobeCells)
 
 -- Beat state (driven by ClubAudioSync's beat clock)
 local lastBeatCount = -1
@@ -206,7 +220,7 @@ RunService.Heartbeat:Connect(function()
 	if now >= nextRigAudit then
 		nextRigAudit = now + 2
 		if not rig or not rig.Parent then rig = workspace:FindFirstChild("MovingHeadRig") end
-		local discoveredHeads = collectHeads()
+		local discoveredHeads, discoveredSideCounts = collectHeads()
 		local needsRefresh = #discoveredHeads ~= #heads
 		for _, H in ipairs(heads) do
 			if not H.head.Parent or not H.target.Parent or not H.pool.Parent
@@ -224,8 +238,12 @@ RunService.Heartbeat:Connect(function()
 		end
 		if needsRefresh then
 			heads = discoveredHeads
+			headSideCounts = discoveredSideCounts
 			strobeCells = discoveredCells
-			print("[ClubNeon][MovingHeadShowFX] Fixture references refreshed; active heads=" .. #heads .. ", strobeCells=" .. #strobeCells)
+			print("[ClubNeon][MovingHeadShowFX] Fixture references refreshed; active heads=" .. #heads
+				.. ", sides=N:" .. (headSideCounts.north or 0) .. "/E:" .. (headSideCounts.east or 0)
+				.. "/S:" .. (headSideCounts.south or 0) .. "/W:" .. (headSideCounts.west or 0)
+				.. ", strobeCells=" .. #strobeCells)
 		end
 	end
 	if #heads == 0 then return end
