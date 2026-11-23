@@ -143,6 +143,7 @@ local function seededUnit(seed)
 	return value - math.floor(value)
 end
 local frameCount = 0
+local nextRigAudit = 0
 
 RunService.Heartbeat:Connect(function()
 	local now = clock()
@@ -154,18 +155,36 @@ RunService.Heartbeat:Connect(function()
 	frameCount += 1
 	if frameCount == 120 then print("[ClubNeon][LaserShowFX] Heartbeat active; frames=" .. frameCount) end
 
-	-- Self-heal if streaming replaces the rig parts
-	if lasers[1] and lasers[1].lens.Parent == nil then
-		lasers = collectLasers()
-		if #lasers == 0 then return end
-		orb = rig:FindFirstChild("CenterOrb")
-		orbLight = orb and orb:FindFirstChildOfClass("PointLight")
-		orbRings = {}
-		for i = 1, 3 do
-			local ring = rig:FindFirstChild("OrbRing" .. i)
-			if ring then table.insert(orbRings, ring) end
+	-- Audit every laser independently so stale references on later fixtures
+	-- are recovered even while the first laser remains healthy.
+	if now >= nextRigAudit then
+		nextRigAudit = now + 2
+		local needsRefresh = false
+		for _, L in ipairs(lasers) do
+			if not L.lens.Parent or not L.target.Parent or not L.pool.Parent or not L.spot.Parent then
+				needsRefresh = true
+				break
+			end
+			for _, beam in ipairs(L.beams) do
+				if not beam.Parent then needsRefresh = true; break end
+			end
+			if needsRefresh then break end
+		end
+		if needsRefresh then
+			lasers = collectLasers()
+			orb = rig:FindFirstChild("CenterOrb")
+			orbLight = orb and orb:FindFirstChildOfClass("PointLight")
+			orbRings = {}
+			for i = 1, 3 do
+				local ring = rig:FindFirstChild("OrbRing" .. i)
+				if ring then table.insert(orbRings, ring) end
+			end
+			local refreshedBeams = 0
+			for _, L in ipairs(lasers) do refreshedBeams += #L.beams end
+			print("[ClubNeon][LaserShowFX] Fixture references refreshed; active lasers=" .. #lasers .. ", beams=" .. refreshedBeams)
 		end
 	end
+	if #lasers == 0 then return end
 
 	-- Beat clock from the shared ClubAudioSync module
 	local beat = ClubAudioSync.getBeatState()
@@ -196,6 +215,8 @@ RunService.Heartbeat:Connect(function()
 	local kick = math.exp(-beatAge * 5) * beatPower
 	local hue = (beatCount * 0.045) % 1 -- same cadence as the other FX
 	local pattern = math.floor(beatCount / 16) % 6
+	local beatBlend = if beat.playing then math.clamp(beat.beatPhase, 0, 1) else math.clamp(beatAge / (60 / IDLE_BPM), 0, 1)
+	beatBlend = beatBlend * beatBlend * (3 - 2 * beatBlend)
 	local flaring = now < flareUntil
 	local flare = flaring and (math.floor(now * FLARE_HZ) % 2 == 0) and 1 or 0
 	local flareKick = kick + flare * 1.5
@@ -264,10 +285,15 @@ RunService.Heartbeat:Connect(function()
 			targetPos = wallPoint(t) + Vector3.new(0, 0.5, 0)
 		else
 			-- Blizzard: beams snap to random floor spots every beat, strobing
-			local seed = beatCount + i * 97
-			local r = RADIUS * (0.2 + seededUnit(seed) * 0.75)
-			local a = ang + seededUnit(seed + 1) * math.pi
-			targetPos = CENTER + Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
+			local function spotForBeat(n)
+				local seed = n + i * 97
+				local r = RADIUS * (0.2 + seededUnit(seed) * 0.75)
+				local a = ang + seededUnit(seed + 1) * math.pi
+				return CENTER + Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
+			end
+			-- Interpolate between deterministic beat targets to avoid apparent
+			-- stalls in the high-tempo blizzard pattern.
+			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		end
 		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
 		local motionAlpha = 1 - math.exp(-dt * 10)
