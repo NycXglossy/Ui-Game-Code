@@ -41,18 +41,7 @@ if #floorPanels + #ceilPanels == 0 then
 	end
 end
 
--- Ceiling pillars: collect their neon parts so the show can drive them too
-local pillarNeons = {}
-local pillarsModel = workspace:FindFirstChild("CeilingPillars")
-while not pillarsModel do
-	task.wait(1)
-	pillarsModel = workspace:FindFirstChild("CeilingPillars")
-end
-for _, part in pillarsModel:GetDescendants() do
-	if part:IsA("BasePart") and part.Material == Enum.Material.Neon then
-		table.insert(pillarNeons, part)
-	end
-end
+-- CeilingPillarFX owns pillar color and movement locally; avoid competing server writes.
 
 local CENTER_X, CENTER_Z = maxGX / 2, maxGZ / 2
 local PATTERN_TIME = 10 -- seconds per effect
@@ -242,18 +231,6 @@ end
 
 local effects = {ripple, sweep, twinkle, rainbowRows, strobe, fade, lightning, checker, pulse, spiral, fireworks, plasma, comet, matrixRain}
 
--- Pillar show: hue drifts with the pattern clock and the glow gently
--- breathes, staying in sync with whichever effect is running.
-local function runPillars(t, index)
-	local hue = (t * 0.05 + index * 0.09) % 1
-	local breath = 0.55 + 0.2 * math.sin(t * 1.1) -- soft pulse, dimmer range
-	local v = 0.04 + breath * MAX_BRIGHTNESS
-	for _, part in pillarNeons do
-		if part.Parent then
-			part.Color = Color3.fromHSV((hue + part.Position.X * 0.001) % 1, 0.85, v)
-		end
-	end
-end
 
 -- 12 Hz is sufficient for replicated ambient panel color animation and reduces server property churn.
 while task.wait(1 / 12) do
@@ -267,5 +244,4 @@ while task.wait(1 / 12) do
 	pcall(effects[index], t)
 	panels = ceilPanels
 	pcall(effects[(index % #effects) + 1], t)
-	runPillars(t, index)
 end
