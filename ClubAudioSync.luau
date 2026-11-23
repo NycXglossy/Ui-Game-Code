@@ -1,60 +1,48 @@
 --!strict
--- ClubAudioSync: shared audio sync for every club FX script.
--- The club's music is played by the ClubMusic modern audio backend, which
--- injects an AudioPlayer graph at runtime under SoundService. AudioPlayer
--- exposes IsPlaying and TimePosition but NO PlaybackLoudness, so this module
--- derives a live beat clock from TimePosition and simulates the energy
--- envelope that legacy Sound.PlaybackLoudness used to provide.
--- Works on both server and client (keep it in ReplicatedStorage).
+-- ClubAudioSync: one client-local live audio analyzer and beat clock for all Club Neon FX.
+-- AudioAnalyzer is deliberately a parallel tap from AudioPlayer: it never sits
+-- in the audible output chain and therefore cannot alter playback or volume.
+-- Roblox returns zero/empty analyzer measurements on the server, so this module
+-- is consumed by the client-side MovingHeadShowFX and LaserShowFX scripts only.
 
 local SoundService = game:GetService("SoundService")
 
 local ClubAudioSync = {}
 
 local ROOT_NAME = "ClubMusicModernAudio"
-
--- Adaptive BPM state. All published tempos are bounded to the supported
--- club-show range so every lighting system behaves consistently at 60–300 BPM.
--- Missing metadata retains the last known valid tempo; changes ease smoothly.
-local BPM_MIN = 60
-local BPM_MAX = 300
-local BPM_SEED = 128
--- Optional per-asset BPM catalogue. Keys are the numeric Roblox audio asset IDs
--- as strings; add a verified tempo here when one is known. The asset ID itself
--- does not encode BPM, so unknown tracks deliberately retain last-known tempo.
-local ASSET_BPM_BY_ID: {[string]: number} = {
-	-- ["100919684616729"] = 124,
-}
-local bpmOverride: number? = nil -- pushed via ClubAudioSync.setBPM
-local bpmTarget = BPM_SEED
-local bpmCurrent = BPM_SEED
-local bpmLastKnown = BPM_SEED
-
--- One shared movement-speed envelope consumed by every Club Neon FX animator.
+local BPM_MIN = 70
+local BPM_MAX = 190
+local BPM_SEED = 120
+local SAMPLE_RATE = 20
+local HISTORY_SECONDS = 12
+local HISTORY_LIMIT = SAMPLE_RATE * HISTORY_SECONDS
+local ANALYZE_INTERVAL = 0.05
 local MOVEMENT_SPEED_MIN = 0.55
 local MOVEMENT_SPEED_MAX = 1.45
-local movementSpeedCurrent = 1
-local lastPlaying: boolean? = nil
-
-local function sanitizeBPM(value: any): number?
-	if typeof(value) ~= "number" or value ~= value or value <= 0 or value == math.huge then return nil end
-	return math.clamp(value, BPM_MIN, BPM_MAX)
-end
 
 local audioPlayer: AudioPlayer? = nil
-local lastBeatPlayer: AudioPlayer? = nil
-local lastBeatAssetId: string? = nil
+local analyzer: AudioAnalyzer? = nil
+local analyzerWire: Wire? = nil
 local lastScan = 0
-
--- Live beat-clock state (updated lazily whenever getBeatState is called)
+local lastPlayer: AudioPlayer? = nil
+local lastAssetId = ""
+local lastSampleAt = 0
+local sampleAccumulator = 0
+local previousSpectrum: {number}? = nil
+local previousRms = 0
+local envelopeHistory: {number} = {}
+local bpmCurrent = BPM_SEED
+local bpmDetected: number? = nil
+local bpmConfidence = 0
+local energy = 0
+local movementSpeedCurrent = 1
 local lastT = os.clock()
 local lastBeatIndex = -1
 local beatCount = 0
-local pulse = 0 -- 1 on the kick, decays fast
-local energy = 0 -- smoothed 0..1 envelope, the PlaybackLoudness substitute
+local lastPlaying: boolean? = nil
 
-local function hash01(n: number): number
-	return (math.sin(n * 12.9898) * 43758.5453) % 1
+local function finite(value: any): boolean
+	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
 
 local function backendRootFor(player: AudioPlayer?): Instance?
@@ -69,12 +57,8 @@ local function scanForAudioPlayer(): AudioPlayer?
 	local root = SoundService:FindFirstChild(ROOT_NAME)
 	if root and root:GetAttribute("ManagedByClubMusicAudioBackend") == true then
 		local player = root:FindFirstChildOfClass("AudioPlayer")
-		if player then
-			return player
-		end
+		if player then return player end
 	end
-	-- Fallback: the backend may be named differently; any AudioPlayer whose
-	-- parent is flagged as backend-managed is the club deck.
 	for _, descendant in SoundService:GetDescendants() do
 		if descendant:IsA("AudioPlayer") and backendRootFor(descendant) then
 			return descendant
@@ -83,20 +67,57 @@ local function scanForAudioPlayer(): AudioPlayer?
 	return nil
 end
 
--- Rescans at most once per second until the runtime-created graph appears.
-function ClubAudioSync.getAudioPlayer(): AudioPlayer?
-	if audioPlayer == nil or audioPlayer.Parent == nil then
-		local now = os.clock()
-		if now - lastScan >= 1 then
-			lastScan = now
-			audioPlayer = scanForAudioPlayer()
-		end
-	end
-	return audioPlayer
+local function clearAnalysis()
+	previousSpectrum = nil
+	previousRms = 0
+	envelopeHistory = {}
+	bpmDetected = nil
+	bpmConfidence = 0
+	energy = 0
+	sampleAccumulator = 0
+	lastSampleAt = 0
+	lastBeatIndex = -1
 end
 
-local function getActiveAssetId(player: AudioPlayer?): string?
-	if not player then return nil end
+local function ensureAnalyzer(player: AudioPlayer?)
+	if player == lastPlayer and analyzer and analyzer.Parent and analyzerWire and analyzerWire.Parent then
+		return
+	end
+	if analyzerWire then pcall(function() analyzerWire:Destroy() end) end
+	if analyzer then pcall(function() analyzer:Destroy() end) end
+	analyzerWire = nil
+	analyzer = nil
+	lastPlayer = player
+	clearAnalysis()
+	if not player then return end
+
+	local root = backendRootFor(player)
+	if not root then return end
+	local ok, result = pcall(function()
+		local liveAnalyzer = Instance.new("AudioAnalyzer")
+		liveAnalyzer.Name = "ClubNeonLiveAudioAnalyzer"
+		liveAnalyzer.SpectrumEnabled = true
+		liveAnalyzer.Parent = root
+
+		local wire = Instance.new("Wire")
+		wire.Name = "ClubNeonAnalyzerTap"
+		wire.SourceInstance = player
+		wire.SourceName = "Output"
+		wire.TargetInstance = liveAnalyzer
+		wire.TargetName = "Input"
+		wire.Parent = root
+		return {liveAnalyzer, wire}
+	end)
+	if ok and result then
+		analyzer = result[1] :: AudioAnalyzer
+		analyzerWire = result[2] :: Wire
+	else
+		warn("[ClubAudioSync] Live AudioAnalyzer route unavailable: " .. tostring(result))
+	end
+end
+
+local function getActiveAssetId(player: AudioPlayer?): string
+	if not player then return "" end
 	local asset = ""
 	pcall(function() asset = player.Asset end)
 	local id = if typeof(asset) == "string" then string.match(asset, "^rbxassetid://(%d+)$") else nil
@@ -108,74 +129,106 @@ local function getActiveAssetId(player: AudioPlayer?): string?
 			id = attribute
 		end
 	end
-	return id
+	return id or ""
 end
 
-local function resolveAssetBPM(player: AudioPlayer?, root: Instance?, assetId: string?): number?
-	if not player or not assetId then return nil end
-	local catalogBPM = sanitizeBPM(ASSET_BPM_BY_ID[assetId])
-	if catalogBPM then return catalogBPM end
-	-- Prefer explicitly asset-keyed metadata so a previous song's tempo cannot
-	-- be mistaken for the newly selected AudioPlayer asset.
-	for _, key in ipairs({"BPM_" .. assetId, "ClubMusicBPM_" .. assetId}) do
-		local value = sanitizeBPM(player:GetAttribute(key))
-		if value then return value end
+local function pushHistory(value: number)
+	table.insert(envelopeHistory, value)
+	if #envelopeHistory > HISTORY_LIMIT then table.remove(envelopeHistory, 1) end
+end
+
+-- Autocorrelation of measured bass-band spectral flux. The strongest periodic
+-- lag across a rolling 12-second window estimates tempo from the audio itself.
+local function estimateTempo(): (number?, number)
+	local count = #envelopeHistory
+	if count < SAMPLE_RATE * 7 then return nil, 0 end
+	local mean = 0
+	for _, value in ipairs(envelopeHistory) do mean += value end
+	mean /= count
+	local centered = table.create(count)
+	local variance = 0
+	for i, value in ipairs(envelopeHistory) do
+		local v = value - mean
+		centered[i] = v
+		variance += v * v
 	end
-	if root then
-		for _, key in ipairs({"ClubMusicBPM_" .. assetId, "BPM_" .. assetId}) do
-			local value = sanitizeBPM(root:GetAttribute(key))
-			if value then return value end
+	if variance < 0.00001 then return nil, 0 end
+
+	local bestLag, bestScore = 0, -math.huge
+	local minLag = math.floor(60 / BPM_MAX * SAMPLE_RATE)
+	local maxLag = math.ceil(60 / BPM_MIN * SAMPLE_RATE)
+	for lag = minLag, maxLag do
+		local score, normA, normB = 0, 0, 0
+		for i = lag + 1, count do
+			local a, b = centered[i], centered[i - lag]
+			score += a * b
+			normA += a * a
+			normB += b * b
+		end
+		local normalized = score / math.sqrt(math.max(1e-9, normA * normB))
+		-- Slight preference for the normal club tempo range reduces octave errors.
+		local candidateBPM = 60 * SAMPLE_RATE / lag
+		local preference = if candidateBPM >= 95 and candidateBPM <= 160 then 0.025 else 0
+		normalized += preference
+		if normalized > bestScore then
+			bestScore = normalized
+			bestLag = lag
 		end
 	end
-	local playerBPMAsset = player:GetAttribute("BPMAssetId")
-	local playerBPMAssetText = if typeof(playerBPMAsset) == "number"
-		then string.format("%.0f", playerBPMAsset) else tostring(playerBPMAsset or "")
-	if playerBPMAssetText == assetId then
-		local value = sanitizeBPM(player:GetAttribute("BPM"))
-		if value then return value end
+	if bestLag == 0 then return nil, 0 end
+	local bpm = math.clamp(60 * SAMPLE_RATE / bestLag, BPM_MIN, BPM_MAX)
+	local confidence = math.clamp((bestScore - 0.08) / 0.52, 0, 1)
+	if confidence < 0.12 then return nil, confidence end
+	return bpm, confidence
+end
+
+local function sampleAnalyzer(dt: number)
+	if not analyzer or not analyzer.Parent then return end
+	sampleAccumulator += dt
+	if sampleAccumulator < ANALYZE_INTERVAL then return end
+	sampleAccumulator %= ANALYZE_INTERVAL
+
+	local ok, rms = pcall(function() return analyzer.RmsLevel end)
+	if not ok or not finite(rms) then return end
+	local spectrumOk, spectrum = pcall(function() return analyzer:GetSpectrum() end)
+	if not spectrumOk or typeof(spectrum) ~= "table" or #spectrum < 8 then
+		-- RMS-only fallback still supplies real audio energy, but not a tempo claim.
+		energy += (math.clamp(rms, 0, 1) - energy) * 0.25
+		return
 	end
-	if root then
-		local rootBPMAsset = root:GetAttribute("ClubMusicBPMAssetId")
-		local rootBPMAssetText = if typeof(rootBPMAsset) == "number"
-			then string.format("%.0f", rootBPMAsset) else tostring(rootBPMAsset or "")
-		if rootBPMAssetText == assetId then
-			local value = sanitizeBPM(root:GetAttribute("ClubMusicBPM"))
-			if value then return value end
-			value = sanitizeBPM(root:GetAttribute("BPM"))
-			if value then return value end
+
+	local flux = 0
+	local firstBin = 2
+	local lastBin = math.min(#spectrum, 28)
+	for i = firstBin, lastBin do
+		local current = if finite(spectrum[i]) then math.max(0, spectrum[i]) else 0
+		local previous = previousSpectrum and previousSpectrum[i] or 0
+		flux += math.max(0, current - previous)
+	end
+	local rmsRise = math.max(0, rms - previousRms)
+	local onsetEnvelope = flux * 0.82 + rmsRise * 0.18
+	previousSpectrum = table.clone(spectrum)
+	previousRms = rms
+	energy += (math.clamp(rms * 5, 0, 1) - energy) * 0.22
+	pushHistory(onsetEnvelope)
+
+	local detected, confidence = estimateTempo()
+	if detected then
+		bpmDetected = detected
+		bpmConfidence = confidence
+	end
+end
+
+function ClubAudioSync.getAudioPlayer(): AudioPlayer?
+	if audioPlayer == nil or audioPlayer.Parent == nil then
+		local now = os.clock()
+		if now - lastScan >= 0.5 then
+			lastScan = now
+			audioPlayer = scanForAudioPlayer()
+			ensureAnalyzer(audioPlayer)
 		end
 	end
-	return nil
-end
-
-local function resolveBPMTarget()
-	local target = bpmOverride
-	local player = ClubAudioSync.getAudioPlayer()
-	local root = backendRootFor(player)
-	local assetId = getActiveAssetId(player)
-	if sanitizeBPM(target) == nil then
-		target = resolveAssetBPM(player, root, assetId)
-	end
-	local validTarget = sanitizeBPM(target)
-	if validTarget ~= nil then
-		bpmLastKnown = validTarget
-		bpmTarget = validTarget
-	else
-		-- An asset ID alone does not expose musical tempo. Keep the last
-		-- verified BPM until metadata matching the active asset is available.
-		bpmTarget = bpmLastKnown
-	end
-end
-
-function ClubAudioSync.getBPM(): number
-	resolveBPMTarget()
-	return bpmCurrent
-end
-
--- Push the tempo from outside (e.g. the audio backend or an admin tool).
--- Values are clamped to the supported 60–300 BPM range. Pass nil to clear.
-function ClubAudioSync.setBPM(bpm: number?)
-	bpmOverride = sanitizeBPM(bpm)
+	return audioPlayer
 end
 
 export type BeatState = {
@@ -183,88 +236,72 @@ export type BeatState = {
 	assetId: string,
 	timePosition: number,
 	bpm: number,
-	beatIndex: number, -- beats elapsed in the current track
-	beatCount: number, -- beats since this module started syncing (hue/pattern cycling)
-	beatPhase: number, -- 0..1 position inside the current beat
-	barPhase: number, -- 0..1 position inside the current 4-beat bar
-	pulse: number, -- 1 on the kick, exponential decay
-	energy: number, -- smoothed 0..1 simulated loudness envelope
-	movementSpeed: number, -- shared smoothed movement multiplier, adapted primarily to BPM
+	bpmConfidence: number,
+	bpmSource: string,
+	beatIndex: number,
+	beatCount: number,
+	beatPhase: number,
+	barPhase: number,
+	pulse: number,
+	energy: number,
+	movementSpeed: number,
 }
 
--- Call every frame (or whenever fresh beat data is needed). Advances the
--- internal clock from real elapsed time, so it is safe to call from any
--- number of scripts without double-stepping.
 function ClubAudioSync.getBeatState(): BeatState
 	local now = os.clock()
 	local dt = math.min(now - lastT, 0.1)
 	lastT = now
 
 	local player = ClubAudioSync.getAudioPlayer()
-	if player ~= lastBeatPlayer then
-		lastBeatPlayer = player
-		lastBeatAssetId = nil
-		lastBeatIndex = -1
-	end
+	if player ~= lastPlayer then ensureAnalyzer(player) end
 	local assetId = getActiveAssetId(player)
-	if assetId ~= lastBeatAssetId then
-		lastBeatAssetId = assetId
-		lastBeatIndex = -1
+	if assetId ~= lastAssetId then
+		lastAssetId = assetId
+		clearAnalysis()
 	end
+
 	local playing = player ~= nil and player.IsPlaying
-	local timePosition = if playing then player.TimePosition else 0
+	local timePosition = if playing and player then player.TimePosition else 0
 	if lastPlaying ~= playing then
 		lastPlaying = playing
 		lastBeatIndex = -1
 	end
+	if playing then sampleAnalyzer(dt) end
 
-	resolveBPMTarget()
-	-- Ease toward the target tempo so track changes adapt the beat clock
-	-- smoothly instead of snapping (converges in roughly a second).
-	bpmCurrent += (bpmTarget - bpmCurrent) * (1 - math.exp(-4 * dt))
+	local targetBPM = bpmDetected or BPM_SEED
+	bpmCurrent += (targetBPM - bpmCurrent) * (1 - math.exp(-2.4 * dt))
 	local bpm = bpmCurrent
 
-	-- Music follows AudioPlayer.TimePosition. When stopped, a quiet tempo clock
-	-- keeps ambient lighting alive at the last known BPM instead of freezing.
+	-- The analyzer supplies actual audio energy. TimePosition remains the
+	-- stable playback clock; measured BPM controls its beat phase and cadence.
 	local beats = (if playing then timePosition else now) * bpm / 60
 	local beatIndex = math.floor(beats)
 	if beatIndex ~= lastBeatIndex then
-		-- Track rewinds and play/stop transitions start a fresh beat segment.
 		if lastBeatIndex >= 0 and beatIndex > lastBeatIndex then
-			beatCount += beatIndex - lastBeatIndex
+			beatCount += math.min(beatIndex - lastBeatIndex, 8)
 		else
 			beatCount += 1
 		end
 		lastBeatIndex = beatIndex
-		pulse = 1
 	end
-
 	local beatPhase = beats % 1
-	pulse = math.exp(-beatPhase * 5)
-
-	-- Simulated envelope: per-beat variety from a deterministic hash so EQ
-	-- bars breathe differently each beat, plus the kick pulse on top.
-	local beatVariety = 0.25 + 0.5 * hash01(beatCount)
-	local targetEnergy = if playing then math.clamp(0.3 + 0.4 * pulse + 0.3 * beatVariety, 0, 1) else 0
-	energy += (targetEnergy - energy) * (1 - math.exp(-10 * dt))
-
-	-- Centralize the movement response so all FX use the same tempo adaptation.
-	-- BPM drives the response; the simulated energy envelope adds only a subtle lift.
+	local pulse = math.exp(-beatPhase * 5)
 	local tempoDrive = math.clamp((bpm - 70) / 90, 0, 1)
-	local energyDrive = math.clamp(energy, 0, 1)
-	local targetMovementSpeed = math.clamp(0.58 + tempoDrive * 0.68 + energyDrive * 0.18,
+	local targetMovementSpeed = math.clamp(0.58 + tempoDrive * 0.68 + energy * 0.18,
 		MOVEMENT_SPEED_MIN, MOVEMENT_SPEED_MAX)
 	movementSpeedCurrent += (targetMovementSpeed - movementSpeedCurrent) * (1 - math.exp(-1.8 * dt))
 
 	return {
 		playing = playing,
-		assetId = assetId or "",
+		assetId = assetId,
 		timePosition = timePosition,
 		bpm = bpm,
-		beatIndex = math.floor(beats),
+		bpmConfidence = bpmConfidence,
+		bpmSource = if bpmDetected then "AudioAnalyzer" else "Analyzer warming up",
+		beatIndex = beatIndex,
 		beatCount = beatCount,
 		beatPhase = beatPhase,
-		barPhase = (math.floor(beats) % 4) / 4,
+		barPhase = (beatIndex % 4) / 4,
 		pulse = pulse,
 		energy = energy,
 		movementSpeed = movementSpeedCurrent,
