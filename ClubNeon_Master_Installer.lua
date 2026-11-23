@@ -36,7 +36,7 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "2a4326b27f7f9d9834912a7ae60ebc16b841ca35",
-    utility = "2a20e1480716006919a66efe9bf6623fb1797fc3",
+    utility = "77c506441162da3e8d0e9009330766003210c7a9",
 }
 
 if RunService:IsRunning() then
