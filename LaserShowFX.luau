@@ -102,32 +102,43 @@ end
 -- Four-wall crosshatch coverage: north/south fixtures scan the full floor depth
 -- on distinct X lanes; east/west fixtures scan the full width on distinct Z lanes.
 -- Fixture phase and BPM-scaled speed remain independent; no ceiling-FX pattern clock.
-local function adaptiveCoverageTarget(side, sideSlot, phase, fixtureSpeed, showTime, beat, y)
+local function adaptiveCoverageTarget(coverageIndex, totalFixtures, phase, fixtureSpeed, showTime, beat, y)
 	local spanX, spanZ = maxX - minX, maxZ - minZ
 	local marginX = math.min(2.5, spanX * 0.035)
 	local marginZ = math.min(2.5, spanZ * 0.035)
 	local usableX = math.max(1, spanX - marginX * 2)
 	local usableZ = math.max(1, spanZ - marginZ * 2)
-	local slot = math.clamp(sideSlot or 0.5, 0.04, 0.96)
+
+	-- Assign every fixture a dedicated cell across the entire floor. The
+	-- previous wall-parallel lanes left the same narrow strips active for long
+	-- periods, so overlapping sweeps could still look weighted to one side.
+	-- A 2:1 cell grid keeps the 32-head and 24-laser layouts evenly tiled.
+	local aspect = usableX / math.max(1, usableZ)
+	local rows = math.max(1, math.floor(math.sqrt(math.max(1, totalFixtures) / (2 * aspect)) + 0.5))
+	local columns = math.max(1, math.ceil(totalFixtures / rows))
+	local index = math.clamp(math.floor(coverageIndex or 1) - 1, 0, math.max(0, totalFixtures - 1))
+	local column = index % columns
+	local row = math.floor(index / columns)
+	local cellWidth = usableX / columns
+	local cellDepth = usableZ / rows
+	local centerX = minX + marginX + (column + 0.5) * cellWidth
+	local centerZ = minZ + marginZ + (row + 0.5) * cellDepth
+
+	-- Shared BPM/energy changes travel speed only. Each fixture retains its
+	-- own phase and traces a two-axis loop inside its assigned floor cell.
 	local tempoDrive = math.clamp((((beat and beat.bpm) or 120) - 70) / 120, 0, 1)
 	local energyDrive = math.clamp((beat and beat.energy) or 0, 0, 1)
 	local rate = (0.38 + tempoDrive * 0.32 + energyDrive * 0.12) * fixtureSpeed
-	local sweep = 0.5 - 0.5 * math.cos(showTime * rate + phase)
-	local weave = math.sin(showTime * rate * 0.53 + phase * 1.37) * 0.018
-	local x, z
-	if side == "north" or side == "south" then
-		x = minX + marginX + math.clamp(slot + weave, 0.025, 0.975) * usableX
-		local travel = if side == "south" then 1 - sweep else sweep
-		z = minZ + marginZ + travel * usableZ
-	else
-		z = minZ + marginZ + math.clamp(slot + weave, 0.025, 0.975) * usableZ
-		local travel = if side == "west" then 1 - sweep else sweep
-		x = minX + marginX + travel * usableX
-	end
-	return Vector3.new(math.clamp(x, minX + marginX, maxX - marginX), y,
-		math.clamp(z, minZ + marginZ, maxZ - marginZ))
+	local sweepX = math.sin(showTime * rate + phase)
+	local sweepZ = math.sin(showTime * rate * 0.73 + phase * 1.61)
+	local x = centerX + sweepX * cellWidth * 0.43
+	local z = centerZ + sweepZ * cellDepth * 0.43
+	return Vector3.new(
+		math.clamp(x, minX + marginX, maxX - marginX),
+		y,
+		math.clamp(z, minZ + marginZ, maxZ - marginZ)
+	)
 end
-
 local function collectLasers()
 	local list = {}
 	if not rig then return list, {north = 0, east = 0, south = 0, west = 0} end
@@ -386,8 +397,8 @@ RunService.Heartbeat:Connect(function()
 	-- while shared BPM/energy continuously modulate its sweep rate.
 	for i, L in ipairs(lasers) do
 		local targetPos = adaptiveCoverageTarget(
-			L.side,
-			L.sideSlot,
+			L.coverageIndex,
+			#lasers,
 			L.phase,
 			L.speed,
 			showTime,
