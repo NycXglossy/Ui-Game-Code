@@ -50,7 +50,7 @@ end
 local warningFrame = mk("Frame", {
 	Name = "WarningFrame",
 	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = Color3.fromRGB(5, 5, 10),
+	BackgroundColor3 = Color3.fromRGB(13, 18, 28),
 	BorderSizePixel = 0,
 	ZIndex = 10,
 }, gui) :: Frame
@@ -58,7 +58,7 @@ local warningFrame = mk("Frame", {
 mk("Frame", {
 	Name = "Vignette",
 	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = Color3.fromRGB(30, 20, 50),
+	BackgroundColor3 = Color3.fromRGB(24, 29, 41),
 	BackgroundTransparency = 0.9,
 	BorderSizePixel = 0,
 	ZIndex = 10,
@@ -69,14 +69,14 @@ local warningCard = mk("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.5),
 	Size = UDim2.fromScale(0.9, 0.72),
-	BackgroundColor3 = Color3.fromRGB(14, 16, 26),
+	BackgroundColor3 = Color3.fromRGB(13, 16, 24),
 	BackgroundTransparency = 0.04,
 	BorderSizePixel = 0,
 	ZIndex = 11,
 }, warningFrame) :: Frame
 mk("UISizeConstraint", {MinSize = Vector2.new(280, 300), MaxSize = Vector2.new(560, 390)}, warningCard)
 mk("UICorner", {CornerRadius = UDim.new(0, 20)}, warningCard)
-mk("UIStroke", {Thickness = 2, Color = Color3.fromRGB(255, 200, 0), Transparency = 0.35}, warningCard)
+mk("UIStroke", {Thickness = 2, Color = Color3.fromRGB(226, 194, 132), Transparency = 0.35}, warningCard)
 
 local warningIcon = mk("TextLabel", {
 	Name = "WarningIcon",
@@ -84,7 +84,7 @@ local warningIcon = mk("TextLabel", {
 	Position = UDim2.new(0, 16, 0, 16),
 	BackgroundTransparency = 1,
 	Text = "⚠",
-	TextColor3 = Color3.fromRGB(255, 200, 0),
+	TextColor3 = Color3.fromRGB(226, 194, 132),
 	TextScaled = true,
 	Font = Enum.Font.GothamBold,
 	ZIndex = 12,
@@ -97,7 +97,7 @@ local warningTitle = mk("TextLabel", {
 	Position = UDim2.new(0, 18, 0, 88),
 	BackgroundTransparency = 1,
 	Text = "WARNING: FLASHING LIGHTS",
-	TextColor3 = Color3.fromRGB(255, 255, 255),
+	TextColor3 = Color3.fromRGB(242, 241, 236),
 	TextScaled = true,
 	Font = Enum.Font.GothamBlack,
 	ZIndex = 12,
@@ -110,7 +110,7 @@ local warningBody = mk("TextLabel", {
 	Position = UDim2.new(0, 24, 0, 140),
 	BackgroundTransparency = 1,
 	Text = "This experience contains rapidly flashing colors, strobe lights, and bright neon effects. If you are sensitive to flashing lights or have photosensitive epilepsy, please use caution.",
-	TextColor3 = Color3.fromRGB(200, 200, 210),
+	TextColor3 = Color3.fromRGB(190, 197, 207),
 	TextScaled = true,
 	TextWrapped = true,
 	Font = Enum.Font.Gotham,
@@ -123,24 +123,24 @@ local enterButton = mk("TextButton", {
 	AnchorPoint = Vector2.new(0.5, 1),
 	Position = UDim2.new(0.5, 0, 1, -20),
 	Size = UDim2.new(0.82, 0, 0, 54),
-	BackgroundColor3 = Color3.fromRGB(0, 255, 200),
+	BackgroundColor3 = Color3.fromRGB(119, 196, 203),
 	Text = "ENTER THE CLUB",
-	TextColor3 = Color3.fromRGB(5, 5, 10),
+	TextColor3 = Color3.fromRGB(13, 18, 28),
 	TextScaled = true,
 	Font = Enum.Font.GothamBlack,
 	AutoButtonColor = true,
 	ZIndex = 12,
 }, warningCard) :: TextButton
 mk("UICorner", {CornerRadius = UDim.new(0, 14)}, enterButton)
-mk("UIStroke", {Thickness = 2, Color = Color3.fromRGB(0, 255, 255), Transparency = 0.45}, enterButton)
+mk("UIStroke", {Thickness = 2, Color = Color3.fromRGB(119, 196, 203), Transparency = 0.45}, enterButton)
 mk("UITextSizeConstraint", {MaxTextSize = 23, MinTextSize = 16}, enterButton)
 
 local warningAlive = true
 task.spawn(function()
 	while warningAlive and enterButton.Parent do
-		tween(enterButton, 0.9, {BackgroundColor3 = Color3.fromRGB(0, 190, 150)}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut).Completed:Wait()
+		tween(enterButton, 0.9, {BackgroundColor3 = Color3.fromRGB(75, 143, 151)}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut).Completed:Wait()
 		if not warningAlive or not enterButton.Parent then break end
-		tween(enterButton, 0.9, {BackgroundColor3 = Color3.fromRGB(0, 255, 200)}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut).Completed:Wait()
+		tween(enterButton, 0.9, {BackgroundColor3 = Color3.fromRGB(119, 196, 203)}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut).Completed:Wait()
 	end
 end)
 
@@ -174,7 +174,7 @@ warningFrame:Destroy()
 local scene = mk("Frame", {
 	Name = "BeachScene",
 	Size = UDim2.fromScale(1, 1),
-	BackgroundColor3 = Color3.fromRGB(255, 140, 60),
+	BackgroundColor3 = Color3.fromRGB(13, 18, 28),
 	BorderSizePixel = 0,
 	ClipsDescendants = true,
 	ZIndex = 5,
@@ -190,10 +190,10 @@ local sky = mk("Frame", {
 mk("UIGradient", {
 	Rotation = 90,
 	Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 20, 80)),
-		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(255, 90, 140)),
-		ColorSequenceKeypoint.new(0.75, Color3.fromRGB(255, 160, 70)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 220, 120)),
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(13, 18, 28)),
+		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(24, 29, 41)),
+		ColorSequenceKeypoint.new(0.75, Color3.fromRGB(119, 196, 203)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(226, 194, 132)),
 	}),
 }, sky)
 
@@ -202,18 +202,18 @@ local sun = mk("Frame", {
 	AnchorPoint = Vector2.new(0.5, 0.5),
 	Position = UDim2.fromScale(0.5, 0.56),
 	Size = UDim2.fromScale(0.16, 0.16),
-	BackgroundColor3 = Color3.fromRGB(255, 230, 140),
+	BackgroundColor3 = Color3.fromRGB(226, 194, 132),
 	BorderSizePixel = 0,
 	ZIndex = 6,
 }, scene) :: Frame
 mk("UICorner", {CornerRadius = UDim.new(1, 0)}, sun)
-mk("UIStroke", {Thickness = 6, Color = Color3.fromRGB(255, 180, 80), Transparency = 0.5}, sun)
+mk("UIStroke", {Thickness = 6, Color = Color3.fromRGB(119, 196, 203), Transparency = 0.5}, sun)
 tween(sun, 6, {Position = UDim2.fromScale(0.5, 0.66)}, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
 
 local waveColors = {
-	Color3.fromRGB(60, 90, 200),
-	Color3.fromRGB(45, 70, 180),
-	Color3.fromRGB(30, 50, 150),
+	Color3.fromRGB(45, 78, 91),
+	Color3.fromRGB(29, 53, 67),
+	Color3.fromRGB(18, 35, 49),
 }
 local waves: {Frame} = {}
 for index = 1, 3 do
@@ -247,7 +247,7 @@ mk("Frame", {
 	AnchorPoint = Vector2.new(0, 1),
 	Position = UDim2.fromScale(0, 1),
 	Size = UDim2.fromScale(1, 0.16),
-	BackgroundColor3 = Color3.fromRGB(240, 200, 140),
+	BackgroundColor3 = Color3.fromRGB(205, 169, 104),
 	BorderSizePixel = 0,
 	ZIndex = 10,
 }, scene)
@@ -262,7 +262,7 @@ local function buildPalm(xScale: number, scaleValue: number, flip: boolean)
 		ZIndex = 11,
 	}, scene) :: Frame
 
-	local silhouette = Color3.fromRGB(35, 20, 55)
+	local silhouette = Color3.fromRGB(13, 18, 28)
 	local trunk = mk("Frame", {
 		Name = "Trunk",
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -299,23 +299,23 @@ local title = mk("TextLabel", {
 	Size = UDim2.fromScale(0.9, 0.17),
 	Position = UDim2.fromScale(0.05, 0.3),
 	BackgroundTransparency = 1,
-	Text = "NEON NIGHTCLUB",
-	TextColor3 = Color3.fromRGB(0, 255, 210),
+	Text = "CLUB NEON",
+	TextColor3 = Color3.fromRGB(226, 194, 132),
 	TextScaled = true,
 	Font = Enum.Font.GothamBlack,
 	TextTransparency = 1,
 	ZIndex = 12,
 }, scene) :: TextLabel
 mk("UITextSizeConstraint", {MaxTextSize = 68, MinTextSize = 28}, title)
-local titleStroke = mk("UIStroke", {Thickness = 4, Color = Color3.fromRGB(0, 200, 255), Transparency = 1}, title)
+local titleStroke = mk("UIStroke", {Thickness = 4, Color = Color3.fromRGB(119, 196, 203), Transparency = 1}, title)
 
 local subtitle = mk("TextLabel", {
 	Name = "Subtitle",
 	Size = UDim2.fromScale(0.9, 0.07),
 	Position = UDim2.fromScale(0.05, 0.49),
 	BackgroundTransparency = 1,
-	Text = "BEACH PARTY • ROOFTOP CLUB • ALL NIGHT",
-	TextColor3 = Color3.fromRGB(255, 255, 255),
+	Text = "THE CLUB NEON EXPERIENCE",
+	TextColor3 = Color3.fromRGB(242, 241, 236),
 	TextScaled = true,
 	Font = Enum.Font.GothamBold,
 	TextTransparency = 1,
@@ -331,7 +331,7 @@ local skipButton = mk("TextButton", {
 	BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 	BackgroundTransparency = 0.4,
 	Text = "SKIP  >>",
-	TextColor3 = Color3.fromRGB(255, 255, 255),
+	TextColor3 = Color3.fromRGB(242, 241, 236),
 	TextSize = 18,
 	Font = Enum.Font.GothamBold,
 	AutoButtonColor = true,
@@ -357,10 +357,10 @@ task.spawn(function()
 end)
 
 local hype = {
-	"BEACH PARTY • ROOFTOP CLUB • ALL NIGHT",
-	"DANCE UNDER THE SUNSET",
-	"THE BEAT IS ABOUT TO DROP",
-	"WELCOME TO THE PARTY",
+	"THE CLUB NEON EXPERIENCE",
+	"TEAL GLOW • ROYAL GOLD",
+	"LIGHTS UP • MUSIC ON",
+	"WELCOME TO CLUB NEON",
 }
 local elapsed = 0
 while elapsed < 5 and not skipped and gui.Parent do
