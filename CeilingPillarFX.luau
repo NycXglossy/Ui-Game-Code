@@ -63,6 +63,7 @@ while #pillars == 0 do
 	task.wait(0.5)
 	pillars = collectPillars()
 end
+print("[ClubNeon][CeilingPillarFX] Animation started; active pillars=" .. #pillars)
 
 -- Grid coordinates centered at 0
 local function gridPos(p)
