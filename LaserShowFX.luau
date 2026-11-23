@@ -28,10 +28,10 @@ repeat
 	floorPartCount = 0
 	if folder then
 		for _, p in folder:GetChildren() do
-			if p:IsA("BasePart") then
+			if p:IsA("BasePart") and p.Name == "FloorPanel" then
 				floorPartCount += 1
 				local pos = p.Position
-				if pos.Y < 40 then floorY = math.max(floorY, pos.Y) end
+				floorY = math.max(floorY, pos.Y)
 				minX = math.min(minX, pos.X); maxX = math.max(maxX, pos.X)
 				minZ = math.min(minZ, pos.Z); maxZ = math.max(maxZ, pos.Z)
 			end
