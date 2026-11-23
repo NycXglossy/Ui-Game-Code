@@ -1,7 +1,7 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.54
+-- CLUB NEON MASTER INSTALLER v0.4.55
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.54 adapts continuous laser and moving-head sweep speed smoothly to the active track BPM and energy.
+-- v0.4.55 centralizes adaptive BPM movement speed in ClubAudioSync for all supported FX consumers.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
 --
@@ -23,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.54"
+local INSTALLER_VERSION = "0.4.55"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -37,6 +37,7 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "df45c86a1d3e115fb17c5f5dc9c9c1905ae0a917",
+    audioSync = "51da329a366d03db19aeba4fb412b062187f2ed0",
     laserFX = "7151ec3caa29316879ebb606954dec3f6f7dacc0",
     laserRig = "2b525ecf949e8f5de0b15ac27914f79b98efa2fa",
     movingHeadFX = "51a50c8cf05c0d7783a991cf8f36f3652fc29b3d",
@@ -312,7 +313,7 @@ end
 -- Shared beat clock and separate, independently restartable Club Neon FX.
 -- Client scripts stay in StarterPlayerScripts; rig builders and replicated
 -- fixture animators stay server-side. All source is pinned to the FX upload.
-addSource("ClubAudioSync.luau", "ModuleScript", "ReplicatedStorage", "ClubAudioSync", RELEASE.fx)
+addSource("ClubAudioSync.luau", "ModuleScript", "ReplicatedStorage", "ClubAudioSync", RELEASE.audioSync)
 -- Server-owned fixture/layout halves; their paired LocalScripts animate locally.
 addSource("AudienceBlinderRig.server.lua", "Script", "ServerScriptService", "AudienceBlinderRig", RELEASE.fx)
 addSource("StageHazeRig.server.lua", "Script", "ServerScriptService", "StageHazeRig", RELEASE.fx)
