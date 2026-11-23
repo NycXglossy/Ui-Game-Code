@@ -8,8 +8,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ClubAudioSync = require(ReplicatedStorage:WaitForChild("ClubAudioSync"))
 
 local ROOT_NAME = "CeilingFX"
-local FLOOR_BRIGHTNESS = 0.34
-local CEILING_BRIGHTNESS = 0.30
+local FLOOR_BRIGHTNESS = 0.43
+local CEILING_BRIGHTNESS = 0.24
 local UPDATE_RATE = 1 / 15
 local root = workspace:WaitForChild(ROOT_NAME)
 
@@ -43,7 +43,7 @@ root.ChildRemoved:Connect(function() task.defer(collect) end)
 local function paint(panel: Panel, hue: number, level: number, ceiling: boolean)
 	if not panel.part.Parent then return end
 	local cap = if ceiling then CEILING_BRIGHTNESS else FLOOR_BRIGHTNESS
-	local value = 0.035 + math.clamp(level, 0, 1) * cap
+	local value = 0.045 + math.clamp(level, 0, 1) * cap
 	panel.part.Color = Color3.fromHSV(hue % 1, 0.88, value)
 end
 
@@ -54,7 +54,7 @@ local function floorPattern(panel: Panel, phrase: number, phase: number, pulse: 
 	local angle = math.atan2(dz, dx)
 	local pattern = phrase % 6
 	local hue = (0.52 + phrase * 0.035 + panel.seed * 0.0007) % 1
-	local level = 0.08
+	local level = 0.12
 	if pattern == 0 then -- diagonal traveling wave
 		level = 0.12 + 0.88 * math.max(0, math.cos((panel.x + panel.z) * 0.62 - phase * math.pi * 2)) ^ 3
 	elseif pattern == 1 then -- concentric rings
