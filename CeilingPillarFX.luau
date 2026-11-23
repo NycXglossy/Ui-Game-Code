@@ -94,6 +94,7 @@ RunService.Heartbeat:Connect(function()
 
 	if now > nextHealthCheck then
 		nextHealthCheck = now + 2
+		if not pillarsModel or not pillarsModel.Parent then pillarsModel = workspace:FindFirstChild("CeilingPillars") end
 		local discovered = collectPillars()
 		local stale = #discovered ~= #pillars
 		if not stale then
