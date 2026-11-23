@@ -98,6 +98,26 @@ local function distributedFloorSpot(index, total, seed, y)
 	)
 end
 
+-- Wall-balanced floor anchors: every perimeter wall contributes targets to
+-- all four floor quadrants. This avoids a whole wall's fixtures inheriting
+-- neighboring cells on one side of the venue.
+local function wallBalancedFloorSpot(laneIndex, seed, y)
+	local lane = laneIndex - 1
+	local quadrant = lane % 4
+	local withinQuadrant = math.floor(lane / 4)
+	local quadrantColumn = quadrant % 2
+	local quadrantRow = math.floor(quadrant / 2)
+	local halfWidth = (maxX - minX) * 0.5
+	local halfDepth = (maxZ - minZ) * 0.5
+	local localX = if withinQuadrant % 2 == 0 then 0.34 else 0.66
+	local localZ = if withinQuadrant % 2 == 0 then 0.34 else 0.66
+	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.16
+	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.16
+	local x = minX + quadrantColumn * halfWidth + localX * halfWidth + jitterX
+	local z = minZ + quadrantRow * halfDepth + localZ * halfDepth + jitterZ
+	return clampFloorPoint(x, z, y)
+end
+
 local function collectHeads()
 	local list = {}
 	if not rig then return list, {north = 0, east = 0, south = 0, west = 0} end
@@ -157,7 +177,8 @@ local function collectHeads()
 			if H then
 				coverageIndex += 1
 				H.coverageIndex = coverageIndex
-				H.anchor = distributedFloorSpot(coverageIndex, #list, H.idx * 29.7, floorY + 1)
+				-- Each wall cycles its own fixtures through all four floor quadrants.
+				H.anchor = wallBalancedFloorSpot(laneIndex, H.idx * 29.7, floorY + 1)
 				H.currentTarget = H.anchor
 			end
 		end
