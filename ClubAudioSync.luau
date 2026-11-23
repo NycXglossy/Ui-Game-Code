@@ -172,6 +172,7 @@ end
 
 export type BeatState = {
 	playing: boolean,
+	assetId: string,
 	timePosition: number,
 	bpm: number,
 	beatIndex: number, -- beats elapsed in the current track
