@@ -100,7 +100,7 @@ end
 
 local function collectHeads()
 	local list = {}
-	if not rig then return list end
+	if not rig then return list, {north = 0, east = 0, south = 0, west = 0} end
 	-- Use the actual emitter perimeter for wall classification. The venue trim
 	-- can extend beyond the CeilingFX dance-floor panels, so comparing fixture
 	-- positions directly with floor bounds can label every fixture as one side.
