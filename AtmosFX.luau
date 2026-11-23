@@ -68,6 +68,7 @@ RunService.Heartbeat:Connect(function()
 
 	-- Beat clock from the shared ClubAudioSync module
 	local beat = ClubAudioSync.getBeatState()
+	local tempoNow = now * (beat.bpm / 128)
 	norm = beat.energy
 
 	if beat.beatCount ~= lastBeatCount then
@@ -112,7 +113,7 @@ RunService.Heartbeat:Connect(function()
 	-- they track every swell, riff and vocal, not just the drum hits
 	local beatGlow = math.exp(-beatAge * 5) * beatPower
 	local envelope = norm ^ 1.4 -- sharpened so quiet parts stay calm
-	local flicker = 0.75 + 0.25 * math.sin(now * 31) -- subtle flame jitter
+	local flicker = 0.75 + 0.25 * math.sin(tempoNow * 31) -- subtle flame jitter
 	for _, f in flames do
 		if f.unit.Parent then
 			f.emitter.Rate = FLAME_AMBIENT * envelope * flicker
