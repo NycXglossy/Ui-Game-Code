@@ -82,21 +82,25 @@ end
 -- Stratified coverage: each projector owns a different floor cell instead of
 -- independently rolling anywhere on the floor (which can create hotspots).
 local function adaptiveCoverageTarget(anchor, quadrant, phase, fixtureSpeed, showTime, beat, y)
-	-- A fixture moves continuously inside its own assigned quadrant. Audio tempo
-	-- and energy modulate the trajectory; no ceiling-FX pattern clock owns it.
-	local q = quadrant or 0
+	-- Fixtures rotate through neighboring floor quadrants on a slow independent
+	-- cycle. Their phase offsets prevent a venue-wide synchronized direction change.
+	-- BPM/energy control movement rate only; the ceiling FX never owns the path.
+	local baseQ = quadrant or 0
+	local q = (baseQ + math.floor((showTime + phase * 3) / 32)) % 4
 	local halfWidth = (maxX - minX) * 0.5
 	local halfDepth = (maxZ - minZ) * 0.5
-	local qMinX = minX + (q % 2) * halfWidth + 0.75
-	local qMaxX = minX + (q % 2 + 1) * halfWidth - 0.75
-	local qMinZ = minZ + math.floor(q / 2) * halfDepth + 0.75
-	local qMaxZ = minZ + (math.floor(q / 2) + 1) * halfDepth - 0.75
+	local baseCenterX = minX + (baseQ % 2 + 0.5) * halfWidth
+	local baseCenterZ = minZ + (math.floor(baseQ / 2) + 0.5) * halfDepth
+	local centerX = minX + (q % 2 + 0.5) * halfWidth
+	local centerZ = minZ + (math.floor(q / 2) + 0.5) * halfDepth
+	local qMinX, qMaxX = minX + (q % 2) * halfWidth + 0.75, minX + (q % 2 + 1) * halfWidth - 0.75
+	local qMinZ, qMaxZ = minZ + math.floor(q / 2) * halfDepth + 0.75, minZ + (math.floor(q / 2) + 1) * halfDepth - 0.75
 	local tempoDrive = math.clamp((beat.bpm - 70) / 120, 0, 1)
 	local energyDrive = math.clamp(beat.energy, 0, 1)
 	local xRate = (0.34 + tempoDrive * 0.30 + energyDrive * 0.08) * fixtureSpeed
 	local zRate = (0.23 + tempoDrive * 0.24 + energyDrive * 0.12) * fixtureSpeed
-	local x = anchor.X + math.sin(showTime * xRate + phase) * (qMaxX - qMinX) * 0.36
-	local z = anchor.Z + math.cos(showTime * zRate + phase * 0.79) * (qMaxZ - qMinZ) * 0.36
+	local x = centerX + (anchor.X - baseCenterX) * 0.30 + math.sin(showTime * xRate + phase) * halfWidth * 0.38
+	local z = centerZ + (anchor.Z - baseCenterZ) * 0.30 + math.cos(showTime * zRate + phase * 0.79) * halfDepth * 0.38
 	return Vector3.new(math.clamp(x, qMinX, qMaxX), y, math.clamp(z, qMinZ, qMaxZ))
 end
 
@@ -121,20 +125,16 @@ end
 -- all four floor quadrants. This avoids a whole wall's fixtures inheriting
 -- neighboring cells on one side of the venue.
 local function wallBalancedFloorSpot(laneIndex, sideIndex, seed, y)
-	-- Rotate each wall's successive lanes through all four floor quadrants.
-	-- The former lane*4 expression kept each wall locked to one quadrant.
-	local slot = (laneIndex - 1) * 4 + (sideIndex - 1)
+	-- Each wall contributes anchors to all quadrants. Within a quadrant,
+	-- lane pairs occupy separate sub-cells; wall-specific jitter breaks overlap.
 	local quadrant = (laneIndex + sideIndex - 2) % 4
-	local withinQuadrant = math.floor(slot / 4)
-	local quadrantColumn = quadrant % 2
-	local quadrantRow = math.floor(quadrant / 2)
-	local halfWidth = (maxX - minX) * 0.5
-	local halfDepth = (maxZ - minZ) * 0.5
-	local cell = (sideIndex - 1) * 2 + (withinQuadrant % 2)
-	local localX = ((cell % 4) + 0.5) / 4
-	local localZ = (math.floor(cell / 4) + 0.5) / 2
-	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.12
-	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.12
+	local quadrantColumn, quadrantRow = quadrant % 2, math.floor(quadrant / 2)
+	local halfWidth, halfDepth = (maxX - minX) * 0.5, (maxZ - minZ) * 0.5
+	local laneCell = (laneIndex - 1) % 4
+	local localX = (laneCell % 2 == 0) and 0.32 or 0.68
+	local localZ = (laneCell < 2) and 0.32 or 0.68
+	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.10
+	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.10
 	local x = minX + quadrantColumn * halfWidth + localX * halfWidth + jitterX
 	local z = minZ + quadrantRow * halfDepth + localZ * halfDepth + jitterZ
 	return clampFloorPoint(x, z, y)
