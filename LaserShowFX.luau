@@ -76,6 +76,27 @@ while not rig do
 	rig = workspace:FindFirstChild("LaserRig")
 end
 
+-- Stable deterministic values avoid allocating a Random object for every fixture per frame.
+local function seededUnit(seed)
+	local value = math.sin(seed * 12.9898) * 43758.5453
+	return value - math.floor(value)
+end
+
+local function randomFloorSpot(seed, y)
+	local margin = math.min(2, math.max(0.25, (maxX - minX) * 0.04))
+	local x = minX + margin + seededUnit(seed) * math.max(0.5, maxX - minX - margin * 2)
+	local z = minZ + margin + seededUnit(seed + 1) * math.max(0.5, maxZ - minZ - margin * 2)
+	return Vector3.new(x, y, z)
+end
+
+local function clampFloorPoint(x, z, y)
+	return Vector3.new(
+		math.clamp(x, minX + 1, maxX - 1),
+		y,
+		math.clamp(z, minZ + 1, maxZ - 1)
+	)
+end
+
 local function collectLasers()
 	local list = {}
 	for _, d in rig:GetChildren() do
@@ -95,7 +116,10 @@ local function collectLasers()
 				table.insert(list, {
 					idx = idx, lens = d, target = target, pool = pool,
 					spot = spot, beams = beams,
-					currentTarget = CENTER,
+					currentTarget = randomFloorSpot(idx * 17.31, floorY + 1),
+					anchor = randomFloorSpot(idx * 17.31 + 7, floorY + 1),
+					phase = seededUnit(idx * 17.31 + 2) * math.pi * 2,
+					speed = 0.78 + seededUnit(idx * 17.31 + 3) * 0.44,
 				})
 			end
 		end
@@ -132,14 +156,9 @@ local lastColorBeat = -1
 local flareUntil = 0
 
 local clock = os.clock
-local lastT = startTime
+local lastT = clock()
 local showTime = 0
 
--- Stable deterministic values avoid allocating a Random object for every laser on every frame.
-local function seededUnit(seed)
-	local value = math.sin(seed * 12.9898) * 43758.5453
-	return value - math.floor(value)
-end
 local frameCount = 0
 local nextRigAudit = 0
 
@@ -246,45 +265,41 @@ RunService.Heartbeat:Connect(function()
 
 	-- Laser choreography: a new pattern every 16 beats (one musical phrase)
 	for i, L in ipairs(lasers) do
-		local motionSeed = L.idx * 23.17
-		local phase = seededUnit(motionSeed) * math.pi * 2
-		local speed = 0.78 + seededUnit(motionSeed + 1) * 0.44
-		local ang = i / #lasers * math.pi * 2 + phase * 0.22
+		local phase, speed = L.phase, L.speed
+		local anchor = L.anchor
 		local targetPos
 		if pattern == 0 then
-			-- Orbiting spotlights circling the floor
+			-- Independent orbit paths around randomized floor anchors.
 			local spin = showTime * 0.6 * speed + phase
-			local r = RADIUS * (0.15 + 0.3 * (0.5 + 0.5 * math.sin(showTime * 0.25 * speed + phase)))
-			targetPos = CENTER + Vector3.new(math.cos(ang + spin) * r, 0.5, math.sin(ang + spin) * r)
+			local r = RADIUS * (0.12 + 0.22 * (0.5 + 0.5 * math.sin(showTime * 0.25 * speed + phase)))
+			targetPos = clampFloorPoint(anchor.X + math.cos(spin) * r,
+				anchor.Z + math.sin(spin) * r, floorY + 0.5)
 		elseif pattern == 1 then
-			-- Criss-cross sweeps slashing across the crowd
+			-- Criss-cross sweeps use separate randomized lanes per laser.
 			local sweep = math.sin(showTime * 1.5 * speed + phase)
-			targetPos = CENTER + Vector3.new(sweep * RADIUS * 0.7, 0.5, math.cos(ang) * RADIUS * 0.45)
+			targetPos = clampFloorPoint(anchor.X + sweep * RADIUS * 0.3,
+				anchor.Z + math.cos(phase) * RADIUS * 0.3, floorY + 0.5)
 		elseif pattern == 2 then
-			-- Beat pulse: beams snap to the center on the kick, then burst outward
-			local r = RADIUS * (0.05 + (0.45 + seededUnit(motionSeed + 2) * 0.3) * (1 - kick))
-			targetPos = CENTER + Vector3.new(math.cos(ang) * r, 0.5, math.sin(ang) * r)
+			-- Beat destinations are independently randomized across the floor.
+			local function spotForBeat(n)
+				return randomFloorSpot(n * 211 + L.idx * 1877, floorY + 0.5)
+			end
+			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
-			-- Tunnel: every beam fans outward from the center, rotating like
-			-- a spinning tunnel of light around the crowd
-			local spin = showTime * 0.35 * speed + phase
-			local r = RADIUS * 0.95
-			targetPos = CENTER + Vector3.new(math.cos(ang + spin) * r, 0.5, math.sin(ang + spin) * r)
+			-- Fan sweeps across individual lanes, not a center-origin tunnel.
+			local sweep = math.sin(showTime * 0.35 * speed + phase)
+			local cross = math.cos(showTime * 0.55 * speed + phase)
+			targetPos = clampFloorPoint(anchor.X + sweep * RADIUS * 0.38,
+				anchor.Z + cross * RADIUS * 0.38, floorY + 0.5)
 		elseif pattern == 4 then
-			-- Wall crawl: beams rake along the walls themselves, tracing
-			-- light around the whole perimeter of the venue
+			-- Wall crawl remains perimeter-based with per-laser phase offsets.
 			local t = (showTime * 0.02 * speed + i / #lasers + phase / (math.pi * 2)) % 1
 			targetPos = wallPoint(t) + Vector3.new(0, 0.5, 0)
 		else
-			-- Blizzard: beams snap to random floor spots every beat, strobing
+			-- Blizzard: randomized full-floor spots on each beat, no center snap.
 			local function spotForBeat(n)
-				local seed = n + i * 97
-				local r = RADIUS * (0.2 + seededUnit(seed) * 0.75)
-				local a = ang + seededUnit(seed + 1) * math.pi
-				return CENTER + Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
+				return randomFloorSpot(n * 307 + L.idx * 2371, floorY + 0.5)
 			end
-			-- Interpolate between deterministic beat targets to avoid apparent
-			-- stalls in the high-tempo blizzard pattern.
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		end
 		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
