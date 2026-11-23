@@ -22,12 +22,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.14"
+local INSTALLER_VERSION = "0.4.15"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "b66882089bfa50bef56125488dc6c85c542ed700",
+    runtime = "14e5845d26c2a00810e0d23331293d6c9c7de3c6",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
     globalService = "032fdc0085ac0a75db270bf569b9db19ef39b36b",
     security = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
@@ -140,6 +140,7 @@ addRaw("UI_Server_Controller", "Script", "ServerScriptService", controllerSource
 addRaw("ClubNeon_UI_Renderer_Config", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Config.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Config.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_Helpers", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Helpers.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Helpers.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_StateHelpers", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_StateHelpers.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_StateHelpers.lua@" .. RELEASE.runtime)
+addRaw("ClubNeon_UI_Renderer_Typography", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Typography.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Typography.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_PurchasePromptDiagnostics", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_PurchasePromptDiagnostics.lua", RELEASE.runtime), "ClubNeon_UI_PurchasePromptDiagnostics.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_ClientPolicy", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_ClientPolicy.lua", RELEASE.runtime), "ClubNeon_UI_ClientPolicy.lua@" .. RELEASE.runtime)
 
