@@ -67,6 +67,7 @@ RunService.Heartbeat:Connect(function()
 
 	-- Beat clock from the shared ClubAudioSync module
 	local beat = ClubAudioSync.getBeatState()
+	local tempoNow = os.clock() * (beat.bpm / 128)
 	if beat.beatCount ~= lastBeatCount then
 		lastBeatCount = beat.beatCount
 		beatCount = beat.beatCount
