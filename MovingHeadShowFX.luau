@@ -137,7 +137,8 @@ RunService.Heartbeat:Connect(function()
 	-- remain frozen just because the first head is still present.
 	if now >= nextRigAudit then
 		nextRigAudit = now + 2
-		local needsRefresh = false
+		local discoveredHeads = collectHeads()
+		local needsRefresh = #discoveredHeads ~= #heads
 		for _, H in ipairs(heads) do
 			if not H.head.Parent or not H.target.Parent or not H.pool.Parent
 				or not H.beam.Parent or not H.spot.Parent then
@@ -146,7 +147,7 @@ RunService.Heartbeat:Connect(function()
 			end
 		end
 		if needsRefresh then
-			heads = collectHeads()
+			heads = discoveredHeads
 			strobeCells = collectStrobeCells()
 			print("[ClubNeon][MovingHeadShowFX] Fixture references refreshed; active heads=" .. #heads)
 		end
