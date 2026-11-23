@@ -119,7 +119,7 @@ local function collectHeads()
 	local rigMinX, rigMaxX, rigMinZ, rigMaxZ = math.huge, -math.huge, math.huge, -math.huge
 	local emitterCount = 0
 	for _, candidate in ipairs(rig:GetChildren()) do
-		if candidate:IsA("BasePart") and candidate.Name:match("^^Head(%d+)_Lens$") then
+		if candidate:IsA("BasePart") and candidate.Name:match("^Head(%d+)_Lens$") then
 			emitterCount += 1
 			rigMinX = math.min(rigMinX, candidate.Position.X)
 			rigMaxX = math.max(rigMaxX, candidate.Position.X)
@@ -245,9 +245,27 @@ local function collectStrobeCells()
 end
 
 local heads, headSideCounts = collectHeads()
-while #heads == 0 do
-	task.wait(0.5)
-	heads, headSideCounts = collectHeads()
+-- A replicated rig Folder can arrive before all fixture parts and their
+-- attachments/targets. Wait for the ready-fixture count to settle before
+-- taking the one-time controller snapshot.
+local stableCount = #heads
+local stableSince = os.clock()
+local replicationDeadline = os.clock() + 20
+while os.clock() < replicationDeadline do
+	task.wait(0.25)
+	local nextFixtures, nextCounts = collectHeads()
+	if #nextFixtures ~= stableCount then
+		stableCount = #nextFixtures
+		stableSince = os.clock()
+	end
+	heads, headSideCounts = nextFixtures, nextCounts
+	if #heads > 0 and os.clock() - stableSince >= 3 then
+		break
+	end
+end
+if #heads == 0 then
+	warn("[ClubNeon][FX] No complete fixtures replicated within 20 seconds; controller will not start.")
+	return
 end
 local strobeCells = collectStrobeCells()
 print("[ClubNeon][MovingHeadShowFX] Four-wall crosshatch coverage ready; heads=" .. #heads
