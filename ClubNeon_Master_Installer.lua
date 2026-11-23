@@ -23,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.68"
+local INSTALLER_VERSION = "0.4.69"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -38,9 +38,9 @@ local RELEASE = {
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "df45c86a1d3e115fb17c5f5dc9c9c1905ae0a917",
     audioSync = "e0b631612dd9479021930d79ad250530990d2f97",
-    laserFX = "f25e1b4cafda5451a0928a30b96177c836ffbab2",
+    laserFX = "e7f97f3be5973d1149208f88a5806336568da4df",
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
-    movingHeadFX = "40336e4d718a45ce8fd6ca4d14234c35c67f0c34",
+    movingHeadFX = "6908be92a1b2575bb2e772d9eb011d5046d6d3af",
     movingHeadRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
