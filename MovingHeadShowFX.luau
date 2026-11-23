@@ -1,5 +1,5 @@
 -- MovingHeadShowFX (client half of the dual-script projector show):
--- animates the moving-head rig built by the server script. Uses the shared
+-- animates the 16-fixture, four-per-side moving-head rig built by the server script. Uses the shared
 -- ClubAudioSync beat clock, hue cadence (0.045/beat) and 16-beat pattern
 -- rotation so the whole club hits together, synced to the club's ClubMusic
 -- AudioPlayer backend. Heavy kicks fire the strobe bars in 12Hz bursts.
@@ -147,7 +147,7 @@ while #heads == 0 do
 	heads = collectHeads()
 end
 local strobeCells = collectStrobeCells()
-print("[ClubNeon][MovingHeadShowFX] Animation started; heads=" .. #heads .. ", strobeCells=" .. #strobeCells)
+print("[ClubNeon][MovingHeadShowFX] Balanced four-side animation started; heads=" .. #heads .. ", strobeCells=" .. #strobeCells)
 
 -- Beat state (driven by ClubAudioSync's beat clock)
 local lastBeatCount = -1
@@ -252,7 +252,7 @@ RunService.Heartbeat:Connect(function()
 	end
 
 	-- Beam glow swells with the kick
-	local beamFade = math.clamp(0.72 - kick * 0.12, 0.48, 0.72)
+	local beamFade = math.clamp(0.68 - kick * 0.12, 0.44, 0.68)
 	for _, H in ipairs(heads) do
 		H.beam.Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, beamFade),
@@ -284,21 +284,15 @@ RunService.Heartbeat:Connect(function()
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
-			-- Per-fixture perimeter crawl with a randomized starting offset.
-			local t = (showTime * 0.03 * speed + i / #heads + phase / (math.pi * 2)) % 1
-			local per = 2 * ((maxX - minX) + (maxZ - minZ))
-			local d2 = t * per
-			local wx, wz
-			if d2 < maxX - minX then
-				wx, wz = minX + d2, minZ
-			elseif d2 < (maxX - minX) + (maxZ - minZ) then
-				wx, wz = maxX, minZ + (d2 - (maxX - minX))
-			elseif d2 < 2 * (maxX - minX) + (maxZ - minZ) then
-				wx, wz = maxX - (d2 - (maxX - minX) - (maxZ - minZ)), maxZ
-			else
-				wx, wz = minX, maxZ - (d2 - 2 * (maxX - minX) - (maxZ - minZ))
-			end
-			targetPos = Vector3.new(wx, floorY + 14 + math.sin(showTime * 1.2 * speed + phase) * 8, wz)
+			-- Opposing-side cross-room sweeps. Each fixture traverses a dedicated
+			-- lane from its wall toward the opposite half, keeping all four sides active.
+			local lane = (i - 0.5) / #heads
+			local direction = if H.idx <= #heads / 2 then 1 else -1
+			local sweep = (math.sin(showTime * 0.62 * speed + phase) + 1) * 0.5
+			local x = minX + (maxX - minX) * ((lane + sweep * 0.34) % 1)
+			local zBase = if H.idx % 4 <= 2 then minZ + (maxZ - minZ) * 0.28 else minZ + (maxZ - minZ) * 0.72
+			local z = zBase + direction * math.sin(showTime * 0.48 * speed + phase) * (maxZ - minZ) * 0.22
+			targetPos = clampFloorPoint(x, z, floorY + 1)
 		elseif pattern == 4 then
 			-- Ceiling rake with each beam crossing a different randomized lane.
 			local sweep = math.sin(showTime * 0.5 * speed + phase)
