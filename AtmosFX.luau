@@ -111,7 +111,7 @@ RunService.Heartbeat:Connect(function()
 
 	-- Continuous reactivity: flames flicker with the live sound envelope so
 	-- they track every swell, riff and vocal, not just the drum hits
-	local beatGlow = math.exp(-beatAge * 5) * beatPower
+	local beatGlow = math.exp(-beat.beatPhase * 5) * beatPower
 	local envelope = norm ^ 1.4 -- sharpened so quiet parts stay calm
 	local flicker = 0.75 + 0.25 * math.sin(tempoNow * 31) -- subtle flame jitter
 	for _, f in flames do
