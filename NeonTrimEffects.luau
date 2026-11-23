@@ -20,7 +20,8 @@ local SPEED = 0.06 -- hue cycles per second
 local WAVELENGTH = 420 -- studs per full hue rotation along the walls
 
 while task.wait(0.1) do -- 10 Hz ambient trim updates
-	local t = os.clock()
+	local beat = ClubAudioSync.getBeatState()
+	local t = os.clock() * (beat.bpm / 128)
 	local pulse = 0.5 + 0.5 * math.sin(t * 2) -- 0..1 breathing pulse
 
 	for _, p in trims do
