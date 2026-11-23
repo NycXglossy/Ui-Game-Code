@@ -4011,77 +4011,18 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		if (activeTab == "Moderation" and perm() < 4) or ((activeTab == "Audio ID" or activeTab == "Playlists") and perm() < 1) then activeTab = "Home" end
 	end
 
-	local typographyTargets: {TextLabel | TextButton | TextBox} = {}
-	local typographyTargetsInitialized = false
-	local typographyTargetsDirty = true
-	local lastTypographyDevice: string? = nil
-	local lastTypographyViewportWidth: number? = nil
-	local function isTypographyTarget(item: Instance): boolean
-		return item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox")
-	end
-	local function applyMenuTypography()
-		-- Keep typography readable without fighting the panel's device UIScale.
-		local scaleByDevice = {Desktop=1.04, Tablet=0.98, Mobile=0.92, Console=1.02, VR=0.96}
-		local camera = workspace.CurrentCamera
-		local viewportWidth = if camera then camera.ViewportSize.X else 1280
-		-- A narrow desktop window needs the same typography restraint as a tablet;
-		-- do not let the device label override the actual available width.
-		local textScale = (scaleByDevice[currentDevice] or 1) * (if viewportWidth < 560 then 0.9 elseif viewportWidth < 760 then 0.95 else 1)
-		if not typographyTargetsDirty and lastTypographyDevice == currentDevice and lastTypographyViewportWidth == viewportWidth then
-			return
-		end
-		lastTypographyDevice = currentDevice
-		lastTypographyViewportWidth = viewportWidth
-		if not typographyTargetsInitialized then
-			typographyTargetsInitialized = true
-			for _, descendant in ipairs(panel:GetDescendants()) do
-				if isTypographyTarget(descendant) then
-					table.insert(typographyTargets, descendant :: any)
-				end
-			end
-			table.insert(connections, panel.DescendantAdded:Connect(function(descendant)
-				if isTypographyTarget(descendant) then
-					table.insert(typographyTargets, descendant :: any)
-					typographyTargetsDirty = true
-				end
-			end))
-			table.insert(connections, panel.DescendantRemoving:Connect(function(descendant)
-				if isTypographyTarget(descendant) then
-					local index = table.find(typographyTargets, descendant)
-					if index then table.remove(typographyTargets, index) end
-				end
-			end))
-		end
-		for _, item in ipairs(typographyTargets) do
-			if item.Parent ~= nil then
-				local baseSize = item:GetAttribute("ClubBaseTextSize")
-				if typeof(baseSize) ~= "number" then
-					baseSize = item.TextSize
-					item:SetAttribute("ClubBaseTextSize", baseSize)
-				end
-				local minSize = if currentDevice == "Mobile" or viewportWidth < 560 then 8 else 9
-				local maxSize = if currentDevice == "Mobile" then 25 elseif viewportWidth < 560 then 24 else 28
-				item.TextSize = math.clamp(math.floor(baseSize * textScale + 0.5), minSize, maxSize)
-				if item:IsA("TextLabel") then
-					-- Content is already inside panel, so apply its editorial
-					-- typography here instead of traversing the content tree again.
-					item.Font = if baseSize >= 13 then BOLD else FONT
-					item.TextScaled = false
-					local height = item.Size.Y.Offset
-					if height >= 26 and #item.Text > 34 then
-						item.TextWrapped = true
-					end
-				elseif item:IsA("TextButton") then
-					item.TextScaled = false
-					item.Font = BOLD
-				elseif item:IsA("TextBox") then
-					item.TextScaled = false
-					item.Font = FONT
-				end
-			end
-		end
-		typographyTargetsDirty = false
-	end
+	local typographyModule = ReplicatedStorage:WaitForChild("ClubNeon_UI_Renderer_Typography")
+	local typography = require(typographyModule).new({
+		panel = panel,
+		connections = connections,
+		getDevice = function() return currentDevice end,
+		boldFont = BOLD,
+		regularFont = FONT,
+		cameraProvider = function() return workspace.CurrentCamera end,
+	})
+	local applyMenuTypography = typography.apply
+	local isTypographyTarget = typography.isTarget
+
 	local function renderTab()
 		refreshNav()
 		local tabChanged = lastRenderedTab ~= activeTab
