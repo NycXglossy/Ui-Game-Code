@@ -120,8 +120,8 @@ RunService.Heartbeat:Connect(function()
 	end
 	beatPower *= math.max(0, 1 - dt * 2)
 
-	local beatGlow = math.exp(-beatAge * 4) * beatPower -- sharp hit, fast decay
-	local wavefront = beatAge * WAVE_SPEED -- shockwave distance from wall center
+	local beatGlow = math.exp(-beat.beatPhase * 4) * beatPower -- sharp hit, fast decay
+	local wavefront = beat.beatPhase * WAVE_SPEED -- shockwave distance from wall center
 	local hue = (beat.beatCount * 0.045) % 1 -- hue advances every beat
 	local pattern = math.floor(beat.beatCount / 16) % 4 -- new pattern every 16 beats
 
@@ -152,7 +152,7 @@ RunService.Heartbeat:Connect(function()
 				target += norm * 0.15
 			else
 				-- Center burst: energy explodes outward from the wall's middle
-				local ring = math.abs(m - (1 - math.exp(-beatAge * 3)) * 0.95)
+				local ring = math.abs(m - (1 - math.exp(-beat.beatPhase * 3)) * 0.95)
 				target = math.clamp(1 - ring * 2.2, 0, 1) * (0.25 + beatGlow * 0.75) + 0.08
 			end
 
