@@ -29,8 +29,8 @@ local function enhanceBeams(root)
 			item:SetAttribute("HazeBeamEnhanced", true)
 			item.LightEmission = 1
 			item.LightInfluence = 0
-			item.Width0 = math.clamp(item.Width0 * 1.15, 0.08, 1.4)
-			item.Width1 = math.clamp(item.Width1 * 1.12, 0.12, 3.5)
+			item.Width0 = math.clamp(item.Width0 * 1.06, 0.06, 1.1)
+			item.Width1 = math.clamp(item.Width1 * 1.04, 0.1, 2.8)
 		end
 	end
 end
@@ -57,6 +57,6 @@ RunService.Heartbeat:Connect(function()
 	local lift = math.clamp(beat.energy, 0, 1)
 	local beatBreath = 0.5 + 0.5 * math.cos(beat.beatPhase * math.pi * 2)
 	for _, emitter in ipairs(emitters) do
-		if emitter.Parent then emitter.Rate = 0.6 + lift * 1.1 + beatBreath * beat.pulse * 1.4 end
+		if emitter.Parent then emitter.Rate = 0.35 + lift * 0.55 + beatBreath * beat.pulse * 0.65 end
 	end
 end)
