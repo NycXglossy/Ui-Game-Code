@@ -125,7 +125,7 @@ RunService.Heartbeat:Connect(function()
 	end
 	beatPower *= math.max(0, 1 - dt * 2)
 
-	local beatGlow = math.exp(-beatAge * 4) * beatPower
+	local beatGlow = math.exp(-beat.beatPhase * 4) * beatPower
 	-- Strobe: hard double-flash on strong kicks
 	local strobe = 0
 	if beatPower > 1.4 then
@@ -150,7 +150,7 @@ RunService.Heartbeat:Connect(function()
 		elseif pattern == 1 then
 			-- Center ripple: the drop radiates outward from the middle each beat
 			local dist = math.sqrt(gx * gx + gz * gz)
-			local ring = math.abs(dist - (1 - math.exp(-beatAge * 3)) * maxDist)
+			local ring = math.abs(dist - (1 - math.exp(-beat.beatPhase * 3)) * maxDist)
 			target = math.clamp(1 - ring * 1.6, 0, 1) * (0.3 + beatGlow * 0.7) + 0.05
 		elseif pattern == 2 then
 			-- Random slam: chosen pillars drop hard, others idle-breathe
