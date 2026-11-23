@@ -56,13 +56,16 @@ local perimTotal = 2 * (wallW + wallH)
 local function wallPoint(t)
 	local d = (t % 1) * perimTotal
 	if d < wallW then
-		return Vector3.new(wallMinX + d, 0, wallMinZ)
+		return Vector3.new(wallMinX + d, 0, wallMinZ), "north", d / math.max(1, wallW)
 	elseif d < wallW + wallH then
-		return Vector3.new(wallMaxX, 0, wallMinZ + (d - wallW))
+		local along = d - wallW
+		return Vector3.new(wallMaxX, 0, wallMinZ + along), "east", along / math.max(1, wallH)
 	elseif d < 2 * wallW + wallH then
-		return Vector3.new(wallMaxX - (d - wallW - wallH), 0, wallMaxZ)
+		local along = d - wallW - wallH
+		return Vector3.new(wallMaxX - along, 0, wallMaxZ), "south", along / math.max(1, wallW)
 	else
-		return Vector3.new(wallMinX, 0, wallMaxZ - (d - 2 * wallW - wallH))
+		local along = d - 2 * wallW - wallH
+		return Vector3.new(wallMinX, 0, wallMaxZ - along), "west", along / math.max(1, wallH)
 	end
 end
 
@@ -73,7 +76,7 @@ end
 local mountHeights = {37, 50, 62, 44, 56}
 for i = 1, WALL_HEADS do
 	local t = (i - 0.5) / WALL_HEADS
-	local wp = wallPoint(t)
+	local wp, wallSide, wallSlot = wallPoint(t)
 	local h = mountHeights[(i - 1) % #mountHeights + 1]
 	local flat = Vector3.new(wp.X, 0, wp.Z)
 	local toCenter = Vector3.new(CENTER.X, 0, CENTER.Z) - flat
@@ -98,6 +101,8 @@ for i = 1, WALL_HEADS do
 		local lens = mkPart("Laser" .. i .. "_Lens", Vector3.new(0.75, 0.4, 0.75),
 			Enum.Material.Neon, color,
 			CFrame.lookAt(lensPos, lensPos + dir))
+		lens:SetAttribute("WallSide", wallSide)
+		lens:SetAttribute("WallSlot", math.clamp(wallSlot, 0.04, 0.96))
 
 		-- Invisible target the beam fan chases; the choreography moves this
 		local target = mkPart("Laser" .. i .. "_Target", Vector3.new(1, 1, 1),
