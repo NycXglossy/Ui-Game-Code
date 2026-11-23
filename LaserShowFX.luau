@@ -117,8 +117,8 @@ local function adaptiveCoverageTarget(anchor, quadrant, phase, fixtureSpeed, sho
 	local energyDrive = math.clamp(beat.energy, 0, 1)
 	local xRate = (0.34 + tempoDrive * 0.30 + energyDrive * 0.08) * fixtureSpeed
 	local zRate = (0.23 + tempoDrive * 0.24 + energyDrive * 0.12) * fixtureSpeed
-	local x = centerX + (anchor.X - baseCenterX) * 0.30 + math.sin(showTime * xRate + phase) * halfWidth * 0.38
-	local z = centerZ + (anchor.Z - baseCenterZ) * 0.30 + math.cos(showTime * zRate + phase * 0.79) * halfDepth * 0.38
+	local x = centerX + (anchor.X - baseCenterX) * 0.14 + math.sin(showTime * xRate + phase) * halfWidth * 0.43
+	local z = centerZ + (anchor.Z - baseCenterZ) * 0.14 + math.cos(showTime * zRate + phase * 0.79) * halfDepth * 0.43
 	return Vector3.new(math.clamp(x, qMinX, qMaxX), y, math.clamp(z, qMinZ, qMaxZ))
 end
 
@@ -143,16 +143,17 @@ end
 -- all four floor quadrants. This avoids a whole wall's fixtures inheriting
 -- neighboring cells on one side of the venue.
 local function wallBalancedFloorSpot(laneIndex, sideIndex, seed, y)
-	-- Each wall contributes anchors to all quadrants. Within a quadrant,
-	-- lane pairs occupy separate sub-cells; wall-specific jitter breaks overlap.
+	-- For eight fixtures per wall, each quadrant receives two lanes from
+	-- every wall. Spread those eight anchors across a 4x2 sub-grid.
 	local quadrant = (laneIndex + sideIndex - 2) % 4
 	local quadrantColumn, quadrantRow = quadrant % 2, math.floor(quadrant / 2)
 	local halfWidth, halfDepth = (maxX - minX) * 0.5, (maxZ - minZ) * 0.5
-	local laneCell = (laneIndex - 1) % 4
-	local localX = (laneCell % 2 == 0) and 0.32 or 0.68
-	local localZ = (laneCell < 2) and 0.32 or 0.68
-	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.10
-	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.10
+	local lanePair = math.floor((laneIndex - 1) / 4)
+	local cell = lanePair * 4 + (sideIndex - 1)
+	local column, row = cell % 4, math.floor(cell / 4) % 2
+	local localX, localZ = (column + 0.5) / 4, (row + 0.5) / 2
+	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.035
+	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.035
 	local x = minX + quadrantColumn * halfWidth + localX * halfWidth + jitterX
 	local z = minZ + quadrantRow * halfDepth + localZ * halfDepth + jitterZ
 	return clampFloorPoint(x, z, y)
