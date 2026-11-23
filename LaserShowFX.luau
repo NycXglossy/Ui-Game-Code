@@ -122,18 +122,7 @@ local function collectLasers()
 	-- Use the actual emitter perimeter for wall classification. The venue trim
 	-- can extend beyond the CeilingFX dance-floor panels, so comparing fixture
 	-- positions directly with floor bounds can label every fixture as one side.
-	local rigMinX, rigMaxX, rigMinZ, rigMaxZ = math.huge, -math.huge, math.huge, -math.huge
-	for _, part in rig:GetChildren() do
-		local prefix = "Laser"
-		if part:IsA("BasePart") and part.Name:match("^" .. prefix .. "%d+_Lens$") then
-			rigMinX = math.min(rigMinX, part.Position.X)
-			rigMaxX = math.max(rigMaxX, part.Position.X)
-			rigMinZ = math.min(rigMinZ, part.Position.Z)
-			rigMaxZ = math.max(rigMaxZ, part.Position.Z)
-		end
-	end
-	if rigMinX == math.huge or rigMaxX <= rigMinX or rigMaxZ <= rigMinZ then return list end
-	for _, d in rig:GetChildren() do
+		for _, d in rig:GetChildren() do
 		local n = d.Name:match("^Laser(%d+)_Lens$")
 		if n and d:IsA("BasePart") then
 			local idx = tonumber(n)
@@ -145,24 +134,17 @@ local function collectLasers()
 				for _, child in d:GetChildren() do
 					if child:IsA("Beam") then table.insert(beams, child) end
 				end
-				local headPos = d.Position
-				local wallDistances = {
-					north = math.abs(headPos.Z - rigMinZ),
-					east = math.abs(headPos.X - rigMaxX),
-					south = math.abs(headPos.Z - rigMaxZ),
-					west = math.abs(headPos.X - rigMinX),
-				}
-				local side, nearest = "north", math.huge
-				for wall, distance in pairs(wallDistances) do
-					if distance < nearest then side, nearest = wall, distance end
+				-- Wall identity is authored by the server rig builder; do not infer
+				-- it from world-space extrema, which can collapse on irregular venues.
+				local side = d:GetAttribute("WallSide")
+				local along = d:GetAttribute("WallSlot")
+				if type(side) ~= "string" or type(along) ~= "number" then
+					continue
 				end
-				local along = if side == "north" or side == "south"
-					then (headPos.X - rigMinX) / math.max(1, rigMaxX - rigMinX)
-				else (headPos.Z - rigMinZ) / math.max(1, rigMaxZ - rigMinZ)
 				table.insert(list, {
 					idx = idx, lens = d, target = target, pool = pool,
 					spot = spot, beams = beams, side = side,
-					sideSlot = math.clamp(along, 0.08, 0.92),
+					sideSlot = math.clamp(along, 0.04, 0.96),
 					currentTarget = randomFloorSpot(idx * 17.31, floorY + 1),
 					anchor = randomFloorSpot(idx * 17.31 + 7, floorY + 1),
 					phase = seededUnit(idx * 17.31 + 2) * math.pi * 2,
