@@ -27,7 +27,7 @@ local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed an
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "2f3f3ba63230cb545f3d4a4c650964e9631d9332",
+    runtime = "39829c484dd16f99e5b46f090e9072536fffb1df",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
     globalService = "032fdc0085ac0a75db270bf569b9db19ef39b36b",
     security = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
@@ -109,6 +109,7 @@ addSource("ClubNeon_DanceFloorRewards.lua", "ModuleScript", "ServerStorage", "Cl
 addSource("ClubNeon_RateLimitBuckets.lua", "ModuleScript", "ServerStorage", "ClubNeon_RateLimitBuckets", RELEASE.runtime)
 addSource("ClubNeon_QueuePrimitives.lua", "ModuleScript", "ServerStorage", "ClubNeon_QueuePrimitives", RELEASE.runtime)
 addSource("ClubNeon_PlaylistRotation.lua", "ModuleScript", "ServerStorage", "ClubNeon_PlaylistRotation", RELEASE.runtime)
+addSource("ClubNeon_RequestValidation.lua", "ModuleScript", "ServerStorage", "ClubNeon_RequestValidation", RELEASE.runtime)
 addSource("ClubNeon_PurchaseDiagnostics.lua", "ModuleScript", "ServerStorage", "ClubNeon_PurchaseDiagnostics", RELEASE.runtime)
 addSource("ClubNeon_OperationalDiagnosticsFormatter.lua", "ModuleScript", "ServerStorage", "ClubNeon_OperationalDiagnosticsFormatter", RELEASE.runtime)
 addSource("ClubNeon_ReceiptProcessing.lua", "ModuleScript", "ServerStorage", "ClubNeon_ReceiptProcessing", RELEASE.runtime)
