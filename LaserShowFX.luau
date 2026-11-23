@@ -96,6 +96,7 @@ local function collectLasers()
 				table.insert(list, {
 					idx = idx, lens = d, target = target, pool = pool,
 					spot = spot, beams = beams,
+					currentTarget = target.Position,
 				})
 			end
 		end
@@ -132,15 +133,23 @@ local lastColorBeat = -1
 local flareUntil = 0
 
 local clock = os.clock
-local lastT = clock()
+local startTime = clock()
+local lastT = startTime
 local showTime = 0
+
+-- Stable deterministic values avoid allocating a Random object for every laser on every frame.
+local function seededUnit(seed)
+	local value = math.sin(seed * 12.9898) * 43758.5453
+	return value - math.floor(value)
+end
 local frameCount = 0
 
 RunService.Heartbeat:Connect(function()
 	local now = clock()
 	local dt = math.min(now - lastT, 0.1)
 	lastT = now
-	showTime += dt
+	-- Use elapsed wall time so a long frame does not permanently slow the choreography.
+	showTime = now - startTime
 	beatAge += dt
 	frameCount += 1
 	if frameCount == 120 then print("[ClubNeon][LaserShowFX] Heartbeat active; frames=" .. frameCount) end
@@ -255,14 +264,18 @@ RunService.Heartbeat:Connect(function()
 			targetPos = wallPoint(t) + Vector3.new(0, 0.5, 0)
 		else
 			-- Blizzard: beams snap to random floor spots every beat, strobing
-			local snap = Random.new(beatCount + i * 97)
-			local r = RADIUS * (0.2 + snap:NextNumber() * 0.75)
-			local a = ang + snap:NextNumber() * math.pi
+			local seed = beatCount + i * 97
+			local r = RADIUS * (0.2 + seededUnit(seed) * 0.75)
+			local a = ang + seededUnit(seed + 1) * math.pi
 			targetPos = CENTER + Vector3.new(math.cos(a) * r, 0.5, math.sin(a) * r)
 		end
-		L.target.CFrame = CFrame.new(targetPos)
-		-- Light pool chases the beam and pulses with the kick
-		L.pool.CFrame = CFrame.new(targetPos + Vector3.new(0, 0.3, 0)) * CFrame.Angles(0, 0, math.pi / 2)
+		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
+		local motionAlpha = 1 - math.exp(-dt * 10)
+		L.currentTarget = L.currentTarget:Lerp(targetPos, motionAlpha)
+		local smoothTarget = L.currentTarget
+		L.target.CFrame = CFrame.new(smoothTarget)
+		-- Light pool chases the smoothed beam and pulses with the kick
+		L.pool.CFrame = CFrame.new(smoothTarget + Vector3.new(0, 0.3, 0)) * CFrame.Angles(0, 0, math.pi / 2)
 		L.pool.Size = Vector3.new(0.1, 3.5 * poolScale, 3.5 * poolScale)
 		L.pool.Transparency = poolFade
 		L.spot.Brightness = 1.5 + flareKick * 5
