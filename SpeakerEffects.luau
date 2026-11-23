@@ -78,6 +78,7 @@ local IDLE_LEVEL = 0.12
 
 RunService.RenderStepped:Connect(function(dt)
 	local beat = ClubAudioSync.getBeatState()
+	local tempoNow = os.clock() * (beat.bpm / 128)
 	local level = if beat.playing then beat.energy else IDLE_LEVEL
 
 	-- One shockwave/burst per beat on the shared club beat clock
