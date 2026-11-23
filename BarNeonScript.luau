@@ -1,3 +1,4 @@
+local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
 -- Animates the NeonBar's neon accents: slow hue shift + breathing pulse
 local bar = workspace:FindFirstChild("NeonBar")
 if not bar then return end
