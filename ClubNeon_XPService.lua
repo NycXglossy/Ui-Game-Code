@@ -7,6 +7,10 @@ return function(context: {[string]: any})
 	local RunService = context.RunService
 	local ControllerFunctions = context.ControllerFunctions
 	local profiles = context.profiles
+	if typeof(profiles) ~= "table" then
+		warn("[Club Neon XP] Profile table was not supplied; XP accrual is safely paused until the controller wiring is corrected.")
+		profiles = {}
+	end
 	local publishState = context.publishState
 	local getStudioBoostState = context.getStudioBoostState
 
