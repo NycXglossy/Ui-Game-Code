@@ -1116,68 +1116,22 @@ local saveAgain: {[number]: boolean} = {}
 local saveQueueTokens: {[number]: any} = {}
 local queueCounter = 0
 
--- Token buckets are server-authoritative and shared across all requests in this
--- server instance. They are deliberately separate from per-player cooldowns.
-type TokenBucket = { tokens: number, capacity: number, refillPerSecond: number, updatedAt: number }
-
-ControllerFunctions.newTokenBucket = function(capacity: number, refillPerSecond: number): TokenBucket
-	return {
-		tokens = capacity,
-		capacity = capacity,
-		refillPerSecond = refillPerSecond,
-		updatedAt = os.clock(),
-	}
-end
-
-local globalActionBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalActionBurst, CONFIG.GlobalActionRefillPerSecond)
-local globalAudioBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalAudioBurst, CONFIG.GlobalAudioRefillPerSecond)
-local globalStateQueryBucket = ControllerFunctions.newTokenBucket(30, 15)
--- Read-only catalog browsing gets an isolated budget so GetState traffic or
--- temporary global security-service pressure cannot starve catalog visibility.
--- This does not authorize mutations; all writes still pass their security gates.
-local globalCatalogQueryBucket = ControllerFunctions.newTokenBucket(30, 15)
-local globalDataStoreBucket = ControllerFunctions.newTokenBucket(CONFIG.GlobalDataStoreBurst, CONFIG.GlobalDataStoreRefillPerSecond)
-local perPlayerActionBuckets: {[number]: TokenBucket} = {}
-
-ControllerFunctions.consumeToken = function(bucket: TokenBucket, now: number, cost: number?): boolean
-	local amount = cost or 1
-	local elapsed = math.max(0, now - bucket.updatedAt)
-	bucket.updatedAt = now
-	bucket.tokens = math.min(bucket.capacity, bucket.tokens + elapsed * bucket.refillPerSecond)
-	if bucket.tokens < amount then return false end
-	bucket.tokens -= amount
-	return true
-end
-
-ControllerFunctions.waitForDataStoreBudget = function(maxWaitSeconds: number): boolean
-	-- DataStore operations use a bounded per-server token bucket. Persistent
-	-- storage remains server-owned; no MemoryStore call is required for budgeting.
-	local startedAt = os.clock()
-	while true do
-		if ControllerFunctions.consumeToken(globalDataStoreBucket, os.clock(), 1) then return true end
-		if os.clock() - startedAt >= maxWaitSeconds then return false end
-		task.wait(0.1)
-	end
-end
-
--- Initialize storage with bounded retries. The services leave their initialization
--- state retryable after transient budget/DataStore failures; built-in catalog tracks
--- remain available even when persistent custom storage cannot be initialized.
-ControllerFunctions.initializeStorageWithRetries = function(service: any, label: string): boolean
-	local delays = {0, 1, 2, 4}
-	for attempt, delaySeconds in ipairs(delays) do
-		if delaySeconds > 0 then task.wait(delaySeconds) end
-		local ok, ready = pcall(function()
-			return service:Initialize(CONFIG.StudioUseDataStore, function()
-				return ControllerFunctions.waitForDataStoreBudget(5)
-			end)
-		end)
-		if ok and ready == true then return true end
-		warn(string.format("[ClubMusic] %s initialization attempt %d/%d failed: %s",
-			label, attempt, #delays, if ok then "storage not ready" else tostring(ready)))
-	end
-	return false
-end
+-- Rate-limit buckets are isolated in a server-only module. The buckets remain
+-- local to this server instance; no cross-server coordination is introduced.
+local rateLimitModule = ServerStorage:FindFirstChild("ClubNeon_RateLimitBuckets")
+assert(rateLimitModule and rateLimitModule:IsA("ModuleScript"), "ClubNeon_RateLimitBuckets is required")
+local RateLimitBuckets = require(rateLimitModule)
+local rateLimitBuckets = RateLimitBuckets.create(CONFIG)
+ControllerFunctions.newTokenBucket = rateLimitBuckets.newTokenBucket
+ControllerFunctions.consumeToken = rateLimitBuckets.consumeToken
+ControllerFunctions.waitForDataStoreBudget = rateLimitBuckets.waitForDataStoreBudget
+ControllerFunctions.consumeActionBudget = rateLimitBuckets.consumeActionBudget
+local globalActionBucket = rateLimitBuckets.globalActionBucket
+local globalAudioBucket = rateLimitBuckets.globalAudioBucket
+local globalStateQueryBucket = rateLimitBuckets.globalStateQueryBucket
+local globalCatalogQueryBucket = rateLimitBuckets.globalCatalogQueryBucket
+local globalDataStoreBucket = rateLimitBuckets.globalDataStoreBucket
+local perPlayerActionBuckets = rateLimitBuckets.perPlayerActionBuckets
 
 local catalogStorageReady = ControllerFunctions.initializeStorageWithRetries(MusicCatalogService, "MusicCatalogService")
 local playlistRefreshAt = 0
@@ -1206,21 +1160,7 @@ end
 table.sort(ALL_TRACK_IDS)
 remotes:SetAttribute("StartupStage", "BuildingController")
 
-ControllerFunctions.consumeActionBudget = function(userId: number, now: number): boolean
-	local bucket = perPlayerActionBuckets[userId]
-	if not bucket then
-		bucket = ControllerFunctions.newTokenBucket(CONFIG.PerPlayerActionBurst, CONFIG.PerPlayerActionRefillPerSecond)
-		perPlayerActionBuckets[userId] = bucket
-	end
-	-- Consume the per-player bucket first. Only consume the global bucket when
-	-- the player has capacity, avoiding global-budget loss to one noisy player.
-	if not ControllerFunctions.consumeToken(bucket, now, 1) then return false end
-	if not ControllerFunctions.consumeToken(globalActionBucket, now, 1) then
-		bucket.tokens = math.min(bucket.capacity, bucket.tokens + 1)
-		return false
-	end
-	return true
-end
+
 
 local sanityValidationService: any = nil
 
