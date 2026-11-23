@@ -26,6 +26,7 @@ local bpmCurrent = BPM_SEED
 local bpmLastKnown = BPM_SEED
 
 local audioPlayer: AudioPlayer? = nil
+local lastBeatPlayer: AudioPlayer? = nil
 local lastScan = 0
 
 -- Live beat-clock state (updated lazily whenever getBeatState is called)
@@ -136,6 +137,10 @@ function ClubAudioSync.getBeatState(): BeatState
 	lastT = now
 
 	local player = ClubAudioSync.getAudioPlayer()
+	if player ~= lastBeatPlayer then
+		lastBeatPlayer = player
+		lastBeatIndex = -1
+	end
 	local playing = player ~= nil and player.IsPlaying
 	local timePosition = if playing then player.TimePosition else 0
 
