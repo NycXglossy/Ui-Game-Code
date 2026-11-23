@@ -188,23 +188,19 @@ RunService.Heartbeat:Connect(function()
 	-- Beat clock from the shared ClubAudioSync module
 	local beat = ClubAudioSync.getBeatState()
 	showTime += dt * (beat.bpm / 128)
-	if beat.playing then
-		if beat.beatCount ~= lastBeatCount then
-			lastBeatCount = beat.beatCount
-			beatCount = beat.beatCount
-			beatAge = 0
-			beatPower = math.clamp(0.8 + beat.energy * 1.6, 0.5, 3)
-			-- Heavy kick: trigger a hard flare burst across the rig
-			if beatPower > 1.6 then
-				flareUntil = now + (60 / beat.bpm) * 1.5
-			end
-		else
-			beatAge = beat.beatPhase * (60 / beat.bpm)
+	if beat.beatCount ~= lastBeatCount then
+		lastBeatCount = beat.beatCount
+		beatCount = beat.beatCount
+		beatAge = 0
+		beatPower = if beat.playing then math.clamp(0.8 + beat.energy * 1.6, 0.5, 3) else 0.6
+		-- Heavy kick: trigger a beat-scaled flare burst across the rig
+		if beat.playing and beatPower > 1.6 then
+			flareUntil = now + (60 / beat.bpm) * 1.5
 		end
 	else
 		beatAge = beat.beatPhase * (60 / beat.bpm)
 	end
-	beatPower *= math.max(0, 1 - dt * 2)
+	beatPower *= math.max(0, 1 - dt * 2 * (beat.bpm / 128))
 
 	local kick = math.exp(-beat.beatPhase * 5) * beatPower
 	local hue = (beatCount * 0.045) % 1 -- same cadence as the other FX
