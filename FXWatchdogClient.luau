@@ -21,6 +21,8 @@ local FX_NAMES = {
 	"SpeakerEffects",
 	"AtmosFX",
 	"BeatImpactFX",
+	"MovingHeadShowFX",
+	"LaserShowFX",
 }
 
 local player = Players.LocalPlayer
@@ -93,7 +95,32 @@ local function strobeSignature()
 	return nil
 end
 
+local function movingHeadSignature()
+	local rig = workspace:FindFirstChild("MovingHeadRig")
+	if not rig then return nil end
+	local target = rig:FindFirstChild("Head1_Target")
+	local lens = rig:FindFirstChild("Head1_Lens")
+	if target and lens then
+		local p, c = target.Position, lens.CFrame.LookVector
+		return p.X + p.Y * 3 + p.Z * 7 + c.X * 11 + c.Y * 13 + c.Z * 17
+	end
+	return nil
+end
+
+local function laserSignature()
+	local rig = workspace:FindFirstChild("LaserRig")
+	if not rig then return nil end
+	local target = rig:FindFirstChild("Laser1_Target")
+	if target then
+		local p = target.Position
+		return p.X + p.Y * 3 + p.Z * 7
+	end
+	return nil
+end
+
 local PROBES = {
+	MovingHeadShowFX = movingHeadSignature,
+	LaserShowFX = laserSignature,
 	WallVisualizerClient = wallSignature,
 	CeilingPillarFX = pillarSignature,
 	StrobeLightsFX = strobeSignature,
@@ -122,7 +149,8 @@ while true do
 	-- 2) Motion: sample each probed rig twice; if the signature does not
 	-- change at all while the music plays, count a strike. Two strikes in
 	-- a row (>= 16s frozen) restarts the script so the show comes back.
-	if musicPlaying() then
+	do
+		-- Moving heads and lasers animate during idle as well as playback.
 		for name, probe in PROBES do
 			local sig1 = probe()
 			if sig1 then
