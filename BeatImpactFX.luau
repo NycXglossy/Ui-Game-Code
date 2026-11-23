@@ -97,7 +97,7 @@ local heartbeatConnection = RunService.Heartbeat:Connect(function()
 	shake = shake:Lerp(Vector3.zero, math.min(dt * 9 * tempoScale, 1))
 
 	-- Beat glow curve: sharp attack, fast falloff
-	local beatGlow = math.exp(-beatAge * 5) * beatPower * effectScale
+	local beatGlow = math.exp(-beat.beatPhase * 5) * beatPower * effectScale
 
 	-- FOV punch
 	if camera then
