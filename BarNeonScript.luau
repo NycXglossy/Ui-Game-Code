@@ -10,7 +10,7 @@ for _, p in bar:GetChildren() do
 end
 if #neons == 0 then return end
 
-while task.wait(0.06) do
+while task.wait(0.1) do -- 10 Hz ambient bar updates
 	local t = os.clock()
 	local pulse = 0.5 + 0.5 * math.sin(t * 2) -- matches the wall trim pulse
 	for i, p in neons do
