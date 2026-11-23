@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.63
+-- CLUB NEON MASTER INSTALLER v0.4.64
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- v0.4.63 adds client-side live AudioAnalyzer tempo detection and removes ceiling/perimeter-only sweeps from floor-coverage patterns.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
@@ -23,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.63"
+local INSTALLER_VERSION = "0.4.64"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -37,7 +37,7 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "df45c86a1d3e115fb17c5f5dc9c9c1905ae0a917",
-    audioSync = "395d706967b62b8faa2c22fd62da9c458a18b07f",
+    audioSync = "e0b631612dd9479021930d79ad250530990d2f97",
     laserFX = "5f01506f9f2f5755b746862dc3e49e3976d0128a",
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     movingHeadFX = "2572ccacb8e327dcb6578b789535b7b962d20a92",
