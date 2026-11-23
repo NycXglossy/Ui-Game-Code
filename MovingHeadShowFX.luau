@@ -107,11 +107,12 @@ end
 
 local function collectStrobeCells()
 	local cells = {}
-	for _, d in rig:GetChildren() do
+	for _, d in ipairs(rig:GetDescendants()) do
 		if d:IsA("BasePart") and d.Name:match("^Strobe%a_Cell%d+$") then
 			table.insert(cells, d)
 		end
 	end
+	table.sort(cells, function(a, b) return a.Name < b.Name end)
 	return cells
 end
 
@@ -162,10 +163,17 @@ RunService.Heartbeat:Connect(function()
 				break
 			end
 		end
+		local discoveredCells = collectStrobeCells()
+		if #discoveredCells ~= #strobeCells then needsRefresh = true end
+		if not needsRefresh then
+			for _, cell in ipairs(strobeCells) do
+				if not cell.Parent then needsRefresh = true; break end
+			end
+		end
 		if needsRefresh then
 			heads = discoveredHeads
-			strobeCells = collectStrobeCells()
-			print("[ClubNeon][MovingHeadShowFX] Fixture references refreshed; active heads=" .. #heads)
+			strobeCells = discoveredCells
+			print("[ClubNeon][MovingHeadShowFX] Fixture references refreshed; active heads=" .. #heads .. ", strobeCells=" .. #strobeCells)
 		end
 	end
 	if #heads == 0 then return end
@@ -193,11 +201,16 @@ RunService.Heartbeat:Connect(function()
 	local beatBlend = math.clamp(beat.beatPhase, 0, 1)
 	beatBlend = beatBlend * beatBlend * (3 - 2 * beatBlend)
 	local bursting = now < burstUntil
-	local strobeVis = bursting and (math.floor(now * STROBE_HZ) % 2 == 0) and 1 or 0
-
-	-- Strobe cells flash hard during a burst, hidden otherwise
-	for _, cell in strobeCells do
-		cell.Transparency = 1 - strobeVis
+	-- Every cell flashes on its own deterministic phase, but remains locked
+	-- to the same beat-triggered burst. This avoids synchronized dead-looking
+	-- pairs and ensures every discovered cell receives an update each frame.
+	for cellIndex, cell in ipairs(strobeCells) do
+		if cell.Parent then
+			local phaseOffset = seededUnit(cellIndex * 41.17 + 5.3)
+			local flashOn = bursting
+				and (math.floor((now + phaseOffset / STROBE_HZ) * STROBE_HZ) % 2 == 0)
+			cell.Transparency = flashOn and 0 or 1
+		end
 	end
 
 	-- On-beat color rotation around the hue wheel
