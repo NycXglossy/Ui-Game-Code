@@ -1,7 +1,7 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.49
+-- CLUB NEON MASTER INSTALLER v0.4.50
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.49 expands the moving-head rig to 32 fixtures (8 per wall), preserving the original 16 positions and adding interleaved supplemental coverage; animation remains cross-hatched and wall-aware.
+-- v0.4.50 includes balanced four-wall laser cross-hatch choreography and reduced laser/floor/stage glare, alongside the 32-fixture moving-head layout.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
 --
@@ -23,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.49"
+local INSTALLER_VERSION = "0.4.50"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -36,7 +36,7 @@ local RELEASE = {
     phase32 = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
-    fx = "f4805fff18c1ca2a629153af64ce89a991932c04",
+    fx = "df45c86a1d3e115fb17c5f5dc9c9c1905ae0a917",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
@@ -670,6 +670,7 @@ print("Phase 32 release: " .. RELEASE.phase32)
 print("Client diagnostics release: " .. RELEASE.diagnostics)
 print("Client integrity telemetry release: " .. RELEASE.integrityClient)
 print("Intro release: " .. RELEASE.intro)
+print("Lighting/FX release: " .. RELEASE.fx)
 print("Instances promoted: " .. #promoted)
 print("Prior instances and retired playback authority archived under ServerStorage/" .. backupRoot.Name .. "/" .. backupRelease.Name)
 print("Playback synchronization: DISABLED. No leader lease or shared playback snapshots are installed.")
