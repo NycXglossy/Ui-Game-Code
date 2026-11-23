@@ -111,7 +111,6 @@ local lastColorBeat = -1
 local burstUntil = 0
 
 local clock = os.clock
-local startTime = clock()
 local lastT = startTime
 local showTime = 0
 
@@ -128,7 +127,6 @@ RunService.Heartbeat:Connect(function()
 	local dt = math.min(now - lastT, 0.1)
 	lastT = now
 	-- Use elapsed wall time so a long frame does not permanently slow the choreography.
-	showTime = now - startTime
 	beatAge += dt
 	frameCount += 1
 	if frameCount == 120 then print("[ClubNeon][MovingHeadShowFX] Heartbeat active; frames=" .. frameCount) end
@@ -156,6 +154,7 @@ RunService.Heartbeat:Connect(function()
 
 	-- Beat clock from the shared ClubAudioSync module
 	local beat = ClubAudioSync.getBeatState()
+	showTime += dt * (beat.bpm / 128)
 	if beat.playing then
 		if beat.beatCount ~= lastBeatCount then
 			lastBeatCount = beat.beatCount
@@ -164,26 +163,20 @@ RunService.Heartbeat:Connect(function()
 			beatPower = math.clamp(0.8 + beat.energy * 1.6, 0.5, 3)
 			-- Heavy kick: fire the strobe bars in a rapid burst
 			if beatPower > 1.6 then
-				burstUntil = now + STROBE_BURST
+				burstUntil = now + (60 / beat.bpm) * 1.5
 			end
 		else
 			beatAge = beat.beatPhase * (60 / beat.bpm)
 		end
 	else
-		-- Idle clock: keep the show cycling at a gentle tempo when silent
-		local idleBeat = math.floor(now * IDLE_BPM / 60)
-		if idleBeat > beatCount then
-			beatCount = idleBeat
-			beatAge = 0
-			beatPower = 0.6
-		end
+		beatAge = beat.beatPhase * (60 / beat.bpm)
 	end
 	beatPower *= math.max(0, 1 - dt * 2)
 
 	local kick = math.exp(-beatAge * 5) * beatPower
 	local hue = (beatCount * 0.045) % 1 -- same cadence as the other FX
 	local pattern = math.floor(beatCount / 16) % 6
-	local beatBlend = if beat.playing then math.clamp(beat.beatPhase, 0, 1) else math.clamp(beatAge / (60 / IDLE_BPM), 0, 1)
+	local beatBlend = math.clamp(beat.beatPhase, 0, 1)
 	beatBlend = beatBlend * beatBlend * (3 - 2 * beatBlend)
 	local bursting = now < burstUntil
 	local strobeVis = bursting and (math.floor(now * STROBE_HZ) % 2 == 0) and 1 or 0
