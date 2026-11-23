@@ -107,7 +107,7 @@ RunService.Heartbeat:Connect(function()
 	else
 		beatAge = beat.beatPhase * (60 / beat.bpm)
 	end
-	beatPower *= math.max(0, 1 - dt * 2.5)
+	beatPower *= math.max(0, 1 - dt * 2.5 * (beat.bpm / 128))
 
 	-- Continuous reactivity: flames flicker with the live sound envelope so
 	-- they track every swell, riff and vocal, not just the drum hits
