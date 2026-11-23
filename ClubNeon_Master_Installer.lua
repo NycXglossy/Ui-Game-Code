@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.12
+-- CLUB NEON MASTER INSTALLER v0.4.29
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -407,7 +407,7 @@ local securityManifest = "securityCoreRelease=" .. RELEASE.security
     .. ";visualClient=ClubNeonAdaptiveVisualQuality;installedBy=ClubNeonMasterInstaller"
 addValue("InstallManifest", "StringValue", "SecurityCore", securityManifest, "generated:SecurityCoreInstallManifest")
 addValue("ClubNeonMasterInstallManifest", "StringValue", "ServerStorage",
-    "runtime=" .. RELEASE.runtime .. ";audio=" .. RELEASE.audio .. ";globalService=" .. RELEASE.globalService
+    "runtime=" .. RELEASE.runtime .. ";audio=" .. RELEASE.audio .. ";fx=" .. RELEASE.fx .. ";utility=" .. RELEASE.utility .. ";globalService=" .. RELEASE.globalService
     .. ";security=" .. RELEASE.security .. ";threat=" .. RELEASE.threat .. ";phase32=" .. RELEASE.phase32
     .. ";diagnostics=" .. RELEASE.diagnostics .. ";integrityClient=" .. RELEASE.integrityClient
         .. ";playbackSync=DISABLED;localQueues=ENFORCED",
