@@ -26,7 +26,7 @@ local bpmLastKnown = BPM_SEED
 local lastPlaying: boolean? = nil
 
 local function sanitizeBPM(value: any): number?
-	if typeof(value) ~= "number" or value ~= value then return nil end
+	if typeof(value) ~= "number" or value ~= value or value <= 0 or value == math.huge then return nil end
 	return math.clamp(value, BPM_MIN, BPM_MAX)
 end
 
@@ -94,7 +94,7 @@ local function resolveBPMTarget()
 		local root = backendRootFor(player)
 		if root then
 			target = root:GetAttribute("ClubMusicBPM")
-			if typeof(target) ~= "number" or target <= 0 then
+			if sanitizeBPM(target) == nil then
 				target = root:GetAttribute("BPM")
 			end
 		end
@@ -173,7 +173,8 @@ function ClubAudioSync.getBeatState(): BeatState
 		pulse = 1
 	end
 
-	pulse *= math.max(0, 1 - dt * 3.5)
+	local beatPhase = beats % 1
+	pulse = math.exp(-beatPhase * 5)
 
 	-- Simulated envelope: per-beat variety from a deterministic hash so EQ
 	-- bars breathe differently each beat, plus the kick pulse on top.
@@ -181,7 +182,6 @@ function ClubAudioSync.getBeatState(): BeatState
 	local targetEnergy = if playing then math.clamp(0.3 + 0.4 * pulse + 0.3 * beatVariety, 0, 1) else 0
 	energy += (targetEnergy - energy) * (1 - math.exp(-10 * dt))
 
-	local beatPhase = beats % 1
 	return {
 		playing = playing,
 		timePosition = timePosition,
