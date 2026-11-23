@@ -99,6 +99,7 @@ end
 
 local function collectLasers()
 	local list = {}
+	if not rig then return list end
 	for _, d in rig:GetChildren() do
 		local n = d.Name:match("^Laser(%d+)_Lens$")
 		if n and d:IsA("BasePart") then
