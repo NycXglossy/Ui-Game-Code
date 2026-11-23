@@ -81,6 +81,25 @@ end
 
 -- Stratified coverage: each projector owns a different floor cell instead of
 -- independently rolling anywhere on the floor (which can create hotspots).
+local function adaptiveCoverageTarget(anchor, quadrant, phase, fixtureSpeed, showTime, beat, y)
+	-- A fixture moves continuously inside its own assigned quadrant. Audio tempo
+	-- and energy modulate the trajectory; no ceiling-FX pattern clock owns it.
+	local q = quadrant or 0
+	local halfWidth = (maxX - minX) * 0.5
+	local halfDepth = (maxZ - minZ) * 0.5
+	local qMinX = minX + (q % 2) * halfWidth + 0.75
+	local qMaxX = minX + (q % 2 + 1) * halfWidth - 0.75
+	local qMinZ = minZ + math.floor(q / 2) * halfDepth + 0.75
+	local qMaxZ = minZ + (math.floor(q / 2) + 1) * halfDepth - 0.75
+	local tempoDrive = math.clamp((beat.bpm - 70) / 120, 0, 1)
+	local energyDrive = math.clamp(beat.energy, 0, 1)
+	local xRate = (0.34 + tempoDrive * 0.30 + energyDrive * 0.08) * fixtureSpeed
+	local zRate = (0.23 + tempoDrive * 0.24 + energyDrive * 0.12) * fixtureSpeed
+	local x = anchor.X + math.sin(showTime * xRate + phase) * (qMaxX - qMinX) * 0.36
+	local z = anchor.Z + math.cos(showTime * zRate + phase * 0.79) * (qMaxZ - qMinZ) * 0.36
+	return Vector3.new(math.clamp(x, qMinX, qMaxX), y, math.clamp(z, qMinZ, qMaxZ))
+end
+
 local function distributedFloorSpot(index, total, seed, y)
 	local columns = math.max(1, math.ceil(math.sqrt(total * ((maxX - minX) / math.max(1, maxZ - minZ)))))
 	local rows = math.max(1, math.ceil(total / columns))
@@ -102,23 +121,20 @@ end
 -- all four floor quadrants. This avoids a whole wall's fixtures inheriting
 -- neighboring cells on one side of the venue.
 local function wallBalancedFloorSpot(laneIndex, sideIndex, seed, y)
-	-- Interleave successive fixtures across all four quadrants, rotating
-	-- the starting quadrant by wall. This prevents every wall's first lane
-	-- from targeting the same half of the dance floor.
+	-- Rotate each wall's successive lanes through all four floor quadrants.
+	-- The former lane*4 expression kept each wall locked to one quadrant.
 	local slot = (laneIndex - 1) * 4 + (sideIndex - 1)
-	local quadrant = slot % 4
+	local quadrant = (laneIndex + sideIndex - 2) % 4
 	local withinQuadrant = math.floor(slot / 4)
 	local quadrantColumn = quadrant % 2
 	local quadrantRow = math.floor(quadrant / 2)
 	local halfWidth = (maxX - minX) * 0.5
 	local halfDepth = (maxZ - minZ) * 0.5
-	-- Four walls x two fixture lanes provide eight distinct anchor cells
-	-- inside each quadrant rather than stacking fixtures at shared points.
 	local cell = (sideIndex - 1) * 2 + (withinQuadrant % 2)
 	local localX = ((cell % 4) + 0.5) / 4
 	local localZ = (math.floor(cell / 4) + 0.5) / 2
-	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.16
-	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.16
+	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.12
+	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.12
 	local x = minX + quadrantColumn * halfWidth + localX * halfWidth + jitterX
 	local z = minZ + quadrantRow * halfDepth + localZ * halfDepth + jitterZ
 	return clampFloorPoint(x, z, y)
@@ -184,6 +200,7 @@ local function collectHeads()
 				coverageIndex += 1
 				H.coverageIndex = coverageIndex
 				-- Each wall cycles its own fixtures through all four floor quadrants.
+				H.coverageQuadrant = (laneIndex + sideIndex - 2) % 4
 				H.anchor = wallBalancedFloorSpot(laneIndex, sideIndex, H.idx * 29.7, floorY + 1)
 				H.currentTarget = H.anchor
 			end
@@ -294,9 +311,6 @@ RunService.Heartbeat:Connect(function()
 
 	local kick = math.exp(-beat.beatPhase * 5) * beatPower
 	local hue = (beatCount * 0.045) % 1 -- same cadence as the other FX
-	local pattern = math.floor(beatCount / 16) % 6
-	local beatBlend = math.clamp(beat.beatPhase, 0, 1)
-	beatBlend = beatBlend * beatBlend * (3 - 2 * beatBlend)
 	local bursting = now < burstUntil
 	-- Every cell flashes on its own deterministic phase, but remains locked
 	-- to the same beat-triggered burst. This avoids synchronized dead-looking
@@ -332,64 +346,19 @@ RunService.Heartbeat:Connect(function()
 		})
 	end
 
-	-- Choreography: a new pattern every 16 beats (one musical phrase)
+	-- Adaptive coverage movement: each fixture keeps its assigned quadrant,
+		-- while shared BPM/energy continuously modulate its sweep rate.
 		for i, H in ipairs(heads) do
-		local phase, speed = H.phase, H.speed
-		local anchor = H.anchor
-		local targetPos
-		if pattern == 0 then
-			-- Independent randomized sweep around each fixture's own floor lane.
-			local sweep = math.sin(showTime * 0.75 * speed + phase)
-			targetPos = clampFloorPoint(anchor.X + sweep * RADIUS * 0.28,
-				anchor.Z + math.cos(showTime * 0.42 * speed + phase) * RADIUS * 0.22, floorY + 1)
-		elseif pattern == 1 then
-			-- Each head orbits a different randomized anchor and radius.
-			local spin = showTime * 0.5 * speed + phase
-			local r = RADIUS * (0.12 + seededUnit(H.idx * 17.31 + 4) * 0.22)
-			targetPos = clampFloorPoint(anchor.X + math.cos(spin) * r,
-				anchor.Z + math.sin(spin) * r, floorY + 1)
-		elseif pattern == 2 then
-			-- Every head selects independent full-floor destinations each beat.
-			local function spotForBeat(n)
-				return distributedFloorSpot(H.coverageIndex or i, #heads, n * 131 + H.idx * 911, floorY + 1)
-			end
-			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
-		elseif pattern == 3 then
-			-- Four-side cross-hatch: north/south heads own distinct X lanes and
-			-- sweep the full depth; east/west heads own distinct Z lanes and sweep
-			-- the full width. This guarantees coverage on both camera-left/right
-			-- halves instead of tying movement to arbitrary fixture numbering.
-			local sweep = (math.sin(showTime * 0.58 * speed + phase) + 1) * 0.5
-			local marginX = math.min(2, (maxX - minX) * 0.06)
-			local marginZ = math.min(2, (maxZ - minZ) * 0.06)
-			local x, z
-			if H.side == "north" or H.side == "south" then
-				x = minX + marginX + H.sideSlot * (maxX - minX - marginX * 2)
-				local depth = if H.side == "north" then sweep else 1 - sweep
-				z = minZ + marginZ + depth * (maxZ - minZ - marginZ * 2)
-			else
-				z = minZ + marginZ + H.sideSlot * (maxZ - minZ - marginZ * 2)
-				local width = if H.side == "west" then sweep else 1 - sweep
-				x = minX + marginX + width * (maxX - minX - marginX * 2)
-			end
-			targetPos = clampFloorPoint(x, z, floorY + 1)
-		elseif pattern == 4 then
-			-- Broad floor sweep stays centered on each wall's assigned quadrant.
-			-- The former ceiling rake lifted every moving head off the dance floor.
-			local sweepX = math.sin(showTime * 0.42 * speed + phase)
-			local sweepZ = math.cos(showTime * 0.31 * speed + phase * 0.73)
-			targetPos = clampFloorPoint(
-				anchor.X + sweepX * (maxX - minX) * 0.22,
-				anchor.Z + sweepZ * (maxZ - minZ) * 0.22,
+			local targetPos = adaptiveCoverageTarget(
+				H.anchor,
+				H.coverageQuadrant,
+				H.phase,
+				H.speed,
+				showTime,
+				beat,
 				floorY + 1
 			)
-		else
-			-- Randomized wandering destinations; never converge on the center.
-			local function spotForBeat(n)
-				return distributedFloorSpot(H.coverageIndex or i, #heads, n * 197 + H.idx * 1297, floorY + 1)
-			end
-			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
-		end
+
 		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
 		local motionAlpha = 1 - math.exp(-dt * 9)
 		H.currentTarget = H.currentTarget:Lerp(targetPos, motionAlpha)
