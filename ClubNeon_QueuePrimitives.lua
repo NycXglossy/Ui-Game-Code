@@ -96,6 +96,43 @@ function QueuePrimitives.create(context: any)
 		return not RunService:IsStudio()
 	end
 
+	-- Refill only the server-local queue. Playlist entries take precedence while
+	-- playlist rotation is active; otherwise use the controller's filtered Auto DJ
+	-- selector. Bound attempts so an exhausted playlist/catalog cannot spin.
+	function functions.topUpAuto()
+		if ControllerFunctions.autoQueueHold == true then return end
+		local target = math.clamp(math.floor(tonumber(CONFIG.AutoQueueTarget) or 3), 0, 50)
+		local attempts = 0
+		while #queue < target and attempts < math.max(6, target * 4) do
+			attempts += 1
+			local playlistTrack = if typeof(ControllerFunctions.nextPlaylistTrack) == "function"
+				then ControllerFunctions.nextPlaylistTrack() else nil
+			local track = playlistTrack or ControllerFunctions.pickAutoTrack()
+			if not track then break end
+			local duplicate = track.id == (ControllerFunctions.currentTrackId or "")
+			for _, queuedEntry in ipairs(queue) do
+				if queuedEntry.trackId == track.id then duplicate = true; break end
+			end
+			if not duplicate then
+				table.insert(queue, functions.makeEntry(track, if playlistTrack then "playlist" else "auto", nil))
+			end
+		end
+	end
+
+	function functions.clearAutomaticQueue()
+		for index = #queue, 1, -1 do
+			local entry = queue[index]
+			if entry.source ~= "player" then
+				table.remove(queue, index)
+			end
+		end
+	end
+
+	-- Expose through the controller table to avoid growing the size-limited
+	-- controller source with another wiring block.
+	ControllerFunctions.topUpAuto = functions.topUpAuto
+	ControllerFunctions.clearAutomaticQueue = functions.clearAutomaticQueue
+
 	return functions
 end
 
