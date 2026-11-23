@@ -81,6 +81,7 @@ end
 
 local function collectHeads()
 	local list = {}
+	if not rig then return list end
 	for _, d in rig:GetChildren() do
 		local n = d.Name:match("^Head(%d+)_Lens$")
 		if n and d:IsA("BasePart") then
@@ -107,6 +108,7 @@ end
 
 local function collectStrobeCells()
 	local cells = {}
+	if not rig then return cells end
 	for _, d in ipairs(rig:GetDescendants()) do
 		if d:IsA("BasePart") and d.Name:match("^Strobe%a_Cell%d+$") then
 			table.insert(cells, d)
