@@ -365,9 +365,15 @@ RunService.Heartbeat:Connect(function()
 			end
 			targetPos = clampFloorPoint(x, z, floorY + 0.5)
 		elseif pattern == 4 then
-			-- Wall crawl remains perimeter-based with per-laser phase offsets.
-			local t = (showTime * 0.02 * speed + i / #lasers + phase / (math.pi * 2)) % 1
-			targetPos = wallPoint(t) + Vector3.new(0, 0.5, 0)
+			-- Broad floor sweep stays inside each wall's assigned quadrant.
+			-- The old perimeter crawl repeatedly concentrated pools on the walls.
+			local sweepX = math.sin(showTime * 0.36 * speed + phase)
+			local sweepZ = math.cos(showTime * 0.27 * speed + phase * 0.81)
+			targetPos = clampFloorPoint(
+				anchor.X + sweepX * (maxX - minX) * 0.20,
+				anchor.Z + sweepZ * (maxZ - minZ) * 0.20,
+				floorY + 0.5
+			)
 		else
 			-- Blizzard: randomized full-floor spots on each beat, no center snap.
 			local function spotForBeat(n)
