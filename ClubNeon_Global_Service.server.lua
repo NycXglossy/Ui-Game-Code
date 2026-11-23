@@ -1182,9 +1182,18 @@ if globalMaintenanceService and not startOperationalService("ClubMusic_Global_Ma
 local authorizationCore = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 local authorizationModule = authorizationCore and authorizationCore:IsA("Folder")
 	and authorizationCore:FindFirstChild("Authorization") or nil
-if authorizationModule and type(authorizationModule.GetShared) == "function" then
+local authorizationApi = nil
+if authorizationModule and authorizationModule:IsA("ModuleScript") then
+	local moduleOk, moduleResult = pcall(require, authorizationModule)
+	if moduleOk and typeof(moduleResult) == "table" then
+		authorizationApi = moduleResult
+	else
+		warn("[ClubMusic][Authorization] SecurityCore Authorization require failed: " .. tostring(moduleResult))
+	end
+end
+if authorizationApi and type(authorizationApi.GetShared) == "function" then
 	local createOk, instance = pcall(function()
-		return authorizationModule.GetShared({
+		return authorizationApi.GetShared({
 			groupId = tonumber(projectConfig.Permissions.GroupId) or 0,
 			studioStaff = false,
 			staffUserIds = projectConfig.Permissions.OwnerUserIds,
