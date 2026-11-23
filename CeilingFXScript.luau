@@ -53,14 +53,16 @@ local function setPanel(p, hue, value)
 	p.Color = Color3.fromHSV(hue % 1, 1, v)
 end
 
--- Effect 1: expanding ripple rings from the center
+-- Effect 1: independent randomized pulses; no center-out ripple.
 local function ripple(t)
 	for _, p in panels do
-		local gx, gz = p:GetAttribute("GX"), p:GetAttribute("GZ")
-		local dist = math.sqrt((gx - CENTER_X) ^ 2 + (gz - CENTER_Z) ^ 2)
-		local ring = (t * 6 - dist * 0.45) % 6
-		local glow = math.max(0, 1 - math.abs(ring - 1) * 1.4)
-		setPanel(p, (dist * 0.04 + t * 0.05) % 1, 0.06 + 0.94 * glow)
+		local gx, gz = p:GetAttribute("GX") or 0, p:GetAttribute("GZ") or 0
+		local seed = (gx * 71 + gz * 113) % 997
+		local phase = seed * 0.071
+		local speed = 0.55 + (seed % 13) * 0.09
+		local pulse = 0.5 + 0.5 * math.sin(t * speed + phase)
+		local glow = 0.06 + 0.94 * pulse ^ 3
+		setPanel(p, (seed * 0.013 + t * 0.045) % 1, glow)
 	end
 end
 
@@ -148,19 +150,16 @@ local function pulse(t)
 	end
 end
 
--- Effect 10: spiral vortex -- rotating arms of light spinning out from the center
+-- Effect 10: independently phased randomized shimmer, not a center vortex.
 local function spiral(t)
-	local spin = t * 2.5
-	local maxDist = math.max(maxGX, maxGZ) * 0.75
 	for _, p in panels do
-		local gx, gz = p:GetAttribute("GX"), p:GetAttribute("GZ")
-		local dx, dz = gx - CENTER_X, gz - CENTER_Z
-		local dist = math.sqrt(dx * dx + dz * dz)
-		local angle = math.atan(dz, dx)
-		-- Offset the angle by distance to create the swirl shape
-		local arm = math.cos(angle * 2 - dist * 0.9 - spin)
-		local glow = math.max(0, arm) * math.max(0, 1 - dist / maxDist)
-		setPanel(p, (angle / (math.pi * 2) + t * 0.1) % 1, 0.04 + 0.96 * glow)
+		local gx, gz = p:GetAttribute("GX") or 0, p:GetAttribute("GZ") or 0
+		local seed = (gx * 193 + gz * 227) % 991
+		local phase = seed * 0.037
+		local speed = 0.65 + (seed % 17) * 0.08
+		local arm = math.cos(t * speed + phase)
+		local glow = 0.04 + 0.96 * math.max(0, arm) ^ 2
+		setPanel(p, (seed * 0.019 + t * 0.08) % 1, glow)
 	end
 end
 
@@ -201,16 +200,16 @@ local function plasma(t)
 	end
 end
 
--- Effect 13: comet -- a bright orb orbiting the grid with a glowing trail
+-- Effect 13: independent randomized spark bursts across the panel grid.
 local function comet(t)
-	local orbit = t * 3
-	local cx = CENTER_X + math.cos(orbit) * CENTER_X * 0.8
-	local cz = CENTER_Z + math.sin(orbit) * CENTER_Z * 0.8
 	for _, p in panels do
-		local gx, gz = p:GetAttribute("GX"), p:GetAttribute("GZ")
-		local d = math.sqrt((gx - cx) ^ 2 + (gz - cz) ^ 2)
-		local glow = math.exp(-d * 0.55) + math.exp(-d * 0.18) * 0.35
-		setPanel(p, (t * 0.25 - d * 0.04) % 1, math.min(1, glow))
+		local gx, gz = p:GetAttribute("GX") or 0, p:GetAttribute("GZ") or 0
+		local seed = (gx * 137 + gz * 149) % 983
+		local phase = seed * 0.053
+		local speed = 0.8 + (seed % 11) * 0.13
+		local spark = math.max(0, math.cos(t * speed + phase)) ^ 8
+		local glow = 0.04 + spark * 0.96
+		setPanel(p, (seed * 0.011 + t * 0.06) % 1, glow)
 	end
 end
 
