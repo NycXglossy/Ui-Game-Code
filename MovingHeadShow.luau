@@ -254,7 +254,7 @@ local function makeHead(i, pos)
 	spot.Range = 170
 	spot.Color = color
 	spot.Face = Enum.NormalId.Front
-	spot.Shadows = true
+	spot.Shadows = false -- 32 dynamic fixtures; avoid expensive per-light shadows
 	spot.Parent = head
 
 	-- Glowing pool where the beam lands on the floor
