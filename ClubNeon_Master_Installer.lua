@@ -1,7 +1,7 @@
 --!strict
 -- CLUB NEON MASTER INSTALLER v0.4.46
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.47 adds 16 balanced moving heads, cross-room beam choreography, brighter floor matrix, and compact Neon branding.
+-- v0.4.48 rebalances moving-head sweeps by physical wall with full-width/full-depth cross-hatch coverage.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
 --
@@ -23,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.47"
+local INSTALLER_VERSION = "0.4.48"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -36,7 +36,7 @@ local RELEASE = {
     phase32 = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
-    fx = "7207e810bc385444613296ae7923240a8c17d919",
+    fx = "9a2d7febc3d6e11b7803b2556a5fd5325535f07b",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
