@@ -22,12 +22,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.17"
+local INSTALLER_VERSION = "0.4.18"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "1a30996993a415ff138c3a694dd8860f1d27f1f4",
+    runtime = "1e1fb56c86dab5f5226a14dc82579c8d2fbb51fd",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
     globalService = "032fdc0085ac0a75db270bf569b9db19ef39b36b",
     security = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
@@ -106,6 +106,10 @@ addRaw("ClubNeon_Config", "ModuleScript", "ServerStorage", projectConfigSource, 
 addSource("ClubNeon_ControllerBootstrap.lua", "ModuleScript", "ServerStorage", "ClubNeon_ControllerBootstrap", RELEASE.runtime)
 addSource("ClubNeon_ProfilePersistence.lua", "ModuleScript", "ServerStorage", "ClubNeon_ProfilePersistence", RELEASE.runtime)
 addSource("ClubNeon_ProductCatalog.lua", "ModuleScript", "ServerStorage", "ClubNeon_ProductCatalog", RELEASE.runtime)
+addSource("ClubNeon_LocalDiagnosticsBridge.lua", "ModuleScript", "ServerStorage", "ClubNeon_LocalDiagnosticsBridge", RELEASE.runtime)
+addSource("ClubNeon_NativeBanHistory.lua", "ModuleScript", "ServerStorage", "ClubNeon_NativeBanHistory", RELEASE.runtime)
+addSource("ClubNeon_SkipVoting.lua", "ModuleScript", "ServerStorage", "ClubNeon_SkipVoting", RELEASE.runtime)
+addSource("ClubNeon_StartupErrorReporter.lua", "ModuleScript", "ServerStorage", "ClubNeon_StartupErrorReporter", RELEASE.runtime)
 addSource("ClubNeon_ProfileWriteLocks.lua", "ModuleScript", "ServerStorage", "ClubNeon_ProfileWriteLocks", RELEASE.runtime)
 addSource("ClubNeon_DanceFloorRewards.lua", "ModuleScript", "ServerStorage", "ClubNeon_DanceFloorRewards", RELEASE.runtime)
 addSource("ClubNeon_RateLimitBuckets.lua", "ModuleScript", "ServerStorage", "ClubNeon_RateLimitBuckets", RELEASE.runtime)
@@ -141,6 +145,7 @@ addRaw("ClubNeon_UI_Renderer_Config", "ModuleScript", "ReplicatedStorage", fetch
 addRaw("ClubNeon_UI_Renderer_Helpers", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Helpers.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Helpers.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_StateHelpers", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_StateHelpers.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_StateHelpers.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_Typography", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Typography.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Typography.lua@" .. RELEASE.runtime)
+addRaw("ClubNeon_UI_Renderer_Visibility", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Visibility.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Visibility.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_Visibility", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Visibility.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Visibility.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_Typography", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Typography.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Typography.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_PurchasePromptDiagnostics", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_PurchasePromptDiagnostics.lua", RELEASE.runtime), "ClubNeon_UI_PurchasePromptDiagnostics.lua@" .. RELEASE.runtime)
