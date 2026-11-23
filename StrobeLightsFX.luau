@@ -87,7 +87,7 @@ RunService.Heartbeat:Connect(function()
 	local pattern = math.floor(beatCount / 16) % 3
 	local bursting = now < burstUntil
 	-- Square wave for hard on/off strobing during a burst
-	local strobeOn = bursting and (math.floor(tempoNow * STROBE_BURST_HZ) % 2 == 0)
+	local strobeOn = bursting and (math.floor(now * STROBE_BURST_HZ) % 2 == 0)
 
 	for idx, entry in strobes do
 		local panel = entry.panel
