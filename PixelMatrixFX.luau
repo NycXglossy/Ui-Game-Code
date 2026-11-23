@@ -8,7 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ClubAudioSync = require(ReplicatedStorage:WaitForChild("ClubAudioSync"))
 
 local ROOT_NAME = "CeilingFX"
-local FLOOR_BRIGHTNESS = 0.43
+local FLOOR_BRIGHTNESS = 0.47
 local CEILING_BRIGHTNESS = 0.24
 local UPDATE_RATE = 1 / 15
 local root = workspace:WaitForChild(ROOT_NAME)
@@ -43,7 +43,8 @@ root.ChildRemoved:Connect(function() task.defer(collect) end)
 local function paint(panel: Panel, hue: number, level: number, ceiling: boolean)
 	if not panel.part.Parent then return end
 	local cap = if ceiling then CEILING_BRIGHTNESS else FLOOR_BRIGHTNESS
-	local value = 0.045 + math.clamp(level, 0, 1) * cap
+	local base = if ceiling then 0.045 else 0.065
+	local value = base + math.clamp(level, 0, 1) * cap
 	panel.part.Color = Color3.fromHSV(hue % 1, 0.88, value)
 end
 
