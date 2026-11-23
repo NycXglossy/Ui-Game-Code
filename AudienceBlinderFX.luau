@@ -18,8 +18,8 @@ local function collect()
 	table.sort(fixtures, function(a, b) return a.index < b.index end)
 end
 collect()
-folder.ChildAdded:Connect(collect)
-folder.ChildRemoved:Connect(collect)
+folder.DescendantAdded:Connect(function() task.defer(collect) end)
+folder.DescendantRemoving:Connect(function() task.defer(collect) end)
 
 local palette = {
 	Color3.fromRGB(255, 245, 220),
