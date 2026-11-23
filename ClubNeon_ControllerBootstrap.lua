@@ -39,5 +39,22 @@ return function(serverStorage: ServerStorage)
 		return nil
 	end
 
+
+	helpers.initializeStorageWithRetries = function(service: any, serviceName: string, studioUseDataStore: boolean, budgetCallback: (() -> boolean)?): boolean
+		if typeof(service) ~= "table" or type(service.Initialize) ~= "function" then
+			warn("[ClubMusic] " .. tostring(serviceName) .. " has no Initialize interface.")
+			return false
+		end
+		for attempt = 1, 3 do
+			local ok, ready = pcall(service.Initialize, service, studioUseDataStore, budgetCallback)
+			if ok and ready == true then return true end
+			if not ok then
+				warn("[ClubMusic] " .. tostring(serviceName) .. " initialization attempt " .. attempt .. " failed: " .. tostring(ready))
+			end
+			if attempt < 3 then task.wait(attempt * 0.5) end
+		end
+		return false
+	end
+
 	return helpers
 end
