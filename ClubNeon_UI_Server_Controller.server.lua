@@ -29,7 +29,7 @@ local SoundService = game:GetService("SoundService")
 local HttpService = game:GetService("HttpService")
 
 local ServerStorage = game:GetService("ServerStorage")
--- Preserve the established lowercase alias used by legacy controller sections.
+-- Legacy lowercase alias.
 local serverStorage = ServerStorage
 local projectConfigModule = ServerStorage:WaitForChild("ClubNeon_Config", 20)
 if not projectConfigModule or not projectConfigModule:IsA("ModuleScript") then
