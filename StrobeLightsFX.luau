@@ -51,6 +51,7 @@ while #strobes == 0 do
 	strobesModel = findRig() or strobesModel
 	strobes = collectStrobes()
 end
+print("[ClubNeon][StrobeLightsFX] Animation started; active panels=" .. #strobes)
 
 local function seededUnit(seed)
 	local value = math.sin(seed * 12.9898) * 43758.5453
