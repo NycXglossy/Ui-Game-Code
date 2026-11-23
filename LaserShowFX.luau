@@ -159,7 +159,8 @@ RunService.Heartbeat:Connect(function()
 	-- are recovered even while the first laser remains healthy.
 	if now >= nextRigAudit then
 		nextRigAudit = now + 2
-		local needsRefresh = false
+		local discoveredLasers = collectLasers()
+		local needsRefresh = #discoveredLasers ~= #lasers
 		for _, L in ipairs(lasers) do
 			if not L.lens.Parent or not L.target.Parent or not L.pool.Parent or not L.spot.Parent then
 				needsRefresh = true
@@ -171,7 +172,7 @@ RunService.Heartbeat:Connect(function()
 			if needsRefresh then break end
 		end
 		if needsRefresh then
-			lasers = collectLasers()
+			lasers = discoveredLasers
 			orb = rig:FindFirstChild("CenterOrb")
 			orbLight = orb and orb:FindFirstChildOfClass("PointLight")
 			orbRings = {}
