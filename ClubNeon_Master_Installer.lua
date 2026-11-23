@@ -1,6 +1,7 @@
 --!strict
 -- CLUB NEON MASTER INSTALLER v0.4.46
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
+-- v0.4.47 adds 16 balanced moving heads, cross-room beam choreography, brighter floor matrix, and compact Neon branding.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
 --
@@ -22,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.46"
+local INSTALLER_VERSION = "0.4.47"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -35,8 +36,8 @@ local RELEASE = {
     phase32 = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
-    fx = "b4df084e5e0a7e2723d5cdce81aafb144815a44a",
-    utility = "77c506441162da3e8d0e9009330766003210c7a9",
+    fx = "49854d7a11592af42cf18211016f4a2df25bec3d",
+    utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
 
@@ -301,7 +302,7 @@ for _, item in ipairs({
     {"ClubNeonUtilityBar/ToolShop.server.lua", "Script", "ToolShop"},
 }) do
     local parentKey = if string.find(item[1], ".client.", 1, true) then "StarterPlayerScripts" else "ServerScriptService"
-    addSource(item[1], item[2], parentKey, item[3])
+    addSource(item[1], item[2], parentKey, item[3], RELEASE.utility)
 end
 
 -- Shared beat clock and separate, independently restartable Club Neon FX.
