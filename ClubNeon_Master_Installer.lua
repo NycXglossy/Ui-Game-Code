@@ -27,7 +27,7 @@ local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed an
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "471d2f0ec1f3df6bbc29289ae28cade37c8baa31",
+    runtime = "43c30ff13c475599984a6ba7c7d7dd9b94c2a926",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
     globalService = "032fdc0085ac0a75db270bf569b9db19ef39b36b",
     security = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
@@ -105,6 +105,7 @@ end
 addRaw("ClubNeon_Config", "ModuleScript", "ServerStorage", projectConfigSource, "ClubNeon_Config.lua@" .. RELEASE.runtime)
 addSource("ClubNeon_ControllerBootstrap.lua", "ModuleScript", "ServerStorage", "ClubNeon_ControllerBootstrap", RELEASE.runtime)
 addSource("ClubNeon_ProfilePersistence.lua", "ModuleScript", "ServerStorage", "ClubNeon_ProfilePersistence", RELEASE.runtime)
+addSource("ClubNeon_ProfileWriteLocks.lua", "ModuleScript", "ServerStorage", "ClubNeon_ProfileWriteLocks", RELEASE.runtime)
 addSource("ClubNeon_DanceFloorRewards.lua", "ModuleScript", "ServerStorage", "ClubNeon_DanceFloorRewards", RELEASE.runtime)
 addSource("ClubNeon_RateLimitBuckets.lua", "ModuleScript", "ServerStorage", "ClubNeon_RateLimitBuckets", RELEASE.runtime)
 addSource("ClubNeon_QueuePrimitives.lua", "ModuleScript", "ServerStorage", "ClubNeon_QueuePrimitives", RELEASE.runtime)
