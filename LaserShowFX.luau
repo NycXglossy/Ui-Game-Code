@@ -120,9 +120,12 @@ end
 -- all four floor quadrants. This avoids a whole wall's fixtures inheriting
 -- neighboring cells on one side of the venue.
 local function wallBalancedFloorSpot(laneIndex, sideIndex, seed, y)
-	local lane = laneIndex - 1
-	local quadrant = lane % 4
-	local withinQuadrant = math.floor(lane / 4)
+	-- Interleave successive fixtures across all four quadrants, rotating
+	-- the starting quadrant by wall. This prevents every wall's first lane
+	-- from targeting the same half of the dance floor.
+	local slot = (laneIndex - 1) * 4 + (sideIndex - 1)
+	local quadrant = slot % 4
+	local withinQuadrant = math.floor(slot / 4)
 	local quadrantColumn = quadrant % 2
 	local quadrantRow = math.floor(quadrant / 2)
 	local halfWidth = (maxX - minX) * 0.5
@@ -196,7 +199,7 @@ local function collectLasers()
 	-- opposite walls different fixture counts.
 	local coverageIndex = 0
 	for laneIndex = 1, maxSideCount do
-		for _, sideName in ipairs(sideOrder) do
+		for sideIndex, sideName in ipairs(sideOrder) do
 			local L = sideGroups[sideName][laneIndex]
 			if L then
 				coverageIndex += 1
