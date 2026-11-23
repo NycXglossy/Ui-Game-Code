@@ -161,14 +161,6 @@ local beamCount = 0
 for _, laser in ipairs(lasers) do beamCount += #laser.beams end
 print("[ClubNeon][LaserShowFX] Animation started; lasers=" .. #lasers .. ", beams=" .. beamCount)
 
-local orb = rig:FindFirstChild("CenterOrb")
-local orbLight = orb and orb:FindFirstChildOfClass("PointLight")
-local orbRings = {}
-for i = 1, 3 do
-	local ring = rig:FindFirstChild("OrbRing" .. i)
-	if ring then table.insert(orbRings, ring) end
-end
-
 -- Beat state (driven by ClubAudioSync's beat clock)
 local lastBeatCount = -1
 local beatAge = math.huge
@@ -214,13 +206,6 @@ RunService.Heartbeat:Connect(function()
 		end
 		if needsRefresh then
 			lasers = discoveredLasers
-			orb = rig:FindFirstChild("CenterOrb")
-			orbLight = orb and orb:FindFirstChildOfClass("PointLight")
-			orbRings = {}
-			for i = 1, 3 do
-				local ring = rig:FindFirstChild("OrbRing" .. i)
-				if ring then table.insert(orbRings, ring) end
-			end
 			local refreshedBeams = 0
 			for _, L in ipairs(lasers) do refreshedBeams += #L.beams end
 			print("[ClubNeon][LaserShowFX] Fixture references refreshed; active lasers=" .. #lasers .. ", beams=" .. refreshedBeams)
@@ -254,7 +239,7 @@ RunService.Heartbeat:Connect(function()
 	local flare = flaring and (math.floor(now * FLARE_HZ) % 2 == 0) and 1 or 0
 	local flareKick = kick + flare * 1.5
 
-	-- On-beat events: color shifts across every laser and the orb
+	-- On-beat events: color shifts across every laser fixture
 	if beatCount ~= lastColorBeat then
 		lastColorBeat = beatCount
 		for i, L in ipairs(lasers) do
@@ -266,27 +251,11 @@ RunService.Heartbeat:Connect(function()
 				bm.Color = ColorSequence.new(c)
 			end
 		end
-		if orb and orbLight then
-			orb.Color = Color3.fromHSV((hue + 0.5) % 1, 1, 1)
-			orbLight.Color = orb.Color
-			for _, ring in ipairs(orbRings) do
-				ring.Color = orb.Color
-			end
-		end
 	end
 
-	-- Per-frame glow: everything swells with the kick and settles after
-	if orb and orbLight then
-		orb.Size = Vector3.new(3.5, 3.5, 3.5) * (1 + flareKick * 0.25)
-		orbLight.Brightness = 1.2 + flareKick * 2.5
-	end
+	-- Laser floor-pool choreography; the centerpiece has its own client animator.
 	local poolScale = 1 + flareKick * 0.3
 	local poolFade = 0.68 - flareKick * 0.12
-	for i, ring in ipairs(orbRings) do
-		-- Rings spin around the orb at different speeds and axes
-		ring.CFrame = CFrame.new(orb.Position)
-			* CFrame.Angles(showTime * (0.4 + i * 0.25), 0, i * 0.6 + showTime * 0.3)
-	end
 
 	-- Laser choreography: a new pattern every 16 beats (one musical phrase)
 	for i, L in ipairs(lasers) do
