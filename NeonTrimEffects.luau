@@ -1,3 +1,4 @@
+local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
 -- Animates the wall neon trim with a traveling rainbow wave and pulsing glow
 local folder = workspace:FindFirstChild("NeonTrim")
 
