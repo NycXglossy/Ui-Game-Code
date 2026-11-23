@@ -359,85 +359,16 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		AutoButtonColor = false,
 	}, gui) :: TextButton
 
-	-- Keep every stale/duplicate compact bar suppressed. Only this renderer's
-	-- active HUD is allowed to return when the full menu closes.
-	local function isCompactClubHud(instance: Instance): boolean
-		if not instance:IsA("GuiObject") then return false end
-		local normalizedName = string.lower(string.gsub(instance.Name, "[^%w]", ""))
-		return normalizedName == "topbarhud"
-			or normalizedName == "clubmusictopbarhud"
-			or normalizedName == "compactclubhud"
-			or normalizedName == "clubmusiccompacthud"
-	end
-
-	-- Maintain a small index of compact HUD candidates instead of rescanning
-	-- the entire PlayerGui every time a panel attribute or menu state changes.
-	local compactHudCandidates: {GuiObject} = {}
-	for _, descendant in ipairs(playerGui:GetDescendants()) do
-		if descendant ~= hud and isCompactClubHud(descendant) then
-			table.insert(compactHudCandidates, descendant :: GuiObject)
-		end
-	end
-
-	local function hideDuplicateCompactHuds()
-		for index = #compactHudCandidates, 1, -1 do
-			local candidate = compactHudCandidates[index]
-			if candidate.Parent == nil then
-				table.remove(compactHudCandidates, index)
-			elseif candidate ~= hud then
-				candidate.Visible = false
-			end
-		end
-	end
-
-	local function syncLauncherVisibility()
-		-- Keep the floating full-UI launcher hidden behind every companion panel.
-		local eliteSettingsOpen = playerGui:GetAttribute("ClubNeonSettingsOpen") == true
-		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
-		toggleButton.Visible = not expanded and not eliteSettingsOpen and not inventoryOpen
-	end
-
-	local function setCompactHudVisibility(visible: boolean)
-		-- Keep the compact HUD hidden while any full-size companion panel is open.
-		playerGui:SetAttribute("ClubMusicMenuExpanded", expanded)
-		local eliteSettingsOpen = playerGui:GetAttribute("ClubNeonSettingsOpen") == true
-		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
-		hideDuplicateCompactHuds()
-		hud.Visible = visible and not expanded and not eliteSettingsOpen and not inventoryOpen
-		syncLauncherVisibility()
-	end
-
-	local function syncExternalPanelHudVisibility()
-		local inventoryOpen = playerGui:GetAttribute("UtilityInventoryOpen") == true
-		local eliteSettingsOpen = playerGui:GetAttribute("ClubNeonSettingsOpen") == true
-		if inventoryOpen or eliteSettingsOpen or expanded then
-			hideDuplicateCompactHuds()
-		end
-		hud.Visible = not expanded and not eliteSettingsOpen and not inventoryOpen
-		syncLauncherVisibility()
-	end
-
-	-- Coordinate compact-HUD visibility with Club Neon Settings and the
-	-- independent Utility Bar inventory without rebuilding either interface.
-	table.insert(connections, playerGui:GetAttributeChangedSignal("ClubNeonSettingsOpen"):Connect(syncExternalPanelHudVisibility))
-	table.insert(connections, playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(syncExternalPanelHudVisibility))
-	syncExternalPanelHudVisibility()
-	-- Keep the candidate index current as other UI systems add/remove compact bars.
-	table.insert(connections, playerGui.DescendantAdded:Connect(function(descendant)
-		if descendant ~= hud and isCompactClubHud(descendant) then
-			table.insert(compactHudCandidates, descendant :: GuiObject)
-			if expanded or playerGui:GetAttribute("UtilityInventoryOpen") == true
-				or playerGui:GetAttribute("ClubNeonSettingsOpen") == true then
-				(descendant :: GuiObject).Visible = false
-			end
-		end
-	end))
-	table.insert(connections, playerGui.DescendantRemoving:Connect(function(descendant)
-		if descendant:IsA("GuiObject") then
-			local index = table.find(compactHudCandidates, descendant)
-			if index then table.remove(compactHudCandidates, index) end
-		end
-	end))
+	local visibilityModule = ReplicatedStorage:WaitForChild("ClubNeon_UI_Renderer_Visibility")
+	local visibility = require(visibilityModule).new({
+		playerGui = playerGui,
+		hud = hud,
+		toggleButton = toggleButton,
+		connections = connections,
+		getExpanded = function() return expanded end,
+	})
+	local setCompactHudVisibility = visibility.setCompactHudVisibility
+	local syncExternalPanelHudVisibility = visibility.syncExternalPanelHudVisibility
 
 	corner(hud, 15)
 	local hudOutline = stroke(hud, C.Gold, 1.1)
