@@ -254,8 +254,8 @@ RunService.Heartbeat:Connect(function()
 	end
 
 	-- Laser floor-pool choreography; the centerpiece has its own client animator.
-	local poolScale = 1 + flareKick * 0.3
-	local poolFade = 0.68 - flareKick * 0.12
+	local poolScale = 1 + flareKick * 0.18
+	local poolFade = 0.75 - flareKick * 0.07
 
 	-- Laser choreography: a new pattern every 16 beats (one musical phrase)
 	for i, L in ipairs(lasers) do
@@ -305,7 +305,7 @@ RunService.Heartbeat:Connect(function()
 		L.pool.CFrame = CFrame.new(smoothTarget + Vector3.new(0, 0.3, 0)) * CFrame.Angles(0, 0, math.pi / 2)
 		L.pool.Size = Vector3.new(0.1, 3.5 * poolScale, 3.5 * poolScale)
 		L.pool.Transparency = poolFade
-		L.spot.Brightness = 0.9 + flareKick * 2.2
+		L.spot.Brightness = 0.55 + flareKick * 1.1
 		L.spot.Enabled = true
 	end
 end)
