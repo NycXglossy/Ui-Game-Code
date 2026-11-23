@@ -154,7 +154,7 @@ RunService.Heartbeat:Connect(function()
 			target = math.clamp(1 - ring * 1.6, 0, 1) * (0.3 + beatGlow * 0.7) + 0.05
 		elseif pattern == 2 then
 			-- Random slam: chosen pillars drop hard, others idle-breathe
-			local idle = 0.06 + 0.06 * math.sin(now * 1.8 + (gx + gz) * 0.9)
+			local idle = 0.06 + 0.06 * math.sin(tempoNow * 1.8 + (gx + gz) * 0.9)
 			if dropSet[idx] then
 				target = 0.25 + beatGlow * 0.75
 			else
@@ -162,7 +162,7 @@ RunService.Heartbeat:Connect(function()
 			end
 		elseif pattern == 3 then
 			-- Sweeping wave: a diagonal wave rolls across the grid
-			local wave = math.abs(math.sin((gx + gz) * 0.8 - now * 1.6))
+			local wave = math.abs(math.sin((gx + gz) * 0.8 - tempoNow * 1.6))
 			target = wave * (0.3 + norm * 0.45 + beatGlow * 0.35) + 0.05
 		elseif pattern == 4 then
 			-- Checkerboard slam: alternating cells hammer down on odd/even beats
