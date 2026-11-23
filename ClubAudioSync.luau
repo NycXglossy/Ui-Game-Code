@@ -23,6 +23,11 @@ local bpmOverride: number? = nil -- pushed via ClubAudioSync.setBPM
 local bpmTarget = BPM_SEED
 local bpmCurrent = BPM_SEED
 local bpmLastKnown = BPM_SEED
+
+-- One shared movement-speed envelope consumed by every Club Neon FX animator.
+local MOVEMENT_SPEED_MIN = 0.55
+local MOVEMENT_SPEED_MAX = 1.45
+local movementSpeedCurrent = 1
 local lastPlaying: boolean? = nil
 
 local function sanitizeBPM(value: any): number?
@@ -130,6 +135,7 @@ export type BeatState = {
 	barPhase: number, -- 0..1 position inside the current 4-beat bar
 	pulse: number, -- 1 on the kick, exponential decay
 	energy: number, -- smoothed 0..1 simulated loudness envelope
+	movementSpeed: number, -- shared smoothed movement multiplier, adapted primarily to BPM
 }
 
 -- Call every frame (or whenever fresh beat data is needed). Advances the
@@ -182,6 +188,14 @@ function ClubAudioSync.getBeatState(): BeatState
 	local targetEnergy = if playing then math.clamp(0.3 + 0.4 * pulse + 0.3 * beatVariety, 0, 1) else 0
 	energy += (targetEnergy - energy) * (1 - math.exp(-10 * dt))
 
+	-- Centralize the movement response so all FX use the same tempo adaptation.
+	-- BPM drives the response; the simulated energy envelope adds only a subtle lift.
+	local tempoDrive = math.clamp((bpm - 70) / 90, 0, 1)
+	local energyDrive = math.clamp(energy, 0, 1)
+	local targetMovementSpeed = math.clamp(0.58 + tempoDrive * 0.68 + energyDrive * 0.18,
+		MOVEMENT_SPEED_MIN, MOVEMENT_SPEED_MAX)
+	movementSpeedCurrent += (targetMovementSpeed - movementSpeedCurrent) * (1 - math.exp(-1.8 * dt))
+
 	return {
 		playing = playing,
 		timePosition = timePosition,
@@ -192,6 +206,7 @@ function ClubAudioSync.getBeatState(): BeatState
 		barPhase = (math.floor(beats) % 4) / 4,
 		pulse = pulse,
 		energy = energy,
+		movementSpeed = movementSpeedCurrent,
 	}
 end
 
