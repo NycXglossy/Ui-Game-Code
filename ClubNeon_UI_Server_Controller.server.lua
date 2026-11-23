@@ -1156,30 +1156,16 @@ ControllerFunctions.isValidAudioAssetId = function(value: any): boolean
 		and value % 1 == 0
 end
 
-ControllerFunctions.acquireProfileWriteLock = function(userId: number, timeoutSeconds: number?): any
-	local startedAt = os.clock()
-	local timeout = if typeof(timeoutSeconds) == "number"
-		then math.clamp(timeoutSeconds, 0, CONFIG.ProfileWriteLockTimeoutSeconds)
-		else CONFIG.ProfileWriteLockTimeoutSeconds
-	while profileWriteLocks[userId] do
-		if os.clock() - startedAt >= timeout then
-			warn("[ClubMusic] Timed out waiting for profile write lock for userId " .. tostring(userId))
-			return nil
-		end
-		task.wait(0.05)
-	end
-	-- Each holder gets an identity token. A delayed completion may release only
-	-- its own lock, never a newer writer's lock for a rapid same-server rejoin.
-	local lockToken = {}
-	profileWriteLocks[userId] = lockToken
-	return lockToken
+local profileWriteLocksModule = ServerStorage:FindFirstChild("ClubNeon_ProfileWriteLocks")
+if not profileWriteLocksModule or not profileWriteLocksModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_ProfileWriteLocks; controller will not start.")
 end
-
-ControllerFunctions.releaseProfileWriteLock = function(userId: number, lockToken: any?)
-	if lockToken == nil or profileWriteLocks[userId] == lockToken then
-		profileWriteLocks[userId] = nil
-	end
-end
+local profileWriteLocksService = require(profileWriteLocksModule)({
+	locks = profileWriteLocks,
+	timeoutLimit = CONFIG.ProfileWriteLockTimeoutSeconds,
+})
+ControllerFunctions.acquireProfileWriteLock = profileWriteLocksService.acquire
+ControllerFunctions.releaseProfileWriteLock = profileWriteLocksService.release
 
 -- Session-only moderation / VIP / vote state.
 -- All group-rank authorization and caching is owned by SecurityCore.Authorization.
