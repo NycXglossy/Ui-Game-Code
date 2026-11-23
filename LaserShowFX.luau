@@ -160,29 +160,43 @@ local function collectLasers()
 		local group = sideGroups[fixture.side]
 		if group then table.insert(group, fixture) end
 	end
-	for sideIndex, sideName in ipairs(sideOrder) do
+	local maxSideCount = 0
+	local sideCounts = {}
+	for _, sideName in ipairs(sideOrder) do
 		local group = sideGroups[sideName]
 		table.sort(group, function(a, b) return a.sideSlot < b.sideSlot end)
-		for laneIndex, L in ipairs(group) do
-			-- Interleave wall lanes across the grid so every wall contributes
-			-- beams to every floor region instead of one contiguous block.
-			local coverageIndex = ((laneIndex - 1) * 4 + sideIndex - 1) % math.max(1, #list) + 1
-			L.coverageIndex = coverageIndex
-			L.anchor = distributedFloorSpot(coverageIndex, #list, L.idx * 31.9, floorY + 0.5)
-			L.currentTarget = L.anchor
+		sideCounts[sideName] = #group
+		maxSideCount = math.max(maxSideCount, #group)
+	end
+	-- Assign every projector a unique floor cell. Round-robin by lane and wall
+	-- prevents duplicate cells when the venue's rectangular perimeter gives
+	-- opposite walls different fixture counts.
+	local coverageIndex = 0
+	for laneIndex = 1, maxSideCount do
+		for _, sideName in ipairs(sideOrder) do
+			local L = sideGroups[sideName][laneIndex]
+			if L then
+				coverageIndex += 1
+				L.coverageIndex = coverageIndex
+				L.anchor = distributedFloorSpot(coverageIndex, #list, L.idx * 31.9, floorY + 0.5)
+				L.currentTarget = L.anchor
+			end
 		end
 	end
-	return list
+	return list, sideCounts
 end
 
-local lasers = collectLasers()
+local lasers, laserSideCounts = collectLasers()
 while #lasers == 0 do
 	task.wait(0.5)
-	lasers = collectLasers()
+	lasers, laserSideCounts = collectLasers()
 end
 local beamCount = 0
 for _, laser in ipairs(lasers) do beamCount += #laser.beams end
-print("[ClubNeon][LaserShowFX] Animation started; lasers=" .. #lasers .. ", beams=" .. beamCount)
+print("[ClubNeon][LaserShowFX] Four-wall coverage ready; lasers=" .. #lasers
+	.. ", sides=N:" .. (laserSideCounts.north or 0) .. "/E:" .. (laserSideCounts.east or 0)
+	.. "/S:" .. (laserSideCounts.south or 0) .. "/W:" .. (laserSideCounts.west or 0)
+	.. ", floorCells=" .. #lasers .. ", beams=" .. beamCount)
 
 -- Beat state (driven by ClubAudioSync's beat clock)
 local lastBeatCount = -1
@@ -216,7 +230,7 @@ RunService.Heartbeat:Connect(function()
 	if now >= nextRigAudit then
 		nextRigAudit = now + 2
 		if not rig or not rig.Parent then rig = workspace:FindFirstChild("LaserRig") end
-		local discoveredLasers = collectLasers()
+		local discoveredLasers, discoveredSideCounts = collectLasers()
 		local needsRefresh = #discoveredLasers ~= #lasers
 		for _, L in ipairs(lasers) do
 			if not L.lens.Parent or not L.target.Parent or not L.pool.Parent or not L.spot.Parent then
@@ -230,9 +244,13 @@ RunService.Heartbeat:Connect(function()
 		end
 		if needsRefresh then
 			lasers = discoveredLasers
+			laserSideCounts = discoveredSideCounts
 			local refreshedBeams = 0
 			for _, L in ipairs(lasers) do refreshedBeams += #L.beams end
-			print("[ClubNeon][LaserShowFX] Fixture references refreshed; active lasers=" .. #lasers .. ", beams=" .. refreshedBeams)
+			print("[ClubNeon][LaserShowFX] Fixture references refreshed; active lasers=" .. #lasers
+				.. ", sides=N:" .. (laserSideCounts.north or 0) .. "/E:" .. (laserSideCounts.east or 0)
+				.. "/S:" .. (laserSideCounts.south or 0) .. "/W:" .. (laserSideCounts.west or 0)
+				.. ", beams=" .. refreshedBeams)
 		end
 	end
 	if #lasers == 0 then return end
