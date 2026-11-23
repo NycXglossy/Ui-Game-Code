@@ -1641,68 +1641,20 @@ end
 -- Title slots -------------------------------------------------------------------
 
 -- Returns the hex colors for an effect/set (empty for RGB, which animates by speed instead).
-ControllerFunctions.titleHexFor = function(effect: string, set: string): {string}
-	if effect == "rainbow" then
-		-- Palette-based rainbow sets (amethyst, fire, ocean, ...) reuse the two-color palettes above as a
-		-- circular list (color A, midpoint, color B, midpoint) that the client flows through the title.
-		local palette = if RAINBOW_PARAMS[set] == nil then TITLE_HEX.gradient[set] else nil
-		if palette and #palette >= 2 then
-			local first = Color3.fromHex(palette[1])
-			local second = Color3.fromHex(palette[2])
-			local middle = "#" .. first:Lerp(second, 0.5):ToHex()
-			return { palette[1], middle, palette[2], middle }
-		end
-		local params = RAINBOW_PARAMS[set] or RAINBOW_PARAMS.classic
-		local out = {}
-		for i = 0, 6 do
-			table.insert(out, "#" .. Color3.fromHSV(i / 7, params[1], params[2]):ToHex())
-		end
-		return out
-	end
-	local group = TITLE_HEX[effect]
-	local colors = if group then group[set] else nil
-	return colors or {}
+-- Title presentation and slot validation are isolated from persistence and text filtering.
+local titlePresentationModule = ServerStorage:FindFirstChild("ClubNeon_TitlePresentation")
+if not titlePresentationModule or not titlePresentationModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_TitlePresentation; controller will not start.")
 end
-
--- Validates a stored/received slot. Returns nil when anything is out of the allowlists.
-ControllerFunctions.sanitizeTitleSlot = function(data: any): TitleSlot?
-	if typeof(data) ~= "table" then return nil end
-	local text = data.text
-	if typeof(text) ~= "string" or #text > 256 then return nil end
-	local length = utf8.len(text)
-	if not length or length < 1 or length > MAX_CUSTOM_TITLE_LENGTH then return nil end
-	local effect = data.effect
-	if typeof(effect) ~= "string" or TITLE_SETS[effect] == nil then return nil end
-	local set = data.set
-	if typeof(set) ~= "string" or TITLE_SETS[effect][set] ~= true then return nil end
-	local font = data.font
-	if typeof(font) ~= "string" or TITLE_FONTS[font] ~= true then return nil end
-	local style = data.style
-	if typeof(style) ~= "string" or TITLE_STYLES[style] ~= true then return nil end
-	local textSize = tonumber(data.textSize or data.size)
-	local height = tonumber(data.heightOffset or data.height)
-	local distance = tonumber(data.viewDistance or data.distance)
-	if not ControllerFunctions.isFiniteNumber(textSize) then textSize = 20 end
-	if not ControllerFunctions.isFiniteNumber(height) then height = 2.5 end
-	if not ControllerFunctions.isFiniteNumber(distance) then distance = 80 end
-	return {
-		text = text,
-		effect = effect,
-		set = set,
-		font = font,
-		style = style,
-		textSize = math.clamp(math.floor((textSize or 20) + 0.5), 14, 32),
-		height = math.clamp(height or 2.5, 0, 8),
-		distance = math.clamp(distance or 80, 20, 200),
-	}
-end
-
-ControllerFunctions.firstFilledSlot = function(profile: Profile): number?
-	for i = 1, TITLE_SLOT_COUNT do
-		if profile.titleSlots[i] and i <= profile.unlockedSlots then return i end
-	end
-	return nil
-end
+local titlePresentation = require(titlePresentationModule)({
+	TITLE_HEX = TITLE_HEX, RAINBOW_PARAMS = RAINBOW_PARAMS, TITLE_SETS = TITLE_SETS,
+	TITLE_FONTS = TITLE_FONTS, TITLE_STYLES = TITLE_STYLES, RGB_SPEED = RGB_SPEED,
+	TITLE_SLOT_COUNT = TITLE_SLOT_COUNT, MAX_CUSTOM_TITLE_LENGTH = MAX_CUSTOM_TITLE_LENGTH,
+	isFiniteNumber = ControllerFunctions.isFiniteNumber,
+})
+ControllerFunctions.titleHexFor = titlePresentation.titleHexFor
+ControllerFunctions.sanitizeTitleSlot = titlePresentation.sanitizeTitleSlot
+ControllerFunctions.firstFilledSlot = titlePresentation.firstFilledSlot
 
 -- Per-session cache of text that has passed Roblox broadcast filtering.
 -- Profile text is preserved if TextService is temporarily unavailable, but is never
@@ -1714,42 +1666,7 @@ local CUSTOM_TITLE_TEXT_COOLDOWN_SECONDS = 60
 -- Mirrors the active slot onto player attributes for the overhead title script.
 -- Legacy attributes (CustomTitle/TitleColor/TitleStyle/ShowCustomTitle) are kept up to date as well.
 ControllerFunctions.applyTitleAttributes = function(player: Player, profile: Profile)
-	local slot = profile.titleSlots[profile.activeSlot]
-	local safeTexts = filteredTitleTextByUserId[player.UserId]
-	local safeText = if safeTexts then safeTexts[profile.activeSlot] else nil
-	-- Replicate the equipped collection tag on join as well as after equip actions.
-	-- The overhead renderer consumes this cosmetic attribute; ownership remains server-authoritative.
-	player:SetAttribute("EquippedTag", if typeof(profile.equippedTag) == "string" then profile.equippedTag else "")
-	player:SetAttribute("TitleSlotsUnlocked", profile.unlockedSlots)
-	player:SetAttribute("TitleSlot", profile.activeSlot)
-	player:SetAttribute("ShowCustomTitle", profile.showCustomTitle)
-	if slot == nil or typeof(safeText) ~= "string" or safeText == "" then
-		player:SetAttribute("CustomTitle", "")
-		player:SetAttribute("TitleColor", "gold")
-		player:SetAttribute("TitleStyle", "normal")
-		player:SetAttribute("TitleEffect", "fixed")
-		player:SetAttribute("TitleSet", "gold")
-		player:SetAttribute("TitleColors", "#FCD34D")
-		player:SetAttribute("TitleSpeed", 0)
-		player:SetAttribute("TitleShimmer", false)
-		player:SetAttribute("TitleFont", "gotham")
-		player:SetAttribute("TitleTextSize", 20)
-		player:SetAttribute("TitleHeight", 2.5)
-		player:SetAttribute("TitleDistance", 80)
-		return
-	end
-	player:SetAttribute("CustomTitle", safeText)
-	player:SetAttribute("TitleColor", if slot.effect == "fixed" then slot.set else "gold")
-	player:SetAttribute("TitleStyle", slot.style)
-	player:SetAttribute("TitleEffect", slot.effect)
-	player:SetAttribute("TitleSet", slot.set)
-	player:SetAttribute("TitleColors", table.concat(ControllerFunctions.titleHexFor(slot.effect, slot.set), ","))
-	player:SetAttribute("TitleSpeed", if slot.effect == "rgb" then (RGB_SPEED[slot.set] or 0.25) elseif slot.effect == "shimmer" then 0.35 else 0)
-	player:SetAttribute("TitleShimmer", slot.effect == "shimmer")
-	player:SetAttribute("TitleFont", slot.font)
-	player:SetAttribute("TitleTextSize", slot.textSize)
-	player:SetAttribute("TitleHeight", slot.height)
-	player:SetAttribute("TitleDistance", slot.distance)
+	titlePresentation.applyTitleAttributes(player, profile, filteredTitleTextByUserId[player.UserId])
 end
 
 -- Filters player-authored text on the server before storing or replicating it. Returns nil on failure.
