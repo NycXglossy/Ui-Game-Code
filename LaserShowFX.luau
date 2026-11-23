@@ -131,6 +131,50 @@ end
 local function collectLasers()
 	local list = {}
 	if not rig then return list, {north = 0, east = 0, south = 0, west = 0} end
+	-- Backward-compatible metadata recovery: older replicated rig builders may not
+	-- have WallSide/WallSlot yet. Infer from the actual emitter perimeter, never
+	-- from CeilingFX floor bounds (which can collapse the entire rig onto one wall).
+	local rigMinX, rigMaxX, rigMinZ, rigMaxZ = math.huge, -math.huge, math.huge, -math.huge
+	local emitterCount = 0
+	for _, candidate in ipairs(rig:GetChildren()) do
+		if candidate:IsA("BasePart") and candidate.Name:match("^^Laser(%d+)_Lens$") then
+			emitterCount += 1
+			rigMinX = math.min(rigMinX, candidate.Position.X)
+			rigMaxX = math.max(rigMaxX, candidate.Position.X)
+			rigMinZ = math.min(rigMinZ, candidate.Position.Z)
+			rigMaxZ = math.max(rigMaxZ, candidate.Position.Z)
+		end
+	end
+	local rigSpanX = math.max(0.01, rigMaxX - rigMinX)
+	local rigSpanZ = math.max(0.01, rigMaxZ - rigMinZ)
+	local function inferWallMetadata(emitter, preferredSide)
+		local side = preferredSide
+		if side ~= "north" and side ~= "east" and side ~= "south" and side ~= "west" then
+			local p = emitter.Position
+			local distances = {
+				{side = "north", distance = math.abs(p.Z - rigMinZ)},
+				{side = "east", distance = math.abs(rigMaxX - p.X)},
+				{side = "south", distance = math.abs(rigMaxZ - p.Z)},
+				{side = "west", distance = math.abs(p.X - rigMinX)},
+			}
+			table.sort(distances, function(a, b) return a.distance < b.distance end)
+			side = distances[1].side
+		end
+		local p = emitter.Position
+		local slot
+		if side == "north" then
+			slot = (p.X - rigMinX) / rigSpanX
+		elseif side == "east" then
+			slot = (p.Z - rigMinZ) / rigSpanZ
+		elseif side == "south" then
+			slot = (rigMaxX - p.X) / rigSpanX
+		else
+			slot = (rigMaxZ - p.Z) / rigSpanZ
+		end
+		return side, math.clamp(slot, 0.04, 0.96)
+	end
+	local recoveredMetadata = 0
+	local invalidMetadata = 0
 	-- Use the actual emitter perimeter for wall classification. The venue trim
 	-- can extend beyond the CeilingFX dance-floor panels, so comparing fixture
 	-- positions directly with floor bounds can label every fixture as one side.
@@ -146,11 +190,19 @@ local function collectLasers()
 				for _, child in d:GetChildren() do
 					if child:IsA("Beam") then table.insert(beams, child) end
 				end
-				-- Wall identity is authored by the server rig builder; do not infer
-				-- it from world-space extrema, which can collapse on irregular venues.
 				local side = d:GetAttribute("WallSide")
 				local along = d:GetAttribute("WallSlot")
-				if type(side) ~= "string" or type(along) ~= "number" then
+				if side ~= "north" and side ~= "east" and side ~= "south" and side ~= "west" then
+					side = nil
+				end
+				if type(along) ~= "number" then along = nil end
+				if not side or not along then
+					recoveredMetadata += 1
+					side, along = inferWallMetadata(d, side)
+				end
+				if not side or not along then
+					invalidMetadata += 1
+					warn("[ClubNeon][FX] Unable to infer wall metadata for " .. d:GetFullName())
 					continue
 				end
 				table.insert(list, {
@@ -194,6 +246,10 @@ local function collectLasers()
 			end
 		end
 	end
+	print("[ClubNeon][FX] Laser fixtures=" .. #list
+		.. " emitters=" .. emitterCount
+		.. " sides N/E/S/W=" .. sideCounts.north .. "/" .. sideCounts.east .. "/" .. sideCounts.south .. "/" .. sideCounts.west
+		.. " recoveredMetadata=" .. recoveredMetadata .. " invalidMetadata=" .. invalidMetadata)
 	return list, sideCounts
 end
 
