@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.28"
+local INSTALLER_VERSION = "0.4.29"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -35,6 +35,8 @@ local RELEASE = {
     phase32 = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
+    fx = "55a13ea87dca541b8761cf004e3e859e1885db8b",
+    utility = "2a20e1480716006919a66efe9bf6623fb1797fc3",
 }
 
 if RunService:IsRunning() then
@@ -292,15 +294,41 @@ addSource("ClubNeonUnifiedLauncher.client.lua", "LocalScript", "StarterPlayerScr
 for _, item in ipairs({
     {"ClubNeonUtilityBar/UtilityBar.client.lua", "LocalScript", "UtilityBar"},
     {"ClubNeonUtilityBar/UtilityBarActions.client.lua", "LocalScript", "UtilityBarActions"},
-    {"ClubNeonUtilityBar/UtilityBarPanels.client.lua", "LocalScript", "UtilityBarPanels"},
     {"ClubNeonUtilityBar/ToolShop.client.lua", "LocalScript", "ToolShop"},
     {"ClubNeonUtilityBar/UtilityBarActions.server.lua", "Script", "UtilityBarActions"},
-    {"ClubNeonUtilityBar/UtilityBarExtendedActions.server.lua", "Script", "UtilityBarExtendedActions"},
     {"ClubNeonUtilityBar/ToolShop.server.lua", "Script", "ToolShop"},
 }) do
     local parentKey = if string.find(item[1], ".client.", 1, true) then "StarterPlayerScripts" else "ServerScriptService"
     addSource(item[1], item[2], parentKey, item[3])
 end
+
+-- Shared beat clock and separate, independently restartable Club Neon FX.
+-- Client scripts stay in StarterPlayerScripts; rig builders and replicated
+-- fixture animators stay server-side. All source is pinned to the FX upload.
+addSource("ClubAudioSync.luau", "ModuleScript", "ReplicatedStorage", "ClubAudioSync", RELEASE.fx)
+for _, item in ipairs({
+    {"AtmosFX.luau", "LocalScript", "StarterPlayerScripts", "AtmosFX"},
+    {"BarNeonScript.luau", "Script", "ServerScriptService", "BarNeonScript"},
+    {"BeatImpactFX.luau", "LocalScript", "StarterPlayerScripts", "BeatImpactFX"},
+    {"CeilingFXScript.luau", "Script", "ServerScriptService", "CeilingFXScript"},
+    {"CeilingPillarFX.luau", "LocalScript", "StarterPlayerScripts", "CeilingPillarFX"},
+    {"FXWatchdogClient.luau", "LocalScript", "StarterPlayerScripts", "FXWatchdogClient"},
+    {"GlowFloorFXScript.luau", "Script", "ServerScriptService", "GlowFloorFXScript"},
+    {"LaserShowFX.luau", "LocalScript", "StarterPlayerScripts", "LaserShowFX"},
+    {"LaserShowScript.luau", "Script", "ServerScriptService", "LaserShowScript"},
+    {"LightshowFX.luau", "Script", "ServerScriptService", "LightshowFX"},
+    {"MovingHeadShow.luau", "Script", "ServerScriptService", "MovingHeadShow"},
+    {"MovingHeadShowFX.luau", "LocalScript", "StarterPlayerScripts", "MovingHeadShowFX"},
+    {"NeonSignFX.luau", "Script", "ServerScriptService", "NeonSignFX"},
+    {"NeonTrimEffects.luau", "Script", "ServerScriptService", "NeonTrimEffects"},
+    {"SpeakerEffects.luau", "LocalScript", "StarterPlayerScripts", "SpeakerEffects"},
+    {"StrobeLightsFX.luau", "LocalScript", "StarterPlayerScripts", "StrobeLightsFX"},
+    {"WallVisualizerClient.luau", "LocalScript", "StarterPlayerScripts", "WallVisualizerClient"},
+}) do
+    addSource(item[1], item[2], item[3], item[4], RELEASE.fx)
+end
+addSource("UtilityBarPanels.luau", "LocalScript", "StarterPlayerScripts", "UtilityBarPanels", RELEASE.utility)
+addSource("UtilityBarExtendedActions.luau", "Script", "ServerScriptService", "UtilityBarExtendedActions", RELEASE.utility)
 
 -- Discover the existing Kohl's Admin package wherever it is parented in the
 -- place. In the installed package layout, BOTH repository-owned adapters are
