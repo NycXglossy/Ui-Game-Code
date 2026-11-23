@@ -90,14 +90,12 @@ RunService.Heartbeat:Connect(function()
 	lastT = now
 	local beat = ClubAudioSync.getBeatState()
 	energy = beat.energy
-	if beat.beatCount ~= lastBeat then
-		lastBeat = beat.beatCount
-		pulse = math.clamp(0.35 + beat.energy * 0.9, 0.25, 1)
-	end
-	pulse *= math.max(0, 1 - dt * 4.5)
+	if beat.beatCount ~= lastBeat then lastBeat = beat.beatCount end
+	pulse = math.exp(-beat.beatPhase * 5) * math.clamp(0.35 + beat.energy * 0.9, 0.25, 1)
+	local tempoTime = now * (beat.bpm / 128)
 	local hueStep = math.floor(beat.beatCount / 4)
 	for _, fixture in ipairs(fixtures) do
-		local wave = 0.5 + 0.5 * math.sin(now * 1.4 + fixture.index * 0.8)
+		local wave = 0.5 + 0.5 * math.sin(tempoTime * 1.4 + fixture.index * 0.8)
 		local intensity = math.clamp(0.08 + energy * 0.12 + pulse * (0.35 + wave * 0.35), 0, 0.8)
 		fixture.light.Brightness = intensity * 5.5
 		local color = if pulse > 0.18 then palette[(hueStep + fixture.index - 1) % #palette + 1] else palette[(fixture.index - 1) % #palette + 1]
