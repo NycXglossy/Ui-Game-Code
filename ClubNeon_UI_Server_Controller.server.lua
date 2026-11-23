@@ -1846,93 +1846,28 @@ ControllerFunctions.recordDiagnosticPulse = function(name: string, detail: strin
 end
 
 -- Queue / Auto DJ ---------------------------------------------------------------
+-- Queue primitives operate on the controller-owned local queue and request counts.
+local queuePrimitivesModule = ServerStorage:FindFirstChild("ClubNeon_QueuePrimitives")
+assert(queuePrimitivesModule and queuePrimitivesModule:IsA("ModuleScript"), "ClubNeon_QueuePrimitives is required")
+local QueuePrimitives = require(queuePrimitivesModule)
+local queuePrimitives = QueuePrimitives.create({
+	ControllerFunctions = ControllerFunctions,
+	HttpService = HttpService,
+	CONFIG = CONFIG,
+	queue = queue,
+	requestCounts = requestCounts,
+	RunService = RunService,
+})
+ControllerFunctions.makeEntry = queuePrimitives.makeEntry
+ControllerFunctions.releaseSlot = queuePrimitives.releaseSlot
+ControllerFunctions.countPlayerEntries = queuePrimitives.countPlayerEntries
+ControllerFunctions.findQueueIndex = queuePrimitives.findQueueIndex
+ControllerFunctions.insertIndex = queuePrimitives.insertIndex
+ControllerFunctions.isTrackBlocked = queuePrimitives.isTrackBlocked
 
-ControllerFunctions.makeEntry = function(track: Track, source: string, player: Player?): QueueEntry
-	queueCounter += 1
-	return {
-		id = "cm-" .. HttpService:GenerateGUID(false),
-		trackId = track.id,
-		title = track.title,
-		artist = track.artist,
-		duration = track.duration,
-		requestedBy = if player then player.DisplayName else "Auto DJ",
-		userId = if player then player.UserId else 0,
-		genre = track.genre,
-		source = source,
-		vip = if player then ControllerFunctions.isVip(player) else false,
-		passTier = if player then ControllerFunctions.passTier(player) else 0,
-		soundId = track.soundId or CONFIG.SoundIds[track.id],
-	}
-end
-
-ControllerFunctions.releaseSlot = function(entry: QueueEntry)
-	if entry.source == "player" and entry.userId > 0 then
-		local remaining = (requestCounts[entry.userId] or 0) - 1
-		requestCounts[entry.userId] = if remaining > 0 then remaining else nil
-	end
-end
-
--- The manager is an adapter over this controller-owned table. It never creates a
--- parallel queue and all request-slot accounting remains in releaseSlot above.
+-- The manager is an adapter over the same controller-owned table. It never creates
+-- a parallel queue and all request-slot accounting remains in releaseSlot above.
 queueManager = MusicQueueManager.new(queue, ControllerFunctions.releaseSlot)
-
-ControllerFunctions.countPlayerEntries = function(): number
-	local n = 0
-	for _, entry in ipairs(queue) do
-		if entry.source == "player" then n += 1 end
-	end
-	return n
-end
-
-ControllerFunctions.findQueueIndex = function(id: string): number?
-	for index, entry in ipairs(queue) do
-		if entry.id == id then return index end
-	end
-	return nil
-end
-
--- Queue order: Club Neon, VVIP, VIP, normal player requests, then auto tracks.
-ControllerFunctions.insertIndex = function(tier: number): number
-	local lastPlayer = 0
-	local insertAt = 0
-	for index, entry in ipairs(queue) do
-		if entry.source == "player" then
-			lastPlayer = index
-			local existingTier = tonumber(entry.passTier) or (entry.vip and 1 or 0)
-			if tier > 0 and existingTier >= tier then insertAt = index end
-		end
-	end
-	if tier > 0 and CONFIG.VipPriority then return insertAt + 1 end
-	return lastPlayer + 1
-end
-
-ControllerFunctions.isTrackBlocked = function(trackId: string): boolean
-	if typeof(trackId) ~= "string" or #trackId < 1 or #trackId > 64
-		or not string.match(trackId, "^[%w%-_]+$") then return true end
-
-	local cache = ControllerFunctions.blockedTrackCache or {}
-	ControllerFunctions.blockedTrackCache = cache
-	local now = os.clock()
-	local cached = cache[trackId]
-	-- Moderation decisions are cached per server to avoid a DataStore read for
-	-- every queue/catalog check. MessagingService updates this cache immediately.
-	if typeof(cached) == "table" and typeof(cached.blocked) == "boolean"
-		and typeof(cached.checkedAt) == "number" and now - cached.checkedAt < 300 then
-		return cached.blocked
-	end
-
-	local callOk, blocked, lookupOk = ControllerFunctions.globalInvoke("IsTrackBlocked", trackId)
-	if callOk and lookupOk == true and typeof(blocked) == "boolean" then
-		cache[trackId] = {blocked = blocked, checkedAt = now}
-		return blocked
-	end
-
-	-- Studio isolation intentionally permits local testing without the global
-	-- moderation backend. In live servers, an unknown moderation decision fails
-	-- closed; a previously cached block also remains effective during outages.
-	if cached and cached.blocked == true then return true end
-	return not RunService:IsStudio()
-end
 
 ControllerFunctions.pickAutoTrack = function(): Track?
 	local queued: {[string]: boolean} = {}
