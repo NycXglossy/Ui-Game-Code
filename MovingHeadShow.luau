@@ -141,7 +141,7 @@ end
 -- -----------------------------------------------------------
 -- Moving-head fixtures hung from the truss
 -- -----------------------------------------------------------
-local HEADS = 12
+local HEADS = 16
 local function makeHead(i, pos)
 	local color = Color3.fromHSV(i / HEADS, 1, 1)
 
@@ -269,22 +269,23 @@ local function makeHead(i, pos)
 	pool.Parent = rig
 end
 
+-- Four fixtures on each wall, centered within equal-width side segments.
+-- Explicit side allocation keeps the count balanced even when the room is rectangular.
+local w = tx1 - tx0
+local h = tz1 - tz0
+local PER_SIDE = HEADS / 4
 for i = 1, HEADS do
-	-- Spread fixtures evenly around the truss ring
-	local t = (i - 0.5) / HEADS
-	local w = tx1 - tx0
-	local h = tz1 - tz0
-	local per = 2 * (w + h)
-	local d = t * per
+	local side = math.floor((i - 1) / PER_SIDE)
+	local slot = ((i - 1) % PER_SIDE + 0.5) / PER_SIDE
 	local px, pz
-	if d < w then
-		px, pz = tx0 + d, tz0
-	elseif d < w + h then
-		px, pz = tx1, tz0 + (d - w)
-	elseif d < 2 * w + h then
-		px, pz = tx1 - (d - w - h), tz1
-	else
-		px, pz = tx0, tz1 - (d - 2 * w - h)
+	if side == 0 then -- North wall: west to east
+		px, pz = tx0 + w * slot, tz0
+	elseif side == 1 then -- East wall: north to south
+		px, pz = tx1, tz0 + h * slot
+	elseif side == 2 then -- South wall: east to west
+		px, pz = tx1 - w * slot, tz1
+	else -- West wall: south to north
+		px, pz = tx0, tz1 - h * slot
 	end
 	makeHead(i, { X = px, Z = pz })
 end
