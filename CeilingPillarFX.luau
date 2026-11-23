@@ -161,8 +161,10 @@ RunService.Heartbeat:Connect(function()
 
 		local target
 		if pattern == 0 then
-			-- Full-floor pulse: everything drops with the music's envelope
-			target = 0.04 + norm * 0.75 + beatGlow * 0.2
+			-- Each fixture gets a distinct randomized response depth.
+			local depth = 0.45 + ((entry.seed * 17) % 51) / 100
+			local kickScale = 0.1 + ((entry.seed * 23) % 31) / 100
+			target = 0.04 + norm * depth + beatGlow * kickScale
 		elseif pattern == 1 then
 			-- Independent randomized drop timing; no center-out ripple.
 			local phaseOffset = (entry.seed * 0.173) % 1
@@ -179,17 +181,19 @@ RunService.Heartbeat:Connect(function()
 				target = idle + norm * 0.1
 			end
 		elseif pattern == 3 then
-			-- Sweeping wave: a diagonal wave rolls across the grid
-			local wave = math.abs(math.sin((gx + gz) * 0.8 - tempoNow * 1.6))
+			-- Independently phased sweep; no fixed diagonal or center-origin wave.
+			local phaseOffset = (entry.seed * 0.119) % (math.pi * 2)
+			local speed = 0.65 + ((entry.seed * 31) % 13) * 0.12
+			local wave = math.abs(math.sin(phaseOffset + tempoNow * speed))
 			target = wave * (0.3 + norm * 0.45 + beatGlow * 0.35) + 0.05
 		elseif pattern == 4 then
-			-- Checkerboard slam: alternating cells hammer down on odd/even beats
-			local parity = (gx + gz) % 2 == 0
-			local phase = beatCount % 2 == 0
-			if parity == phase then
-				target = 0.3 + beatGlow * 0.7
+			-- Randomized independent hit cadence rather than a fixed checkerboard.
+			local beatOffset = math.floor(((entry.seed * 0.037) % 1) * 4)
+			local hit = (beatCount + beatOffset) % 4 == 0
+			if hit then
+				target = 0.3 + beatGlow * (0.45 + ((entry.seed * 7) % 50) / 100)
 			else
-				target = 0.04 + norm * 0.12
+				target = 0.04 + norm * (0.05 + ((entry.seed * 11) % 14) / 100)
 			end
 		else
 			-- Each pillar has its own phase, speed and random depth.
