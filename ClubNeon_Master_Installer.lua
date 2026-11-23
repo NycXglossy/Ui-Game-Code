@@ -1,7 +1,7 @@
 --!strict
 -- CLUB NEON MASTER INSTALLER v0.4.70
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.66 decouples moving-head/laser floor movement from fixed FX phrase patterns; shared BPM/energy now modulate independent quadrant trajectories.
+-- v0.4.70 adds public-server-safe wall metadata recovery and waits for replicated fixture rigs before starting FX controllers.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
 --
