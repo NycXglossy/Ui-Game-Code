@@ -1,5 +1,5 @@
 -- MovingHeadShowFX (client half of the dual-script projector show):
--- animates the 16-fixture, four-per-side moving-head rig built by the server script. Uses the shared
+-- animates the 32-fixture, eight-per-side moving-head rig built by the server script. Uses the shared
 -- ClubAudioSync beat clock, hue cadence (0.045/beat) and 16-beat pattern
 -- rotation so the whole club hits together, synced to the club's ClubMusic
 -- AudioPlayer backend. Heavy kicks fire the strobe bars in 12Hz bursts.
@@ -164,7 +164,7 @@ while #heads == 0 do
 	heads = collectHeads()
 end
 local strobeCells = collectStrobeCells()
-print("[ClubNeon][MovingHeadShowFX] Balanced four-side animation started; heads=" .. #heads .. ", strobeCells=" .. #strobeCells)
+print("[ClubNeon][MovingHeadShowFX] Balanced eight-per-side animation started; heads=" .. #heads .. ", strobeCells=" .. #strobeCells)
 
 -- Beat state (driven by ClubAudioSync's beat clock)
 local lastBeatCount = -1
