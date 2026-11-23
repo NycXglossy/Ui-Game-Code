@@ -15,19 +15,36 @@ local FLARE_BURST = 1.0 -- seconds a heavy-kick flare lasts
 local FLARE_HZ = 12 -- hard on/off flashes per second during a flare
 
 -- Measure the dance floor from the panel grid (same as the rig builder)
+-- Client scripts can start before Workspace has finished replicating the floor.
+-- Wait for usable panel bounds instead of silently exiting during the join-time race.
 local folder = workspace:FindFirstChild("CeilingFX")
-if not folder then return end
 local floorY = -math.huge
 local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
-for _, p in folder:GetChildren() do
-	if p:IsA("BasePart") then
-		local pos = p.Position
-		if pos.Y < 40 then floorY = math.max(floorY, pos.Y) end
-		minX = math.min(minX, pos.X); maxX = math.max(maxX, pos.X)
-		minZ = math.min(minZ, pos.Z); maxZ = math.max(maxZ, pos.Z)
+local floorPartCount = 0
+local floorDeadline = os.clock() + 60
+repeat
+	folder = folder or workspace:FindFirstChild("CeilingFX")
+	floorY = -math.huge
+	minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+	floorPartCount = 0
+	if folder then
+		for _, p in folder:GetChildren() do
+			if p:IsA("BasePart") then
+				floorPartCount += 1
+				local pos = p.Position
+				if pos.Y < 40 then floorY = math.max(floorY, pos.Y) end
+				minX = math.min(minX, pos.X); maxX = math.max(maxX, pos.X)
+				minZ = math.min(minZ, pos.Z); maxZ = math.max(maxZ, pos.Z)
+			end
+		end
 	end
+	if floorY == -math.huge or maxX <= minX or maxZ <= minZ then task.wait(0.5) end
+until (floorY ~= -math.huge and maxX > minX and maxZ > minZ) or os.clock() >= floorDeadline
+if floorY == -math.huge or maxX <= minX or maxZ <= minZ then
+	warn("[ClubNeon][LaserShowFX] Startup aborted: CeilingFX floor panels did not replicate with usable bounds within 60 seconds.")
+	return
 end
-if floorY == -math.huge then return end
+print("[ClubNeon][LaserShowFX] Floor bounds ready; panels=" .. floorPartCount)
 
 local CENTER = Vector3.new((minX + maxX) / 2, floorY, (minZ + maxZ) / 2)
 local RADIUS = math.min(maxX - minX, maxZ - minZ) / 2
@@ -92,6 +109,9 @@ while #lasers == 0 do
 	task.wait(0.5)
 	lasers = collectLasers()
 end
+local beamCount = 0
+for _, laser in ipairs(lasers) do beamCount += #laser.beams end
+print("[ClubNeon][LaserShowFX] Animation started; lasers=" .. #lasers .. ", beams=" .. beamCount)
 
 local orb = rig:FindFirstChild("CenterOrb")
 local orbLight = orb and orb:FindFirstChildOfClass("PointLight")
@@ -114,6 +134,7 @@ local flareUntil = 0
 local clock = os.clock
 local lastT = clock()
 local showTime = 0
+local frameCount = 0
 
 RunService.Heartbeat:Connect(function()
 	local now = clock()
@@ -121,6 +142,8 @@ RunService.Heartbeat:Connect(function()
 	lastT = now
 	showTime += dt
 	beatAge += dt
+	frameCount += 1
+	if frameCount == 120 then print("[ClubNeon][LaserShowFX] Heartbeat active; frames=" .. frameCount) end
 
 	-- Self-heal if streaming replaces the rig parts
 	if lasers[1] and lasers[1].lens.Parent == nil then
