@@ -124,7 +124,7 @@ local function setSize(player: Player, requestedFactor: any): (boolean, string)
 	if typeof(requestedFactor) ~= "number" or requestedFactor ~= requestedFactor
 		or requestedFactor == math.huge or requestedFactor == -math.huge
 		or requestedFactor < 0.5 or requestedFactor > 5 then
-		return false, "Character size must be between 0.5× and 5×."
+		return false, "Character size must be between 0.5Ã— and 5Ã—."
 	end
 	local factor = requestedFactor
 	local character, humanoid = getCharacter(player)
@@ -165,7 +165,7 @@ local function setSize(player: Player, requestedFactor: any): (boolean, string)
 		warn("[UtilityBar] ClubNeonMovementAuthority is unavailable; install the RegularCommandsSecurityServer add-on to enable movement authorization tracking.")
 	end
 
-	return true, string.format("Character size set to %.2f×.", factor)
+	return true, string.format("Character size set to %.2fÃ—.", factor)
 end
 
 -- Mount templates are deliberately server-only. Add the reviewed Model to
@@ -521,267 +521,123 @@ local function collectStageClubLights(): ({Light}, {Beam})
 	return lights, beams
 end
 
--- Preset colors are sampled from the club's own neon fixture palette: the
--- NeonRailing postcaps, NeonTrim strips, GlowFloor strips and underglows.
--- Pass holders repaint the stage, club and island in the venue's real hues.
-local LIGHT_PRESETS: {[string]: {color: Color3, brightness: number}} = {
-	NeonMagenta = {color = Color3.fromRGB(255, 0, 200), brightness = 1.3},
-	NeonCyan = {color = Color3.fromRGB(0, 255, 255), brightness = 1.3},
-	NeonGold = {color = Color3.fromRGB(255, 200, 0), brightness = 1.3},
-	NeonGreen = {color = Color3.fromRGB(0, 255, 200), brightness = 1.3},
-}
-
--- The island's global scene lighting (ambient, color correction, atmosphere,
--- bloom) is synced toward the active neon preset color so the whole venue
--- atmosphere matches the fixtures. Original values are snapshotted once and
--- restored when the pass holder turns the presets off.
-type SceneProp = {read: () -> any, write: (any) -> (), transform: (any, Color3) -> any, original: any, last: any}
-local sceneProps: {SceneProp} | nil = nil
-local function buildSceneProps(): {SceneProp}
-	local props: {SceneProp} = {}
-	local function add(read: () -> any, write: (any) -> (), transform: (any, Color3) -> any)
-		local current = read()
-		table.insert(props, {read = read, write = write, transform = transform, original = current, last = current})
-	end
-	local function colorMix(weight: number): (any, Color3) -> any
-		return function(value: any, presetColor: Color3): any
-			return (value :: Color3):Lerp(presetColor, weight)
-		end
-	end
-	local function numberFloor(minimum: number): (any, Color3) -> any
-		return function(value: any, _presetColor: Color3): any
-			return math.max(value :: number, minimum)
-		end
-	end
-	add(function() return Lighting.Ambient end, function(v) Lighting.Ambient = v end, colorMix(0.3))
-	add(function() return Lighting.OutdoorAmbient end, function(v) Lighting.OutdoorAmbient = v end, colorMix(0.3))
-	local colorCorrection = Lighting:FindFirstChild("ColorCorrection")
-	if colorCorrection and colorCorrection:IsA("ColorCorrectionEffect") then
-		add(function() return colorCorrection.TintColor end, function(v) colorCorrection.TintColor = v end, colorMix(0.35))
-		add(function() return colorCorrection.Saturation end, function(v) colorCorrection.Saturation = v end, numberFloor(0.25))
-	end
-	local atmosphere = Lighting:FindFirstChild("Atmosphere")
-	if atmosphere and atmosphere:IsA("Atmosphere") then
-		add(function() return atmosphere.Color end, function(v) atmosphere.Color = v end, colorMix(0.3))
-		add(function() return atmosphere.Decay end, function(v) atmosphere.Decay = v end, colorMix(0.5))
-	end
-	local bloom = Lighting:FindFirstChild("Bloom")
-	if bloom and bloom:IsA("BloomEffect") then
-		add(function() return bloom.Intensity end, function(v) bloom.Intensity = v end, numberFloor(0.8))
-	end
-	return props
-end
-local function applySceneLightingSync(presetColor: Color3)
-	if not sceneProps then sceneProps = buildSceneProps() end
-	for _, prop in ipairs(sceneProps) do
-		local current = prop.read()
-		-- If another system changed this property since our last write, adopt
-		-- the new value as the restore baseline rather than reviving stale data.
-		if current ~= prop.last then
-			prop.original = current
-		end
-		local applied = prop.transform(prop.original, presetColor)
-		prop.write(applied)
-		prop.last = applied
-	end
-end
-local function restoreSceneLightingSync(): boolean
-	local props = sceneProps
-	if not props then return false end
-	sceneProps = nil
-	for _, prop in ipairs(props) do
-		-- Do not overwrite a property another authorized system changed
-		-- after our last preset application.
-		if prop.read() == prop.last then
-			prop.write(prop.original)
-		end
-	end
-	return true
-end
--- Live Show Sync: instead of a fixed preset, the tagged stage/club
--- fixtures follow the club's actual music. The beat clock comes from the
--- ClubMusic AudioPlayer backend through the shared ClubAudioSync module,
--- so the lights change on every beat of whatever track is playing.
+-- Live Music Sync only touches explicitly tagged StageClubLight fixtures.
+-- It never edits Workspace-wide Lighting, atmosphere, bloom, or unrelated FX.
 local LIVE_SHOW_HUES = {
-	Color3.fromRGB(255, 0, 200), -- magenta
-	Color3.fromRGB(0, 255, 255), -- cyan
-	Color3.fromRGB(255, 200, 0), -- gold
-	Color3.fromRGB(0, 255, 200), -- green
+	Color3.fromRGB(255, 0, 200),
+	Color3.fromRGB(0, 255, 255),
+	Color3.fromRGB(255, 200, 0),
+	Color3.fromRGB(0, 255, 200),
 }
 local liveShowConnection: RBXScriptConnection? = nil
 local liveShowLights: {Light} = {}
 local liveShowBeams: {Beam} = {}
+local liveShowIntensity = 0.75
 
 local function stopLiveShow(restore: boolean): boolean
 	local connection = liveShowConnection
-	if not connection then return false end
 	liveShowConnection = nil
-	connection:Disconnect()
+	if connection then connection:Disconnect() end
+	local restoredAny = false
 	if restore then
 		for _, light in ipairs(liveShowLights) do
 			local snapshot = originalLightState[light]
 			if snapshot then
-				light.Enabled = snapshot.enabled
-				light.Color = snapshot.color
-				light.Brightness = snapshot.brightness
+				if light.Parent and light.Enabled == snapshot.lastEnabled
+					and light.Color == snapshot.lastColor
+					and math.abs(light.Brightness - snapshot.lastBrightness) <= 0.001 then
+					light.Enabled = snapshot.enabled
+					light.Color = snapshot.color
+					light.Brightness = snapshot.brightness
+					restoredAny = true
+				end
 				originalLightState[light] = nil
 			end
 		end
 		for _, beam in ipairs(liveShowBeams) do
 			local snapshot = originalBeamState[beam]
 			if snapshot then
-				beam.Color = snapshot.original
+				if beam.Parent and beam.Color == snapshot.lastApplied then
+					beam.Color = snapshot.original
+					restoredAny = true
+				end
 				originalBeamState[beam] = nil
 			end
 		end
 	end
 	table.clear(liveShowLights)
 	table.clear(liveShowBeams)
-	return true
+	return connection ~= nil or restoredAny
 end
 
 local function startLiveShow(lights: {Light}, beams: {Beam}): boolean
-	-- Replacing a running show: hand the fixtures back to their snapshot
-	-- originals first so the new run baselines from clean values.
 	stopLiveShow(true)
 	for _, light in ipairs(lights) do
-		if not originalLightState[light] then
-			originalLightState[light] = {
-				enabled = light.Enabled, color = light.Color, brightness = light.Brightness,
-				lastEnabled = light.Enabled, lastColor = light.Color, lastBrightness = light.Brightness,
-			}
-		end
+		originalLightState[light] = {
+			enabled = light.Enabled, color = light.Color, brightness = light.Brightness,
+			lastEnabled = light.Enabled, lastColor = light.Color, lastBrightness = light.Brightness,
+		}
 	end
 	for _, beam in ipairs(beams) do
-		if not originalBeamState[beam] then
-			originalBeamState[beam] = {original = beam.Color, lastApplied = beam.Color}
-		end
+		originalBeamState[beam] = {original = beam.Color, lastApplied = beam.Color}
 	end
 	liveShowLights = lights
 	liveShowBeams = beams
 	local lastBeatCount = -1
 	liveShowConnection = RunService.Heartbeat:Connect(function()
 		local beat = ClubAudioSync.getBeatState()
-		if beat.beatCount == lastBeatCount then return end
+		if not beat.playing or beat.beatCount == lastBeatCount then return end
 		lastBeatCount = beat.beatCount
 		local color = LIVE_SHOW_HUES[(beat.beatCount % #LIVE_SHOW_HUES) + 1]
 		local sequence = ColorSequence.new(color)
 		for _, light in ipairs(liveShowLights) do
-			if light.Parent then
+			local snapshot = originalLightState[light]
+			if light.Parent and snapshot then
+				local brightness = math.clamp(snapshot.brightness * liveShowIntensity, 0, 10)
 				light.Enabled = true
 				light.Color = color
+				light.Brightness = brightness
+				snapshot.lastEnabled = true
+				snapshot.lastColor = color
+				snapshot.lastBrightness = brightness
 			end
 		end
 		for _, beam in ipairs(liveShowBeams) do
-			if beam.Parent then
+			local snapshot = originalBeamState[beam]
+			if beam.Parent and snapshot then
 				beam.Color = sequence
+				snapshot.lastApplied = sequence
 			end
 		end
 	end)
 	return true
 end
 
-local function setStageClubLighting(player: Player, request: any): (boolean, string)
+local function setStageClubLighting(_player: Player, request: any): (boolean, string)
 	if typeof(request) ~= "table" or typeof(request.preset) ~= "string" then
-		return false, "Choose a lighting preset."
+		return false, "Choose Live Music Sync or Restore Defaults."
 	end
-	local lights, beams = collectStageClubLights()
 	if request.preset == "LiveShow" then
+		if request.intensity ~= nil then
+			if typeof(request.intensity) ~= "number" or request.intensity ~= request.intensity
+				or request.intensity == math.huge or request.intensity == -math.huge
+				or request.intensity < 0.1 or request.intensity > 1.5 then
+				return false, "Sync intensity must be between 10% and 150%."
+			end
+			liveShowIntensity = request.intensity
+		end
+		local lights, beams = collectStageClubLights()
 		if #lights == 0 and #beams == 0 then
-			return false, "No stage/club lights are tagged yet. Tag the club and stage light objects 'StageClubLight'."
+			return false, "No stage/club lights are tagged yet. Tag the fixtures 'StageClubLight'."
 		end
 		startLiveShow(lights, beams)
-		return true, "Live show engaged: the stage and club lights now sync to the club's music beat."
+		return true, string.format("Live Music Sync enabled at %d%% intensity.", math.floor(liveShowIntensity * 100 + 0.5))
+	elseif request.preset == "Off" then
+		local restored = stopLiveShow(true)
+		if restored then return true, "Live Music Sync stopped. Tagged fixtures restored to their defaults." end
+		return true, "Live Music Sync is already off; fixture defaults were left unchanged."
 	end
-	-- Any other choice replaces a running live show; restore the fixtures
-	-- to their snapshot originals first so the new baseline is clean.
-	local hadLiveShow = stopLiveShow(true)
-	if request.preset == "Off" then
-		local sceneRestored = restoreSceneLightingSync()
-		if #lights == 0 and #beams == 0 then
-			if sceneRestored then
-				return true, "Island lighting restored to its original settings."
-			end
-			return false, "No stage/club lights are tagged yet. Tag the club and stage light objects 'StageClubLight'."
-		end
-		local restored, preserved = 0, 0
-		for _, light in ipairs(lights) do
-			local snapshot = originalLightState[light]
-			if snapshot then
-				-- Do not overwrite a fixture another authorized system changed
-				-- after our last preset application.
-				if light.Enabled == snapshot.lastEnabled
-					and light.Color == snapshot.lastColor
-					and math.abs(light.Brightness - snapshot.lastBrightness) <= 0.001 then
-					light.Enabled = snapshot.enabled
-					light.Color = snapshot.color
-					light.Brightness = snapshot.brightness
-					restored += 1
-				else
-					preserved += 1
-				end
-				originalLightState[light] = nil
-			end
-		end
-		for _, beam in ipairs(beams) do
-			local snapshot = originalBeamState[beam]
-			if snapshot then
-				if beam.Color == snapshot.lastApplied then
-					beam.Color = snapshot.original
-					restored += 1
-				else
-					preserved += 1
-				end
-				originalBeamState[beam] = nil
-			end
-		end
-		local sceneNote = if sceneRestored then " Island lighting restored." else ""
-		if preserved > 0 then
-			return true, string.format("Restored %d fixtures; preserved %d fixtures changed by another system.", restored, preserved) .. sceneNote
-		end
-		return true, "Stage and club lighting restored to its original settings." .. sceneNote
-	end
-	local preset = LIGHT_PRESETS[request.preset]
-	if not preset then return false, "That lighting preset is not available." end
-	if #lights == 0 and #beams == 0 then
-		return false, "No stage/club lights are tagged yet. Tag the club and stage light objects 'StageClubLight'."
-	end
-	local sequence = ColorSequence.new(preset.color)
-	for _, light in ipairs(lights) do
-		if not originalLightState[light] then
-			originalLightState[light] = {
-				enabled = light.Enabled, color = light.Color, brightness = light.Brightness,
-				lastEnabled = light.Enabled, lastColor = light.Color, lastBrightness = light.Brightness,
-			}
-		end
-		local snapshot = originalLightState[light]
-		-- If another writer changed this fixture between our presets, treat
-		-- that new state as the restore baseline rather than reviving stale data.
-		if light.Enabled ~= snapshot.lastEnabled or light.Color ~= snapshot.lastColor
-			or math.abs(light.Brightness - snapshot.lastBrightness) > 0.001 then
-			snapshot.enabled = light.Enabled
-			snapshot.color = light.Color
-			snapshot.brightness = light.Brightness
-		end
-		local appliedBrightness = math.clamp(snapshot.brightness * preset.brightness, 0, 10)
-		light.Enabled = true
-		light.Color = preset.color
-		light.Brightness = appliedBrightness
-		snapshot.lastEnabled = true
-		snapshot.lastColor = preset.color
-		snapshot.lastBrightness = appliedBrightness
-	end
-	for _, beam in ipairs(beams) do
-		if not originalBeamState[beam] then
-			originalBeamState[beam] = {original = beam.Color, lastApplied = beam.Color}
-		elseif beam.Color ~= originalBeamState[beam].lastApplied then
-			originalBeamState[beam].original = beam.Color
-		end
-		beam.Color = sequence
-		originalBeamState[beam].lastApplied = sequence
-	end
-	applySceneLightingSync(preset.color)
-	return true, request.preset .. " neon lighting applied to the club, stage and island fixtures."
+	return false, "That lighting option is not available."
 end
 
 execute.OnServerInvoke = function(player: Player, actionName: any, value: any): (boolean, string)
