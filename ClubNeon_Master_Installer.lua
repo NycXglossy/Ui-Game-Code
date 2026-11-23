@@ -27,7 +27,7 @@ local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed an
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "addf04389978620cb9bc811accdf47842d16a4c6",
+    runtime = "894dd7a266134d56f683b1a6c9cfd094996fbbb1",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
     globalService = "032fdc0085ac0a75db270bf569b9db19ef39b36b",
     security = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
@@ -139,6 +139,7 @@ addRaw("UI_Server_Controller", "Script", "ServerScriptService", controllerSource
 addRaw("ClubNeon_UI_Renderer_Config", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Config.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Config.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_Helpers", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Helpers.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Helpers.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_PurchasePromptDiagnostics", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_PurchasePromptDiagnostics.lua", RELEASE.runtime), "ClubNeon_UI_PurchasePromptDiagnostics.lua@" .. RELEASE.runtime)
+addRaw("ClubNeon_UI_ClientPolicy", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_ClientPolicy.lua", RELEASE.runtime), "ClubNeon_UI_ClientPolicy.lua@" .. RELEASE.runtime)
 
 local rendererSource = fetchSource("ClubNeon_UI_Renderer.lua", RELEASE.runtime)
 for _, forbiddenId in ipairs({2089785323,2089263330,2087955353,2088891595,2089053637,2087955619,2088585676,2088315619,3731386650,3731387153,3731392651,3731394060,3731488823,3731489572,3731490154,3731490513,3731490937,3731491257,3731491679}) do
