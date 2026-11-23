@@ -252,7 +252,7 @@ RunService.Heartbeat:Connect(function()
 	end
 
 	-- Beam glow swells with the kick
-	local beamFade = math.clamp(0.65 - kick * 0.18, 0.35, 0.65)
+	local beamFade = math.clamp(0.72 - kick * 0.12, 0.48, 0.72)
 	for _, H in ipairs(heads) do
 		H.beam.Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, beamFade),
@@ -322,13 +322,13 @@ RunService.Heartbeat:Connect(function()
 
 		-- Light pool follows the beam when it lands on the floor
 		local onFloor = smoothTarget.Y < floorY + 4
-		H.pool.Transparency = onFloor and (0.68 - kick * 0.12) or 1
+		H.pool.Transparency = onFloor and (0.75 - kick * 0.07) or 1
 		if onFloor then
-			local poolScale = 1 + kick * 0.25
-			H.pool.Size = Vector3.new(0.1, 4 * poolScale, 4 * poolScale)
+			local poolScale = 1 + kick * 0.15
+			H.pool.Size = Vector3.new(0.1, 3.5 * poolScale, 3.5 * poolScale)
 			H.pool.CFrame = CFrame.new(smoothTarget.X, floorY + 0.2, smoothTarget.Z)
 				* CFrame.Angles(0, 0, math.pi / 2)
 		end
-		H.spot.Brightness = 0.9 + kick * 2.2
+		H.spot.Brightness = 0.55 + kick * 1.15
 	end
 end)
