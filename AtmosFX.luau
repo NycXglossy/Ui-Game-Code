@@ -89,12 +89,6 @@ RunService.Heartbeat:Connect(function()
 				if pick and pick.emitter.Parent then pick.emitter:Emit(FOG_PUFF) end
 			end
 		end
-			else
-				local pick = fogs[(beatCount / FOG_EVERY) % #fogs + 1]
-				pick.emitter:Emit(FOG_PUFF)
-			end
-		end
-
 		-- Flames: every jet blasts on every beat, particle count scaled by
 		-- how hard the beat hits; heavy kicks light the whole ring huge
 		local puff = math.ceil(FLAME_PUFF + (FLAME_PUFF_HOT - FLAME_PUFF)
