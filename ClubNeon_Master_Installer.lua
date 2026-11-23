@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.29
+-- CLUB NEON MASTER INSTALLER v0.4.30
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
@@ -22,7 +22,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.29"
+local INSTALLER_VERSION = "0.4.30"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -37,6 +37,7 @@ local RELEASE = {
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "3e5d633f2b137f6b587226d6caf53744d48ddc9e",
     utility = "77c506441162da3e8d0e9009330766003210c7a9",
+    intro = "8d473d74b6a60062a1753d2e603e7623a8a67ae8",
 }
 
 if RunService:IsRunning() then
@@ -290,6 +291,7 @@ addSource("ClubNeonSocialActions.server.lua", "Script", "ServerScriptService", "
 addSource("ClubNeonSocialActions/AnimationConfig.lua", "ModuleScript", "SocialConfig", "AnimationConfig")
 addSource("ClubNeonSocialActions.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonSocialActions")
 addSource("ClubNeonUnifiedLauncher.client.lua", "LocalScript", "StarterPlayerScripts", "ClubNeonUnifiedLauncher")
+addSource("RaveIntroUI.client.lua", "LocalScript", "StarterPlayerScripts", "RaveIntroUI", RELEASE.intro)
 
 for _, item in ipairs({
     {"ClubNeonUtilityBar/UtilityBar.client.lua", "LocalScript", "UtilityBar"},
@@ -410,7 +412,7 @@ addValue("ClubNeonMasterInstallManifest", "StringValue", "ServerStorage",
     "runtime=" .. RELEASE.runtime .. ";audio=" .. RELEASE.audio .. ";fx=" .. RELEASE.fx .. ";utility=" .. RELEASE.utility .. ";globalService=" .. RELEASE.globalService
     .. ";security=" .. RELEASE.security .. ";threat=" .. RELEASE.threat .. ";phase32=" .. RELEASE.phase32
     .. ";diagnostics=" .. RELEASE.diagnostics .. ";integrityClient=" .. RELEASE.integrityClient
-        .. ";playbackSync=DISABLED;localQueues=ENFORCED",
+        .. ";intro=" .. RELEASE.intro .. ";playbackSync=DISABLED;localQueues=ENFORCED",
     "generated:ClubNeonMasterInstallManifest")
 
 -- Destination folders are deterministic and only created when absent.
