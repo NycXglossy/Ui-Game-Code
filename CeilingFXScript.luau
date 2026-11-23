@@ -1,3 +1,4 @@
+local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
 -- Ceiling light show: cycles through multiple effects on the CeilingPanel grid
 local folder = workspace:FindFirstChild("CeilingFX")
 while not folder do
