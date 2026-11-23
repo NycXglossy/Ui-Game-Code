@@ -1,3 +1,4 @@
+local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
 -- LightshowFX: low-frequency palette cycling for decorative rig segments.
 -- Cache the segment list once and sleep between checks instead of scanning all rigs
 -- on every server Heartbeat.
@@ -39,7 +40,8 @@ rigsFolder.ChildAdded:Connect(collectRig)
 
 local lastStep = -1
 while task.wait(0.1) do
-	local step = math.floor(os.clock() * SPEED)
+	local beat = ClubAudioSync.getBeatState()
+	local step = math.floor(os.clock() * SPEED * (beat.bpm / 128))
 	if step ~= lastStep then
 		lastStep = step
 		for _, entry in ipairs(segments) do
