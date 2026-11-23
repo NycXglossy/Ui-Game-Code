@@ -119,7 +119,7 @@ end
 -- Wall-balanced floor anchors: every perimeter wall contributes targets to
 -- all four floor quadrants. This avoids a whole wall's fixtures inheriting
 -- neighboring cells on one side of the venue.
-local function wallBalancedFloorSpot(laneIndex, seed, y)
+local function wallBalancedFloorSpot(laneIndex, sideIndex, seed, y)
 	local lane = laneIndex - 1
 	local quadrant = lane % 4
 	local withinQuadrant = math.floor(lane / 4)
@@ -127,8 +127,11 @@ local function wallBalancedFloorSpot(laneIndex, seed, y)
 	local quadrantRow = math.floor(quadrant / 2)
 	local halfWidth = (maxX - minX) * 0.5
 	local halfDepth = (maxZ - minZ) * 0.5
-	local localX = if withinQuadrant % 2 == 0 then 0.34 else 0.66
-	local localZ = if withinQuadrant % 2 == 0 then 0.34 else 0.66
+	-- Four walls x two fixture lanes provide eight distinct anchor cells
+	-- inside each quadrant rather than stacking fixtures at shared points.
+	local cell = (sideIndex - 1) * 2 + (withinQuadrant % 2)
+	local localX = ((cell % 4) + 0.5) / 4
+	local localZ = (math.floor(cell / 4) + 0.5) / 2
 	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.16
 	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.16
 	local x = minX + quadrantColumn * halfWidth + localX * halfWidth + jitterX
@@ -182,7 +185,7 @@ local function collectLasers()
 	end
 	local maxSideCount = 0
 	local sideCounts = {}
-	for _, sideName in ipairs(sideOrder) do
+	for sideIndex, sideName in ipairs(sideOrder) do
 		local group = sideGroups[sideName]
 		table.sort(group, function(a, b) return a.sideSlot < b.sideSlot end)
 		sideCounts[sideName] = #group
@@ -199,7 +202,7 @@ local function collectLasers()
 				coverageIndex += 1
 				L.coverageIndex = coverageIndex
 				-- Each wall cycles its own projectors through all four floor quadrants.
-				L.anchor = wallBalancedFloorSpot(laneIndex, L.idx * 31.9, floorY + 0.5)
+				L.anchor = wallBalancedFloorSpot(laneIndex, sideIndex, L.idx * 31.9, floorY + 0.5)
 				L.currentTarget = L.anchor
 			end
 		end
