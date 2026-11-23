@@ -2,7 +2,7 @@
 -- Owns playlist selection/cursor lifecycle while the controller retains the
 -- authoritative queue, catalog, playback state, and Auto DJ refill.
 return function(context)
-	local function nextPlaylistTrack(): Track?
+	local function nextPlaylistTrack()
 		local activePlaylistId = context.getActivePlaylistId()
 		local tracks = context.getActivePlaylistTracks()
 		if not activePlaylistId or #tracks == 0 then return nil end
