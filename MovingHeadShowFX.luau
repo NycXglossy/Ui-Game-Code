@@ -1,7 +1,7 @@
 -- MovingHeadShowFX (client half of the dual-script projector show):
 -- animates the 32-fixture, eight-per-side moving-head rig built by the server script. Uses the shared
--- ClubAudioSync beat clock, hue cadence (0.045/beat) and 16-beat pattern
--- rotation so the whole club hits together, synced to the club's ClubMusic
+-- ClubAudioSync beat clock, hue cadence (0.045/beat) and independent quadrant trajectories
+-- driven by shared adaptive BPM/energy movement., synced to the club's ClubMusic
 -- AudioPlayer backend. Heavy kicks fire the strobe bars in 12Hz bursts.
 -- Runs client-side for 60fps pan/tilt sweeps.
 
@@ -359,7 +359,7 @@ RunService.Heartbeat:Connect(function()
 				floorY + 1
 			)
 
-		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
+		-- Smooth adaptive target motion rather than snapping fixtures.
 		local motionAlpha = 1 - math.exp(-dt * 9)
 		H.currentTarget = H.currentTarget:Lerp(targetPos, motionAlpha)
 		local smoothTarget = H.currentTarget
