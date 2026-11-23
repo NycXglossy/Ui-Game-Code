@@ -175,6 +175,7 @@ RunService.Heartbeat:Connect(function()
 	-- are recovered even while the first laser remains healthy.
 	if now >= nextRigAudit then
 		nextRigAudit = now + 2
+		if not rig or not rig.Parent then rig = workspace:FindFirstChild("LaserRig") end
 		local discoveredLasers = collectLasers()
 		local needsRefresh = #discoveredLasers ~= #lasers
 		for _, L in ipairs(lasers) do
