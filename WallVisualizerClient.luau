@@ -134,7 +134,7 @@ RunService.Heartbeat:Connect(function()
 			local m = math.abs(t - 0.5) * 2 -- 0 at wall center, 1 at edges
 
 			-- Idle sway so the wall looks alive even between beats
-			local sway = 0.5 + 0.5 * math.sin(now * 2.2 + i * 0.55 + w * 1.7)
+			local sway = 0.5 + 0.5 * math.sin(tempoNow * 2.2 + i * 0.55 + w * 1.7)
 
 			-- Pattern choreography (changes every 16 beats)
 			local target
@@ -144,7 +144,7 @@ RunService.Heartbeat:Connect(function()
 				target += beatGlow * 0.25
 			elseif pattern == 1 then
 				-- Traveling wave rolling along the wall
-				local wave = math.abs(math.sin((t * 6 - now * 1.4 - w * 0.35) * math.pi))
+				local wave = math.abs(math.sin((t * 6 - tempoNow * 1.4 - w * 0.35) * math.pi))
 				target = wave * (0.35 + norm * 0.5 + beatGlow * 0.35) + 0.06
 			elseif pattern == 2 then
 				-- Beat pulse: the whole wall jumps on the kick and settles
