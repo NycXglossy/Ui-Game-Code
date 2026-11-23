@@ -17,16 +17,25 @@ local PALETTE = {
 local SPEED = 0.5 -- color steps per second
 local segments = {}
 
-for _, rig in rigsFolder:GetChildren() do
-	for _, part in rig:GetChildren() do
-		if part:IsA("BasePart") then
-			local segNum = tonumber(part.Name:match("^Segment(%d+)"))
-			if segNum then
-				table.insert(segments, {part = part, index = segNum})
-			end
-		end
+local function addSegment(part)
+	if not part:IsA("BasePart") then return end
+	local segNum = tonumber(part.Name:match("^Segment(%d+)"))
+	if segNum then
+		table.insert(segments, {part = part, index = segNum})
 	end
 end
+
+local function collectRig(rig)
+	for _, part in rig:GetChildren() do
+		addSegment(part)
+	end
+	rig.ChildAdded:Connect(addSegment)
+end
+
+for _, rig in rigsFolder:GetChildren() do
+	collectRig(rig)
+end
+rigsFolder.ChildAdded:Connect(collectRig)
 
 local lastStep = -1
 while task.wait(0.1) do
