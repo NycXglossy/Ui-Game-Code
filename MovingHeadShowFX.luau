@@ -154,6 +154,7 @@ RunService.Heartbeat:Connect(function()
 	-- remain frozen just because the first head is still present.
 	if now >= nextRigAudit then
 		nextRigAudit = now + 2
+		if not rig or not rig.Parent then rig = workspace:FindFirstChild("MovingHeadRig") end
 		local discoveredHeads = collectHeads()
 		local needsRefresh = #discoveredHeads ~= #heads
 		for _, H in ipairs(heads) do
