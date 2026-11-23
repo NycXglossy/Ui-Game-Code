@@ -1,7 +1,7 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.62
+-- CLUB NEON MASTER INSTALLER v0.4.63
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.62 gives each wall distinct floor anchor cells in every quadrant while retaining shared adaptive BPM choreography.
+-- v0.4.63 adds client-side live AudioAnalyzer tempo detection and removes ceiling/perimeter-only sweeps from floor-coverage patterns.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
 --
@@ -23,7 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.62"
+local INSTALLER_VERSION = "0.4.63"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -37,10 +37,10 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "df45c86a1d3e115fb17c5f5dc9c9c1905ae0a917",
-    audioSync = "587eb2de0cc5a75f976fcd47cac28757c36b5d06",
-    laserFX = "caddb8a538d70191903c04e96f2f9494491fb863",
+    audioSync = "395d706967b62b8faa2c22fd62da9c458a18b07f",
+    laserFX = "5f01506f9f2f5755b746862dc3e49e3976d0128a",
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
-    movingHeadFX = "0134b4a8c714d09d3371c86abf905692d102ae67",
+    movingHeadFX = "2572ccacb8e327dcb6578b789535b7b962d20a92",
     movingHeadRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
