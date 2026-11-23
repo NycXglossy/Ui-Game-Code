@@ -43,6 +43,8 @@ local nextFlickerCheck = os.clock() + 6
 while true do
 	task.wait(0.1) -- 10 Hz is adequate for marquee/glow and reduces server-side UI property churn
 	local now = os.clock()
+	local beat = ClubAudioSync.getBeatState()
+	local tempoNow = now * (beat.bpm / 128)
 
 	-- Schedule a random flicker every so often
 	if now > nextFlickerCheck then
