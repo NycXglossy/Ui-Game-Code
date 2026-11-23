@@ -257,7 +257,8 @@ end
 
 -- 12 Hz is sufficient for replicated ambient panel color animation and reduces server property churn.
 while task.wait(1 / 12) do
-	local t = os.clock()
+	local beat = ClubAudioSync.getBeatState()
+	local t = os.clock() * (beat.bpm / 128)
 	local index = (math.floor(t / PATTERN_TIME) % #effects) + 1
 	-- The floor runs the current effect while the ceiling runs the next
 	-- one, so both surfaces dance with complementary shows at once.
