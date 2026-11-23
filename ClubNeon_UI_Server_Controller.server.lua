@@ -1898,164 +1898,34 @@ ControllerFunctions.pickAutoTrack = function(): Track?
 	return nil
 end
 
-ControllerFunctions.nextPlaylistTrack = function(): Track?
-	if not activePlaylistId or #activePlaylistTracks == 0 then return nil end
-	for _ = 1, #activePlaylistTracks do
-		if activePlaylistCursor > #activePlaylistTracks then activePlaylistCursor = 1 end
-		local track = activePlaylistTracks[activePlaylistCursor]
-		activePlaylistCursor += 1
-		if isPlayableTrack(TRACK_BY_ID[track.id]) and not ControllerFunctions.isTrackBlocked(track.id) then return TRACK_BY_ID[track.id] end
-	end
-	return nil
+local playlistRotationModule = ServerStorage:FindFirstChild("ClubNeon_PlaylistRotation")
+if not playlistRotationModule or not playlistRotationModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_PlaylistRotation; controller will not start.")
 end
-
-ControllerFunctions.topUpAuto = function()
-	if autoQueueHold then
-		ControllerFunctions.recordDiagnosticPulse("AutoDJ", "refill-held", true, {queueDepth = #queue})
-		return
-	end
--- Auto DJ refills only this server's queue.
-	local guard = 0
-	while #queue < CONFIG.AutoQueueTarget and guard < 10 do
-		guard += 1
-		local playlistTrack = ControllerFunctions.nextPlaylistTrack()
-		local entry: QueueEntry
-		if playlistTrack then
-			entry = ControllerFunctions.makeEntry(playlistTrack, "playlist", nil)
-		else
-			if activePlaylistId then
-				warn("[ClubMusic] Active playlist has no playable catalog tracks; returning to Auto DJ.")
-				activePlaylistId = nil; activePlaylistName = ""
-				table.clear(activePlaylistTracks); activePlaylistCursor = 1
-			end
-			local autoTrack = ControllerFunctions.pickAutoTrack()
-			if not autoTrack then warn("[ClubMusic] No playable catalog tracks are available; automatic queue refill paused."); break end
-			entry = ControllerFunctions.makeEntry(autoTrack, "auto", nil)
-		end
-		queueManager:Insert(#queue + 1, entry)
-	end
-	local healthy = #queue >= CONFIG.AutoQueueTarget
-	ControllerFunctions.recordDiagnosticPulse("AutoDJ",
-		if healthy then "refill-complete" else "no-playable-catalog-tracks",
-		healthy, {queueDepth = #queue, target = CONFIG.AutoQueueTarget})
-	ControllerFunctions.recordDiagnosticPulse("Queue", "queue-refill-observed", true, {queueDepth = #queue})
-end
-
-ControllerFunctions.clearAutomaticQueue = function()
-	queueManager:ClearAutomatic()
-end
-
-ControllerFunctions.reloadActivePlaylist = function(): boolean
-	if not activePlaylistId then return false end
-	for _, playlist in ipairs(MusicPlaylistService:GetAll()) do
-		if playlist.id == activePlaylistId then
-			local validTracks: {Track} = {}
-			for _, trackId in ipairs(playlist.trackIds) do
-				local track = TRACK_BY_ID[trackId]
-				if track then table.insert(validTracks, track) end
-			end
-			if #validTracks == 0 then
-				activePlaylistId = nil
-				activePlaylistName = ""
-				table.clear(activePlaylistTracks)
-				activePlaylistCursor = 1
-				return false
-			end
-			-- Rebuild the catalog-resolved view without changing the saved ID list.
-			-- When the current song belongs to this rotation, continue after it rather
-			-- than restarting at the first entry after a catalog/playlist refresh.
-			local nextCursor = 1
-			if nowPlaying.source == "playlist" then
-				local currentIndex: number? = nil
-				for index, track in ipairs(validTracks) do
-					if track.id == nowPlaying.trackId then currentIndex = index; break end
-				end
-				if currentIndex then
-					nextCursor = if currentIndex >= #validTracks then 1 else currentIndex + 1
-				else
-					-- The current track may have been removed remotely. Continue after
-					-- its former position in the previous resolved rotation.
-					local oldIndex: number? = nil
-					for index, track in ipairs(activePlaylistTracks) do
-						if track.id == nowPlaying.trackId then oldIndex = index; break end
-					end
-					if oldIndex then
-						local foundNext = false
-						for offset = 1, #activePlaylistTracks do
-							if not foundNext then
-								local oldTrack = activePlaylistTracks[((oldIndex + offset - 1) % #activePlaylistTracks) + 1]
-								for index, track in ipairs(validTracks) do
-									if track.id == oldTrack.id then
-										nextCursor = index
-										foundNext = true
-										break
-									end
-								end
-							end
-						end
-					end
-				end
-			end
-			activePlaylistName = playlist.name
-			activePlaylistTracks = validTracks
-			activePlaylistCursor = nextCursor
-			return true
-		end
-	end
-	activePlaylistId = nil
-	activePlaylistName = ""
-	table.clear(activePlaylistTracks)
-	activePlaylistCursor = 1
-	return false
-end
-
-ControllerFunctions.startPlaylistRotation = function(player: Player, playlistId: any): boolean
-	if typeof(playlistId) ~= "string" or #playlistId == 0 or #playlistId > 64 then
-		notify(player, "Choose a valid playlist.", "warn")
-		return false
-	end
-	local found: any = nil
-	for _, playlist in ipairs(MusicPlaylistService:GetAll()) do
-		if playlist.id == playlistId then found = playlist; break end
-	end
-	if not found then
-		notify(player, "Playlist not found. Refresh the playlist list and try again.", "warn")
-		return false
-	end
-	local validTracks: {Track} = {}
-	for _, trackId in ipairs(found.trackIds) do
-		local track = TRACK_BY_ID[trackId]
-		if track then table.insert(validTracks, track) end
-	end
-	if #validTracks == 0 then
-		notify(player, "This playlist has no tracks available in the current catalog.", "warn")
-		return false
-	end
-	activePlaylistId = found.id
-	activePlaylistName = found.name
-	activePlaylistTracks = validTracks
-	activePlaylistCursor = 1
-	ControllerFunctions.clearAutomaticQueue()
-	ControllerFunctions.topUpAuto()
-	notify(player, "Playlist rotation enabled: " .. activePlaylistName .. ". The current track will finish first.", "ok")
-	return true
-end
-
-ControllerFunctions.stopPlaylistRotation = function(player: Player?)
-	if not activePlaylistId then
-		if player then notify(player, "No playlist rotation is active.", "info") end
-		return false
-	end
-	local stoppedName = activePlaylistName
-	activePlaylistId = nil
-	activePlaylistName = ""
-	table.clear(activePlaylistTracks)
-	activePlaylistCursor = 1
-	ControllerFunctions.clearAutomaticQueue()
-	ControllerFunctions.topUpAuto()
-	if player then notify(player, "Playlist rotation stopped: " .. stoppedName .. ".", "ok") end
-	return true
-end
+local createPlaylistRotation = require(playlistRotationModule)
+local playlistRotation = createPlaylistRotation({
+	ControllerFunctions = ControllerFunctions,
+	MusicPlaylistService = MusicPlaylistService,
+	TRACK_BY_ID = TRACK_BY_ID,
+	nowPlaying = nowPlaying,
+	isPlayableTrack = isPlayableTrack,
+	getActivePlaylistId = function() return activePlaylistId end,
+	getActivePlaylistName = function() return activePlaylistName end,
+	getActivePlaylistTracks = function() return activePlaylistTracks end,
+	getActivePlaylistCursor = function() return activePlaylistCursor end,
+	setActivePlaylistCursor = function(value: number) activePlaylistCursor = value end,
+	setActivePlaylist = function(id, name, tracks, cursor)
+		activePlaylistId = id
+		activePlaylistName = name
+		activePlaylistTracks = tracks
+		activePlaylistCursor = cursor
+	end,
+	notify = notify,
+})
+ControllerFunctions.nextPlaylistTrack = playlistRotation.nextPlaylistTrack
+ControllerFunctions.reloadActivePlaylist = playlistRotation.reloadActivePlaylist
+ControllerFunctions.startPlaylistRotation = playlistRotation.startPlaylistRotation
+ControllerFunctions.stopPlaylistRotation = playlistRotation.stopPlaylistRotation
 
 local playbackGeneration = 0
 local transitionInProgress = false
