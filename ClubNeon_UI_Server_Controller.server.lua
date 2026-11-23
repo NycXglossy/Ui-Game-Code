@@ -2688,109 +2688,30 @@ MarketplaceService.ProcessReceipt = function(receiptInfo: any)
 	return decision
 end
 
-ControllerFunctions.isValidString = function(value: any, maxLength: number): boolean
-	return typeof(value) == "string" and #value > 0 and #value <= maxLength
+local requestValidationModule = ServerStorage:FindFirstChild("ClubNeon_RequestValidation")
+if not requestValidationModule or not requestValidationModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_RequestValidation; controller will not start.")
 end
-
--- Remote payloads are intentionally shallow and small. This rejects oversized
--- tables before action-specific code can inspect or retain attacker-controlled data.
-ControllerFunctions.isBoundedPayload = function(payload: any): boolean
-	if typeof(payload) ~= "table" then return false end
-	-- Shared validation is deliberately capped to a tiny, shallow request tree.
-	-- The legacy field checks below remain as a compatibility contract for UI actions.
-	if sanityValidationService then
-		local ok, valid = pcall(sanityValidationService.ValidateDataTree, payload, {
-			maxDepth = 3,
-			maxEntries = 64,
-			maxStringLength = 1024,
-		})
-		if not ok or valid ~= true then return false end
-	end
-	local topCount = 0
-	for key, value in pairs(payload) do
-		topCount += 1
-		if topCount > 16 or typeof(key) ~= "string" or #key > 32 then return false end
-		if typeof(value) == "string" then
-			if #value > 1024 then return false end
-		elseif typeof(value) == "number" then
-			if not ControllerFunctions.isFiniteNumber(value) then return false end
-		elseif typeof(value) == "table" then
-			local nestedCount = 0
-			for nestedKey, nestedValue in pairs(value) do
-				nestedCount += 1
-				-- String keys (maps) or small positive integer keys (arrays such as the title "colors" list).
-				local nestedKeyType = typeof(nestedKey)
-				local validNestedKey = (nestedKeyType == "string" and #nestedKey <= 32)
-					or (nestedKeyType == "number" and nestedKey % 1 == 0 and nestedKey >= 1 and nestedKey <= 16)
-				if nestedCount > 16 or not validNestedKey then return false end
-				local valueType = typeof(nestedValue)
-				if valueType == "string" then
-					if #nestedValue > 1024 then return false end
-				elseif valueType == "number" then
-					if not ControllerFunctions.isFiniteNumber(nestedValue) then return false end
-				elseif valueType ~= "boolean" then
-					return false
-				end
-			end
-		elseif typeof(value) ~= "boolean" then
-			return false
-		end
-	end
-	return true
-end
-
-ControllerFunctions.findTarget = function(actor: Player, userId: any): Player?
-	if not ControllerFunctions.isFiniteNumber(userId) or userId < 1 or userId % 1 ~= 0 or userId > 9007199254740991 then return nil end
-	local target = Players:GetPlayerByUserId(userId)
-	if not target then return nil end
-	if target == actor then return nil end
-	if not ControllerFunctions.canModerate(actor, target) then
-		notify(actor, "You can't moderate someone with equal or higher rank.", "warn")
-		return nil
-	end
-	return target
-end
-
-ControllerFunctions.purgeUserEntries = function(userId: number): number
-	local removed = 0
-	for index = #queue, 1, -1 do
-		local entry = queue[index]
-		if entry.source == "player" and entry.userId == userId then
-			queueManager:RemoveAt(index, true)
-			removed += 1
-		end
-	end
-	if removed > 0 then ControllerFunctions.topUpAuto() end
-	return removed
-end
-
--- Returns a reason string when this player may NOT queue this track right now, otherwise nil.
--- Used by Creator Hub audio requests, which re-check after yielding for the asset lookup.
-ControllerFunctions.requestBlockReason = function(player: Player, trackId: string, now: number): string?
-	if player:GetAttribute("GlobalModerationPending") == true then
-		return "Global moderation is temporarily checking your account. Song requests are paused until verification completes."
-	end
-	if blockedUsers[player.UserId] then return "Your requests are disabled by staff." end
-	if ControllerFunctions.isTrackBlocked(trackId) then return "That track has been blocked by ClubMusic staff." end
-	if djControlModeEnabled and djControlModeUserId ~= player.UserId then return "DJ Control Mode is active. Only the current DJ controller can submit requests." end
-	if requestsLocked and ControllerFunctions.getLevel(player) < 3 then return "Emergency request lock is active on this server." end
-	if ControllerFunctions.countPlayerEntries() >= CONFIG.MaxQueueSize then return "The request queue is full." end
-	local cooldown = ControllerFunctions.cooldownFor(player)
-	local sinceLast = now - (lastRequestAt[player.UserId] or -1000)
-	if sinceLast < cooldown then
-		return string.format("Slow down - wait %ds to request again.", math.ceil(cooldown - sinceLast))
-	end
-	local count = requestCounts[player.UserId] or 0
-	local limit = ControllerFunctions.requestLimitFor(player)
-	if count >= limit then
-		return string.format("Request limit reached (%d/%d). Wait for your track to play.", count, limit)
-	end
-	if nowPlaying.trackId == trackId then return "That track is playing right now." end
-	for _, queued in ipairs(queue) do
-		if queued.trackId == trackId then return "That track is already in the queue." end
-	end
-	return nil
-end
+local createRequestValidation = require(requestValidationModule)
+local requestValidation = createRequestValidation({
+	ControllerFunctions = ControllerFunctions,
+	Players = Players,
+	CONFIG = CONFIG,
+	sanityValidationService = sanityValidationService,
+	blockedUsers = blockedUsers,
+	lastRequestAt = lastRequestAt,
+	requestCounts = requestCounts,
+	nowPlaying = nowPlaying,
+	queue = queue,
+	getDjControlModeEnabled = function() return djControlModeEnabled end,
+	getDjControlModeUserId = function() return djControlModeUserId end,
+	getRequestsLocked = function() return requestsLocked end,
+	notify = notify,
+})
+ControllerFunctions.isValidString = requestValidation.isValidString
+ControllerFunctions.isBoundedPayload = requestValidation.isBoundedPayload
+ControllerFunctions.findTarget = requestValidation.findTarget
+ControllerFunctions.requestBlockReason = requestValidation.requestBlockReason
 
 -- Yields. Confirms an asset is an audio file, loadable by this experience, and returns its real length.
 local audioAssetInspectorModule = ServerStorage:FindFirstChild("ClubNeon_AudioAssetInspector")
