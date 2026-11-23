@@ -342,7 +342,7 @@ for _, item in ipairs({
     {"StrobeLightsFX.luau", "LocalScript", "StarterPlayerScripts", "StrobeLightsFX"},
     {"WallVisualizerClient.luau", "LocalScript", "StarterPlayerScripts", "WallVisualizerClient"},
 }) do
-    addSource(item[1], item[2], item[3], item[4], RELEASE.fx)
+    addSource(item[1], item[2], item[3], item[4], item[5] or RELEASE.fx)
 end
 addSource("UtilityBarPanels.luau", "LocalScript", "StarterPlayerScripts", "UtilityBarPanels", RELEASE.utility)
 addSource("UtilityBarExtendedActions.luau", "Script", "ServerScriptService", "UtilityBarExtendedActions", RELEASE.utility)
