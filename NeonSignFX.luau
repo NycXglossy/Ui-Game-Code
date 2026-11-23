@@ -1,3 +1,4 @@
+local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
 -- NeonSignFX: animated effects for the CLUB NEON wall sign.
 -- The giant letters scroll across the sign like a marquee, a rainbow
 -- gradient sweeps through them, the neon frame cycles color, the glow
@@ -53,11 +54,11 @@ while true do
 	local flickering = now < flickerUntil
 
 	-- Slow breathing glow + flicker dim
-	local breathe = 0.75 + 0.25 * math.sin(now * 1.2)
+	local breathe = 0.75 + 0.25 * math.sin(tempoNow * 1.2)
 	local glow = flickering and 0.15 or breathe
 
 	-- Cycle color through the spectrum
-	local hue = (now * 0.06) % 1
+	local hue = (tempoNow * 0.06) % 1
 	local c = Color3.fromHSV(hue, 1, 1)
 
 	-- Scroll the letters across the sign: the container slides in from
@@ -67,15 +68,15 @@ while true do
 		local start_x = 1 -- just off the right edge
 		local end_x = -CONTAINER_W -- fully past the left edge
 		local cycle = (start_x - end_x) / speed
-		local p = (now % cycle) / cycle
+		local p = (tempoNow % cycle) / cycle
 		container.Position = UDim2.fromScale(start_x + (end_x - start_x) * p, 0)
 	end
 
 	-- Rainbow gradient sweeps across the letters as they scroll
 	for _, info in ipairs(letters) do
 		if info.grad then
-			info.grad.Rotation = (now * 90) % 360
-			info.grad.Offset = Vector2.new((now * 0.25) % 2 - 0.5, 0)
+			info.grad.Rotation = (tempoNow * 90) % 360
+			info.grad.Offset = Vector2.new((tempoNow * 0.25) % 2 - 0.5, 0)
 		end
 		if info.stroke then
 			info.stroke.Color = c
