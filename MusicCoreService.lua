@@ -82,6 +82,7 @@ local CATALOG: {Track} = {
 	{id="custom-86468432953052",genreId="exclusive",title="Fallen Star Blues",artist="DJ Doom",duration=230,genre="Club Exclusives",assetId=86468432953052,soundId="rbxassetid://86468432953052"},
 	{id="custom-126526272193872",genreId="exclusive",title="Winter Between Us",artist="DJ Doom",duration=214,genre="Club Exclusives",assetId=126526272193872,soundId="rbxassetid://126526272193872"},
 	{id="custom-96399574470852",genreId="exclusive",title="Terminal Frequency",artist="DJ Doom",duration=200,genre="Club Exclusives",assetId=96399574470852,soundId="rbxassetid://96399574470852"},
+	{id="custom-113786540921203",genreId="exclusive",title="Static Defiance",artist="DJ Doom",duration=230,genre="Club Exclusives",assetId=113786540921203,soundId="rbxassetid://113786540921203"},
 	{id="temp-rockstar",genreId="rockstar",title="Coming Soon — Rockstar Music",artist="Temporary placeholder • audio pending",duration=1,genre="Rockstar Music",placeholder=true},
 	{id="temp-other",genreId="other",title="Coming Soon — Other",artist="Temporary placeholder • audio pending",duration=1,genre="Other",placeholder=true},
 }

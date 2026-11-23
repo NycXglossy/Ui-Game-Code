@@ -1,0 +1,686 @@
+--!strict
+-- Club Neon Settings server service (legacy filename retained for install compatibility)
+-- Place in ServerScriptService. Uses the existing server-owned ClubMusic rank/pass attributes.
+-- Movement/AFK/teleport preferences are session-scoped; no profile schema is changed.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local configModule = ServerStorage:WaitForChild("ClubNeon_Config", 20)
+if not configModule or not configModule:IsA("ModuleScript") then
+	error("[Club Neon Settings] Missing ClubNeon_Config; privileged settings are disabled.")
+end
+local projectConfig = require(configModule)
+
+-- Shared structural validation is optional during staged rollout. The local
+-- fallback below remains shallow and bounded until the Security Core installer
+-- is deployed; no client payload is trusted for authority decisions.
+local SanityValidation: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
+	local module = core and core:IsA("Folder") and core:FindFirstChild("SanityValidation")
+	if module and module:IsA("ModuleScript") then
+		local ok, exported = pcall(require, module)
+		if ok and typeof(exported) == "table" and type(exported.ValidateDataTree) == "function" then
+			SanityValidation = exported
+		end
+	end
+	if not SanityValidation then
+		warn("[Club Neon] Shared SanityValidation unavailable; bounded local request validation remains active.")
+	end
+end
+local TextService = game:GetService("TextService")
+
+-- Authorization is read directly from the shared SecurityCore singleton.
+local authorizationService: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("Authorization") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.GetShared) == "function" then
+			local sharedOk, instance = pcall(exported.GetShared, {
+				groupId = tonumber(projectConfig.Permissions.GroupId) or 0,
+				studioStaff = false,
+				staffUserIds = projectConfig.Permissions.OwnerUserIds,
+				roleUserIds = {Owner = projectConfig.Permissions.OwnerUserIds, CoOwner = projectConfig.Permissions.CoOwnerUserIds, Admin = projectConfig.Permissions.AdminUserIds, Moderator = projectConfig.Permissions.ModeratorUserIds, DJ = projectConfig.Permissions.DJUserIds},
+				thresholds = projectConfig.Permissions.RankThresholds,
+			})
+			if sharedOk and typeof(instance) == "table" and type(instance.Check) == "function" then
+				authorizationService = instance
+			end
+		end
+	end
+	if not authorizationService then
+		warn("[Club Neon] SecurityCore Authorization is unavailable; privileged settings actions are fail-closed.")
+	end
+end
+
+-- A second copy would overwrite RemoteFunction.OnServerInvoke and duplicate
+-- player lifecycle listeners. Refuse to start if another copy already owns the service.
+local SERVICE_MARKER_NAME = "ClubNeonSettingsServiceActive"
+if ServerStorage:FindFirstChild(SERVICE_MARKER_NAME) then
+	error("[Club Neon] Duplicate service detected; keep exactly one server Script.")
+end
+local serviceMarker = Instance.new("BoolValue")
+serviceMarker.Name = SERVICE_MARKER_NAME
+serviceMarker.Value = true
+serviceMarker.Parent = ServerStorage
+
+local FOLDER_NAME = "ClubNeonSettingsRemotes"
+local REQUEST_COOLDOWN = 0.25
+local ANNOUNCEMENT_COOLDOWN = 180
+local BUBBLE_COOLDOWN = 60
+local AFK_TEXT_COOLDOWN = 60
+local MAX_MESSAGE_LENGTH = 180
+
+local existingFolder = ReplicatedStorage:FindFirstChild(FOLDER_NAME)
+if existingFolder and not existingFolder:IsA("Folder") then
+	error("[Club Neon] ReplicatedStorage." .. FOLDER_NAME .. " exists but is not a Folder; refusing to replace an unrelated instance.")
+end
+
+local folder = existingFolder :: Folder?
+if not folder then
+	folder = Instance.new("Folder")
+	folder.Name = FOLDER_NAME
+	folder.Parent = ReplicatedStorage
+end
+
+local existingRequest = folder:FindFirstChild("Request")
+if existingRequest and not existingRequest:IsA("RemoteFunction") then
+	error("[Club Neon] Request exists with the wrong class; expected RemoteFunction.")
+end
+
+local request = existingRequest :: RemoteFunction?
+if not request then
+	request = Instance.new("RemoteFunction")
+	request.Name = "Request"
+	request.Parent = folder
+end
+
+local existingBroadcast = folder:FindFirstChild("Broadcast")
+if existingBroadcast and not existingBroadcast:IsA("RemoteEvent") then
+	error("[Club Neon] Broadcast exists with the wrong class; expected RemoteEvent.")
+end
+
+local broadcast = existingBroadcast :: RemoteEvent?
+if not broadcast then
+	broadcast = Instance.new("RemoteEvent")
+	broadcast.Name = "Broadcast"
+	broadcast.Parent = folder
+end
+
+type Settings = {
+	walkSpeed: number,
+	jumpPower: number,
+	afk: boolean,
+	afkMessage: string,
+	allowTeleport: boolean,
+}
+
+local settingsByUserId: {[number]: Settings} = {}
+local lastRequestAt: {[number]: number} = {}
+local lastBubbleAt: {[number]: number} = {}
+local lastAFKTextAt: {[number]: number} = {}
+-- Social-action budgets are server-owned and scoped to live sessions. A recipient
+-- cooldown prevents several callers from repeatedly moving the same player.
+local lastTeleportByActor: {[number]: number} = {}
+local lastTeleportToRecipient: {[number]: number} = {}
+local TELEPORT_ACTOR_COOLDOWN = 2
+local TELEPORT_RECIPIENT_COOLDOWN = 3
+local lastAnnouncementAt = 0
+local ingressTokens = 48
+local ingressUpdatedAt = os.clock()
+local INGRESS_CAPACITY = 48
+local INGRESS_REFILL_PER_SECOND = 24
+
+local function consumeIngressBudget(now: number): boolean
+	local elapsed = math.max(0, now - ingressUpdatedAt)
+	ingressUpdatedAt = now
+	ingressTokens = math.min(INGRESS_CAPACITY, ingressTokens + elapsed * INGRESS_REFILL_PER_SECOND)
+	if ingressTokens < 1 then return false end
+	ingressTokens -= 1
+	return true
+end
+
+local function validateRequestPayload(payload: any): boolean
+	if typeof(payload) ~= "table" then return false end
+	if SanityValidation then
+		local ok = SanityValidation.ValidateDataTree(payload, {
+			maxDepth = 3,
+			maxEntries = 24,
+			maxStringLength = MAX_MESSAGE_LENGTH,
+		})
+		return ok == true
+	end
+	local count = 0
+	for key, value in pairs(payload) do
+		count += 1
+		if count > 24 or typeof(key) ~= "string" or #key > 32 then return false end
+		local kind = typeof(value)
+		if kind == "string" then
+			if #value > MAX_MESSAGE_LENGTH then return false end
+		elseif kind == "number" then
+			if value ~= value or value == math.huge or value == -math.huge then return false end
+		elseif kind ~= "boolean" then
+			return false
+		end
+	end
+	return true
+end
+local baseMovementByHumanoid: {[Humanoid]: {walkSpeed: number, jumpPower: number, useJumpPower: boolean}} = {}
+
+local function getSettings(player: Player): Settings
+	local existing = settingsByUserId[player.UserId]
+	if existing then return existing end
+	local created: Settings = {
+		walkSpeed = 20,
+		jumpPower = 80,
+		afk = false,
+		afkMessage = "",
+		allowTeleport = false,
+	}
+	settingsByUserId[player.UserId] = created
+	return created
+end
+
+local function hasClubNeonAccess(player: Player): boolean
+	-- This attribute is set by UI_Server_Controller after server-side pass/rank checks.
+	return player:GetAttribute("HasClubNeonAccess") == true
+end
+
+local function hasClubPermission(player: Player, permission: string): boolean
+	if player.Parent ~= Players or not authorizationService then return false end
+	local ok, allowed = pcall(authorizationService.Check, authorizationService, player.UserId, permission)
+	return ok and allowed == true
+end
+
+local movementAuthorityWarningShown = false
+local function registerMovementAuthority(actorUserId: number, targetUserId: number, property: string, value: any, origin: string)
+	local authority = ServerStorage:FindFirstChild("ClubNeonMovementAuthority")
+	if not authority or not authority:IsA("BindableFunction") or authority.Parent ~= ServerStorage then
+		if not movementAuthorityWarningShown then
+			movementAuthorityWarningShown = true
+			warn("[Club Neon] MovementAuthority is unavailable; approved settings changes will be observed as unverified.")
+		end
+		return false
+	end
+	local ok, registered = pcall(function()
+		return authority:Invoke("Register", actorUserId, targetUserId, property, value, origin, 120)
+	end)
+	if not ok or registered ~= true then
+		if not movementAuthorityWarningShown then
+			movementAuthorityWarningShown = true
+			warn("[Club Neon] MovementAuthority registration failed for " .. property .. ".")
+		end
+		return false
+	end
+	return true
+end
+
+-- Teleport validation is a server-only dependency. If it cannot start, the
+-- TeleportTo action remains unavailable rather than falling back to raw CFrame writes.
+local teleportValidationService: any = nil
+do
+	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
+	local module = if core and core:IsA("Folder") then core:FindFirstChild("TeleportValidationService") else nil
+	if module and module:IsA("ModuleScript") then
+		local requireOk, exported = pcall(require, module)
+		if requireOk and typeof(exported) == "table" and type(exported.Start) == "function"
+			and type(exported.Begin) == "function" and type(exported.Complete) == "function"
+			and type(exported.Cancel) == "function" then
+			local startOk, started = pcall(exported.Start, {
+				onSignal = function(signal: string, targetUserId: number, detail: string)
+					local replay = ServerStorage:FindFirstChild("ClubNeonSecurityReplay")
+					if replay and replay:IsA("BindableFunction") then
+						pcall(function()
+								replay:Invoke("Record", signal, targetUserId, 0,
+								if signal == "TeleportVerified" then "Info" else "Warning", "TeleportValidation", {})
+						end)
+					end
+					local api = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
+					local recorder = api and api:FindFirstChild("RecordGlobalSecuritySignal")
+					if recorder and recorder:IsA("BindableFunction") then
+						local recordOk = pcall(function() recorder:Invoke(signal, targetUserId) end)
+						if recordOk then return end
+					end
+					warn("[Club Neon][TeleportValidation] " .. signal .. " target=" .. tostring(targetUserId) .. " detail=" .. string.sub(tostring(detail), 1, 160))
+				end,
+			})
+			if startOk and started == true then
+				teleportValidationService = exported
+			end
+		end
+	end
+	if not teleportValidationService then
+		warn("[Club Neon] TeleportValidationService is unavailable; TeleportTo is fail-closed.")
+	end
+end
+
+local function truncateUtf8(value: string, maxCharacters: number): string?
+	local length = utf8.len(value)
+	if not length then return nil end
+	if length <= maxCharacters then return value end
+	local nextByte = utf8.offset(value, maxCharacters + 1)
+	if not nextByte then return value end
+	return string.sub(value, 1, nextByte - 1)
+end
+
+local function filterBroadcastText(player: Player, raw: any): string?
+	if typeof(raw) ~= "string" then return nil end
+	local trimmed = string.match(raw, "^%s*(.-)%s*$") or ""
+	if trimmed == "" or #trimmed > MAX_MESSAGE_LENGTH then return nil end
+	if not utf8.len(trimmed) then return nil end
+	local ok, result = pcall(function()
+		local filtered = TextService:FilterStringAsync(trimmed, player.UserId)
+		return filtered:GetNonChatStringForBroadcastAsync()
+	end)
+	if not ok or typeof(result) ~= "string" or result == "" then return nil end
+	return truncateUtf8(result, MAX_MESSAGE_LENGTH)
+end
+
+local function applyMovement(player: Player)
+	if not hasClubNeonAccess(player) then return end
+	local settings = getSettings(player)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	-- Capture this character's actual baseline once so entitlement revocation
+	-- restores the game's configured movement instead of assuming Roblox defaults.
+	if not baseMovementByHumanoid[humanoid] then
+		baseMovementByHumanoid[humanoid] = {
+			walkSpeed = humanoid.WalkSpeed,
+			jumpPower = humanoid.JumpPower,
+			useJumpPower = humanoid.UseJumpPower,
+		}
+	end
+	humanoid.WalkSpeed = math.clamp(settings.walkSpeed, 20, 100)
+	humanoid.UseJumpPower = true
+	humanoid.JumpPower = math.clamp(settings.jumpPower, 80, 300)
+	registerMovementAuthority(player.UserId, player.UserId, "WalkSpeed", humanoid.WalkSpeed, "ClubNeonSettings")
+	registerMovementAuthority(player.UserId, player.UserId, "JumpPower", humanoid.JumpPower, "ClubNeonSettings")
+end
+
+local function applyMovementWhenReady(player: Player, character: Model)
+	-- Custom character rigs may add their Humanoid after CharacterAdded fires.
+	-- Wait briefly rather than silently skipping the Club Neon movement profile.
+	task.spawn(function()
+		local humanoid = character:WaitForChild("Humanoid", 10)
+		if not humanoid or not humanoid:IsA("Humanoid") then return end
+		if player.Parent ~= Players or player.Character ~= character or not hasClubNeonAccess(player) then return end
+		applyMovement(player)
+	end)
+end
+
+local function revokeClubNeonState(player: Player)
+	local settings = getSettings(player)
+	settings.walkSpeed = 20
+	settings.jumpPower = 80
+	settings.afk = false
+	settings.afkMessage = ""
+	settings.allowTeleport = false
+	player:SetAttribute("ClubNeonAFK", false)
+	player:SetAttribute("ClubNeonAFKMessage", "")
+	player:SetAttribute("ClubNeonAllowTeleport", false)
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local baseline = humanoid and baseMovementByHumanoid[humanoid]
+	if humanoid and baseline then
+		humanoid.WalkSpeed = baseline.walkSpeed
+		humanoid.UseJumpPower = baseline.useJumpPower
+		humanoid.JumpPower = baseline.jumpPower
+		registerMovementAuthority(player.UserId, player.UserId, "WalkSpeed", humanoid.WalkSpeed, "ClubNeonSettingsReset")
+		registerMovementAuthority(player.UserId, player.UserId, "JumpPower", humanoid.JumpPower, "ClubNeonSettingsReset")
+		baseMovementByHumanoid[humanoid] = nil
+	end
+end
+
+local function snapshot(player: Player)
+	local settings = getSettings(player)
+	local roster = {}
+	for _, other in ipairs(Players:GetPlayers()) do
+		table.insert(roster, {
+			userId = other.UserId,
+			name = other.Name,
+			displayName = other.DisplayName,
+			allowTeleport = other:GetAttribute("ClubNeonAllowTeleport") == true,
+		})
+	end
+	return {
+		walkSpeed = settings.walkSpeed,
+		jumpPower = settings.jumpPower,
+		afk = settings.afk,
+		afkMessage = settings.afkMessage,
+		allowTeleport = settings.allowTeleport,
+		gravity = workspace.Gravity,
+		hasClubNeonAccess = hasClubNeonAccess(player),
+		canAnnounce = hasClubPermission(player, "GlobalAnnouncement"),
+		canSetGravity = hasClubPermission(player, "GlobalConfig"),
+		players = roster,
+	}
+end
+
+local function fail(message: string)
+	return {ok = false, message = message}
+end
+
+-- Store only the fact that server-filtered text was accepted; never retain the text itself.
+local function recordFilteredTextEvent(player: Player, eventType: string)
+	local replay = ServerStorage:FindFirstChild("ClubNeonSecurityReplay")
+	if replay and replay:IsA("BindableFunction") then
+		pcall(function()
+			replay:Invoke("Record", eventType, player.UserId, 0, "Info", "ClubNeonTextValidation", {})
+		end)
+	end
+end
+
+local function handleRequest(player: Player, action: any, payload: any)
+	if player.Parent ~= Players then return fail("Player is no longer connected.") end
+	local now = os.clock()
+	-- Charge the cheap server-wide budget before walking attacker-controlled data.
+	if not consumeIngressBudget(now) then return fail("Settings service is busy. Please try again shortly.") end
+	if typeof(action) ~= "string" or #action < 1 or #action > 32 or not validateRequestPayload(payload) then
+		return fail("Invalid request.")
+	end
+	local previous = lastRequestAt[player.UserId] or 0
+	if previous > 0 and now - previous < REQUEST_COOLDOWN then
+		return fail("Please wait before changing another setting.")
+	end
+	lastRequestAt[player.UserId] = now
+
+	if action == "GetSnapshot" then
+		if not hasClubNeonAccess(player) then return fail("Club Neon access is required.") end
+		return {ok = true, data = snapshot(player)}
+	end
+
+	if not hasClubNeonAccess(player) then
+		return fail("Club Neon access is required.")
+	end
+
+	local settings = getSettings(player)
+
+	if action == "SetMovement" then
+		local speed = payload.walkSpeed
+		local jump = payload.jumpPower
+		if typeof(speed) ~= "number" or speed ~= speed or speed == math.huge or speed == -math.huge
+			or typeof(jump) ~= "number" or jump ~= jump or jump == math.huge or jump == -math.huge then
+			return fail("Invalid movement values.")
+		end
+		settings.walkSpeed = math.clamp(speed, 20, 100)
+		settings.jumpPower = math.clamp(jump, 80, 300)
+		applyMovement(player)
+		return {ok = true, message = "Movement settings applied.", data = snapshot(player)}
+	elseif action == "SetAFK" then
+		if typeof(payload.enabled) ~= "boolean" then return fail("Invalid AFK setting.") end
+		local message = ""
+		if payload.enabled then
+			local textNow = os.clock()
+			local previousTextAt = lastAFKTextAt[player.UserId] or 0
+			if previousTextAt > 0 and textNow - previousTextAt < AFK_TEXT_COOLDOWN then
+				local remaining = math.ceil(AFK_TEXT_COOLDOWN - (textNow - previousTextAt))
+				return fail("AFK message text can only be changed once every 60 seconds. Wait " .. tostring(remaining) .. " seconds.")
+			end
+			local filtered = filterBroadcastText(player, payload.message or "")
+			if filtered == nil then return fail("Enter a valid AFK message (maximum 180 characters).") end
+			-- Filtering yields; re-check entitlement, liveness, and cooldown before replication.
+			if not hasClubNeonAccess(player) or player.Parent ~= Players then return fail("Club Neon access is required.") end
+			local commitNow = os.clock()
+			local latestTextAt = lastAFKTextAt[player.UserId] or 0
+			if latestTextAt > 0 and commitNow - latestTextAt < AFK_TEXT_COOLDOWN then
+				local remaining = math.ceil(AFK_TEXT_COOLDOWN - (commitNow - latestTextAt))
+				return fail("AFK message text can only be changed once every 60 seconds. Wait " .. tostring(remaining) .. " seconds.")
+			end
+			lastAFKTextAt[player.UserId] = commitNow
+			message = filtered
+		end
+		settings.afk = payload.enabled
+		settings.afkMessage = message
+		if settings.afk then recordFilteredTextEvent(player, "afk_text_filtered") end
+		player:SetAttribute("ClubNeonAFK", settings.afk)
+		player:SetAttribute("ClubNeonAFKMessage", settings.afkMessage)
+		return {ok = true, message = if settings.afk then "AFK mode enabled." else "AFK mode disabled.", data = snapshot(player)}
+	elseif action == "SetTeleportAllowed" then
+		if typeof(payload.enabled) ~= "boolean" then return fail("Invalid teleport permission.") end
+		settings.allowTeleport = payload.enabled
+		player:SetAttribute("ClubNeonAllowTeleport", settings.allowTeleport)
+		return {ok = true, message = if settings.allowTeleport then "Players may teleport to you." else "Teleport permission disabled.", data = snapshot(player)}
+	elseif action == "TeleportTo" then
+		local targetUserId = payload.userId
+		if typeof(targetUserId) ~= "number" or targetUserId ~= targetUserId
+			or targetUserId == math.huge or targetUserId == -math.huge
+			or targetUserId % 1 ~= 0 or targetUserId < 1 or targetUserId > 9007199254740991 then
+			return fail("Select a valid player.")
+		end
+		local target = Players:GetPlayerByUserId(targetUserId)
+		if not target or target == player or (SanityValidation ~= nil and not SanityValidation.IsLivePlayer(target)) then
+			return fail("That player is unavailable.")
+		end
+		local actorCharacter = player.Character
+		local targetCharacter = target.Character
+		if not actorCharacter or not actorCharacter.Parent or not targetCharacter or not targetCharacter.Parent then
+			return fail("Character position is not ready.")
+		end
+		local actorHumanoid = actorCharacter:FindFirstChildOfClass("Humanoid")
+		local targetHumanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+		if not actorHumanoid or actorHumanoid.Health <= 0 or not targetHumanoid or targetHumanoid.Health <= 0 then
+			return fail("Both players must have active characters.")
+		end
+		local function recipientAllowsTeleport(): boolean
+			return target:GetAttribute("ClubNeonAllowTeleport") == true
+		end
+		if not recipientAllowsTeleport() and not hasClubPermission(player, "GlobalModeration") then
+			return fail("That player has not allowed teleporting to them.")
+		end
+		-- Permission checks can yield. Revalidate the actor, recipient, character
+		-- instances and consent after the yield, before reserving or moving anyone.
+		if not hasClubNeonAccess(player) or player.Parent ~= Players or target.Parent ~= Players
+			or (SanityValidation ~= nil and (not SanityValidation.IsLivePlayer(player) or not SanityValidation.IsLivePlayer(target)))
+			or player.Character ~= actorCharacter or target.Character ~= targetCharacter then
+			return fail("Teleport access is no longer available.")
+		end
+		if not recipientAllowsTeleport() and not hasClubPermission(player, "GlobalModeration") then
+			return fail("That player has not allowed teleporting to them.")
+		end
+		if player.Parent ~= Players or target.Parent ~= Players
+			or player.Character ~= actorCharacter or target.Character ~= targetCharacter then
+			return fail("A player character changed; please try again.")
+		end
+		local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+		local ownRoot = actorCharacter:FindFirstChild("HumanoidRootPart")
+		if not targetRoot or not targetRoot:IsA("BasePart") or not ownRoot or not ownRoot:IsA("BasePart") then
+			return fail("Character position is not ready.")
+		end
+		if not teleportValidationService then
+			return fail("Secure teleport validation is unavailable; please try again later.")
+		end
+		local nowTeleport = os.clock()
+		local actorPreviousTeleport = lastTeleportByActor[player.UserId]
+		if actorPreviousTeleport ~= nil and nowTeleport - actorPreviousTeleport < TELEPORT_ACTOR_COOLDOWN then
+			return fail("Please wait before teleporting again.")
+		end
+		local recipientPreviousTeleport = lastTeleportToRecipient[target.UserId]
+		if recipientPreviousTeleport ~= nil and nowTeleport - recipientPreviousTeleport < TELEPORT_RECIPIENT_COOLDOWN then
+			return fail("That player was just teleported to; please try again shortly.")
+		end
+		-- Reserve both budgets without yielding, closing duplicate/concurrent calls.
+		lastTeleportByActor[player.UserId] = nowTeleport
+		lastTeleportToRecipient[target.UserId] = nowTeleport
+		-- Resolve destination only from the server-observed recipient transform.
+		local destinationCFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
+		local ticketOk, ticket = pcall(
+			teleportValidationService.Begin,
+			player,
+			player,
+			destinationCFrame.Position,
+			"ClubNeonSettings",
+			8
+		)
+		if not ticketOk or typeof(ticket) ~= "string" then
+			if lastTeleportByActor[player.UserId] == nowTeleport then lastTeleportByActor[player.UserId] = nil end
+			if lastTeleportToRecipient[target.UserId] == nowTeleport then lastTeleportToRecipient[target.UserId] = nil end
+			return fail("Teleport could not be authorized safely.")
+		end
+		local moveOk = pcall(function()
+			if player.Parent ~= Players or target.Parent ~= Players
+				or player.Character ~= actorCharacter or target.Character ~= targetCharacter
+				or ownRoot.Parent ~= actorCharacter or targetRoot.Parent ~= targetCharacter then
+				error("A player or character changed before teleport execution.")
+			end
+			ownRoot.CFrame = destinationCFrame
+		end)
+		if not moveOk then
+			pcall(teleportValidationService.Cancel, ticket)
+			if lastTeleportByActor[player.UserId] == nowTeleport then lastTeleportByActor[player.UserId] = nil end
+			if lastTeleportToRecipient[target.UserId] == nowTeleport then lastTeleportToRecipient[target.UserId] = nil end
+			return fail("Teleport could not be completed.")
+		end
+		local completeOk, verified = pcall(
+			teleportValidationService.Complete,
+			ticket,
+			player,
+			player
+		)
+		if not completeOk or verified ~= true then
+			return fail("Teleport position could not be verified.")
+		end
+		return {ok = true, message = "Teleported to " .. target.DisplayName .. "."}
+	elseif action == "SetGravity" then
+		if not hasClubPermission(player, "GlobalConfig") then
+			return fail("Administrator configuration permission is required to change server gravity.")
+		end
+		local gravity = payload.gravity
+		if typeof(gravity) ~= "number" or gravity ~= gravity or gravity == math.huge or gravity == -math.huge then
+			return fail("Invalid gravity value.")
+		end
+		-- Keep the entitlement and administrator checks adjacent to the mutation.
+		-- This keeps the authorization boundary adjacent to the mutation if
+		-- the SecurityCore permission implementation changes in the future.
+		if not hasClubNeonAccess(player) or player.Parent ~= Players
+			or not hasClubPermission(player, "GlobalConfig") then
+			return fail("Administrator configuration permission is no longer available.")
+		end
+		workspace.Gravity = math.clamp(gravity, 20, 192.62)
+		registerMovementAuthority(player.UserId, 0, "WorldGravity", workspace.Gravity, "ClubNeonSettings")
+		return {ok = true, message = "Server gravity updated.", data = snapshot(player)}
+	elseif action == "BubbleBroadcast" then
+		if not hasClubPermission(player, "GlobalAnnouncement") then return fail("Administrator announcement permission is required.") end
+		local last = lastBubbleAt[player.UserId] or 0
+		if last > 0 and now - last < BUBBLE_COOLDOWN then return fail("Wait before sending another overhead broadcast.") end
+		local filtered = filterBroadcastText(player, payload.message)
+		if not filtered then return fail("Enter a valid broadcast message.") end
+		-- Filtering yields; reauthorize immediately before broadcasting.
+		if not hasClubNeonAccess(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
+			return fail("Administrator announcement permission is required.")
+		end
+		local broadcastAt = os.clock()
+		local previousBubble = lastBubbleAt[player.UserId] or 0
+		if previousBubble > 0 and broadcastAt - previousBubble < BUBBLE_COOLDOWN then
+			return fail("Wait before sending another overhead broadcast.")
+		end
+		lastBubbleAt[player.UserId] = broadcastAt
+		broadcast:FireAllClients("Bubble", player.UserId, filtered)
+		recordFilteredTextEvent(player, "filtered_bubble_broadcast")
+		return {ok = true, message = "Overhead broadcast sent."}
+	elseif action == "Announcement" then
+		if not hasClubPermission(player, "GlobalAnnouncement") then return fail("Administrator announcement permission is required.") end
+		if lastAnnouncementAt > 0 and now - lastAnnouncementAt < ANNOUNCEMENT_COOLDOWN then
+			local remaining = math.ceil(ANNOUNCEMENT_COOLDOWN - (now - lastAnnouncementAt))
+			return fail("Announcement cooldown: " .. tostring(remaining) .. " seconds remaining.")
+		end
+		local filtered = filterBroadcastText(player, payload.message)
+		if not filtered then return fail("Enter a valid announcement.") end
+		-- Filtering yields; reauthorize immediately before broadcasting.
+		if not hasClubNeonAccess(player) or player.Parent ~= Players or not hasClubPermission(player, "GlobalAnnouncement") then
+			return fail("Administrator announcement permission is required.")
+		end
+		local broadcastAt = os.clock()
+		if lastAnnouncementAt > 0 and broadcastAt - lastAnnouncementAt < ANNOUNCEMENT_COOLDOWN then
+			local remaining = math.ceil(ANNOUNCEMENT_COOLDOWN - (broadcastAt - lastAnnouncementAt))
+			return fail("Announcement cooldown: " .. tostring(remaining) .. " seconds remaining.")
+		end
+		lastAnnouncementAt = broadcastAt
+		broadcast:FireAllClients("Announcement", player.UserId, filtered)
+		recordFilteredTextEvent(player, "filtered_announcement")
+		return {ok = true, message = "Announcement sent to this server."}
+	end
+
+	return fail("Unsupported Club Neon Settings action.")
+end
+
+request.OnServerInvoke = function(player: Player, action: any, payload: any)
+	if typeof(action) ~= "string" or #action < 1 or #action > 40 then
+		local replay = ServerStorage:FindFirstChild("ClubNeonSecurityReplay")
+		if replay and replay:IsA("BindableFunction") then
+			pcall(function()
+				replay:Invoke("Record", "settings_remote_invalid_action", player.UserId, 0,
+					"Warning", "ClubNeonSettingsRemote", {actionType = typeof(action)})
+			end)
+		end
+	end
+	local ok, result = pcall(handleRequest, player, action, payload)
+	if not ok then
+		local replay = ServerStorage:FindFirstChild("ClubNeonSecurityReplay")
+		if replay and replay:IsA("BindableFunction") then
+			pcall(function()
+				replay:Invoke("Record", "settings_remote_handler_error", player.UserId, 0,
+					"Warning", "ClubNeonSettingsRemote", {actionType = typeof(action)})
+			end)
+		end
+		warn("[Club Neon] Request failed: " .. tostring(result))
+		return fail("The settings request could not be completed.")
+	end
+	return result
+end
+
+local function bindPlayer(player: Player)
+	getSettings(player)
+
+	-- Pass/rank verification can finish after CharacterAdded. Re-apply the
+	-- saved movement values when the server-owned Club Neon entitlement arrives.
+	player:GetAttributeChangedSignal("HasClubNeonAccess"):Connect(function()
+		if player.Parent ~= Players then return end
+		if hasClubNeonAccess(player) then
+			task.defer(function()
+				if player.Parent == Players then applyMovement(player) end
+			end)
+		else
+			revokeClubNeonState(player)
+		end
+	end)
+
+	player.CharacterAdded:Connect(function(character)
+		applyMovementWhenReady(player, character)
+	end)
+	player.CharacterRemoving:Connect(function(character)
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then baseMovementByHumanoid[humanoid] = nil end
+	end)
+	player:SetAttribute("ClubNeonAFK", false)
+	player:SetAttribute("ClubNeonAFKMessage", "")
+	player:SetAttribute("ClubNeonAllowTeleport", false)
+
+	-- Handle players whose entitlement was already resolved before this
+	-- service bound their player lifecycle.
+	if hasClubNeonAccess(player) then
+		task.defer(function()
+			if player.Parent == Players then applyMovement(player) end
+		end)
+	end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do bindPlayer(player) end
+Players.PlayerAdded:Connect(bindPlayer)
+Players.PlayerRemoving:Connect(function(player)
+	settingsByUserId[player.UserId] = nil
+	lastRequestAt[player.UserId] = nil
+	lastBubbleAt[player.UserId] = nil
+	lastAFKTextAt[player.UserId] = nil
+	lastTeleportByActor[player.UserId] = nil
+	lastTeleportToRecipient[player.UserId] = nil
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then baseMovementByHumanoid[humanoid] = nil end
+end)
+
+print("[Club Neon] Server service ready.")

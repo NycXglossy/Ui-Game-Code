@@ -1,6 +1,6 @@
 --!strict
--- Bounded server-local threat correlation for staff review.
--- Correlation only: no persistence, cross-server writes, kicks, bans, restrictions, or gameplay changes.
+-- Bounded server-local threat correlation and raid/cohort early warning.
+-- Advisory only: no persistence, cross-server writes, kicks, bans, restrictions, or gameplay changes.
 
 local Players = game:GetService("Players")
 
@@ -14,26 +14,69 @@ local MAX_INCIDENTS = 256
 local MAX_SIGNALS_PER_SUBJECT = 12
 local MAX_QUERY = 30
 local MAX_USER_ID = 9007199254740991
+local MAX_COUNTER = 1000000000
+local MAX_EVENT_IDS = 256
+local EVENT_ID_TTL = 30
+local COHORT_WINDOW_SECONDS = 60
+local MAX_COHORT_SUBJECTS = 128
+local MAX_COHORT_SOURCES = 16
+local MAX_COHORT_CODES = 32
+local MAX_RAID_REVIEWS = 32
+local MAX_SESSION_EVENTS = 1000
+local MAX_SESSIONS = 256
+local MAX_SOURCES_PER_SUBJECT = 8
 
 local CATEGORY_WEIGHT = {
-	Movement = 2,
-	Audio = 2,
-	Social = 2,
-	Avatar = 1,
-	Purchase = 3,
-	Messaging = 2,
-	Authorization = 1,
-	Remote = 2,
-	Watchdog = 2,
-	SafeCall = 2,
-	Diagnostics = 2,
-	Monitor = 2,
-	Other = 1,
+	Movement = 2, Audio = 2, Social = 2, Avatar = 1, Purchase = 3,
+	Messaging = 2, Authorization = 2, Remote = 2, Watchdog = 2,
+	SafeCall = 2, Diagnostics = 1, Monitor = 2, Other = 0,
 }
 
+-- Exact, reviewed machine codes only. Unknown codes are retained as zero-weight
+-- Other telemetry for diagnostics, but never contribute to confidence or score.
+local SIGNALS = {}
+local function add(category: string, weight: number, codes: {string})
+	for _, code in ipairs(codes) do SIGNALS[code] = {category = category, weight = weight} end
+end
+
+add("Movement", 2, {
+	"movement_limit_exceeded", "unverified_movement_change",
+	"world_physics_limit_exceeded", "unverified_world_physics_change",
+	-- Sustained extreme assembly velocity/rotation after the guard's delay and
+	-- server-authority exemption checks. These remain advisory evidence only.
+	"suspicious_physics_velocity", "suspicious_physics_rotation",
+})
+add("Audio", 2, {"audio_asset_invalid_id", "audio_asset_not_allowlisted"})
+add("Avatar", 1, {
+	"avatar_accessory_added_after_appearance", "avatar_accessory_excessive_parts",
+	"avatar_accessory_missing_handle", "avatar_accessory_abnormal_handle_size",
+	"avatar_accessory_collidable_handle", "avatar_accessory_handle_size_changed",
+	"avatar_accessory_handle_collision_changed", "avatar_accessory_rapid_insertion",
+	"avatar_accessory_count_exceeded",
+	"avatar_accessory_invalid_asset_id", "avatar_accessory_duplicate_asset",
+	"avatar_accessory_removed_after_appearance",
+})
+add("Remote", 3, {
+	"honeypot_admin_privilege_remote", "honeypot_purchase_receipt_remote",
+	"honeypot_vip_entitlement_remote", "honeypot_moderation_action_remote",
+	"honeypot_admin_command_event", "honeypot_unlock_all_gear_event",
+	"honeypot_set_vip_rank_event", "honeypot_give_tip_money_event",
+})
+add("Authorization", 2, {
+	"admin_bridge_invalid_operation", "admin_bridge_access_denied",
+	"admin_moderation_access_denied", "admin_security_access_denied",
+	"admin_operational_access_denied",
+})
+add("Monitor", 2, {"security_monitor_threshold"})
+add("SafeCall", 2, {"safe_call_failed"})
+add("Watchdog", 2, {"watchdog_degraded"})
+-- Client integrity heartbeat and observation-only telemetry are deliberately not
+-- risk signals. Add a code here only after its server-side producer is audited.
+
+local ALLOWED_SEVERITY = {Info = true, Warning = true, Critical = true}
+
 local function finite(value: any): boolean
-	return typeof(value) == "number" and value == value
-		and value > -math.huge and value < math.huge
+	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
 
 local function validUserId(value: any): boolean
@@ -46,31 +89,10 @@ local function cleanCode(value: any, maxLength: number): string?
 	return value
 end
 
-local function classify(signal: string): string
-	local value = string.lower(signal)
-	if string.find(value, "movement", 1, true) or string.find(value, "physics", 1, true) then return "Movement" end
-	if string.find(value, "audio", 1, true) or string.find(value, "asset", 1, true) then return "Audio" end
-	if string.find(value, "teleport", 1, true) then return "Social" end
-	if string.find(value, "avatar", 1, true) or string.find(value, "accessory", 1, true) then return "Avatar" end
-	if string.find(value, "purchase", 1, true) or string.find(value, "receipt", 1, true) then return "Purchase" end
-	if string.find(value, "message", 1, true) or string.find(value, "messaging", 1, true) then return "Messaging" end
-	if string.find(value, "admin", 1, true) or string.find(value, "privilege", 1, true) then return "Authorization" end
-	if string.find(value, "remote", 1, true) or string.find(value, "request", 1, true) then return "Remote" end
-	if string.find(value, "watchdog", 1, true) then return "Watchdog" end
-	if string.find(value, "safe_call", 1, true) then return "SafeCall" end
-	if string.find(value, "diagnostic", 1, true) or string.find(value, "server_health", 1, true) then return "Diagnostics" end
-	if string.find(value, "security_monitor", 1, true) then return "Monitor" end
-	return "Other"
-end
-
-local function confidenceFor(bucket): string
-	local categories = 0
-	for _ in pairs(bucket.categories) do categories += 1 end
-	local signals = 0
-	for _ in pairs(bucket.signals) do signals += 1 end
-	if categories >= 3 and signals >= 3 and bucket.score >= 8 then return "High" end
-	if categories >= 2 and signals >= 2 and bucket.score >= 4 then return "Medium" end
-	return "Low"
+local function countKeys(source): number
+	local count = 0
+	for _ in pairs(source) do count += 1 end
+	return count
 end
 
 local function sortedKeys(source): {string}
@@ -80,61 +102,235 @@ local function sortedKeys(source): {string}
 	return result
 end
 
+local function confidenceFor(bucket): string
+	local categories = countKeys(bucket.categories)
+	local signals = countKeys(bucket.signals)
+	local sources = countKeys(bucket.sources)
+	if categories >= 3 and signals >= 3 and sources >= 2 and bucket.score >= 8 then return "High" end
+	if categories >= 2 and signals >= 2 and bucket.score >= 4 then return "Medium" end
+	return "Low"
+end
+
 function Service.new(dependencies: {[string]: any})
 	assert(typeof(dependencies) == "table" and type(dependencies.authorize) == "function",
 		"SecurityThreatIntelligence requires an authorization callback")
+	local players = dependencies.players or Players
 	return setmetatable({
 		d = dependencies,
+		players = players,
+		now = if type(dependencies.now) == "function" then dependencies.now else os.clock,
 		started = false,
 		buckets = {},
 		incidents = {},
-		incidentsById = {},
-		nextPruneAt = 0,
+		sessions = {},
+		joinEvents = {},
+		cohortSignals = {},
+		cohortCategories = {},
+		cohortSources = {},
+		cohortCodes = {},
+		raidReviews = {},
+		recentEventIds = {},
+		connections = {},
 		nextIncidentId = 0,
+		nextRaidId = 0,
 		totalSignals = 0,
 		droppedSignals = 0,
 		openedForReview = 0,
 		deniedQueries = 0,
+		expiredSubjects = 0,
+		expiredReviews = 0,
+		subjectEvictions = 0,
+		reviewEvictions = 0,
+		raidReviewEvictions = 0,
+		duplicateEventIds = 0,
+		cappedContributions = 0,
+		unknownSignals = 0,
+		rejectedInputs = 0,
+		cohortJoinCount = 0,
+		cohortSignalCount = 0,
 	}, Service)
 end
 
-function Service:Start(): boolean
-	self.started = true
-	return true
-end
-
 function Service:_prune(now: number)
-	-- Expiry is bounded to a five-second sweep cadence instead of scanning
-	-- every retained subject and incident for every incoming signal.
-	if now < self.nextPruneAt then return end
-	self.nextPruneAt = now + 5
 	for key, bucket in pairs(self.buckets) do
 		if now - bucket.lastAt > WINDOW_SECONDS then
-			if bucket.incidentId then self.incidentsById[bucket.incidentId] = nil end
 			self.buckets[key] = nil
+			self.expiredSubjects = math.min(MAX_COUNTER, self.expiredSubjects + 1)
 		end
 	end
 	for index = #self.incidents, 1, -1 do
-		local item = self.incidents[index]
-		if now - item.lastAt > INCIDENT_TTL_SECONDS then
-			self.incidentsById[item.id] = nil
+		if now - self.incidents[index].lastAt > INCIDENT_TTL_SECONDS then
 			table.remove(self.incidents, index)
+			self.expiredReviews = math.min(MAX_COUNTER, self.expiredReviews + 1)
 		end
 	end
+	for id, at in pairs(self.recentEventIds) do
+		if now - at > EVENT_ID_TTL then self.recentEventIds[id] = nil end
+	end
+	local cutoff = now - COHORT_WINDOW_SECONDS
+	for index = #self.joinEvents, 1, -1 do
+		if self.joinEvents[index].at < cutoff then table.remove(self.joinEvents, index) end
+	end
+	for index = #self.raidReviews, 1, -1 do
+		if now - self.raidReviews[index].lastAt > INCIDENT_TTL_SECONDS then
+			table.remove(self.raidReviews, index)
+			self.expiredReviews = math.min(MAX_COUNTER, self.expiredReviews + 1)
+		end
+	end
+	-- Rebuild cohort evidence from only the active join window. The set is bounded
+	-- by the join-event cap, so no long-lived identity history accumulates.
+	local joined = {}
+	for _, event in ipairs(self.joinEvents) do joined[event.userId] = true end
+	table.clear(self.cohortCategories)
+	table.clear(self.cohortSources)
+	table.clear(self.cohortCodes)
+	for userId, evidence in pairs(self.cohortSignals) do
+		if not joined[userId] then
+			self.cohortSignals[userId] = nil
+		else
+			for category in pairs(evidence.categories) do self.cohortCategories[category] = true end
+			for source in pairs(evidence.sources) do self.cohortSources[source] = true end
+			for code in pairs(evidence.codes) do self.cohortCodes[code] = true end
+		end
+	end
+end
+
+function Service:_resetCohort()
+	table.clear(self.joinEvents)
+	table.clear(self.cohortSignals)
+	table.clear(self.cohortCategories)
+	table.clear(self.cohortSources)
+	table.clear(self.cohortCodes)
+end
+
+function Service:_recordJoin(userId: number, now: number)
+	self:_prune(now)
+	-- A player contributes at most one join to the current rolling cohort window.
+	for _, event in ipairs(self.joinEvents) do
+		if event.userId == userId then return false end
+	end
+	if #self.joinEvents >= MAX_COHORT_SUBJECTS then
+		table.remove(self.joinEvents, 1)
+		self.subjectEvictions = math.min(MAX_COUNTER, self.subjectEvictions + 1)
+	end
+	table.insert(self.joinEvents, {userId = userId, at = now})
+	self:_prune(now)
+	self.cohortJoinCount = math.min(MAX_COUNTER, self.cohortJoinCount + 1)
+	return true
+end
+
+function Service:JoinUserId(userId: any): boolean
+	if not self.started or not validUserId(userId) then return false end
+	local now = self.now()
+	local key = tostring(math.floor(userId))
+	if not self.sessions[key] then
+		if countKeys(self.sessions) >= MAX_SESSIONS then
+			local oldestKey, oldestAt = nil, math.huge
+			for existingKey, session in pairs(self.sessions) do
+				if session.startedAt < oldestAt then oldestKey, oldestAt = existingKey, session.startedAt end
+			end
+			if oldestKey then self.sessions[oldestKey] = nil end
+		end
+		self.sessions[key] = {startedAt = now, eventCount = 0}
+	end
+	self:_recordJoin(math.floor(userId), now)
+	return true
+end
+
+function Service:PlayerJoined(player: any): boolean
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then return false end
+	return self:JoinUserId(player.UserId)
+end
+
+function Service:PlayerRemoving(player: any)
+	if typeof(player) == "Instance" and player:IsA("Player") then
+		self.sessions[tostring(player.UserId)] = nil
+	end
+end
+
+function Service:Start(): boolean
+	if self.started then return true end
+	self.started = true
+	for _, player in ipairs(self.players:GetPlayers()) do
+		if validUserId(player.UserId) then
+			self.sessions[tostring(player.UserId)] = {startedAt = self.now(), eventCount = 0}
+		end
+	end
+	table.insert(self.connections, self.players.PlayerAdded:Connect(function(player)
+		self:PlayerJoined(player)
+	end))
+	table.insert(self.connections, self.players.PlayerRemoving:Connect(function(player)
+		self:PlayerRemoving(player)
+	end))
+	return true
+end
+
+function Service:_rememberRaid(now: number)
+	local joinCount = #self.joinEvents
+	local signaledPlayers = countKeys(self.cohortSignals)
+	local categories = countKeys(self.cohortCategories)
+	local sources = countKeys(self.cohortSources)
+	local codes = countKeys(self.cohortCodes)
+
+	-- Conservative initial tripwire: join burst plus independent player and
+	-- signal corroboration. Join volume alone is never a raid review.
+	if joinCount < 8 or signaledPlayers < 3 or categories < 2 or sources < 2 then return end
+
+	local confidence = if joinCount >= 15 and signaledPlayers >= 5 and categories >= 3
+		and sources >= 3 and codes >= 4 then "High" else "Medium"
+	local latest = now
+	local existing = self.raidReviews[#self.raidReviews]
+	if existing and now - existing.lastAt <= COHORT_WINDOW_SECONDS then
+		existing.lastAt = latest
+		existing.joinCount = joinCount
+		existing.signaledPlayerCount = signaledPlayers
+		existing.categoryCount = categories
+		existing.sourceCount = sources
+		existing.signalCodeCount = codes
+		existing.confidence = confidence
+		existing.reasons = {"JOIN_BURST", "COHORT_CORROBORATION", "MULTI_CATEGORY", "MULTI_SOURCE"}
+		return
+	end
+	if #self.raidReviews >= MAX_RAID_REVIEWS then
+		table.remove(self.raidReviews, 1)
+		self.raidReviewEvictions = math.min(MAX_COUNTER, self.raidReviewEvictions + 1)
+	end
+	self.nextRaidId += 1
+	table.insert(self.raidReviews, {
+		id = "RAID-" .. tostring(self.nextRaidId),
+		kind = "CohortReview",
+		state = "Review",
+		firstAt = self.joinEvents[1].at,
+		lastAt = now,
+		joinCount = joinCount,
+		signaledPlayerCount = signaledPlayers,
+		categoryCount = categories,
+		sourceCount = sources,
+		signalCodeCount = codes,
+		confidence = confidence,
+		reasons = {"JOIN_BURST", "COHORT_CORROBORATION", "MULTI_CATEGORY", "MULTI_SOURCE"},
+		automaticEnforcement = false,
+	})
 end
 
 function Service:_rememberIncident(bucket, userId: number, now: number)
 	local confidence = confidenceFor(bucket)
 	if confidence == "Low" then return end
-	local item = if bucket.incidentId then self.incidentsById[bucket.incidentId] else nil
+	local item = nil
+	if bucket.incidentId then
+		for index = #self.incidents, 1, -1 do
+			if self.incidents[index].id == bucket.incidentId then item = self.incidents[index]; break end
+		end
+	end
 	if not item then
 		if #self.incidents >= MAX_INCIDENTS then
-			local evicted = table.remove(self.incidents, 1)
-			if evicted then self.incidentsById[evicted.id] = nil end
+			table.remove(self.incidents, 1)
+			self.reviewEvictions = math.min(MAX_COUNTER, self.reviewEvictions + 1)
 		end
 		self.nextIncidentId += 1
 		item = {
 			id = "TTI-" .. tostring(self.nextIncidentId),
+			kind = if userId == 0 then "ServerReview" else "PlayerReview",
 			subjectUserId = userId,
 			state = "Review",
 			firstAt = bucket.firstAt,
@@ -145,85 +341,185 @@ function Service:_rememberIncident(bucket, userId: number, now: number)
 			categories = {},
 			signals = {},
 			sourceCount = 0,
+			reasons = {},
 			automaticEnforcement = false,
 		}
 		table.insert(self.incidents, item)
-		self.incidentsById[item.id] = item
 		bucket.incidentId = item.id
-		self.openedForReview += 1
+		self.openedForReview = math.min(MAX_COUNTER, self.openedForReview + 1)
 	end
-	local sourceCount = 0
-	for _ in pairs(bucket.sources) do sourceCount += 1 end
+	local categories = sortedKeys(bucket.categories)
+	local signals = sortedKeys(bucket.signals)
+	local sources = sortedKeys(bucket.sources)
+	local reasons = {}
+	if #categories >= 2 then table.insert(reasons, "MULTI_CATEGORY") end
+	if #sources >= 2 then table.insert(reasons, "MULTI_SOURCE") end
+	if bucket.capped then table.insert(reasons, "REPEATED_SIGNAL_CAPPED") end
 	item.lastAt = now
 	item.eventCount = bucket.eventCount
 	item.score = bucket.score
 	item.confidence = confidence
-	item.categories = sortedKeys(bucket.categories)
-	item.signals = sortedKeys(bucket.signals)
-	item.sourceCount = sourceCount
+	item.categories = categories
+	item.signals = signals
+	item.sources = sources
+	item.sourceCount = #sources
+	item.categoryCount = #categories
+	item.signalCodeCount = #signals
+	item.sessionAgeSeconds = math.max(0, math.floor(now - (bucket.sessionStartedAt or bucket.firstAt)))
+	item.sessionEventCount = bucket.sessionEventCount or 0
+	item.reasons = reasons
 end
 
-function Service:Record(signal: any, userId: any, source: any, severity: any): boolean
-	if not self.started or not validUserId(userId) then self.droppedSignals += 1; return false end
+function Service:Record(signal: any, userId: any, source: any, severity: any, eventId: any): boolean
+	if not self.started or not validUserId(userId) then
+		self.droppedSignals = math.min(MAX_COUNTER, self.droppedSignals + 1)
+		self.rejectedInputs = math.min(MAX_COUNTER, self.rejectedInputs + 1)
+		return false
+	end
 	local safeSignal = cleanCode(signal, 48)
-	local safeSource = cleanCode(source or "Server", 32)
-	if not safeSignal or not safeSource then self.droppedSignals += 1; return false end
-	local now = os.clock()
+	local safeSource = cleanCode(source or "Unknown", 32)
+	if not safeSignal or not safeSource then
+		self.droppedSignals = math.min(MAX_COUNTER, self.droppedSignals + 1)
+		self.rejectedInputs = math.min(MAX_COUNTER, self.rejectedInputs + 1)
+		return false
+	end
+	local safeSeverity = if typeof(severity) == "string" and ALLOWED_SEVERITY[severity] then severity else "Info"
+	local safeEventId = if eventId ~= nil then cleanCode(eventId, 64) else nil
+	if eventId ~= nil and not safeEventId then
+		self.rejectedInputs = math.min(MAX_COUNTER, self.rejectedInputs + 1)
+		return false
+	end
+
+	local now = self.now()
 	self:_prune(now)
+	if safeEventId then
+		if self.recentEventIds[safeEventId] then
+			self.duplicateEventIds = math.min(MAX_COUNTER, self.duplicateEventIds + 1)
+			return false
+		end
+		if countKeys(self.recentEventIds) >= MAX_EVENT_IDS then
+			local oldestId, oldestAt = nil, math.huge
+			for id, at in pairs(self.recentEventIds) do if at < oldestAt then oldestId, oldestAt = id, at end end
+			if oldestId then self.recentEventIds[oldestId] = nil end
+		end
+		self.recentEventIds[safeEventId] = now
+	end
+
+	local registry = SIGNALS[safeSignal]
+	local scoredSignal = false
+	if not registry then
+		self.unknownSignals = math.min(MAX_COUNTER, self.unknownSignals + 1)
+	end
 	local key = tostring(math.floor(userId))
 	local bucket = self.buckets[key]
 	if not bucket then
-		local count = 0
-		local oldestKey, oldestAt = nil, math.huge
-		for existingKey, existing in pairs(self.buckets) do
-			count += 1
-			if existing.lastAt < oldestAt then oldestAt = existing.lastAt; oldestKey = existingKey end
+		if countKeys(self.buckets) >= MAX_SUBJECTS then
+			local oldestKey, oldestAt = nil, math.huge
+			for existingKey, existing in pairs(self.buckets) do
+				if existing.lastAt < oldestAt then oldestAt = existing.lastAt; oldestKey = existingKey end
+			end
+			if oldestKey then
+				self.buckets[oldestKey] = nil
+				self.subjectEvictions = math.min(MAX_COUNTER, self.subjectEvictions + 1)
+			end
 		end
-		if count >= MAX_SUBJECTS then
-			if oldestKey then self.buckets[oldestKey] = nil end
-			self.droppedSignals += 1
-		end
+		local session = self.sessions[key]
 		bucket = {
 			firstAt = now, lastAt = now, eventCount = 0, score = 0,
-			signals = {}, categories = {}, sources = {}, signalCounts = {}, incidentId = nil,
+			signals = {}, categories = {}, sources = {}, signalCounts = {},
+			categoryScores = {}, sourceScores = {}, incidentId = nil, capped = false,
+			sessionStartedAt = if session then session.startedAt else now,
+			sessionEventCount = if session then session.eventCount else 0,
 		}
 		self.buckets[key] = bucket
 	end
-	local category = classify(safeSignal)
-	local previousCount = bucket.signalCounts[safeSignal] or 0
-	if previousCount < 3 then
-		local knownSignals = 0
-		for _ in pairs(bucket.signals) do knownSignals += 1 end
-		if bucket.signals[safeSignal] or knownSignals < MAX_SIGNALS_PER_SUBJECT then
-			local weight = CATEGORY_WEIGHT[category] or 1
-			local severityBonus = if severity == "Critical" then 1 else 0
-			bucket.score = math.min(100, bucket.score + weight + severityBonus)
-			bucket.signalCounts[safeSignal] = previousCount + 1
-			bucket.signals[safeSignal] = true
-			bucket.categories[category] = true
-			bucket.sources[safeSource] = true
+
+	bucket.eventCount = math.min(MAX_COUNTER, bucket.eventCount + 1)
+	bucket.lastAt = now
+	bucket.sessionEventCount = math.min(MAX_SESSION_EVENTS, (bucket.sessionEventCount or 0) + 1)
+	local session = self.sessions[key]
+	if session then session.eventCount = math.min(MAX_SESSION_EVENTS, session.eventCount + 1) end
+	self.totalSignals = math.min(MAX_COUNTER, self.totalSignals + 1)
+
+	-- Unknown codes remain visible in counters but are deliberately excluded from
+	-- scoring, category diversity, source diversity, and review thresholds.
+	if registry then
+		local previousCount = bucket.signalCounts[safeSignal] or 0
+		local knownSignals = countKeys(bucket.signals)
+		if previousCount >= 3 or (not bucket.signals[safeSignal] and knownSignals >= MAX_SIGNALS_PER_SUBJECT) then
+			bucket.capped = true
+			self.cappedContributions = math.min(MAX_COUNTER, self.cappedContributions + 1)
+		else
+			local category = registry.category
+			local weight = math.min(3, math.max(0, registry.weight or CATEGORY_WEIGHT[category] or 0))
+			local severityBonus = if safeSeverity == "Critical" then 1 else 0
+			local categoryScore = bucket.categoryScores[category] or 0
+			local sourceScore = bucket.sourceScores[safeSource] or 0
+			local knownSources = countKeys(bucket.sources)
+			local sourceAllowed = bucket.sources[safeSource] == true or knownSources < MAX_SOURCES_PER_SUBJECT
+			local contribution = if sourceAllowed then math.min(weight + severityBonus,
+				math.max(0, 8 - categoryScore), math.max(0, 8 - sourceScore)) else 0
+			if contribution <= 0 then
+				bucket.capped = true
+				self.cappedContributions = math.min(MAX_COUNTER, self.cappedContributions + 1)
+			else
+				bucket.signalCounts[safeSignal] = previousCount + 1
+				bucket.signals[safeSignal] = true
+				bucket.categories[category] = true
+				bucket.sources[safeSource] = true
+				bucket.categoryScores[category] = categoryScore + contribution
+				bucket.sourceScores[safeSource] = sourceScore + contribution
+				bucket.score = math.min(100, bucket.score + contribution)
+				scoredSignal = true
+			end
 		end
 	end
-	bucket.eventCount = math.min(1000000, bucket.eventCount + 1)
-	bucket.lastAt = now
-	self.totalSignals = math.min(1000000000, self.totalSignals + 1)
+
+	if registry and scoredSignal then
+		local joinedInWindow = false
+		for _, event in ipairs(self.joinEvents) do if event.userId == userId then joinedInWindow = true; break end end
+		if joinedInWindow then
+			local evidence = self.cohortSignals[userId]
+			if not evidence then
+				evidence = {count = 0, categories = {}, sources = {}, codes = {}}
+				self.cohortSignals[userId] = evidence
+			end
+			evidence.count = math.min(3, evidence.count + 1)
+			evidence.categories[registry.category] = true
+			if evidence.sources[safeSource] or countKeys(evidence.sources) < MAX_SOURCES_PER_SUBJECT then
+				evidence.sources[safeSource] = true
+			end
+			if evidence.codes[safeSignal] or countKeys(evidence.codes) < MAX_SIGNALS_PER_SUBJECT then
+				evidence.codes[safeSignal] = true
+			end
+			self.cohortCategories[registry.category] = true
+			if self.cohortSources[safeSource] or countKeys(self.cohortSources) < MAX_COHORT_SOURCES then
+				self.cohortSources[safeSource] = true
+			end
+			if self.cohortCodes[safeSignal] or countKeys(self.cohortCodes) < MAX_COHORT_CODES then
+				self.cohortCodes[safeSignal] = true
+			end
+			self.cohortSignalCount = math.min(MAX_COUNTER, self.cohortSignalCount + 1)
+			self:_rememberRaid(now)
+		end
+	end
 	self:_rememberIncident(bucket, math.floor(userId), now)
 	return true
 end
 
 function Service:_authorized(actor: any): boolean
-	if typeof(actor) ~= "Instance" or not actor:IsA("Player") or actor.Parent ~= Players then return false end
+	if typeof(actor) ~= "Instance" or not actor:IsA("Player") or actor.Parent ~= self.players then return false end
 	local ok, allowed = pcall(self.d.authorize, actor.UserId, "GlobalModeration")
-	return ok and allowed == true and actor.Parent == Players
+	return ok and allowed == true and actor.Parent == self.players
 end
 
 function Service:Query(actor: any, targetUserId: any, limit: any)
 	if not self:_authorized(actor) then
-		self.deniedQueries += 1
+		self.deniedQueries = math.min(MAX_COUNTER, self.deniedQueries + 1)
 		return false, {}, "Threat intelligence permission denied."
 	end
 	if targetUserId ~= nil and not validUserId(targetUserId) then return false, {}, "Invalid target UserId." end
-	local now = os.clock()
+	local now = self.now()
 	self:_prune(now)
 	local queryLimit = if finite(limit) then math.clamp(math.floor(limit), 1, MAX_QUERY) else 15
 	local result = {}
@@ -237,9 +533,23 @@ function Service:Query(actor: any, targetUserId: any, limit: any)
 	return true, result
 end
 
+function Service:QueryRaids(actor: any, limit: any)
+	if not self:_authorized(actor) then
+		self.deniedQueries = math.min(MAX_COUNTER, self.deniedQueries + 1)
+		return false, {}, "Threat intelligence permission denied."
+	end
+	self:_prune(self.now())
+	local queryLimit = if finite(limit) then math.clamp(math.floor(limit), 1, MAX_QUERY) else 10
+	local result = {}
+	for index = #self.raidReviews, 1, -1 do
+		table.insert(result, table.clone(self.raidReviews[index]))
+		if #result >= queryLimit then break end
+	end
+	return true, result
+end
+
 function Service:GetStatus()
-	local tracked = 0
-	for _ in pairs(self.buckets) do tracked += 1 end
+	local tracked = countKeys(self.buckets)
 	return {
 		state = if self.started then "Observing" else "Stopped",
 		scope = "ServerLocal",
@@ -251,19 +561,51 @@ function Service:GetStatus()
 		droppedSignals = self.droppedSignals,
 		openedForReview = self.openedForReview,
 		deniedQueries = self.deniedQueries,
+		expiredSubjects = self.expiredSubjects,
+		expiredReviews = self.expiredReviews,
+		subjectEvictions = self.subjectEvictions,
+		reviewEvictions = self.reviewEvictions,
+		raidReviewEvictions = self.raidReviewEvictions,
+		duplicateEventIds = self.duplicateEventIds,
+		cappedContributions = self.cappedContributions,
+		unknownSignals = self.unknownSignals,
+		rejectedInputs = self.rejectedInputs,
+		cohortJoinCount = self.cohortJoinCount,
+		cohortWindowJoins = #self.joinEvents,
+		cohortSignaledPlayers = countKeys(self.cohortSignals),
+		cohortSignalCount = self.cohortSignalCount,
+		raidReviewItems = #self.raidReviews,
+		cohortWindowSeconds = COHORT_WINDOW_SECONDS,
+		cohortJoinThreshold = 8,
+		cohortSignaledPlayerThreshold = 3,
+		cohortThresholdsProvisional = true,
+		sessionTrackedPlayers = countKeys(self.sessions),
 		windowSeconds = WINDOW_SECONDS,
 		reviewTtlSeconds = INCIDENT_TTL_SECONDS,
+		maxEventIds = MAX_EVENT_IDS,
+		maxCohortSources = MAX_COHORT_SOURCES,
+		maxCohortSignalCodes = MAX_COHORT_CODES,
+		maxSessions = MAX_SESSIONS,
 		automaticEnforcement = false,
 		persistentWrites = 0,
+		crossServerWrites = 0,
 	}
 end
 
 function Service:Stop()
 	self.started = false
+	for _, connection in ipairs(self.connections) do connection:Disconnect() end
+	table.clear(self.connections)
 	table.clear(self.buckets)
 	table.clear(self.incidents)
-	table.clear(self.incidentsById)
-	self.nextPruneAt = 0
+	table.clear(self.sessions)
+	table.clear(self.joinEvents)
+	table.clear(self.cohortSignals)
+	table.clear(self.cohortCategories)
+	table.clear(self.cohortSources)
+	table.clear(self.cohortCodes)
+	table.clear(self.raidReviews)
+	table.clear(self.recentEventIds)
 end
 
 return Service

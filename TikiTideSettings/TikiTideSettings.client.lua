@@ -13,6 +13,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+playerGui:SetAttribute("TikiTideSettingsReady", false)
 -- The server service may initialize after this LocalScript on slower joins.
 -- Wait for its remotes instead of permanently aborting the client UI after a
 -- short timeout; authorization remains enforced by the server on every request.
@@ -823,8 +824,7 @@ local function open()
 	end
 end
 
--- The separate Utility Bar requests Tiki Tide Settings through a PlayerGui
--- attribute, keeping the launcher independent from this panel's implementation.
+-- The Utility Bar and unified launcher request Tiki Tide Settings through PlayerGui attributes.
 local lastOpenRequest = tonumber(playerGui:GetAttribute("TikiTideSettingsOpenRequest")) or 0
 playerGui:GetAttributeChangedSignal("TikiTideSettingsOpenRequest"):Connect(function()
 	local requestId = tonumber(playerGui:GetAttribute("TikiTideSettingsOpenRequest")) or 0
@@ -833,25 +833,25 @@ playerGui:GetAttributeChangedSignal("TikiTideSettingsOpenRequest"):Connect(funct
 	if not panel.Visible then open() end
 end)
 
-local function closePanel()
+local closePanel: () -> ()
+
+local lastCloseRequest = tonumber(playerGui:GetAttribute("TikiTideSettingsCloseRequest")) or 0
+playerGui:GetAttributeChangedSignal("TikiTideSettingsCloseRequest"):Connect(function()
+	local requestId = tonumber(playerGui:GetAttribute("TikiTideSettingsCloseRequest")) or 0
+	if requestId <= lastCloseRequest then return end
+	lastCloseRequest = requestId
+	if panel.Visible then closePanel() end
+end)
+
+closePanel = function()
 	panel.Visible = false
 	shade.Visible = false
-	-- Keep the launcher discoverable for all players, but the server still
-	-- rejects unauthorized access in GetSnapshot and every privileged action.
-	-- The launcher itself is hidden only while either full settings/menu surface is open.
-	toggle.Visible = playerGui:GetAttribute("ClubMusicMenuExpanded") ~= true
-		and playerGui:GetAttribute("UtilityInventoryOpen") ~= true
-		and playerGui:GetAttribute("UtilityActionPanelOpen") ~= true
-		and playerGui:GetAttribute("UtilityToolShopOpen") ~= true
+	-- The unified launcher is now the only Settings entry point.
+	toggle.Visible = false
 	restoreClubHud()
-	if controllerMode and toggle.Visible then
-		GuiService.SelectedObject = toggle
-	else
-		GuiService.SelectedObject = nil
-	end
+	GuiService.SelectedObject = nil
 end
 
-toggle.Activated:Connect(open)
 close.Activated:Connect(closePanel)
 shade.Activated:Connect(closePanel)
 
@@ -925,8 +925,9 @@ local function updateVisibility()
 
 	-- Do not use a client-replicated entitlement attribute as the only way
 	-- to discover the launcher. Server authorization remains the security boundary.
-	toggle.Visible = not panel.Visible and not clubMenuExpanded and not inventoryOpen and not utilityPanelOpen and not toolShopOpen
-	if not toggle.Visible and GuiService.SelectedObject == toggle then
+	-- Standalone floating button retired; Settings is opened from the unified launcher.
+	toggle.Visible = false
+	if GuiService.SelectedObject == toggle then
 		GuiService.SelectedObject = nil
 	end
 end
@@ -936,6 +937,7 @@ playerGui:GetAttributeChangedSignal("UtilityInventoryOpen"):Connect(updateVisibi
 playerGui:GetAttributeChangedSignal("UtilityActionPanelOpen"):Connect(updateVisibility)
 playerGui:GetAttributeChangedSignal("UtilityToolShopOpen"):Connect(updateVisibility)
 updateVisibility()
+playerGui:SetAttribute("TikiTideSettingsReady", true)
 
 player.CharacterAdded:Connect(function()
 	if panel.Visible then

@@ -644,6 +644,8 @@ local ALLOWED_ACTIONS: {[string]: boolean} = {
 	PlaylistCreate = true, PlaylistDelete = true, PlaylistAddTrack = true,
 	PlaylistRemoveTrack = true, PlaylistMoveTrack = true,
 	DJPlayPlaylist = true, DJStopPlaylist = true,
+	-- Owner/Co-Owner playback-sync mode toggle; server rechecks SecurityCore permissions.
+	DJToggleGlobalPlaybackSync = true,
 }
 local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	RequestTrack = true, ToggleFavorite = true, VoteSkip = true,
@@ -651,7 +653,7 @@ local ALLOWED_NETWORK_METHODS: {[string]: boolean} = {
 	EquipTitleTag = true, BuyTitleTag = true, RequestAudioAsset = true, SaveTitleSlot = true,
 	SaveCustomTitle = true,
 	-- Wrappers that UI_Network exposes; act() prefers these over raw Network.Send.
-	ReloadSong = true, DJToggleLock = true,
+	ReloadSong = true, DJToggleLock = true, DJToggleGlobalPlaybackSync = true,
 	ModSetPassTier = true,
 	SelectTitleSlot = true, ClearTitleSlot = true, SetTitleVisible = true,
 }
@@ -718,6 +720,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local activeTab = "Home"
 	local lastRenderedTab: string? = nil
 	local contentRenderRevision = 0
+	local musicSubView = "listen"
+	local shopSection = "items"
 	local selectedGenre = "hiphop"
 	local musicSearchQuery = ""
 	local trackSearch = ""
@@ -1420,7 +1424,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		BorderSizePixel = 0,
 		Visible = false,
 	}, panel) :: Frame
-	local tabs = {"Home","Music","All Tracks","Playlists","Queue","DJ Booth","XP & Boosts","Tip Jar","Item Shop","Daily Rewards","Title Tag","Community","Audio ID","Moderation"}
+	local tabs = {"Home","Music","Playlists","Queue","DJ Booth","Shop","Daily Rewards","Title Tag","Community","Audio ID","Moderation"}
 	local function addNavGroup(text: string, order: number)
 		local heading = make("TextLabel", {
 			Name = "NavGroup" .. text:gsub("%s", ""),
@@ -1492,11 +1496,9 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			line("StemOne", .33, .24, .075, .53); line("StemTwo", .67, .17, .075, .53)
 			line("Beam", .36, .19, .36, .075, -8)
 			ring("NoteOne", .13, .66, .30, .23); ring("NoteTwo", .48, .59, .30, .23)
-		elseif tabName == "All Tracks" then
-			for i = 0, 2 do
-				line("TrackLine"..i, .22, .27 + i * .23, .56, .065)
-				if i < 2 then navIconPart(icon, "TrackDot"..i, .13, .265 + i * .23, .09, .09, ink, 1) end
-			end
+		elseif tabName == "Shop" then
+			ring("BagBody", .22, .35, .56, .48); line("BagHandle", .36, .20, .28, .07)
+			line("BagHandleLeft", .34, .22, .07, .20, -18); line("BagHandleRight", .59, .22, .07, .20, 18)
 		elseif tabName == "Playlists" then
 			for i = 0, 2 do
 				ring("PlaylistDot"..i, .13, .24 + i * .25, .12, .12)
@@ -1510,15 +1512,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		elseif tabName == "DJ Booth" then
 			ring("VinylOuter", .15, .15, .70, .70); ring("VinylInner", .29, .29, .42, .42)
 			navIconPart(icon, "VinylCenter", .43, .43, .14, .14, ink, 1)
-		elseif tabName == "XP & Boosts" then
-			line("SparkleVertical", .47, .12, .07, .76); line("SparkleHorizontal", .12, .46, .76, .07)
-			line("SparkleDiagA", .30, .29, .07, .40, 45); line("SparkleDiagB", .30, .29, .07, .40, -45)
-		elseif tabName == "Tip Jar" then
-			ring("JarBody", .25, .34, .50, .48); line("JarRim", .23, .29, .54, .07)
-			line("JarBase", .34, .83, .32, .07); ring("Coin", .39, .10, .22, .22)
-		elseif tabName == "Item Shop" then
-			ring("BagBody", .22, .35, .56, .48); line("BagHandle", .36, .20, .28, .07)
-			line("BagHandleLeft", .34, .22, .07, .20, -18); line("BagHandleRight", .59, .22, .07, .20, 18)
+		elseif tabName == "Daily Rewards" then
 		elseif tabName == "Daily Rewards" then
 			ring("Calendar", .20, .24, .60, .58); line("CalendarHeader", .22, .40, .56, .07)
 			line("CalendarPinA", .34, .13, .07, .22); line("CalendarPinB", .61, .13, .07, .22)
@@ -2195,6 +2189,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 		actionButton(homeHeading, "FULL PLAYER", UDim2.new(1, -92, 0, 3), UDim2.fromOffset(84, 24), function()
 			activeTab = "Music"
+			musicSubView = "listen"
 			if renderTabFn then renderTabFn() end
 		end, C.Cyan)
 
@@ -2329,7 +2324,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			trackGenreFilter = "all"
 			trackSearch = ""
 			catalogOffset = 0
-			activeTab = "All Tracks"
+			activeTab = "Music"
+			musicSubView = "catalog"
 			if renderTabFn then renderTabFn() end
 		end, C.SurfaceLight)
 		local genreStrip = make("ScrollingFrame", {
@@ -2368,7 +2364,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				trackGenreFilter = genre.id
 				trackSearch = ""
 				catalogOffset = 0
-				activeTab = "All Tracks"
+				activeTab = "Music"
+				musicSubView = "catalog"
 				if renderTabFn then renderTabFn() end
 			end)
 		end
@@ -2390,6 +2387,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		label(favoriteCard, "YOUR FAVORITES", UDim2.fromOffset(12, 6), UDim2.new(1, -112, 0, 17), C.Gold, 10, true)
 		actionButton(favoriteCard, "LIBRARY", UDim2.new(1, -88, 0, 5), UDim2.fromOffset(76, 24), function()
 			activeTab = "Music"
+			musicSubView = "listen"
 			if renderTabFn then renderTabFn() end
 		end, C.SurfaceLight)
 		if favoriteCount == 0 then
@@ -2436,7 +2434,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			queueHeadingTitle.Size = UDim2.new(1, -112, 0, 25)
 		end
 		actionButton(queueHeading, "BROWSE", UDim2.new(1, -94, 0, 3), UDim2.fromOffset(86, 24), function()
-			activeTab = "All Tracks"
+			activeTab = "Music"
+			musicSubView = "catalog"
 			if renderTabFn then renderTabFn() end
 		end, C.SurfaceLight)
 		local current = card(66)
@@ -2572,7 +2571,26 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 	end
 
+	local renderAllTracks: (boolean?) -> ()
 	local function renderMusic()
+		local musicSwitch = card(42)
+		local listenButton = actionButton(musicSwitch, "LISTEN", UDim2.fromOffset(8, 6), UDim2.new(0.5, -12, 0, 30), function()
+			musicSubView = "listen"
+			if renderTabFn then renderTabFn() end
+		end, if musicSubView == "listen" then C.Cyan else C.SurfaceLight)
+		listenButton.TextSize = 10
+		local catalogButton = actionButton(musicSwitch, "CATALOG  •  ALL TRACKS", UDim2.new(0.5, 4, 0, 6), UDim2.new(0.5, -12, 0, 30), function()
+			musicSubView = "catalog"
+			trackGenreFilter = "all"
+			trackSearch = ""
+			catalogOffset = 0
+			if renderTabFn then renderTabFn() end
+		end, if musicSubView == "catalog" then C.Purple else C.SurfaceLight)
+		catalogButton.TextSize = 10
+		if musicSubView == "catalog" then
+			renderAllTracks(false)
+			return
+		end
 		sectionLabel("NOW PLAYING  /  LISTENING ROOM")
 		buildNowPlaying(content, true, true)
 
@@ -2733,12 +2751,14 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			label(allTile, "♫  ALL TRACKS", UDim2.fromOffset(12, 10), UDim2.new(1, -24, 0, 22), C.Cyan, 13, true)
 			label(allTile, string.format("%d tracks in the catalog", #ALL_TRACKS), UDim2.fromOffset(12, 35), UDim2.new(1, -24, 0, 18), C.Muted, 10, false)
 			badge(allTile, "FULL LIBRARY", C.Cyan, UDim2.new(1, -96, 1, -27), 84)
-			local allHit = actionButton(allTile, if selectedGenre == "all" then "HIDE" else "OPEN",
+			local allHit = actionButton(allTile, "OPEN",
 				UDim2.new(1, -68, 0, 7), UDim2.fromOffset(58, 24), function()
-				selectedGenre = if selectedGenre == "all" then "" else "all"
-					clearContent()
-					renderMusic()
-				end, C.Cyan)
+				musicSubView = "catalog"
+				trackGenreFilter = "all"
+				trackSearch = ""
+				catalogOffset = 0
+				if renderTabFn then renderTabFn() end
+			end, C.Cyan)
 			allHit.TextSize = 9
 
 		if selectedGenre == "favorites" then
@@ -2751,10 +2771,6 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 					makeTrackCard(TRACK_INDEX[id])
 				end
 			end
-			return
-		elseif selectedGenre == "all" then
-			sectionLabel("ALL TRACKS  •  " .. tostring(#ALL_TRACKS))
-			for _, track in ipairs(ALL_TRACKS) do makeTrackCard(track) end
 			return
 		end
 
@@ -2829,7 +2845,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 	end
 
-	local function renderAllTracks(showPlaylists: boolean?)
+	renderAllTracks = function(showPlaylists: boolean?)
 		sectionLabel(if showPlaylists == true then "PLAYLIST LIBRARY" else "ALL TRACKS")
 
 		if showPlaylists == true and perm() >= 1 then
@@ -3047,7 +3063,8 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 			label(browseCard, "PLAYLIST DESTINATION SELECTED", UDim2.fromOffset(12, 5), UDim2.new(1, -128, 0, 14), C.Muted, 8, true)
 			label(browseCard, selectedPlaylistName or "Selected playlist", UDim2.fromOffset(12, 20), UDim2.new(1, -128, 0, 20), C.Green, 11, true)
 			actionButton(browseCard, "ADD TRACKS", UDim2.new(1, -112, 0.5, -15), UDim2.fromOffset(100, 30), function()
-				activeTab = "All Tracks"
+				activeTab = "Music"
+				musicSubView = "catalog"
 				if renderTabFn then renderTabFn() end
 			end, C.Cyan)
 		end
@@ -3626,6 +3643,32 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		end
 
 
+		if canManage then
+			sectionLabel("CROSS-SERVER PLAYBACK")
+			local sync = if typeof(state.globalPlaybackSync) == "table" then state.globalPlaybackSync else {}
+			local syncEnabled = sync.enabled == true
+			local syncReady = sync.authorityReady == true
+			local syncCard = card(112)
+			label(syncCard, if syncEnabled then "GLOBAL PLAYBACK SYNC: ON" else "GLOBAL PLAYBACK SYNC: OFF",
+				UDim2.fromOffset(12, 8), UDim2.new(1, -24, 0, 20), if syncEnabled then C.Green else C.Muted, 11, true)
+			local roleText = if not syncEnabled then "Each server plays independently."
+				elseif sync.isLeader == true then "This server is the elected playback leader."
+				elseif typeof(sync.leaderJobId) == "string" then "Following the elected playback leader."
+				else "Waiting for playback leader election."
+			label(syncCard, roleText, UDim2.fromOffset(12, 32), UDim2.new(1, -24, 0, 18), C.White, 10, false)
+			local syncErrorText = if typeof(sync.error) == "string" and sync.error ~= ""
+				then sync.error else "Playback authority status is unavailable."
+			label(syncCard, if syncReady then "Playback authority is ready." else syncErrorText,
+				UDim2.fromOffset(12, 52), UDim2.new(1, -24, 0, 16), if syncReady then C.Muted else C.Orange, 9, false)
+			actionButton(syncCard, if syncEnabled then "DISABLE GLOBAL SYNC" else "ENABLE GLOBAL SYNC",
+				UDim2.new(1, -166, 0, 76), UDim2.fromOffset(154, 28), function()
+					local requestedEnabled = not syncEnabled
+					act("DJToggleGlobalPlaybackSync", {enabled = requestedEnabled})
+				end, if syncEnabled then C.Orange else C.Green)
+			label(syncCard, "Request queues remain separate on every server.",
+				UDim2.fromOffset(12, 82), UDim2.new(1, -182, 0, 16), C.Muted, 9, false)
+		end
+
 
 		sectionLabel("UP NEXT")
 		local queue = getQueue()
@@ -3857,6 +3900,26 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 				purchaseButton.AutoButtonColor = false
 				purchaseButton.BackgroundTransparency = 0.25
 			end
+		end
+	end
+
+	local function renderUnifiedShop()
+		local shopSwitch = card(42)
+		local shopOptions = {{id="items",text="ITEMS"},{id="xp",text="XP & BOOSTS"},{id="tips",text="TIP JAR"}}
+		for index, option in ipairs(shopOptions) do
+			local width = 1 / #shopOptions
+			local button = actionButton(shopSwitch, option.text, UDim2.new(width * (index - 1), 4, 0, 6), UDim2.new(width, -8, 0, 30), function()
+				shopSection = option.id
+				if renderTabFn then renderTabFn() end
+			end, if shopSection == option.id then C.Gold else C.SurfaceLight)
+			button.TextSize = 9
+		end
+		if shopSection == "xp" then
+			renderXPBoosts()
+		elseif shopSection == "tips" then
+			renderTipJar()
+		else
+			renderShop()
 		end
 	end
 
@@ -4671,14 +4734,11 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	local renderers: {[string]: () -> ()} = {
 		["Home"] = renderHome,
 		["Music"] = renderMusic,
-		["All Tracks"] = function() renderAllTracks(false) end,
 		["Playlists"] = function() renderAllTracks(true) end,
 		["Queue"] = renderQueue,
 		["Audio ID"] = renderAudioId,
 		["DJ Booth"] = renderDJ,
-		["XP & Boosts"] = renderXPBoosts,
-		["Tip Jar"] = renderTipJar,
-		["Item Shop"] = renderShop,
+		["Shop"] = renderUnifiedShop,
 		["Daily Rewards"] = renderRewards,
 		["Title Tag"] = renderTags,
 		["Community"] = renderCommunity,
@@ -4993,7 +5053,7 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		-- own paginated requests and must not be destroyed/recreated for unrelated
 		-- playback updates; doing so restarts the catalog request and looks like
 		-- the entire music library is constantly refreshing.
-		if destroyed or activeTab == "Music" or activeTab == "All Tracks" or activeTab == "Audio ID" then
+		if destroyed or activeTab == "Music" or activeTab == "Audio ID" then
 			return
 		end
 		-- A closed menu is rendered from the latest state when opened; rebuilding
@@ -5050,6 +5110,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	shade.Activated:Connect(close)
 
 	-- Applies the compact device profile (re-runs on resize, rotation and input-device changes).
+	-- Public local UI bridge used by the unified Tiki Tide launcher.
+	local openMainEvent = playerGui:FindFirstChild("TikiTideOpenMainUI")
+	if not openMainEvent then
+		openMainEvent = Instance.new("BindableEvent")
+		openMainEvent.Name = "TikiTideOpenMainUI"
+		openMainEvent.Parent = playerGui
+	end
+	if openMainEvent:IsA("BindableEvent") then
+		openMainEvent.Event:Connect(open)
+		openMainEvent:SetAttribute("Ready", true)
+	end
 	local function applyLayout()
 		local camera = workspace.CurrentCamera
 		local viewport = if camera then camera.ViewportSize else Vector2.new(1280, 720)
