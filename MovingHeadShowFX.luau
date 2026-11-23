@@ -371,10 +371,15 @@ RunService.Heartbeat:Connect(function()
 			end
 			targetPos = clampFloorPoint(x, z, floorY + 1)
 		elseif pattern == 4 then
-			-- Ceiling rake with each beam crossing a different randomized lane.
-			local sweep = math.sin(showTime * 0.5 * speed + phase)
-			targetPos = clampFloorPoint(anchor.X + sweep * RADIUS * 0.3,
-				anchor.Z + math.cos(phase + showTime * 0.3 * speed) * RADIUS * 0.3, CEIL_Y - 1)
+			-- Broad floor sweep stays centered on each wall's assigned quadrant.
+			-- The former ceiling rake lifted every moving head off the dance floor.
+			local sweepX = math.sin(showTime * 0.42 * speed + phase)
+			local sweepZ = math.cos(showTime * 0.31 * speed + phase * 0.73)
+			targetPos = clampFloorPoint(
+				anchor.X + sweepX * (maxX - minX) * 0.22,
+				anchor.Z + sweepZ * (maxZ - minZ) * 0.22,
+				floorY + 1
+			)
 		else
 			-- Randomized wandering destinations; never converge on the center.
 			local function spotForBeat(n)
