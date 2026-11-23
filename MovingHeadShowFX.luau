@@ -121,6 +121,7 @@ local function seededUnit(seed)
 	return value - math.floor(value)
 end
 local frameCount = 0
+local nextRigAudit = 0
 
 RunService.Heartbeat:Connect(function()
 	local now = clock()
@@ -132,12 +133,25 @@ RunService.Heartbeat:Connect(function()
 	frameCount += 1
 	if frameCount == 120 then print("[ClubNeon][MovingHeadShowFX] Heartbeat active; frames=" .. frameCount) end
 
-	-- Self-heal if streaming replaces the rig parts
-	if heads[1] and heads[1].head.Parent == nil then
-		heads = collectHeads()
-		if #heads == 0 then return end
-		strobeCells = collectStrobeCells()
+	-- Audit every fixture independently; don't let a stale later fixture
+	-- remain frozen just because the first head is still present.
+	if now >= nextRigAudit then
+		nextRigAudit = now + 2
+		local needsRefresh = false
+		for _, H in ipairs(heads) do
+			if not H.head.Parent or not H.target.Parent or not H.pool.Parent
+				or not H.beam.Parent or not H.spot.Parent then
+				needsRefresh = true
+				break
+			end
+		end
+		if needsRefresh then
+			heads = collectHeads()
+			strobeCells = collectStrobeCells()
+			print("[ClubNeon][MovingHeadShowFX] Fixture references refreshed; active heads=" .. #heads)
+		end
 	end
+	if #heads == 0 then return end
 
 	-- Beat clock from the shared ClubAudioSync module
 	local beat = ClubAudioSync.getBeatState()
@@ -168,6 +182,8 @@ RunService.Heartbeat:Connect(function()
 	local kick = math.exp(-beatAge * 5) * beatPower
 	local hue = (beatCount * 0.045) % 1 -- same cadence as the other FX
 	local pattern = math.floor(beatCount / 16) % 6
+	local beatBlend = if beat.playing then math.clamp(beat.beatPhase, 0, 1) else math.clamp(beatAge / (60 / IDLE_BPM), 0, 1)
+	beatBlend = beatBlend * beatBlend * (3 - 2 * beatBlend)
 	local bursting = now < burstUntil
 	local strobeVis = bursting and (math.floor(now * STROBE_HZ) % 2 == 0) and 1 or 0
 
@@ -214,10 +230,14 @@ RunService.Heartbeat:Connect(function()
 			targetPos = CENTER + Vector3.new(math.cos(ang + spin) * r, 1, math.sin(ang + spin) * r)
 		elseif pattern == 2 then
 			-- Beat snap: beams jump to a new spot every beat, strobing motion
-			local seed = beatCount + i * 131
-			local r = RADIUS * (0.15 + seededUnit(seed) * 0.8)
-			local a = ang + seededUnit(seed + 1) * math.pi
-			targetPos = CENTER + Vector3.new(math.cos(a) * r, 1, math.sin(a) * r)
+			local function spotForBeat(n)
+				local seed = n + i * 131
+				local r = RADIUS * (0.15 + seededUnit(seed) * 0.8)
+				local a = ang + seededUnit(seed + 1) * math.pi
+				return CENTER + Vector3.new(math.cos(a) * r, 1, math.sin(a) * r)
+			end
+			-- Smoothly travel between deterministic beat targets at high BPM.
+			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
 			-- Wall wash: beams rake up and down the venue walls
 			local t = (showTime * 0.03 + i / #heads) % 1
