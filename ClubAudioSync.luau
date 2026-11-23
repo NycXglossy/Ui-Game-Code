@@ -13,17 +13,22 @@ local ClubAudioSync = {}
 
 local ROOT_NAME = "ClubMusicModernAudio"
 
--- Adaptive BPM state. There is no fixed default tempo and no hard min/max
--- clamp: every value the backend publishes is honored as-is, with only a
--- sanity check that it is a positive, usable number. The seed is merely the
--- starting estimate before the backend reports a real tempo; from then on
--- the module sticks to the last known tempo whenever metadata is briefly
--- missing, and eases smoothly toward tempo changes instead of snapping.
+-- Adaptive BPM state. All published tempos are bounded to the supported
+-- club-show range so every lighting system behaves consistently at 60–300 BPM.
+-- Missing metadata retains the last known valid tempo; changes ease smoothly.
+local BPM_MIN = 60
+local BPM_MAX = 300
 local BPM_SEED = 128
 local bpmOverride: number? = nil -- pushed via ClubAudioSync.setBPM
 local bpmTarget = BPM_SEED
 local bpmCurrent = BPM_SEED
 local bpmLastKnown = BPM_SEED
+local lastPlaying: boolean? = nil
+
+local function sanitizeBPM(value: any): number?
+	if typeof(value) ~= "number" or value ~= value then return nil end
+	return math.clamp(value, BPM_MIN, BPM_MAX)
+end
 
 local audioPlayer: AudioPlayer? = nil
 local lastBeatPlayer: AudioPlayer? = nil
@@ -81,11 +86,11 @@ end
 local function resolveBPMTarget()
 	local target = bpmOverride
 	local player = ClubAudioSync.getAudioPlayer()
-	if typeof(target) ~= "number" or target <= 0 then
+	if sanitizeBPM(target) == nil then
 		-- Per-track tempo published directly on the AudioPlayer wins first.
 		target = player and player:GetAttribute("BPM")
 	end
-	if typeof(target) ~= "number" or target <= 0 then
+	if sanitizeBPM(target) == nil then
 		local root = backendRootFor(player)
 		if root then
 			target = root:GetAttribute("ClubMusicBPM")
@@ -94,9 +99,10 @@ local function resolveBPMTarget()
 			end
 		end
 	end
-	if typeof(target) == "number" and target > 0 then
-		bpmLastKnown = target
-		bpmTarget = target
+	local validTarget = sanitizeBPM(target)
+	if validTarget ~= nil then
+		bpmLastKnown = validTarget
+		bpmTarget = validTarget
 	else
 		-- No metadata right now: keep grooving at the last known tempo.
 		bpmTarget = bpmLastKnown
@@ -108,12 +114,10 @@ function ClubAudioSync.getBPM(): number
 	return bpmCurrent
 end
 
--- Push the tempo from outside (e.g. the audio backend publishing the current
--- track's BPM, or an admin tool). Any positive value is accepted -- 90, 174,
--- 200+, whatever the track actually is. Pass nil to clear the override and
--- fall back to attribute-driven resolution.
+-- Push the tempo from outside (e.g. the audio backend or an admin tool).
+-- Values are clamped to the supported 60–300 BPM range. Pass nil to clear.
 function ClubAudioSync.setBPM(bpm: number?)
-	bpmOverride = if typeof(bpm) == "number" and bpm > 0 then bpm else nil
+	bpmOverride = sanitizeBPM(bpm)
 end
 
 export type BeatState = {
@@ -143,6 +147,10 @@ function ClubAudioSync.getBeatState(): BeatState
 	end
 	local playing = player ~= nil and player.IsPlaying
 	local timePosition = if playing then player.TimePosition else 0
+	if lastPlaying ~= playing then
+		lastPlaying = playing
+		lastBeatIndex = -1
+	end
 
 	resolveBPMTarget()
 	-- Ease toward the target tempo so track changes adapt the beat clock
@@ -150,19 +158,19 @@ function ClubAudioSync.getBeatState(): BeatState
 	bpmCurrent += (bpmTarget - bpmCurrent) * (1 - math.exp(-4 * dt))
 	local bpm = bpmCurrent
 
-	if playing then
-		local beats = timePosition * bpm / 60
-		local beatIndex = math.floor(beats)
-		if beatIndex ~= lastBeatIndex then
-			-- A track change rewinds TimePosition; only count forward beats.
-			if beatIndex > lastBeatIndex then
-				beatCount += beatIndex - math.max(lastBeatIndex, 0)
-			else
-				beatCount += 1
-			end
-			lastBeatIndex = beatIndex
-			pulse = 1
+	-- Music follows AudioPlayer.TimePosition. When stopped, a quiet tempo clock
+	-- keeps ambient lighting alive at the last known BPM instead of freezing.
+	local beats = (if playing then timePosition else now) * bpm / 60
+	local beatIndex = math.floor(beats)
+	if beatIndex ~= lastBeatIndex then
+		-- Track rewinds and play/stop transitions start a fresh beat segment.
+		if lastBeatIndex >= 0 and beatIndex > lastBeatIndex then
+			beatCount += beatIndex - lastBeatIndex
+		else
+			beatCount += 1
 		end
+		lastBeatIndex = beatIndex
+		pulse = 1
 	end
 
 	pulse *= math.max(0, 1 - dt * 3.5)
@@ -173,7 +181,6 @@ function ClubAudioSync.getBeatState(): BeatState
 	local targetEnergy = if playing then math.clamp(0.3 + 0.4 * pulse + 0.3 * beatVariety, 0, 1) else 0
 	energy += (targetEnergy - energy) * (1 - math.exp(-10 * dt))
 
-	local beats = timePosition * bpm / 60
 	local beatPhase = beats % 1
 	return {
 		playing = playing,
