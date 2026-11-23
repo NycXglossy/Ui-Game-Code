@@ -225,8 +225,13 @@ function ClubAudioSync.getAudioPlayer(): AudioPlayer?
 		if now - lastScan >= 0.5 then
 			lastScan = now
 			audioPlayer = scanForAudioPlayer()
-			ensureAnalyzer(audioPlayer)
 		end
+	end
+	-- Retry analyzer construction if the replicated audio graph appeared before
+	-- its AudioPlayer/Wire pins were ready on this client.
+	if audioPlayer and (lastPlayer ~= audioPlayer or analyzer == nil or analyzer.Parent == nil
+		or analyzerWire == nil or analyzerWire.Parent == nil) then
+		ensureAnalyzer(audioPlayer)
 	end
 	return audioPlayer
 end
