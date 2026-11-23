@@ -60,6 +60,7 @@ local heartbeatConnection = RunService.Heartbeat:Connect(function()
 
 	-- Beat clock from the shared ClubAudioSync module
 	local beat = ClubAudioSync.getBeatState()
+	local tempoScale = beat.bpm / 128
 	if beat.beatCount ~= lastBeatCount then
 		lastBeatCount = beat.beatCount
 		beatAge = 0
@@ -92,8 +93,8 @@ local heartbeatConnection = RunService.Heartbeat:Connect(function()
 	end
 
 	-- Decay the impact envelopes
-	fovPunch *= math.max(0, 1 - dt * 6)
-	shake = shake:Lerp(Vector3.zero, math.min(dt * 9, 1))
+	fovPunch *= math.max(0, 1 - dt * 6 * tempoScale)
+	shake = shake:Lerp(Vector3.zero, math.min(dt * 9 * tempoScale, 1))
 
 	-- Beat glow curve: sharp attack, fast falloff
 	local beatGlow = math.exp(-beatAge * 5) * beatPower * effectScale
