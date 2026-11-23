@@ -104,6 +104,7 @@ RunService.Heartbeat:Connect(function()
 	-- Beat clock from the shared ClubAudioSync module: the club's AudioPlayer
 	-- has no PlaybackLoudness, so energy and beats come from its TimePosition
 	local beat = ClubAudioSync.getBeatState()
+	local tempoNow = os.clock() * (beat.bpm / 128)
 	norm = beat.energy
 
 	if beat.beatCount ~= lastBeatCount then
