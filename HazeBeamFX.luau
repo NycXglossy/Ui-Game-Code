@@ -112,8 +112,9 @@ RunService.Heartbeat:Connect(function()
 	if scanAge >= 5 then scanAge = 0; refresh() end
 	local beat = ClubAudioSync.getBeatState()
 	local lift = math.clamp(beat.energy, 0, 1)
+	local beatBreath = 0.5 + 0.5 * math.cos(beat.beatPhase * math.pi * 2)
 	for _, emitter in ipairs(emitters) do
-		emitter.Rate = 0.8 + lift * 1.8
+		emitter.Rate = 0.6 + lift * 1.1 + beatBreath * beat.pulse * 1.4
 	end
 end)
 
