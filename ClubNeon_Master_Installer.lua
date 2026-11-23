@@ -22,12 +22,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.12"
+local INSTALLER_VERSION = "0.4.13"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "894dd7a266134d56f683b1a6c9cfd094996fbbb1",
+    runtime = "c86f667c708f720194d1a921121e5eb5dabf6bf3",
     audio = "6ec3766ef48f38eb2893f3385e4b4370ec0b7112",
     globalService = "032fdc0085ac0a75db270bf569b9db19ef39b36b",
     security = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
@@ -105,6 +105,7 @@ end
 addRaw("ClubNeon_Config", "ModuleScript", "ServerStorage", projectConfigSource, "ClubNeon_Config.lua@" .. RELEASE.runtime)
 addSource("ClubNeon_ControllerBootstrap.lua", "ModuleScript", "ServerStorage", "ClubNeon_ControllerBootstrap", RELEASE.runtime)
 addSource("ClubNeon_ProfilePersistence.lua", "ModuleScript", "ServerStorage", "ClubNeon_ProfilePersistence", RELEASE.runtime)
+addSource("ClubNeon_ProductCatalog.lua", "ModuleScript", "ServerStorage", "ClubNeon_ProductCatalog", RELEASE.runtime)
 addSource("ClubNeon_ProfileWriteLocks.lua", "ModuleScript", "ServerStorage", "ClubNeon_ProfileWriteLocks", RELEASE.runtime)
 addSource("ClubNeon_DanceFloorRewards.lua", "ModuleScript", "ServerStorage", "ClubNeon_DanceFloorRewards", RELEASE.runtime)
 addSource("ClubNeon_RateLimitBuckets.lua", "ModuleScript", "ServerStorage", "ClubNeon_RateLimitBuckets", RELEASE.runtime)
