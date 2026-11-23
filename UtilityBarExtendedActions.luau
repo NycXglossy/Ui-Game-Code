@@ -533,6 +533,7 @@ local liveShowConnection: RBXScriptConnection? = nil
 local liveShowLights: {Light} = {}
 local liveShowBeams: {Beam} = {}
 local liveShowIntensity = 0.75
+ReplicatedStorage:SetAttribute("ClubNeonLiveShowIntensity", liveShowIntensity)
 
 local function stopLiveShow(restore: boolean): boolean
 	local connection = liveShowConnection
@@ -625,6 +626,7 @@ local function setStageClubLighting(_player: Player, request: any): (boolean, st
 				return false, "Sync intensity must be between 10% and 150%."
 			end
 			liveShowIntensity = request.intensity
+			ReplicatedStorage:SetAttribute("ClubNeonLiveShowIntensity", liveShowIntensity)
 		end
 		local lights, beams = collectStageClubLights()
 		if #lights == 0 and #beams == 0 then
@@ -633,6 +635,8 @@ local function setStageClubLighting(_player: Player, request: any): (boolean, st
 		startLiveShow(lights, beams)
 		return true, string.format("Live Music Sync enabled at %d%% intensity.", math.floor(liveShowIntensity * 100 + 0.5))
 	elseif request.preset == "Off" then
+		liveShowIntensity = 0.75
+		ReplicatedStorage:SetAttribute("ClubNeonLiveShowIntensity", liveShowIntensity)
 		local restored = stopLiveShow(true)
 		if restored then return true, "Live Music Sync stopped. Tagged fixtures restored to their defaults." end
 		return true, "Live Music Sync is already off; fixture defaults were left unchanged."
