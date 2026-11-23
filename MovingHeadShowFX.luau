@@ -58,6 +58,27 @@ while not rig do
 	rig = workspace:FindFirstChild("MovingHeadRig")
 end
 
+-- Stable deterministic values avoid allocating a Random object for every fixture per frame.
+local function seededUnit(seed)
+	local value = math.sin(seed * 12.9898) * 43758.5453
+	return value - math.floor(value)
+end
+
+local function randomFloorSpot(seed, y)
+	local margin = math.min(2, math.max(0.25, (maxX - minX) * 0.04))
+	local x = minX + margin + seededUnit(seed) * math.max(0.5, maxX - minX - margin * 2)
+	local z = minZ + margin + seededUnit(seed + 1) * math.max(0.5, maxZ - minZ - margin * 2)
+	return Vector3.new(x, y, z)
+end
+
+local function clampFloorPoint(x, z, y)
+	return Vector3.new(
+		math.clamp(x, minX + 1, maxX - 1),
+		y,
+		math.clamp(z, minZ + 1, maxZ - 1)
+	)
+end
+
 local function collectHeads()
 	local list = {}
 	for _, d in rig:GetChildren() do
@@ -72,7 +93,10 @@ local function collectHeads()
 				table.insert(list, {
 					idx = idx, head = d, target = target, pool = pool,
 					beam = beam, spot = spot, pos = d.CFrame.Position,
-					currentTarget = CENTER,
+					currentTarget = randomFloorSpot(idx * 17.31, floorY + 1),
+					anchor = randomFloorSpot(idx * 17.31 + 7, floorY + 1),
+					phase = seededUnit(idx * 17.31 + 2) * math.pi * 2,
+					speed = 0.78 + seededUnit(idx * 17.31 + 3) * 0.44,
 				})
 			end
 		end
@@ -110,14 +134,9 @@ local lastColorBeat = -1
 local burstUntil = 0
 
 local clock = os.clock
-local lastT = startTime
+local lastT = clock()
 local showTime = 0
 
--- Stable deterministic values avoid allocating a Random object for every fixture on every frame.
-local function seededUnit(seed)
-	local value = math.sin(seed * 12.9898) * 43758.5453
-	return value - math.floor(value)
-end
 local frameCount = 0
 local nextRigAudit = 0
 
@@ -204,34 +223,29 @@ RunService.Heartbeat:Connect(function()
 	end
 
 	-- Choreography: a new pattern every 16 beats (one musical phrase)
-	for i, H in ipairs(heads) do
-		local motionSeed = H.idx * 17.31
-		local phase = seededUnit(motionSeed) * math.pi * 2
-		local speed = 0.78 + seededUnit(motionSeed + 1) * 0.44
-		local ang = i / #heads * math.pi * 2 + phase * 0.22
+		for i, H in ipairs(heads) do
+		local phase, speed = H.phase, H.speed
+		local anchor = H.anchor
 		local targetPos
 		if pattern == 0 then
-			-- Classic pan sweep: beams swing side to side over the crowd,
-			-- alternating direction so they criss-cross in the air
-			local sweep = math.sin(showTime * 0.75 * speed + phase + (i % 2) * math.pi)
-			targetPos = CENTER + Vector3.new(sweep * RADIUS * 0.8, 1, math.cos(ang) * RADIUS * 0.3)
+			-- Independent randomized sweep around each fixture's own floor lane.
+			local sweep = math.sin(showTime * 0.75 * speed + phase)
+			targetPos = clampFloorPoint(anchor.X + sweep * RADIUS * 0.28,
+				anchor.Z + math.cos(showTime * 0.42 * speed + phase) * RADIUS * 0.22, floorY + 1)
 		elseif pattern == 1 then
-			-- Circle chase: targets orbit the floor in a ring
+			-- Each head orbits a different randomized anchor and radius.
 			local spin = showTime * 0.5 * speed + phase
-			local r = RADIUS * 0.75
-			targetPos = CENTER + Vector3.new(math.cos(ang + spin) * r, 1, math.sin(ang + spin) * r)
+			local r = RADIUS * (0.12 + seededUnit(H.idx * 17.31 + 4) * 0.22)
+			targetPos = clampFloorPoint(anchor.X + math.cos(spin) * r,
+				anchor.Z + math.sin(spin) * r, floorY + 1)
 		elseif pattern == 2 then
-			-- Beat snap: beams jump to a new spot every beat, strobing motion
+			-- Every head selects independent full-floor destinations each beat.
 			local function spotForBeat(n)
-				local seed = n + i * 131
-				local r = RADIUS * (0.15 + seededUnit(seed) * 0.8)
-				local a = ang + seededUnit(seed + 1) * math.pi
-				return CENTER + Vector3.new(math.cos(a) * r, 1, math.sin(a) * r)
+				return randomFloorSpot(n * 131 + H.idx * 911, floorY + 1)
 			end
-			-- Smoothly travel between deterministic beat targets at high BPM.
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		elseif pattern == 3 then
-			-- Wall wash: beams rake up and down the venue walls
+			-- Per-fixture perimeter crawl with a randomized starting offset.
 			local t = (showTime * 0.03 * speed + i / #heads + phase / (math.pi * 2)) % 1
 			local per = 2 * ((maxX - minX) + (maxZ - minZ))
 			local d2 = t * per
@@ -244,18 +258,19 @@ RunService.Heartbeat:Connect(function()
 				wx, wz = maxX - (d2 - (maxX - minX) - (maxZ - minZ)), maxZ
 			else
 				wx, wz = minX, maxZ - (d2 - 2 * (maxX - minX) - (maxZ - minZ))
-		end
+			end
 			targetPos = Vector3.new(wx, floorY + 14 + math.sin(showTime * 1.2 * speed + phase) * 8, wz)
 		elseif pattern == 4 then
-			-- Ceiling rake: beams swing up and wash the roof itself, racing
-			-- bright cones across the ceiling over the crowd
+			-- Ceiling rake with each beam crossing a different randomized lane.
 			local sweep = math.sin(showTime * 0.5 * speed + phase)
-			targetPos = CENTER + Vector3.new(sweep * 45, CEIL_Y - 1, math.cos(ang + showTime * 0.3 * speed) * 45)
+			targetPos = clampFloorPoint(anchor.X + sweep * RADIUS * 0.3,
+				anchor.Z + math.cos(phase + showTime * 0.3 * speed) * RADIUS * 0.3, CEIL_Y - 1)
 		else
-			-- Converging center hit: all beams pull to the middle of the
-			-- floor on the kick, then relax back outward
-			local r = RADIUS * (0.05 + (0.42 + seededUnit(motionSeed + 2) * 0.26) * (1 - kick))
-			targetPos = CENTER + Vector3.new(math.cos(ang) * r, 1, math.sin(ang) * r)
+			-- Randomized wandering destinations; never converge on the center.
+			local function spotForBeat(n)
+				return randomFloorSpot(n * 197 + H.idx * 1297, floorY + 1)
+			end
+			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		end
 		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
 		local motionAlpha = 1 - math.exp(-dt * 9)
