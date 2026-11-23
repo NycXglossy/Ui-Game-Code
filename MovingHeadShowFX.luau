@@ -336,7 +336,7 @@ RunService.Heartbeat:Connect(function()
 		else
 			-- Randomized wandering destinations; never converge on the center.
 			local function spotForBeat(n)
-				return distributedFloorSpot(i, #heads, n * 197 + H.idx * 1297, floorY + 1)
+				return distributedFloorSpot(H.coverageIndex or i, #heads, n * 197 + H.idx * 1297, floorY + 1)
 			end
 			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
 		end
