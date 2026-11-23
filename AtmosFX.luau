@@ -78,11 +78,17 @@ RunService.Heartbeat:Connect(function()
 
 		-- Fog: every FOG_EVERY beats one machine bursts; during loud parts all
 		-- of them breathe together for a heavy haze
-		if beatCount % FOG_EVERY == 0 then
+		if #fogs > 0 and beatCount % FOG_EVERY == 0 then
 			if norm > 0.6 then
-				for _, f in fogs do
-					f.emitter:Emit(FOG_PUFF)
+				for _, fog in fogs do
+					if fog.emitter.Parent then fog.emitter:Emit(FOG_PUFF) end
 				end
+			else
+				local pickIndex = (math.floor(beatCount / FOG_EVERY) % #fogs) + 1
+				local pick = fogs[pickIndex]
+				if pick and pick.emitter.Parent then pick.emitter:Emit(FOG_PUFF) end
+			end
+		end
 			else
 				local pick = fogs[(beatCount / FOG_EVERY) % #fogs + 1]
 				pick.emitter:Emit(FOG_PUFF)
