@@ -2,6 +2,9 @@
 -- Shared static configuration for the Club Neon UI renderer.
 -- Keep catalog, device profiles, shop data, and title allowlists in this bounded module.
 
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+
 local C = {
 	Base = Color3.fromRGB(13, 16, 24),
 	Surface = Color3.fromRGB(21, 25, 37),
