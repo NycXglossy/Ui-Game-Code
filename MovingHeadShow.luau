@@ -141,7 +141,11 @@ end
 -- -----------------------------------------------------------
 -- Moving-head fixtures hung from the truss
 -- -----------------------------------------------------------
-local HEADS = 16
+-- Preserve the original 16 fixture positions and interleave a supplemental
+-- set of 16. This gives every wall an independent second coverage row.
+local ORIGINAL_HEADS = 16
+local SUPPLEMENTAL_HEADS = 16
+local HEADS = ORIGINAL_HEADS + SUPPLEMENTAL_HEADS
 local function makeHead(i, pos)
 	local color = Color3.fromHSV(i / HEADS, 1, 1)
 
@@ -269,14 +273,14 @@ local function makeHead(i, pos)
 	pool.Parent = rig
 end
 
--- Four fixtures on each wall, centered within equal-width side segments.
--- Explicit side allocation keeps the count balanced even when the room is rectangular.
+-- Four original fixtures on each wall, centered within equal-width side segments.
+-- Keep those placements unchanged and interleave a supplemental set at the gaps.
+-- This yields 8 fixtures per wall and 32 total.
 local w = tx1 - tx0
 local h = tz1 - tz0
-local PER_SIDE = HEADS / 4
-for i = 1, HEADS do
-	local side = math.floor((i - 1) / PER_SIDE)
-	local slot = ((i - 1) % PER_SIDE + 0.5) / PER_SIDE
+local PER_WALL_PER_SET = ORIGINAL_HEADS / 4
+local function placeWallFixture(index, slot, supplemental)
+	local side = math.floor((index - 1) / PER_WALL_PER_SET)
 	local px, pz
 	if side == 0 then -- North wall: west to east
 		px, pz = tx0 + w * slot, tz0
@@ -287,7 +291,19 @@ for i = 1, HEADS do
 	else -- West wall: south to north
 		px, pz = tx0, tz1 - h * slot
 	end
-	makeHead(i, { X = px, Z = pz })
+	makeHead(index + (supplemental and ORIGINAL_HEADS or 0), { X = px, Z = pz })
+end
+
+for i = 1, ORIGINAL_HEADS do
+	local slot = ((i - 1) % PER_WALL_PER_SET + 0.5) / PER_WALL_PER_SET
+	placeWallFixture(i, slot, false)
+end
+
+for i = 1, SUPPLEMENTAL_HEADS do
+	local wallSlot = (i - 1) % PER_WALL_PER_SET
+	-- Interleave between original fixture positions (quarter-slot offsets).
+	local slot = (wallSlot + 0.25) / PER_WALL_PER_SET
+	placeWallFixture(i, slot, true)
 end
 
 -- -----------------------------------------------------------
