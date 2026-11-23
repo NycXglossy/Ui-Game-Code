@@ -200,44 +200,6 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 		return tostring(value)
 	end
 
-	-- Now-playing progress is interpolated locally between server resyncs.
-	local elapsedBase = 0
-	local baseClock = os.clock()
-	local progressRefs: {fill: any, timeLabel: any, duration: number}? = nil
-	local vizRefs: {container: any, bars: {any}, phases: {number}, seed: number}? = nil
-	local sliderRefs: {track: any, control: GuiButton, setFromX: (number) -> (), adjust: (number) -> ()}? = nil
-
-	local function syncElapsed()
-		local np: any = state.nowPlaying
-		if typeof(np) == "table" then
-			elapsedBase = tonumber(np.elapsed) or 0
-			baseClock = os.clock()
-		end
-	end
-
-	local function playbackIsPaused(): boolean
-		local np: any = state.nowPlaying
-		return typeof(np) == "table" and np.paused == true
-	end
-
-	local function interpolatedElapsed(duration: number): number
-		local elapsed = elapsedBase
-		-- The server snapshot is authoritative. Do not locally advance the clock
-		-- while paused; resume starts interpolation from the fresh server snapshot.
-		if not playbackIsPaused() then
-			elapsed += math.max(0, os.clock() - baseClock)
-		end
-		return math.clamp(elapsed, 0, duration)
-	end
-
-	local function updateProgress()
-		local refs = progressRefs
-		if not refs or not refs.fill.Parent then return end
-		local elapsed = interpolatedElapsed(refs.duration)
-		refs.fill.Size = UDim2.new(math.clamp(elapsed / refs.duration, 0, 1), 0, 1, 0)
-		refs.fill.BackgroundColor3 = if playbackIsPaused() then C.Orange else C.Gold
-		refs.timeLabel.Text = formatTime(elapsed) .. " / " .. formatTime(refs.duration)
-	end
 
 	-- Never destroy a live main menu just because Mount was called again.
 	-- A second renderer module instance can have a separate Lua module cache,
@@ -4311,29 +4273,17 @@ function Renderer.Mount(player: Player, Network: {[string]: any})
 	-- rebuilding the entire mobile tab tree for elapsed-only updates causes
 	-- visible content flashes. Compare snapshots while ignoring that one
 	-- volatile field, but retain every other state change for live tab refresh.
-	local function mobileRenderStateChanged(previous: any, nextState: any): boolean
-		local function equivalent(a: any, b: any, path: string, depth: number): boolean
-			if a == b then return true end
-			if typeof(a) ~= typeof(b) then return false end
-			if typeof(a) ~= "table" then return false end
-			if depth >= 10 then return false end
-			for key, value in pairs(a) do
-				local childPath = if path == "" then tostring(key) else path .. "." .. tostring(key)
-				if childPath ~= "nowPlaying.elapsed" then
-					if b[key] == nil and value ~= nil then return false end
-					if not equivalent(value, b[key], childPath, depth + 1) then return false end
-				end
-			end
-			for key, value in pairs(b) do
-				local childPath = if path == "" then tostring(key) else path .. "." .. tostring(key)
-				if childPath ~= "nowPlaying.elapsed" and a[key] == nil and value ~= nil then
-					return false
-				end
-			end
-			return true
-		end
-		return not equivalent(previous, nextState, "", 0)
-	end
+	local stateHelpersModule = ReplicatedStorage:WaitForChild("ClubNeon_UI_Renderer_StateHelpers")
+	local stateHelpers = require(stateHelpersModule).new({
+		getState = function() return state end,
+		formatTime = formatTime,
+		colors = C,
+	})
+	local syncElapsed = stateHelpers.syncElapsed
+	local playbackIsPaused = stateHelpers.playbackIsPaused
+	local interpolatedElapsed = stateHelpers.interpolatedElapsed
+	local updateProgress = function() stateHelpers.updateProgress(progressRefs) end
+	local mobileRenderStateChanged = stateHelpers.mobileRenderStateChanged
 
 	local function applyState(newState: any)
 		if destroyed or typeof(newState) ~= "table" then return end
