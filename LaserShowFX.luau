@@ -190,10 +190,7 @@ local function collectLasers()
 			if L then
 				coverageIndex += 1
 				L.coverageIndex = coverageIndex
-				-- Each wall cycles its own projectors through all four floor quadrants.
-				L.coverageQuadrant = (laneIndex + sideIndex - 2) % 4
-				L.anchor = wallBalancedFloorSpot(laneIndex, sideIndex, L.idx * 31.9, floorY + 0.5)
-				L.currentTarget = L.anchor
+				-- The wall and slot define the full-floor crosshatch lane.
 			end
 		end
 	end
