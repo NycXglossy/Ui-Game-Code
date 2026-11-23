@@ -48,7 +48,7 @@ return function(context: {[string]: any})
 	
 	ControllerFunctions.loadProfile = function(player: Player)
 		local userId = player.UserId
-		if player.Parent ~= Players or serverShuttingDown then return false end
+		if player.Parent ~= Players or getServerShuttingDown() then return false end
 		local profile = ControllerFunctions.defaultProfile()
 		local data = nil
 		local ok = false
@@ -69,7 +69,7 @@ return function(context: {[string]: any})
 			ok = true
 		else
 			for attempt = 1, 5 do
-				if player.Parent ~= Players or player.UserId ~= userId or serverShuttingDown then return abandonDepartedLoad() end
+				if player.Parent ~= Players or player.UserId ~= userId or getServerShuttingDown() then return abandonDepartedLoad() end
 				if not ControllerFunctions.waitForDataStoreBudget(20) then
 					lastError = "Server DataStore request budget is busy."
 					break
@@ -108,7 +108,7 @@ return function(context: {[string]: any})
 					end)
 				end)
 				ControllerFunctions.releaseProfileWriteLock(userId, loadWriteLockToken)
-				if player.Parent ~= Players or player.UserId ~= userId or serverShuttingDown then return abandonDepartedLoad() end
+				if player.Parent ~= Players or player.UserId ~= userId or getServerShuttingDown() then return abandonDepartedLoad() end
 				if callOk and typeof(result) == "table" then
 					data = result
 					ok = true
@@ -121,7 +121,7 @@ return function(context: {[string]: any})
 				end
 				if attempt < 5 then
 					task.wait(2)
-					if player.Parent ~= Players or player.UserId ~= userId or serverShuttingDown then return abandonDepartedLoad() end
+					if player.Parent ~= Players or player.UserId ~= userId or getServerShuttingDown() then return abandonDepartedLoad() end
 				end
 			end
 		end
@@ -232,7 +232,7 @@ return function(context: {[string]: any})
 		end
 		-- Text filtering can yield after the DataStore session lock was acquired.
 		-- Do not publish a profile or player attributes for a departed join.
-		if player.Parent ~= Players or player.UserId ~= userId or serverShuttingDown then return abandonDepartedLoad() end
+		if player.Parent ~= Players or player.UserId ~= userId or getServerShuttingDown() then return abandonDepartedLoad() end
 	
 		local today = math.floor(os.time() / 86400)
 		if profile.lastClaimDay < today then
@@ -392,7 +392,7 @@ return function(context: {[string]: any})
 	-- Collapse rapid profile mutations into one save. Queue identity prevents a
 	-- delayed callback from an old Player instance clearing a rejoin's new queue.
 	ControllerFunctions.scheduleProfileSave = function(player: Player)
-		if serverShuttingDown then return end
+		if getServerShuttingDown() then return end
 		local userId = player.UserId
 		local scheduledProfile = profiles[userId]
 		if not scheduledProfile then return end
@@ -405,7 +405,7 @@ return function(context: {[string]: any})
 		saveQueued[userId] = true
 		task.delay(CONFIG.ProfileSaveQueueDelaySeconds, function()
 			if saveQueueTokens[userId] ~= queueToken then return end
-			if serverShuttingDown or player.Parent ~= Players or profiles[userId] ~= scheduledProfile then
+			if getServerShuttingDown() or player.Parent ~= Players or profiles[userId] ~= scheduledProfile then
 				saveQueued[userId] = nil
 				saveAgain[userId] = nil
 				saveQueueTokens[userId] = nil
