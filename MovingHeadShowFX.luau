@@ -122,7 +122,7 @@ local function collectHeads()
 				end
 				table.insert(list, {
 					idx = idx, head = d, target = target, pool = pool,
-					beam = beam, spot = spot, pos = headPos, side = side,
+					beam = beam, spot = spot, pos = d.Position, side = side,
 					sideSlot = math.clamp(along, 0.04, 0.96),
 					currentTarget = randomFloorSpot(idx * 17.31, floorY + 1),
 					anchor = randomFloorSpot(idx * 17.31 + 7, floorY + 1),
