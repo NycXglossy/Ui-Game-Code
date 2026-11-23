@@ -615,24 +615,6 @@ end
 local studioXpBoostMultiplier = 1
 local studioXpBoostExpiresAt = 0
 
-
-local xpServiceModule = ServerStorage:FindFirstChild("ClubNeon_XPService")
-if not xpServiceModule or not xpServiceModule:IsA("ModuleScript") then
-	error("[Club Neon] Missing ServerStorage.ClubNeon_XPService; controller will not start.")
-end
-local xpService = require(xpServiceModule)({
-	Players = Players,
-	CONFIG = CONFIG,
-	RunService = RunService,
-	ControllerFunctions = ControllerFunctions,
-	profiles = profiles,
-	publishState = function(player: Player?) publishState(player) end,
-	getStudioBoostState = function() return studioXpBoostMultiplier, studioXpBoostExpiresAt end,
-})
-ControllerFunctions.setGlobalXPState = xpService.SetGlobalXPState
-ControllerFunctions.refreshGlobalXPBoost = xpService.RefreshGlobalXPBoost
-ControllerFunctions.settlePlayerXP = xpService.SettlePlayerXP
-
 local configFolder = ControllerFunctions.getOrCreate(ReplicatedStorage, "Folder", "ClubMusicConfig") :: Folder
 configFolder:SetAttribute("GroupId", CONFIG.GroupId)
 
@@ -684,6 +666,27 @@ type Profile = {
 }
 
 local profiles: {[number]: Profile} = {}
+local studioXpBoostMultiplier = 1
+local studioXpBoostExpiresAt = 0
+
+
+local xpServiceModule = ServerStorage:FindFirstChild("ClubNeon_XPService")
+if not xpServiceModule or not xpServiceModule:IsA("ModuleScript") then
+	error("[Club Neon] Missing ServerStorage.ClubNeon_XPService; controller will not start.")
+end
+local xpService = require(xpServiceModule)({
+	Players = Players,
+	CONFIG = CONFIG,
+	RunService = RunService,
+	ControllerFunctions = ControllerFunctions,
+	profiles = profiles,
+	publishState = function(player: Player?) publishState(player) end,
+	getStudioBoostState = function() return studioXpBoostMultiplier, studioXpBoostExpiresAt end,
+})
+ControllerFunctions.setGlobalXPState = xpService.SetGlobalXPState
+ControllerFunctions.refreshGlobalXPBoost = xpService.RefreshGlobalXPBoost
+ControllerFunctions.settlePlayerXP = xpService.SettlePlayerXP
+
 local receiptTransactions: any = nil
 queue = {}
 local ServerStorageForQueue = serverStorage
