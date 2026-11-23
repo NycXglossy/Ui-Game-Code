@@ -12,7 +12,8 @@ end
 if #neons == 0 then return end
 
 while task.wait(0.1) do -- 10 Hz ambient bar updates
-	local t = os.clock()
+	local beat = ClubAudioSync.getBeatState()
+	local t = os.clock() * (beat.bpm / 128)
 	local pulse = 0.5 + 0.5 * math.sin(t * 2) -- matches the wall trim pulse
 	for i, p in neons do
 		-- offset hue by position so colors flow along the bar
