@@ -84,6 +84,7 @@ end
 -- Four-wall crosshatch coverage: north/south fixtures scan the full floor depth
 -- on distinct X lanes; east/west fixtures scan the full width on distinct Z lanes.
 -- Fixture phase and BPM-scaled speed remain independent; no ceiling-FX pattern clock.
+local coverageGridLogged = false
 local function adaptiveCoverageTarget(coverageIndex, totalFixtures, phase, fixtureSpeed, showTime, beat, y)
 	local spanX, spanZ = maxX - minX, maxZ - minZ
 	local marginX = math.min(2.5, spanX * 0.035)
@@ -96,8 +97,16 @@ local function adaptiveCoverageTarget(coverageIndex, totalFixtures, phase, fixtu
 	-- periods, so overlapping sweeps could still look weighted to one side.
 	-- A 2:1 cell grid keeps the 32-head and 24-laser layouts evenly tiled.
 	local aspect = usableX / math.max(1, usableZ)
-	local rows = math.max(1, math.floor(math.sqrt(math.max(1, totalFixtures) / (2 * aspect)) + 0.5))
-	local columns = math.max(1, math.ceil(totalFixtures / rows))
+	-- Never collapse the target lattice into a single row/column: that leaves
+	-- one full half-axis underused on long rectangular dance floors.
+	local rows = math.max(2, math.floor(math.sqrt(math.max(1, totalFixtures) / (2 * aspect)) + 0.5))
+	local columns = math.max(2, math.ceil(totalFixtures / rows))
+	if not coverageGridLogged then
+		coverageGridLogged = true
+		print("[ClubNeon][MovingHeadShowFX] Full-floor target lattice; columns=" .. columns
+			.. ", rows=" .. rows .. ", floorAspect=" .. string.format("%.2f", aspect)
+			.. ", fixtures=" .. totalFixtures)
+	end
 	local index = math.clamp(math.floor(coverageIndex or 1) - 1, 0, math.max(0, totalFixtures - 1))
 	local column = index % columns
 	local row = math.floor(index / columns)
@@ -113,8 +122,8 @@ local function adaptiveCoverageTarget(coverageIndex, totalFixtures, phase, fixtu
 	local rate = (0.38 + tempoDrive * 0.32 + energyDrive * 0.12) * fixtureSpeed
 	local sweepX = math.sin(showTime * rate + phase)
 	local sweepZ = math.sin(showTime * rate * 0.73 + phase * 1.61)
-	local x = centerX + sweepX * cellWidth * 0.43
-	local z = centerZ + sweepZ * cellDepth * 0.43
+	local x = centerX + sweepX * cellWidth * 0.48
+	local z = centerZ + sweepZ * cellDepth * 0.48
 	return Vector3.new(
 		math.clamp(x, minX + marginX, maxX - marginX),
 		y,
