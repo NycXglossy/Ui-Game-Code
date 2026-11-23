@@ -146,8 +146,6 @@ addRaw("ClubNeon_UI_Renderer_Helpers", "ModuleScript", "ReplicatedStorage", fetc
 addRaw("ClubNeon_UI_Renderer_StateHelpers", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_StateHelpers.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_StateHelpers.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_Typography", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Typography.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Typography.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_Renderer_Visibility", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Visibility.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Visibility.lua@" .. RELEASE.runtime)
-addRaw("ClubNeon_UI_Renderer_Visibility", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Visibility.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Visibility.lua@" .. RELEASE.runtime)
-addRaw("ClubNeon_UI_Renderer_Typography", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_Renderer_Typography.lua", RELEASE.runtime), "ClubNeon_UI_Renderer_Typography.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_PurchasePromptDiagnostics", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_PurchasePromptDiagnostics.lua", RELEASE.runtime), "ClubNeon_UI_PurchasePromptDiagnostics.lua@" .. RELEASE.runtime)
 addRaw("ClubNeon_UI_ClientPolicy", "ModuleScript", "ReplicatedStorage", fetchSource("ClubNeon_UI_ClientPolicy.lua", RELEASE.runtime), "ClubNeon_UI_ClientPolicy.lua@" .. RELEASE.runtime)
 
