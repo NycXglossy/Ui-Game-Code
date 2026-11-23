@@ -74,7 +74,7 @@ RunService.Heartbeat:Connect(function()
 		beatPower = math.clamp(0.8 + beat.energy * 1.6, 0.5, 3)
 		-- Heavy kick: trigger a rapid strobe burst
 		if beatPower > 1.6 then
-			burstUntil = now + BURST_LENGTH
+			burstUntil = now + (60 / beat.bpm) * 1.5
 			burstHue = (beatCount * 0.13) % 1
 		end
 	else
@@ -87,7 +87,7 @@ RunService.Heartbeat:Connect(function()
 	local pattern = math.floor(beatCount / 16) % 3
 	local bursting = now < burstUntil
 	-- Square wave for hard on/off strobing during a burst
-	local strobeOn = bursting and (math.floor(now * STROBE_BURST_HZ) % 2 == 0)
+	local strobeOn = bursting and (math.floor(tempoNow * STROBE_BURST_HZ) % 2 == 0)
 
 	for idx, entry in strobes do
 		local panel = entry.panel
@@ -97,7 +97,7 @@ RunService.Heartbeat:Connect(function()
 		local intensity
 		if pattern == 0 then
 			-- Wall chase: a pulse of light travels around the perimeter
-			local phase = (idx / N + now * 0.35) % 1
+			local phase = (idx / N + tempoNow * 0.35) % 1
 			intensity = math.exp(-((phase - 0.5) ^ 2) * 40) * (0.4 + beatGlow)
 		elseif pattern == 1 then
 			-- Alternating halves: panels flip on/off each beat like classic club strobes
