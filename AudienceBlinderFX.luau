@@ -40,8 +40,8 @@ RunService.Heartbeat:Connect(function()
 	local hueStep = math.floor(beat.beatCount / 4)
 	for _, fixture in ipairs(fixtures) do
 		local wave = 0.5 + 0.5 * math.sin(tempoTime * 1.4 + fixture.index * 0.8)
-		local intensity = math.clamp(0.08 + beat.energy * 0.12 + pulse * (0.35 + wave * 0.35), 0, 0.8)
-		fixture.light.Brightness = intensity * 5.5
+		local intensity = math.clamp(0.05 + beat.energy * 0.08 + pulse * (0.22 + wave * 0.22), 0, 0.52)
+		fixture.light.Brightness = intensity * 3.2
 		local color = if pulse > 0.18 then palette[(hueStep + fixture.index - 1) % #palette + 1] else palette[(fixture.index - 1) % #palette + 1]
 		fixture.light.Color = color
 		fixture.lens.Color = color
