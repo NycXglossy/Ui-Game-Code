@@ -605,6 +605,7 @@ local ok, failure = pcall(function()
     -- All new instances are in place and disabled. Start shared services before
     -- consumers, then enable the remaining scripts.
     local priority = {
+        RaveIntroUI = 0,
         ClubNeon_Global_Service = 1,
         ClubNeonSecurityServer = 2,
         ClubNeonCharacterPhysicsGuardBootstrap = 3,
@@ -658,6 +659,7 @@ print("Threat Intelligence release: " .. RELEASE.threat)
 print("Phase 32 release: " .. RELEASE.phase32)
 print("Client diagnostics release: " .. RELEASE.diagnostics)
 print("Client integrity telemetry release: " .. RELEASE.integrityClient)
+print("Intro release: " .. RELEASE.intro)
 print("Instances promoted: " .. #promoted)
 print("Prior instances and retired playback authority archived under ServerStorage/" .. backupRoot.Name .. "/" .. backupRelease.Name)
 print("Playback synchronization: DISABLED. No leader lease or shared playback snapshots are installed.")
