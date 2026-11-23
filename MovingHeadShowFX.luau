@@ -173,6 +173,9 @@ local burstUntil = 0
 local clock = os.clock
 local lastT = clock()
 local showTime = 0
+-- Smoothly adapt sweep speed to the active track's tempo and energy.
+-- The beat clock remains authoritative; this only scales continuous motion.
+local movementSpeed = 1
 
 local frameCount = 0
 local nextRigAudit = 0
@@ -217,7 +220,11 @@ RunService.Heartbeat:Connect(function()
 
 	-- Beat clock from the shared ClubAudioSync module
 	local beat = ClubAudioSync.getBeatState()
-	showTime += dt * (beat.bpm / 128)
+	local tempoDrive = math.clamp((beat.bpm - 70) / 90, 0, 1)
+	local energyDrive = math.clamp(beat.energy, 0, 1)
+	local targetMovementSpeed = math.clamp(0.58 + tempoDrive * 0.68 + energyDrive * 0.18, 0.55, 1.45)
+	movementSpeed += (targetMovementSpeed - movementSpeed) * (1 - math.exp(-1.8 * dt))
+	showTime += dt * (beat.bpm / 128) * movementSpeed
 	if beat.beatCount ~= lastBeatCount then
 		lastBeatCount = beat.beatCount
 		beatCount = beat.beatCount
