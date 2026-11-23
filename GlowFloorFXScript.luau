@@ -38,7 +38,7 @@ local lastBeatCount = -1
 local hueShift = 0
 
 while true do
-	local dt = task.wait(0.05)
+	local dt = task.wait(0.1) -- 10 Hz keeps beat flashes readable with fewer replicated updates
 	local beat = ClubAudioSync.getBeatState()
 
 	-- Beat clock: advances with the song's position when playing; an idle
