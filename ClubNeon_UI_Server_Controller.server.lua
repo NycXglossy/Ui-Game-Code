@@ -4121,7 +4121,20 @@ task.spawn(function()
 			local loadedAndKnownLength = audio.ready and audio.length > 0
 			local playheadAtEnd = loadedAndKnownLength
 				and audio.position >= math.max(0, audio.length - 1.5)
+			-- During a prepared/active crossfade, the outgoing deck is expected to
+			-- lose playback ownership at handoff. Also treat a near-end playhead reset
+			-- as an end event, not as a recoverable stop at position zero.
+			local crossfadeState = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
+			local crossfadeOwnsHandoff = crossfadeState ~= nil
+				and (crossfadeState.active == true or crossfadeState.starting == true)
+				and pendingCrossfadeToken == audioState.audioTransitionTrackToken
+			local clockNearTrackEnd = nowPlaying.duration > 0
+				and nowPlaying.elapsed >= math.max(0, nowPlaying.duration - CONFIG.CrossfadePrepareLeadSeconds)
+			local playheadResetNearTrackEnd = loadedAndKnownLength and clockNearTrackEnd
+				and audio.position <= 1.5
+			local suppressResumeRecovery = crossfadeOwnsHandoff or playheadResetNearTrackEnd
 			if stoppedFor >= 2 and not playheadAtEnd and loadedAndKnownLength
+				and not suppressResumeRecovery
 				and ControllerFunctions.audioRecoveryAttemptedGeneration ~= currentGeneration then
 				ControllerFunctions.audioRecoveryAttemptedGeneration = currentGeneration
 				local resumePosition = math.clamp(audio.position, 0, math.max(0, audio.length - 0.25))
