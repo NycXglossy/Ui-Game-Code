@@ -44,7 +44,8 @@ end
 -- Wall rig: laser projectors mounted directly on the walls all the way
 -- around the venue, hugging the rectangle perimeter so every wall is
 -- lined with fixtures and the beams sweep the entire floor
-local WALL_HEADS = 24
+-- Double perimeter projector coverage while retaining continuous wall spacing.
+local WALL_HEADS = 48
 local INSET = 0.4
 local wallMinX, wallMaxX = minX + INSET, maxX - INSET
 local wallMinZ, wallMaxZ = minZ + INSET, maxZ - INSET
