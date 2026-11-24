@@ -1,5 +1,6 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.114
+-- CLUB NEON MASTER INSTALLER v0.4.115
+-- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
 -- v0.4.107 hardens crossfade rollback: require verified outgoing asset/playhead before Stop and never default a failed capture to zero.
@@ -29,7 +30,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.114"
+local INSTALLER_VERSION = "0.4.115"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -53,6 +54,8 @@ local RELEASE = {
     movingHeadRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     strobeFX = "850ba444fc0662f5bf4683b2485d8b85dd871a32",
     strobeRig = "70e1ad0926a877847bdcc3248c94004d38769931",
+    ceilingComplementRig = "481f82c27139a5a7e7395f39f193acf10b1b2423",
+    ceilingComplementFX = "783f39a5ea07fc94bff940f07c441ff5df954292",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
@@ -354,6 +357,8 @@ for _, item in ipairs({
     {"SpeakerEffects.luau", "LocalScript", "StarterPlayerScripts", "SpeakerEffects"},
     {"StrobeLightsRig.server.lua", "Script", "ServerScriptService", "StrobeLightsRig", RELEASE.strobeRig},
     {"StrobeLightsFX.luau", "LocalScript", "StarterPlayerScripts", "StrobeLightsFX", RELEASE.strobeFX},
+    {"CeilingComplementRig.server.lua", "Script", "ServerScriptService", "CeilingComplementRig", RELEASE.ceilingComplementRig},
+    {"CeilingComplementFX.client.lua", "LocalScript", "StarterPlayerScripts", "CeilingComplementFX", RELEASE.ceilingComplementFX},
     {"WallVisualizerClient.luau", "LocalScript", "StarterPlayerScripts", "WallVisualizerClient"},
 }) do
     addSource(item[1], item[2], item[3], item[4], item[5] or RELEASE.fx)
