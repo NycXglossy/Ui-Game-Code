@@ -11,8 +11,8 @@ local RunService = game:GetService("RunService")
 local ClubAudioSync = {}
 
 local ROOT_NAME = "ClubMusicModernAudio"
-local BPM_MIN = 70
-local BPM_MAX = 190
+local BPM_MIN = 55
+local BPM_MAX = 240
 local BPM_SEED = 120
 local SAMPLE_RATE = 40
 local HISTORY_SECONDS = 8
@@ -32,6 +32,14 @@ local sampleAccumulator = 0
 local previousSpectrum: {number}? = nil
 local previousRms = 0
 local envelopeHistory: {number} = {}
+-- Independent spectral-band onset histories. These are frequency regions,
+-- not semantic instrument detectors: AudioAnalyzer exposes a mixed spectrum.
+local bandHistories: {[string]: {number}} = {
+	bass = {},
+	lowMid = {},
+	presence = {},
+	high = {},
+}
 local bpmCurrent = BPM_SEED
 local bpmDetected: number? = nil
 local bpmConfidence = 0
@@ -40,6 +48,8 @@ local pendingBPM: number? = nil
 local pendingTempoSamples = 0
 local pendingTempoConfidence = 0
 local lastTempoUpdate = 0
+local lastTempoAnalysisAt = 0
+local TEMPO_ANALYZE_INTERVAL = 0.10
 local TEMPO_STALE_SECONDS = 12
 local energy = 0
 local movementSpeedCurrent = 1
@@ -91,6 +101,7 @@ local function clearAnalysis()
 	previousSpectrum = nil
 	previousRms = 0
 	envelopeHistory = {}
+	bandHistories = {bass = {}, lowMid = {}, presence = {}, high = {}}
 	bpmDetected = nil
 	bpmConfidence = 0
 	rawCandidateBPM = nil
@@ -98,6 +109,7 @@ local function clearAnalysis()
 	pendingTempoSamples = 0
 	pendingTempoConfidence = 0
 	lastTempoUpdate = 0
+	lastTempoAnalysisAt = 0
 	energy = 0
 	sampleAccumulator = 0
 	lastSampleAt = 0
@@ -133,6 +145,7 @@ local function ensureAnalyzer(player: AudioPlayer?)
 		local liveAnalyzer = Instance.new("AudioAnalyzer")
 		liveAnalyzer.Name = "ClubNeonLiveAudioAnalyzer"
 		liveAnalyzer.SpectrumEnabled = true
+		liveAnalyzer.WindowSize = Enum.AudioWindowSize.Medium
 		liveAnalyzer.Parent = root
 
 		local wire = Instance.new("Wire")
@@ -168,102 +181,123 @@ local function getActiveAssetId(player: AudioPlayer?): string
 	return id or ""
 end
 
-local function pushHistory(value: number)
-	table.insert(envelopeHistory, value)
-	if #envelopeHistory > HISTORY_LIMIT then table.remove(envelopeHistory, 1) end
+local function pushBoundedHistory(history: {number}, value: number)
+	table.insert(history, value)
+	if #history > HISTORY_LIMIT then table.remove(history, 1) end
 end
 
--- Autocorrelation of measured bass-band spectral flux. The strongest periodic
--- lag across a rolling 12-second window estimates tempo from the audio itself.
-local function estimateTempo(): (number?, number)
-	local count = #envelopeHistory
-	local analysisSamples = math.min(count, SAMPLE_RATE * 6)
-	if analysisSamples < SAMPLE_RATE * 3.5 then return nil, 0 end
-	local firstIndex = count - analysisSamples + 1
-	local mean = 0
-	for i = firstIndex, count do mean += envelopeHistory[i] end
-	mean /= analysisSamples
-	local centered = table.create(analysisSamples)
-	local variance = 0
-	for i = firstIndex, count do
-		local v = envelopeHistory[i] - mean
-		centered[i - firstIndex + 1] = v
-		variance += v * v
-	end
-	count = analysisSamples
-	if variance < 0.00001 then return nil, 0 end
+local function pushHistory(value: number, bands: {[string]: number})
+	pushBoundedHistory(envelopeHistory, value)
+	pushBoundedHistory(bandHistories.bass, bands.bass)
+	pushBoundedHistory(bandHistories.lowMid, bands.lowMid)
+	pushBoundedHistory(bandHistories.presence, bands.presence)
+	pushBoundedHistory(bandHistories.high, bands.high)
+end
 
-	local bestLag, bestScore = 0, -math.huge
-	local secondScore = -math.huge
+-- Fuse independent autocorrelation evidence from frequency regions. No
+-- region is treated as a named instrument; bass, synths, guitars and percussion
+-- can all occupy overlapping frequency ranges in a mixed master.
+local function estimateTempo(): (number?, number)
+	local analysisSamples = math.min(#envelopeHistory, SAMPLE_RATE * 6)
+	if analysisSamples < SAMPLE_RATE * 3.5 then return nil, 0 end
+
+	local channels = {
+		{history = envelopeHistory, weight = 0.10},
+		{history = bandHistories.bass, weight = 0.36},
+		{history = bandHistories.lowMid, weight = 0.28},
+		{history = bandHistories.presence, weight = 0.18},
+		{history = bandHistories.high, weight = 0.08},
+	}
+	local activeChannels = {}
+	local totalWeight = 0
+	for _, channel in ipairs(channels) do
+		local history = channel.history
+		if #history >= analysisSamples then
+			local firstIndex = #history - analysisSamples + 1
+			local mean = 0
+			for i = firstIndex, #history do mean += history[i] end
+			mean /= analysisSamples
+			local centered = table.create(analysisSamples)
+			local variance = 0
+			for i = firstIndex, #history do
+				local value = history[i] - mean
+				centered[i - firstIndex + 1] = value
+				variance += value * value
+			end
+			if variance > 0.00001 then
+				table.insert(activeChannels, {centered = centered, weight = channel.weight})
+				totalWeight += channel.weight
+			end
+		end
+	end
+	if #activeChannels == 0 or totalWeight <= 0 then return nil, 0 end
+
 	local minLag = math.floor(60 / BPM_MAX * SAMPLE_RATE)
 	local maxLag = math.ceil(60 / BPM_MIN * SAMPLE_RATE)
+	local combinedScores: {[number]: number} = {}
+	local bestLag, bestScore = 0, -math.huge
+	local secondScore = -math.huge
 	for lag = minLag, maxLag do
-		local score, normA, normB = 0, 0, 0
-		for i = lag + 1, count do
-			local a, b = centered[i], centered[i - lag]
-			score += a * b
-			normA += a * a
-			normB += b * b
-		end
-		local normalized = score / math.sqrt(math.max(1e-9, normA * normB))
-		-- Do not favor a narrow club-tempo band: genuine passages up to 170 BPM
-		-- (and slower breakdowns) must compete on measured periodicity alone.
-		if normalized > bestScore then
-			secondScore = bestScore
-			bestScore = normalized
-			bestLag = lag
-		elseif math.abs(lag - bestLag) > 2 and normalized > secondScore then
-			secondScore = normalized
-		end
-	end
-	if bestLag == 0 then return nil, 0 end
-	-- Parabolic interpolation around the winning autocorrelation lag reduces
-	-- quantization error between integer sample offsets.
-	local refinedLag = bestLag
-	if bestLag > minLag and bestLag < maxLag then
-		local function correlationAt(lag)
+		local weightedScore = 0
+		for _, channel in ipairs(activeChannels) do
+			local centered = channel.centered
 			local score, normA, normB = 0, 0, 0
-			for i = lag + 1, count do
+			for i = lag + 1, analysisSamples do
 				local a, b = centered[i], centered[i - lag]
 				score += a * b
 				normA += a * a
 				normB += b * b
 			end
-			return score / math.sqrt(math.max(1e-9, normA * normB))
+			local normalized = score / math.sqrt(math.max(1e-9, normA * normB))
+			weightedScore += normalized * channel.weight
 		end
-		local left, center, right = correlationAt(bestLag - 1), correlationAt(bestLag), correlationAt(bestLag + 1)
+		local combined = weightedScore / totalWeight
+		combinedScores[lag] = combined
+		if combined > bestScore then
+			secondScore = bestScore
+			bestScore = combined
+			bestLag = lag
+		elseif math.abs(lag - bestLag) > 2 and combined > secondScore then
+			secondScore = combined
+		end
+	end
+	if bestLag == 0 then return nil, 0 end
+
+	local function scoreAt(lag: number): number
+		return combinedScores[lag] or -math.huge
+	end
+
+	-- Refine the winning lag between sample intervals.
+	local refinedLag = bestLag
+	if bestLag > minLag and bestLag < maxLag then
+		local left, center, right = scoreAt(bestLag - 1), scoreAt(bestLag), scoreAt(bestLag + 1)
 		local denominator = left - 2 * center + right
 		if math.abs(denominator) > 1e-6 then
 			refinedLag += math.clamp(0.5 * (left - right) / denominator, -0.5, 0.5)
 		end
 	end
-	local bpm = math.clamp(60 * SAMPLE_RATE / refinedLag, BPM_MIN, BPM_MAX)
-	-- Autocorrelation often produces paired half-time/double-time peaks.
-	-- If the octave-related peak is nearly as strong, prefer the hypothesis
-	-- continuous with the last trusted tempo instead of jumping octaves.
+
+	-- Keep half-time and double-time interpretations alive when their evidence
+	-- is competitive. Continuity is a tie-breaker, not the source of tempo.
+	local selectedLag = bestLag
+	local selectedScore = bestScore
 	local referenceBPM = bpmDetected or bpmCurrent
-	local alternateLag = if bestLag * 2 <= maxLag then bestLag * 2
-		elseif bestLag / 2 >= minLag then math.floor(bestLag / 2 + 0.5) else nil
-	if alternateLag then
-		local altScore, normA, normB = 0, 0, 0
-		for i = alternateLag + 1, count do
-			local x, y = centered[i], centered[i - alternateLag]
-			altScore += x * y
-			normA += x * x
-			normB += y * y
-		end
-		altScore /= math.sqrt(math.max(1e-9, normA * normB))
-		if altScore >= bestScore - 0.075 then
-			local alternateBPM = 60 * SAMPLE_RATE / alternateLag
-			if math.abs(alternateBPM - referenceBPM) < math.abs(bpm - referenceBPM) then
-				bpm = math.clamp(alternateBPM, BPM_MIN, BPM_MAX)
-				bestScore = altScore
+	local alternatives = {bestLag * 2, math.floor(bestLag / 2 + 0.5)}
+	for _, alternateLag in ipairs(alternatives) do
+		if alternateLag >= minLag and alternateLag <= maxLag then
+			local alternateScore = scoreAt(alternateLag)
+			local candidateBPM = 60 * SAMPLE_RATE / alternateLag
+			local selectedBPM = 60 * SAMPLE_RATE / selectedLag
+			if alternateScore >= bestScore - 0.075
+				and math.abs(candidateBPM - referenceBPM) < math.abs(selectedBPM - referenceBPM) then
+				selectedLag = alternateLag
+				selectedScore = alternateScore
 			end
 		end
 	end
-	local periodicity = math.clamp((bestScore - 0.08) / 0.52, 0, 1)
-	-- Penalize ambiguous autocorrelation peaks (common with halftime/doubletime
-	-- rhythms) while retaining confidence when the beat has a clear periodic peak.
+
+	local bpm = math.clamp(60 * SAMPLE_RATE / (if selectedLag == bestLag then refinedLag else selectedLag), BPM_MIN, BPM_MAX)
+	local periodicity = math.clamp((selectedScore - 0.08) / 0.52, 0, 1)
 	local peakSeparation = if secondScore > -math.huge
 		then math.clamp((bestScore - secondScore) / 0.18, 0, 1)
 		else 0.5
@@ -286,36 +320,52 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		return
 	end
 
-	-- Separate bass, low-mid and upper transient energy. Bass gets the
-	-- strongest weight for kick detection, while upper bands retain snare/clap
-	-- information so the tempo estimator does not depend on bass-only tracks.
-	local bassFlux, lowMidFlux, upperFlux = 0, 0, 0
-	local lastBin = math.min(#spectrum, 48)
-	for i = 2, lastBin do
+	-- Convert spectrum indices to their documented frequency positions
+	-- (0..24 kHz). Fixed bin numbers are invalid across different window sizes.
+	local bandFlux = {bass = 0, lowMid = 0, presence = 0, high = 0}
+	local bandCounts = {bass = 0, lowMid = 0, presence = 0, high = 0}
+	local spectrumCount = #spectrum
+	for i = 2, spectrumCount do
+		local frequency = ((i - 1) / math.max(spectrumCount - 1, 1)) * 24000
 		local current = if finite(spectrum[i]) then math.max(0, spectrum[i]) else 0
 		local previous = previousSpectrum and previousSpectrum[i] or 0
 		local rise = math.max(0, current - previous)
-		if i <= 9 then
-			bassFlux += rise
-		elseif i <= 24 then
-			lowMidFlux += rise
-		else
-			upperFlux += rise
+		local bandName = if frequency < 160 then "bass"
+			elseif frequency < 600 then "lowMid"
+			elseif frequency < 4000 then "presence"
+			elseif frequency < 12000 then "high" else nil
+		if bandName then
+			bandFlux[bandName] += rise
+			bandCounts[bandName] += 1
 		end
 	end
 	local rmsRise = math.max(0, rms - previousRms)
 	previousSpectrum = table.clone(spectrum)
 	previousRms = rms
 
-	-- Normalize bands independently to avoid a loud midrange dominating the
-	-- onset stream. A small RMS-rise term preserves kick transients.
-	local flux = bassFlux * 1.0 + lowMidFlux * 0.62 + upperFlux * 0.34
+	-- Average within each band so a band with more FFT bins does not win merely
+	-- because it contains more entries. Keep independent envelopes for tempo
+	-- voting and a weighted composite for onset/phase tracking.
+	local function smoothBand(name: string): number
+		local raw = bandFlux[name] / math.max(1, bandCounts[name])
+		local history = bandHistories[name]
+		if #history > 0 then return history[#history] * 0.32 + raw * 0.68 end
+		return raw
+	end
+	local smoothedBands = {
+		bass = smoothBand("bass"),
+		lowMid = smoothBand("lowMid"),
+		presence = smoothBand("presence"),
+		high = smoothBand("high"),
+	}
+	local flux = smoothedBands.bass * 1.0 + smoothedBands.lowMid * 0.72
+		+ smoothedBands.presence * 0.42 + smoothedBands.high * 0.20
 	local rawOnset = flux * 0.78 + rmsRise * 0.22
 	local smoothedOnset = rawOnset
 	if #envelopeHistory > 0 then
 		smoothedOnset = envelopeHistory[#envelopeHistory] * 0.32 + rawOnset * 0.68
 	end
-	pushHistory(smoothedOnset)
+	pushHistory(smoothedOnset, smoothedBands)
 	energy += (math.clamp(rms * 5, 0, 1) - energy) * 0.20
 
 	-- Use a rolling adaptive threshold, rather than a fixed amplitude. This
@@ -376,6 +426,9 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	fluxPrevious = smoothedOnset
 	fluxPreviousPosition = timePosition
 
+	local analysisNow = os.clock()
+	if analysisNow - lastTempoAnalysisAt < TEMPO_ANALYZE_INTERVAL then return end
+	lastTempoAnalysisAt = analysisNow
 	local detected, confidence = estimateTempo()
 	rawCandidateBPM = detected
 	if detected and confidence >= 0.34 then
@@ -396,7 +449,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		end
 
 		-- Require a longer consensus than a single short fill or genre-layer change.
-		-- At 40 Hz, 48 observations ~= 1.2 seconds; large non-octave transitions
+		-- At 10 Hz, 12 observations ~= 1.2 seconds; large non-octave transitions
 		-- need 1.8 seconds so a competing subdivision cannot retune the clock.
 		local accepted = pendingBPM :: number
 		local relativeChange = if bpmDetected
@@ -404,7 +457,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		local octaveMatch = bpmDetected ~= nil and (
 			math.abs(accepted * 2 - bpmDetected) / bpmDetected <= 0.08
 			or math.abs(accepted * 0.5 - bpmDetected) / bpmDetected <= 0.08)
-		local requiredSamples = if bpmDetected and relativeChange > 0.30 and not octaveMatch then 72 else 48
+		local requiredSamples = if bpmDetected and relativeChange > 0.30 and not octaveMatch then 18 else 12
 		if pendingTempoSamples >= requiredSamples then
 			if bpmDetected and relativeChange > 0.30 and not octaveMatch
 				and pendingTempoConfidence < 0.58 then
@@ -425,7 +478,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			end
 		end
 	else
-		pendingTempoSamples = math.max(0, pendingTempoSamples - 2)
+		pendingTempoSamples = math.max(0, pendingTempoSamples - 1)
 		pendingTempoConfidence *= 0.96
 	end
 end
