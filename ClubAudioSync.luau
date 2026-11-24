@@ -662,6 +662,9 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	-- acquisition-grade evidence from its challenger. A stale lock must not
 	-- retain the easier established-track threshold indefinitely.
 	local incumbentStillTrusted = bpmDetected ~= nil and bpmConfidence > 0.18
+	-- A long-lived, tightly clustered family is stronger evidence than any
+	-- single autocorrelation window. Keep the normal acquisition bar early,
+	-- then allow a modest confidence relaxation only after sustained support.
 	local minimumCandidateConfidence = if incumbentStillTrusted then 0.34 else 0.52
 	-- Preserve moderate-confidence candidates as family evidence during hybrid
 	-- arrangements. A candidate may alternate between half-time and double-time
@@ -779,7 +782,12 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			-- Initial acquisition needs fewer repeated windows now that family evidence is
 			-- retained across short candidate dropouts. Confidence remains unchanged.
 			local requiredSamples = if not bpmDetected then 18 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
-			if winner.samples >= requiredSamples and winner.confidence >= minimumCandidateConfidence then
+			local sustainedAcquisition = not bpmDetected
+				and winner.samples >= 30
+				and winner.confidence >= 0.42
+			local normalAcquisition = winner.samples >= requiredSamples
+				and winner.confidence >= minimumCandidateConfidence
+			if sustainedAcquisition or normalAcquisition then
 				local deltaRatio = if bpmDetected then math.abs(preferredBPM - bpmDetected) / math.max(bpmDetected, 1) else 1
 				local blend = math.clamp(0.18 + winner.confidence * 0.30
 					+ math.clamp(deltaRatio * 1.4, 0, 0.18), 0.18, 0.58)
