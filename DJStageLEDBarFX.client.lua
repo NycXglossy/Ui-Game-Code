@@ -41,8 +41,8 @@ collectSegments()
 
 local lastBeatCount = -1
 local dropUntil = 0
-local horizontalCount = tonumber(rig:GetAttribute("HorizontalSegmentsPerBar")) or 32
-local verticalCount = tonumber(rig:GetAttribute("VerticalSegmentsPerBar")) or 16
+local horizontalCount = tonumber(rig:GetAttribute("HorizontalSegmentsPerBar")) or 48
+local verticalCount = tonumber(rig:GetAttribute("VerticalSegmentsPerBar")) or 24
 local showClock = 0
 local lastAudit = 0
 
@@ -81,13 +81,13 @@ RunService.RenderStepped:Connect(function(dt)
 		local row = segment.row
 		local active = false
 		local intensity = 0.10
-		local sidePhase = ({north = 0, east = 0.12, south = 0.24, west = 0.36})[segment.wallSide] or 0
+		local sidePhase = ({north = 0, east = 0.12, south = 0.24, west = 0.36, northeast = 0.08, northwest = 0.04, southeast = 0.28, southwest = 0.32, northmid = 0.06, eastmid = 0.18, southmid = 0.30, westmid = 0.38})[segment.wallSide] or 0
 		local hue = (hueBase + sidePhase + (row % 4) * 0.055 + index * 0.004) % 1
 
 		if dropActive then
 			local progress = 1 - math.clamp((dropUntil - os.clock()) / 0.62, 0, 1)
 			if segment.orientation == "Horizontal" then
-				local front = progress * horizontalCount + ((row - 1) % 3) * (horizontalCount * 0.10)
+				local front = progress * horizontalCount + ((row - 1) % 5) * (horizontalCount * 0.10)
 				active = math.abs(index - front) <= math.max(2, horizontalCount * 0.055)
 			else
 				local front = 1 + progress * verticalCount
