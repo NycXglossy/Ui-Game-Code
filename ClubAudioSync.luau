@@ -503,7 +503,6 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	local peakPosition = fluxPreviousPosition
 	if fluxPrevious > fluxOlder and fluxPrevious >= smoothedOnset
 		and peak > threshold and peakPosition - lastFastOnsetPosition >= 0.16 then
-		local fastOnsetGap = peakPosition - lastFastOnsetPosition
 		lastFastOnsetPosition = peakPosition
 		onsetStrength = math.clamp((peak - mean) / math.max(deviation * 3, 1e-5), 0, 1)
 
