@@ -339,7 +339,16 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 	local selectedScore = bestScore
 	local referenceBPM = bpmDetected or bpmCurrent
 	local familyAmbiguous = false
-	local alternatives = {bestLag * 2, math.floor(bestLag / 2 + 0.5)}
+	local octaveAlternatives = {bestLag * 2, math.floor(bestLag / 2 + 0.5)}
+	-- Also inspect 3:2 metrical interpretations. A strong triplet pulse can
+	-- produce a stable autocorrelation peak at 2/3 or 3/2 of the underlying
+	-- beat period (for example, ~85.7 BPM can coexist with a ~128.6 BPM grid).
+	-- These alternatives are deliberately held to a much tighter score margin
+	-- than octave alternatives, because unrelated tempos must not be merged.
+	local tripletAlternatives = {
+		math.floor(bestLag * 2 / 3 + 0.5),
+		math.floor(bestLag * 3 / 2 + 0.5),
+	}
 	-- On established tracks, protect the confirmed metrical level against
 	-- octave-related transients (blast beats, double-kick, tremolo and dense
 	-- electronic subdivisions). A competing octave hypothesis may be weaker
@@ -347,7 +356,7 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 	-- This is continuity evidence, not a hard BPM clamp: a genuinely new tempo
 	-- can still win when its evidence is clearly stronger across the windows.
 	local familyContinuityMargin = if bpmDetected then 0.18 else 0.075
-	for _, alternateLag in ipairs(alternatives) do
+	for _, alternateLag in ipairs(octaveAlternatives) do
 		if alternateLag >= minLag and alternateLag <= maxLag then
 			local alternateScore = scoreAt(alternateLag)
 			local candidateBPM = 60 * SAMPLE_RATE / alternateLag
@@ -358,6 +367,23 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 				if alternateScore >= bestScore - 0.075 then
 					familyAmbiguous = true
 				end
+				if candidateDistance < selectedDistance then
+					selectedLag = alternateLag
+					selectedScore = alternateScore
+				end
+			end
+		end
+	end
+	local tripletScoreMargin = if bpmDetected then 0.012 else 0.025
+	for _, alternateLag in ipairs(tripletAlternatives) do
+		if alternateLag >= minLag and alternateLag <= maxLag then
+			local alternateScore = scoreAt(alternateLag)
+			if alternateScore >= bestScore - tripletScoreMargin then
+				familyAmbiguous = true
+				local candidateBPM = 60 * SAMPLE_RATE / alternateLag
+				local selectedBPM = 60 * SAMPLE_RATE / selectedLag
+				local candidateDistance = math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1)
+				local selectedDistance = math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1)
 				if candidateDistance < selectedDistance then
 					selectedLag = alternateLag
 					selectedScore = alternateScore
