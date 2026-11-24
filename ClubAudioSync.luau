@@ -14,7 +14,7 @@ local BPM_MIN = 70
 local BPM_MAX = 190
 local BPM_SEED = 120
 local SAMPLE_RATE = 40
-local HISTORY_SECONDS = 10
+local HISTORY_SECONDS = 8
 local HISTORY_LIMIT = SAMPLE_RATE * HISTORY_SECONDS
 local ANALYZE_INTERVAL = 0.025
 local MOVEMENT_SPEED_MIN = 0.55
@@ -173,7 +173,7 @@ end
 local function estimateTempo(): (number?, number)
 	local count = #envelopeHistory
 	local analysisSamples = math.min(count, SAMPLE_RATE * 6)
-	if analysisSamples < SAMPLE_RATE * 4 then return nil, 0 end
+	if analysisSamples < SAMPLE_RATE * 3.5 then return nil, 0 end
 	local firstIndex = count - analysisSamples + 1
 	local mean = 0
 	for i = firstIndex, count do mean += envelopeHistory[i] end
@@ -189,6 +189,7 @@ local function estimateTempo(): (number?, number)
 	if variance < 0.00001 then return nil, 0 end
 
 	local bestLag, bestScore = 0, -math.huge
+	local secondScore = -math.huge
 	local minLag = math.floor(60 / BPM_MAX * SAMPLE_RATE)
 	local maxLag = math.ceil(60 / BPM_MIN * SAMPLE_RATE)
 	for lag = minLag, maxLag do
@@ -203,8 +204,11 @@ local function estimateTempo(): (number?, number)
 		-- Do not favor a narrow club-tempo band: genuine passages up to 170 BPM
 		-- (and slower breakdowns) must compete on measured periodicity alone.
 		if normalized > bestScore then
+			secondScore = bestScore
 			bestScore = normalized
 			bestLag = lag
+		elseif math.abs(lag - bestLag) > 2 and normalized > secondScore then
+			secondScore = normalized
 		end
 	end
 	if bestLag == 0 then return nil, 0 end
@@ -229,8 +233,14 @@ local function estimateTempo(): (number?, number)
 		end
 	end
 	local bpm = math.clamp(60 * SAMPLE_RATE / refinedLag, BPM_MIN, BPM_MAX)
-	local confidence = math.clamp((bestScore - 0.10) / 0.48, 0, 1)
-	if confidence < 0.24 then return nil, confidence end
+	local periodicity = math.clamp((bestScore - 0.08) / 0.52, 0, 1)
+	-- Penalize ambiguous autocorrelation peaks (common with halftime/doubletime
+	-- rhythms) while retaining confidence when the beat has a clear periodic peak.
+	local peakSeparation = if secondScore > -math.huge
+		then math.clamp((bestScore - secondScore) / 0.18, 0, 1)
+		else 0.5
+	local confidence = periodicity * (0.62 + peakSeparation * 0.38)
+	if confidence < 0.22 then return nil, confidence end
 	return bpm, confidence
 end
 
@@ -348,8 +358,8 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			pendingTempoConfidence = confidence
 		end
 
-		-- 48 consecutive 40 Hz observations ~= 1.2 seconds of stable evidence.
-		if pendingTempoSamples >= 48 then
+		-- 32 consecutive 40 Hz observations ~= 0.8 seconds of stable evidence.
+		if pendingTempoSamples >= 32 then
 			local accepted = pendingBPM :: number
 			if bpmDetected then
 				local relativeChange = math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1)
@@ -365,7 +375,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 					end
 				end
 			end
-			local blend = math.clamp(0.18 + pendingTempoConfidence * 0.22, 0.18, 0.40)
+			local blend = math.clamp(0.22 + pendingTempoConfidence * 0.26, 0.22, 0.48)
 			bpmDetected = if bpmDetected then bpmDetected + (accepted - bpmDetected) * blend else accepted
 			bpmConfidence += (pendingTempoConfidence - bpmConfidence) * 0.22
 			lastTempoUpdate = os.clock()
