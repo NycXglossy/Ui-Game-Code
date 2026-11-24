@@ -1,6 +1,6 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.111
--- v0.4.112 extends sparse-intro candidate retention and reduces initial consensus samples without lowering confidence.
+-- CLUB NEON MASTER INSTALLER v0.4.113
+-- v0.4.113 strengthens sustained-family tempo acquisition and rejects near-silent autocorrelation noise.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
 -- v0.4.107 hardens crossfade rollback: require verified outgoing asset/playhead before Stop and never default a failed capture to zero.
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
@@ -29,7 +29,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.112"
+local INSTALLER_VERSION = "0.4.113"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -44,7 +44,7 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "b5012fa3b375f5c99287291c4ba698eef1bc3ad2",
-    audioSync = "4efe356467a656298f555492032237ad8f30f817",
+    audioSync = "67fd5fec100f124af9edc31f013a180882aa6b77",
     djStageBarRig = "d4e11efc2a323450461f1a810222caba3ed8dbd9",
     djStageBarFX = "9346b4badf904821eeec297a6aff006ae9e10199",
     laserFX = "97d318d9eba89f1f1f6a7c28a1c2fd9117571380",
