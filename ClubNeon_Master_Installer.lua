@@ -1,5 +1,6 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.107
+-- CLUB NEON MASTER INSTALLER v0.4.108
+-- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
 -- v0.4.107 hardens crossfade rollback: require verified outgoing asset/playhead before Stop and never default a failed capture to zero.
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- v0.4.82 replaces the stage-dependent DJ LED backdrop with a dense four-wall venue-perimeter LED system (1,152 segments) using the shared beat clock.
@@ -27,12 +28,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.107"
+local INSTALLER_VERSION = "0.4.108"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "3c287ba8b1c8fadeb25b25a3a949275536baec20",
+    runtime = "2fae0c017970c4ae4e6a00a6247efd94f44f33dc",
     audio = "096f9444e650c3c6b1859549661561f7735ed789",
     catalog = "2083b434941b2706d18f2643c20ab87de937f331",
     globalService = "60922f3cc7d62ecdfc9673f40653cc0125d19a2c",
