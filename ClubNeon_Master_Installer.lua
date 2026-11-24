@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.78
+-- CLUB NEON MASTER INSTALLER v0.4.79
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- v0.4.78 improves adaptive tempo tracking for fluctuating tracks, including sustained passages up to 170+ BPM, without changing fixture choreography.
 -- v0.4.73 publishes server-authoritative full-floor bounds so streamed clients do not mistake partial panel replication for the complete dance floor.
@@ -40,7 +40,7 @@ local RELEASE = {
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "b5012fa3b375f5c99287291c4ba698eef1bc3ad2",
     audioSync = "e0d0b49426b06a5053d411789db5d79fea828b25",
-    djStageBarRig = "9f55486dd9d5bc251081b94bdb58a133b9086379",
+    djStageBarRig = "2ca53b561b0d886e6ca9a7f0aa1609481709847d",
     djStageBarFX = "16d0f1cad9e467a941685ed5c10ef5ed0616f235",
     laserFX = "97d318d9eba89f1f1f6a7c28a1c2fd9117571380",
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
