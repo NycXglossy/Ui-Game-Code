@@ -7,7 +7,7 @@ local Workspace = game:GetService("Workspace")
 
 local RIG_NAME = "StrobeLights"
 local FLOOR_FOLDER_NAME = "CeilingFX"
-local FIXTURES_PER_WALL = 6
+local FIXTURES_PER_WALL = 12
 local WALL_INSET = 5
 local HEIGHT_BELOW_CEILING = 7
 
