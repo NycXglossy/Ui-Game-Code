@@ -66,6 +66,7 @@ local fluxOlder = 0
 local fluxPrevious = 0
 local fluxPreviousPosition = 0
 local lastOnsetPosition = -math.huge
+local lastFastOnsetPosition = -math.huge
 local beatAnchorPosition = 0
 local beatAnchorReady = false
 local fallbackAnchorReady = false
@@ -135,6 +136,7 @@ local function clearAnalysis()
 	fluxPrevious = 0
 	fluxPreviousPosition = 0
 	lastOnsetPosition = -math.huge
+	lastFastOnsetPosition = -math.huge
 	beatAnchorPosition = 0
 	beatAnchorReady = false
 	fallbackAnchorReady = false
@@ -500,17 +502,18 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	local peak = fluxPrevious
 	local peakPosition = fluxPreviousPosition
 	if fluxPrevious > fluxOlder and fluxPrevious >= smoothedOnset
-		and peak > threshold and peakPosition - lastOnsetPosition >= 0.16 then
-		local onsetGap = peakPosition - lastOnsetPosition
-		lastOnsetPosition = peakPosition
+		and peak > threshold and peakPosition - lastFastOnsetPosition >= 0.16 then
+		local fastOnsetGap = peakPosition - lastFastOnsetPosition
+		lastFastOnsetPosition = peakPosition
 		onsetStrength = math.clamp((peak - mean) / math.max(deviation * 3, 1e-5), 0, 1)
 
 		local bpm = bpmDetected or bpmCurrent
 		updateRhythmicFeel(peakPosition, bpm)
 		local period = 60 / math.clamp(bpm, BPM_MIN, BPM_MAX)
 		-- The fast diagnostic lane may observe 0.16-0.22s events, but the
-		-- primary beat PLL retains its stricter 0.22s minimum interval.
-		local mainClockOnset = onsetGap >= 0.22
+		-- primary beat PLL retains its independent stricter 0.22s gate.
+		local mainClockOnset = peakPosition - lastOnsetPosition >= 0.22
+		if mainClockOnset then lastOnsetPosition = peakPosition end
 		local strongOnset = onsetStrength >= 0.18
 		if mainClockOnset and not beatAnchorReady then
 			beatAnchorPosition = peakPosition
