@@ -49,6 +49,7 @@ local fluxPreviousPosition = 0
 local lastOnsetPosition = -math.huge
 local beatAnchorPosition = 0
 local beatAnchorReady = false
+local fallbackAnchorReady = false
 local onsetStrength = 0
 local phaseLockConfidence = 0
 
@@ -95,6 +96,7 @@ local function clearAnalysis()
 	lastOnsetPosition = -math.huge
 	beatAnchorPosition = 0
 	beatAnchorReady = false
+	fallbackAnchorReady = false
 	onsetStrength = 0
 	phaseLockConfidence = 0
 end
@@ -401,9 +403,11 @@ function ClubAudioSync.getBeatState(): BeatState
 	-- This preserves smooth AudioPlayer timing while preventing BPM-only drift.
 	local period = 60 / bpm
 	local beatPosition = if playing then timePosition else now
-	if not beatAnchorReady then
-		beatAnchorPosition = beatPosition
-		beatAnchorReady = true
+	if not beatAnchorReady and (not playing or not analyzer or not analyzer.Parent) then
+		if not fallbackAnchorReady then
+			beatAnchorPosition = beatPosition
+			fallbackAnchorReady = true
+		end
 	end
 	local beats = (beatPosition - beatAnchorPosition) / period
 	local beatIndex = math.floor(beats)
