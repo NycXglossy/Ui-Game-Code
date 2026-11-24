@@ -14,7 +14,7 @@ local BPM_MIN = 70
 local BPM_MAX = 190
 local BPM_SEED = 120
 local SAMPLE_RATE = 40
-local HISTORY_SECONDS = 12
+local HISTORY_SECONDS = 10
 local HISTORY_LIMIT = SAMPLE_RATE * HISTORY_SECONDS
 local ANALYZE_INTERVAL = 0.025
 local MOVEMENT_SPEED_MIN = 0.55
@@ -172,17 +172,20 @@ end
 -- lag across a rolling 12-second window estimates tempo from the audio itself.
 local function estimateTempo(): (number?, number)
 	local count = #envelopeHistory
-	if count < SAMPLE_RATE * 7 then return nil, 0 end
+	local analysisSamples = math.min(count, SAMPLE_RATE * 6)
+	if analysisSamples < SAMPLE_RATE * 4 then return nil, 0 end
+	local firstIndex = count - analysisSamples + 1
 	local mean = 0
-	for _, value in ipairs(envelopeHistory) do mean += value end
-	mean /= count
-	local centered = table.create(count)
+	for i = firstIndex, count do mean += envelopeHistory[i] end
+	mean /= analysisSamples
+	local centered = table.create(analysisSamples)
 	local variance = 0
-	for i, value in ipairs(envelopeHistory) do
-		local v = value - mean
-		centered[i] = v
+	for i = firstIndex, count do
+		local v = envelopeHistory[i] - mean
+		centered[i - firstIndex + 1] = v
 		variance += v * v
 	end
+	count = analysisSamples
 	if variance < 0.00001 then return nil, 0 end
 
 	local bestLag, bestScore = 0, -math.huge
@@ -197,12 +200,8 @@ local function estimateTempo(): (number?, number)
 			normB += b * b
 		end
 		local normalized = score / math.sqrt(math.max(1e-9, normA * normB))
-		-- Explicitly resolve common half/double-time ambiguity in the club range.
-		-- This is a modest prior, not a hard BPM clamp: low-tempo tracks remain valid.
-		local candidateBPM = 60 * SAMPLE_RATE / lag
-		local preference = if candidateBPM >= 95 and candidateBPM <= 160 then 0.075
-			elseif candidateBPM < 85 then -0.035 else -0.015
-		normalized += preference
+		-- Do not favor a narrow club-tempo band: genuine passages up to 170 BPM
+		-- (and slower breakdowns) must compete on measured periodicity alone.
 		if normalized > bestScore then
 			bestScore = normalized
 			bestLag = lag
@@ -354,18 +353,16 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			local accepted = pendingBPM :: number
 			if bpmDetected then
 				local relativeChange = math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1)
-				-- Permit an octave correction only when the raw candidate has
-				-- remained stable; otherwise limit normal retuning to 3.5%.
-				if relativeChange > 0.35 then
+				-- Stable evidence is allowed to move well beyond the old 3.5% cap.
+				-- Keep only a guard against implausible non-octave jumps; ordinary
+				-- tempo ramps and 130->170 BPM passages are smoothed downstream.
+				if relativeChange > 0.55 then
 					local octaveMatch = math.abs(accepted * 2 - bpmDetected) / bpmDetected <= 0.08
 						or math.abs(accepted * 0.5 - bpmDetected) / bpmDetected <= 0.08
 					if not octaveMatch then
 						accepted = bpmDetected + math.clamp(accepted - bpmDetected,
-							-bpmDetected * 0.035, bpmDetected * 0.035)
+							-bpmDetected * 0.18, bpmDetected * 0.18)
 					end
-				else
-					accepted = bpmDetected + math.clamp(accepted - bpmDetected,
-						-bpmDetected * 0.035, bpmDetected * 0.035)
 				end
 			end
 			local blend = math.clamp(0.10 + pendingTempoConfidence * 0.20, 0.10, 0.28)
