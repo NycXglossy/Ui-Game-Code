@@ -84,6 +84,10 @@ local rhythmicFeel = "unknown"
 local rhythmicFeelCandidate = "unknown"
 local rhythmicFeelCandidateSamples = 0
 local rhythmicFeelConfidence = 0
+local feelDoubleTimeVotes = 0
+local feelOnBeatVotes = 0
+local feelHalfTimeVotes = 0
+local feelUnclassifiedIntervals = 0
 local FEEL_INTERVAL_HISTORY = 12
 local FEEL_CLASSIFY_MIN_INTERVALS = 6
 
@@ -150,6 +154,10 @@ local function clearAnalysis()
 	rhythmicFeelCandidate = "unknown"
 	rhythmicFeelCandidateSamples = 0
 	rhythmicFeelConfidence = 0
+	feelDoubleTimeVotes = 0
+	feelOnBeatVotes = 0
+	feelHalfTimeVotes = 0
+	feelUnclassifiedIntervals = 0
 end
 
 local function ensureAnalyzer(player: AudioPlayer?)
@@ -399,7 +407,18 @@ local function updateRhythmicFeel(onsetPosition: number, referenceBPM: number)
 			end
 		end
 	end
-	if total < FEEL_CLASSIFY_MIN_INTERVALS then return end
+	if total < FEEL_CLASSIFY_MIN_INTERVALS then
+		feelDoubleTimeVotes = doubleTimeCount
+		feelOnBeatVotes = onBeatCount
+		feelHalfTimeVotes = halfTimeCount
+		feelUnclassifiedIntervals = #feelOnsetIntervals - total
+		return
+	end
+
+	feelDoubleTimeVotes = doubleTimeCount
+	feelOnBeatVotes = onBeatCount
+	feelHalfTimeVotes = halfTimeCount
+	feelUnclassifiedIntervals = #feelOnsetIntervals - total
 
 	local winner = if doubleTimeCount > onBeatCount and doubleTimeCount > halfTimeCount then "double-time"
 		elseif halfTimeCount > onBeatCount and halfTimeCount > doubleTimeCount then "half-time"
@@ -715,10 +734,11 @@ function ClubAudioSync.getBeatState(): BeatState
 			then string.format("half=%.1f base=%.1f double=%.1f", bpmDetected * 0.5, bpmDetected, bpmDetected * 2)
 			else "warming"
 		print(string.format(
-			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
+			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
 			if assetId ~= "" then assetId else "unknown", trackGeneration, bpm, bpmConfidence,
 			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, tempoFamily,
-			rhythmicFeel, rhythmicFeelConfidence, #feelOnsetIntervals, feelFamily,
+			rhythmicFeel, rhythmicFeelConfidence, #feelOnsetIntervals,
+			feelDoubleTimeVotes, feelOnBeatVotes, feelHalfTimeVotes, feelUnclassifiedIntervals, feelFamily,
 			pendingTempoSamples, phaseLockConfidence, phaseErrorSeconds * 1000, onsetStrength, energy,
 			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
 		))
