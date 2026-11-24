@@ -478,8 +478,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				end
 			end
 
-			-- Stop only after the outgoing asset and its non-zero-or-zero-but-verified
-			-- playhead have been captured. If Stop fails, the old source stays active.
+			-- Stop only after the outgoing asset and its verified playhead have been
+			-- captured. A legitimate zero is allowed; a failed read is not. If Stop
+			-- fails, the old source stays active.
 			local stopOk, stopResult = pcall(function()
 				local stopped, stopError = outgoing.backend:Stop()
 				if stopped ~= true then error(tostring(stopError or "Outgoing AudioPlayer did not stop.")) end
