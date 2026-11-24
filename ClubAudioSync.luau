@@ -13,10 +13,10 @@ local ROOT_NAME = "ClubMusicModernAudio"
 local BPM_MIN = 70
 local BPM_MAX = 190
 local BPM_SEED = 120
-local SAMPLE_RATE = 20
+local SAMPLE_RATE = 40
 local HISTORY_SECONDS = 12
 local HISTORY_LIMIT = SAMPLE_RATE * HISTORY_SECONDS
-local ANALYZE_INTERVAL = 0.05
+local ANALYZE_INTERVAL = 0.025
 local MOVEMENT_SPEED_MIN = 0.55
 local MOVEMENT_SPEED_MAX = 1.45
 
@@ -34,6 +34,8 @@ local envelopeHistory: {number} = {}
 local bpmCurrent = BPM_SEED
 local bpmDetected: number? = nil
 local bpmConfidence = 0
+local lastTempoUpdate = 0
+local TEMPO_STALE_SECONDS = 4
 local energy = 0
 local movementSpeedCurrent = 1
 local lastT = os.clock()
@@ -73,6 +75,7 @@ local function clearAnalysis()
 	envelopeHistory = {}
 	bpmDetected = nil
 	bpmConfidence = 0
+	lastTempoUpdate = 0
 	energy = 0
 	sampleAccumulator = 0
 	lastSampleAt = 0
@@ -176,9 +179,29 @@ local function estimateTempo(): (number?, number)
 		end
 	end
 	if bestLag == 0 then return nil, 0 end
-	local bpm = math.clamp(60 * SAMPLE_RATE / bestLag, BPM_MIN, BPM_MAX)
+	-- Parabolic interpolation around the winning autocorrelation lag reduces
+	-- quantization error between integer sample offsets.
+	local refinedLag = bestLag
+	if bestLag > minLag and bestLag < maxLag then
+		local function correlationAt(lag)
+			local score, normA, normB = 0, 0, 0
+			for i = lag + 1, count do
+				local a, b = centered[i], centered[i - lag]
+				score += a * b
+				normA += a * a
+				normB += b * b
+			end
+			return score / math.sqrt(math.max(1e-9, normA * normB))
+		end
+		local left, center, right = correlationAt(bestLag - 1), correlationAt(bestLag), correlationAt(bestLag + 1)
+		local denominator = left - 2 * center + right
+		if math.abs(denominator) > 1e-6 then
+			refinedLag += math.clamp(0.5 * (left - right) / denominator, -0.5, 0.5)
+		end
+	end
+	local bpm = math.clamp(60 * SAMPLE_RATE / refinedLag, BPM_MIN, BPM_MAX)
 	local confidence = math.clamp((bestScore - 0.08) / 0.52, 0, 1)
-	if confidence < 0.12 then return nil, confidence end
+	if confidence < 0.16 then return nil, confidence end
 	return bpm, confidence
 end
 
@@ -214,8 +237,12 @@ local function sampleAnalyzer(dt: number)
 
 	local detected, confidence = estimateTempo()
 	if detected then
-		bpmDetected = detected
-		bpmConfidence = confidence
+		-- Stronger readings may adapt quickly; weaker readings are deliberately
+		-- damped so a transient or half/double-time ambiguity cannot yank the show clock.
+		local blend = math.clamp(0.12 + confidence * 0.28, 0.12, 0.40)
+		bpmDetected = if bpmDetected then bpmDetected + (detected - bpmDetected) * blend else detected
+		bpmConfidence += (confidence - bpmConfidence) * 0.25
+		lastTempoUpdate = os.clock()
 	end
 end
 
@@ -273,6 +300,10 @@ function ClubAudioSync.getBeatState(): BeatState
 	end
 	if playing then sampleAnalyzer(dt) end
 
+	if bpmDetected and lastTempoUpdate > 0 and now - lastTempoUpdate > TEMPO_STALE_SECONDS then
+		bpmDetected = nil
+		bpmConfidence = 0
+	end
 	local targetBPM = bpmDetected or BPM_SEED
 	bpmCurrent += (targetBPM - bpmCurrent) * (1 - math.exp(-2.4 * dt))
 	local bpm = bpmCurrent
