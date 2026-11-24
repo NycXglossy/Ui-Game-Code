@@ -1,6 +1,6 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.113
--- v0.4.113 strengthens sustained-family tempo acquisition and rejects near-silent autocorrelation noise.
+-- CLUB NEON MASTER INSTALLER v0.4.114
+-- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
 -- v0.4.107 hardens crossfade rollback: require verified outgoing asset/playhead before Stop and never default a failed capture to zero.
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
@@ -29,7 +29,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.113"
+local INSTALLER_VERSION = "0.4.114"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -51,6 +51,7 @@ local RELEASE = {
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     movingHeadFX = "3a16afc4108546d4a3a84d8d3726b09173ec28ef",
     movingHeadRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
+    strobeRig = "70e1ad0926a877847bdcc3248c94004d38769931",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
@@ -350,6 +351,7 @@ for _, item in ipairs({
     {"NeonSignFX.luau", "Script", "ServerScriptService", "NeonSignFX"},
     {"NeonTrimEffects.luau", "Script", "ServerScriptService", "NeonTrimEffects"},
     {"SpeakerEffects.luau", "LocalScript", "StarterPlayerScripts", "SpeakerEffects"},
+    {"StrobeLightsRig.server.lua", "Script", "ServerScriptService", "StrobeLightsRig", RELEASE.strobeRig},
     {"StrobeLightsFX.luau", "LocalScript", "StarterPlayerScripts", "StrobeLightsFX"},
     {"WallVisualizerClient.luau", "LocalScript", "StarterPlayerScripts", "WallVisualizerClient"},
 }) do
