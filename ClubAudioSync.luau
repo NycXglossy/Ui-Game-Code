@@ -641,7 +641,14 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	-- than an unbounded lifetime tally.
 	local evidenceDecay = math.exp(-analysisElapsed / TEMPO_EVIDENCE_DECAY_SECONDS)
 	for _, hypothesis in ipairs(tempoFamilyHypotheses) do
+		-- All votes must share the same recency window. Previously only the
+		-- aggregate family score decayed; low/high metrical votes accumulated
+		-- for the entire track and could keep an obsolete half/double-time
+		-- preference alive after the supporting section had passed.
 		hypothesis.samples *= evidenceDecay
+		hypothesis.lowSamples *= evidenceDecay
+		hypothesis.highSamples *= evidenceDecay
+		hypothesis.confidence *= evidenceDecay
 	end
 	local detected, confidence = estimateTempo()
 	rawCandidateBPM = detected
@@ -717,13 +724,13 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			local aScore = a.samples * (0.65 + a.confidence * 0.35)
 			local bScore = b.samples * (0.65 + b.confidence * 0.35)
 			if math.abs(aScore - bScore) < 0.001 then
-				local aLevel = if a.highSamples > a.lowSamples then a.highBPM
-					elseif a.lowSamples > a.highSamples then a.lowBPM
+				local aLevel = if a.highSamples > a.lowSamples * 1.20 then a.highBPM
+					elseif a.lowSamples > a.highSamples * 1.20 then a.lowBPM
 					else if a.highBPM > 0 and a.lowBPM > 0
 						then (if math.abs(a.highBPM - bpmCurrent) < math.abs(a.lowBPM - bpmCurrent) then a.highBPM else a.lowBPM)
 						else math.max(a.highBPM, a.lowBPM)
-				local bLevel = if b.highSamples > b.lowSamples then b.highBPM
-					elseif b.lowSamples > b.highSamples then b.lowBPM
+				local bLevel = if b.highSamples > b.lowSamples * 1.20 then b.highBPM
+					elseif b.lowSamples > b.highSamples * 1.20 then b.lowBPM
 					else if b.highBPM > 0 and b.lowBPM > 0
 						then (if math.abs(b.highBPM - bpmCurrent) < math.abs(b.lowBPM - bpmCurrent) then b.highBPM else b.lowBPM)
 						else math.max(b.highBPM, b.lowBPM)
@@ -738,9 +745,12 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		local winner = tempoFamilyHypotheses[1]
 		if winner then
 			local preferredBPM: number
-			if winner.highSamples > winner.lowSamples and winner.highBPM > 0 then
+			-- Require a meaningful recent vote advantage before choosing one
+			-- metrical level. Near-ties use continuity as a tie-breaker instead
+			-- of flipping between half-time and double-time on tiny vote changes.
+			if winner.highSamples > winner.lowSamples * 1.20 and winner.highBPM > 0 then
 				preferredBPM = winner.highBPM
-			elseif winner.lowSamples > winner.highSamples and winner.lowBPM > 0 then
+			elseif winner.lowSamples > winner.highSamples * 1.20 and winner.lowBPM > 0 then
 				preferredBPM = winner.lowBPM
 			elseif winner.highBPM > 0 and winner.lowBPM > 0 then
 				preferredBPM = if math.abs(winner.highBPM - bpmCurrent) < math.abs(winner.lowBPM - bpmCurrent)
