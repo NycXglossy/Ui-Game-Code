@@ -233,6 +233,29 @@ local function estimateTempo(): (number?, number)
 		end
 	end
 	local bpm = math.clamp(60 * SAMPLE_RATE / refinedLag, BPM_MIN, BPM_MAX)
+	-- Autocorrelation often produces paired half-time/double-time peaks.
+	-- If the octave-related peak is nearly as strong, prefer the hypothesis
+	-- continuous with the last trusted tempo instead of jumping octaves.
+	local referenceBPM = bpmDetected or bpmCurrent
+	local alternateLag = if bestLag * 2 <= maxLag then bestLag * 2
+		elseif bestLag / 2 >= minLag then math.floor(bestLag / 2 + 0.5) else nil
+	if alternateLag then
+		local altScore, normA, normB = 0, 0, 0
+		for i = alternateLag + 1, count do
+			local x, y = centered[i], centered[i - alternateLag]
+			altScore += x * y
+			normA += x * x
+			normB += y * y
+		end
+		altScore /= math.sqrt(math.max(1e-9, normA * normB))
+		if altScore >= bestScore - 0.075 then
+			local alternateBPM = 60 * SAMPLE_RATE / alternateLag
+			if math.abs(alternateBPM - referenceBPM) < math.abs(bpm - referenceBPM) then
+				bpm = math.clamp(alternateBPM, BPM_MIN, BPM_MAX)
+				bestScore = altScore
+			end
+		end
+	end
 	local periodicity = math.clamp((bestScore - 0.08) / 0.52, 0, 1)
 	-- Penalize ambiguous autocorrelation peaks (common with halftime/doubletime
 	-- rhythms) while retaining confidence when the beat has a clear periodic peak.
@@ -443,11 +466,12 @@ function ClubAudioSync.getBeatState(): BeatState
 	if playing then sampleAnalyzer(dt, timePosition) end
 
 	if bpmDetected and lastTempoUpdate > 0 and now - lastTempoUpdate > TEMPO_STALE_SECONDS then
-		bpmDetected = nil
-		bpmConfidence = 0
-		phaseLockConfidence *= 0.8
+		-- Keep the last trusted tempo through breakdowns and analyzer dropouts.
+		-- A new asset explicitly clears this state in clearAnalysis().
+		bpmConfidence *= math.exp(-dt * 0.12)
+		phaseLockConfidence *= math.exp(-dt * 0.08)
 	end
-	local targetBPM = bpmDetected or BPM_SEED
+	local targetBPM = bpmDetected or bpmCurrent
 	bpmCurrent += (targetBPM - bpmCurrent) * (1 - math.exp(-1.8 * dt))
 	local bpm = bpmCurrent
 
