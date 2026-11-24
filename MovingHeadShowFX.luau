@@ -306,9 +306,14 @@ local heads, headSideCounts = collectHeads()
 -- A replicated rig Folder can arrive before all fixture parts and their
 -- attachments/targets. Wait for the ready-fixture count to settle before
 -- taking the one-time controller snapshot.
+-- Wait for the full rig rather than accepting a temporarily stable streamed subset.
+-- The controller still starts after the grace period and its live audit keeps discovering
+-- late fixtures; zero fixtures is not a fatal startup condition.
+local EXPECTED_HEADS = 32
 local stableCount = #heads
 local stableSince = os.clock()
-local replicationDeadline = os.clock() + 20
+local replicationDeadline = os.clock() + 45
+local announcedPartial = false
 while os.clock() < replicationDeadline do
 	task.wait(0.25)
 	local nextFixtures, nextCounts = collectHeads()
@@ -317,13 +322,17 @@ while os.clock() < replicationDeadline do
 		stableSince = os.clock()
 	end
 	heads, headSideCounts = nextFixtures, nextCounts
-	if #heads > 0 and os.clock() - stableSince >= 3 then
+	if #heads >= EXPECTED_HEADS and os.clock() - stableSince >= 1.5 then
 		break
 	end
+	if #heads > 0 and not announcedPartial and os.clock() - stableSince >= 3 then
+		announcedPartial = true
+		print("[ClubNeon][MovingHeadShowFX] Partial replication (" .. #heads .. "/" .. EXPECTED_HEADS .. "); continuing to wait for the full rig.")
+	end
 end
-if #heads == 0 then
-	warn("[ClubNeon][FX] No complete fixtures replicated within 20 seconds; controller will not start.")
-	return
+if #heads < EXPECTED_HEADS then
+	warn("[ClubNeon][MovingHeadShowFX] Startup grace period ended with " .. #heads .. "/" .. EXPECTED_HEADS
+		.. " fixtures; controller remains active and will recover streamed fixtures automatically.")
 end
 local strobeCells = collectStrobeCells()
 print("[ClubNeon][MovingHeadShowFX] Four-wall crosshatch coverage ready; heads=" .. #heads
