@@ -25,7 +25,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.77"
+local INSTALLER_VERSION = "0.4.79"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -40,6 +40,8 @@ local RELEASE = {
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "b5012fa3b375f5c99287291c4ba698eef1bc3ad2",
     audioSync = "e0d0b49426b06a5053d411789db5d79fea828b25",
+    djStageBarRig = "9f55486dd9d5bc251081b94bdb58a133b9086379",
+    djStageBarFX = "16d0f1cad9e467a941685ed5c10ef5ed0616f235",
     laserFX = "97d318d9eba89f1f1f6a7c28a1c2fd9117571380",
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     movingHeadFX = "3a16afc4108546d4a3a84d8d3726b09173ec28ef",
@@ -316,6 +318,8 @@ end
 -- Client scripts stay in StarterPlayerScripts; rig builders and replicated
 -- fixture animators stay server-side. All source is pinned to the FX upload.
 addSource("ClubAudioSync.luau", "ModuleScript", "ReplicatedStorage", "ClubAudioSync", RELEASE.audioSync)
+addSource("DJStageLEDBarRig.server.lua", "Script", "ServerScriptService", "DJStageLEDBarRig", RELEASE.djStageBarRig)
+addSource("DJStageLEDBarFX.client.lua", "LocalScript", "StarterPlayerScripts", "DJStageLEDBarFX", RELEASE.djStageBarFX)
 -- Server-owned fixture/layout halves; their paired LocalScripts animate locally.
 addSource("AudienceBlinderRig.server.lua", "Script", "ServerScriptService", "AudienceBlinderRig", RELEASE.fx)
 addSource("StageHazeRig.server.lua", "Script", "ServerScriptService", "StageHazeRig", RELEASE.fx)
