@@ -367,7 +367,9 @@ local function updateRhythmicFeel(onsetPosition: number, referenceBPM: number)
 	if referenceBPM < BPM_MIN or referenceBPM > BPM_MAX then return end
 	if lastFeelOnsetPosition > -math.huge then
 		local interval = onsetPosition - lastFeelOnsetPosition
-		if interval >= 0.22 and interval <= 2.0 then
+		-- Keep a separate diagnostic interval lane below the beat-clock onset
+		-- gate. This can observe fast subdivisions without feeding them to PLL.
+		if interval >= 0.16 and interval <= 2.0 then
 			table.insert(feelOnsetIntervals, interval)
 			if #feelOnsetIntervals > FEEL_INTERVAL_HISTORY then
 				table.remove(feelOnsetIntervals, 1)
@@ -378,13 +380,17 @@ local function updateRhythmicFeel(onsetPosition: number, referenceBPM: number)
 	if #feelOnsetIntervals < FEEL_CLASSIFY_MIN_INTERVALS then return end
 
 	local beatPeriod = 60 / referenceBPM
-	local onBeatCount, halfTimeCount, total = 0, 0, 0
+	local doubleTimeCount, onBeatCount, halfTimeCount, total = 0, 0, 0, 0
 	for _, interval in ipairs(feelOnsetIntervals) do
+		local doubleError = math.abs(interval - beatPeriod * 0.5) / (beatPeriod * 0.5)
 		local beatError = math.abs(interval - beatPeriod) / beatPeriod
 		local halfError = math.abs(interval - beatPeriod * 2) / (beatPeriod * 2)
-		if math.min(beatError, halfError) <= 0.22 then
+		local bestError = math.min(doubleError, beatError, halfError)
+		if bestError <= 0.22 then
 			total += 1
-			if beatError <= halfError then
+			if bestError == doubleError then
+				doubleTimeCount += 1
+			elseif bestError == beatError then
 				onBeatCount += 1
 			else
 				halfTimeCount += 1
@@ -393,9 +399,11 @@ local function updateRhythmicFeel(onsetPosition: number, referenceBPM: number)
 	end
 	if total < FEEL_CLASSIFY_MIN_INTERVALS then return end
 
-	local winner = if halfTimeCount > onBeatCount then "half-time"
-		elseif onBeatCount > halfTimeCount then "on-beat" else "ambiguous"
-	local winnerCount = math.max(halfTimeCount, onBeatCount)
+	local winner = if doubleTimeCount > onBeatCount and doubleTimeCount > halfTimeCount then "double-time"
+		elseif halfTimeCount > onBeatCount and halfTimeCount > doubleTimeCount then "half-time"
+		elseif onBeatCount > doubleTimeCount and onBeatCount > halfTimeCount then "on-beat"
+		else "ambiguous"
+	local winnerCount = math.max(doubleTimeCount, onBeatCount, halfTimeCount)
 	local confidence = winnerCount / total
 	if confidence < 0.70 then winner = "ambiguous" end
 	rhythmicFeelConfidence = confidence
@@ -492,21 +500,24 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	local peak = fluxPrevious
 	local peakPosition = fluxPreviousPosition
 	if fluxPrevious > fluxOlder and fluxPrevious >= smoothedOnset
-		and peak > threshold and peakPosition - lastOnsetPosition >= 0.22 then
+		and peak > threshold and peakPosition - lastOnsetPosition >= 0.16 then
+		local onsetGap = peakPosition - lastOnsetPosition
 		lastOnsetPosition = peakPosition
 		onsetStrength = math.clamp((peak - mean) / math.max(deviation * 3, 1e-5), 0, 1)
 
 		local bpm = bpmDetected or bpmCurrent
 		updateRhythmicFeel(peakPosition, bpm)
 		local period = 60 / math.clamp(bpm, BPM_MIN, BPM_MAX)
-		-- Reject weak transients and repeated subdivisions as phase references.
+		-- The fast diagnostic lane may observe 0.16-0.22s events, but the
+		-- primary beat PLL retains its stricter 0.22s minimum interval.
+		local mainClockOnset = onsetGap >= 0.22
 		local strongOnset = onsetStrength >= 0.18
-		if not beatAnchorReady then
+		if mainClockOnset and not beatAnchorReady then
 			beatAnchorPosition = peakPosition
 			beatAnchorReady = true
 			lastAcceptedOnsetPosition = peakPosition
 			phaseLockConfidence = 0.20 + onsetStrength * 0.15
-		elseif strongOnset then
+		elseif mainClockOnset and strongOnset then
 			local beatsFromAnchor = (peakPosition - beatAnchorPosition) / period
 			local phaseError = beatsFromAnchor - math.floor(beatsFromAnchor + 0.5)
 			local errorSeconds = phaseError * period
