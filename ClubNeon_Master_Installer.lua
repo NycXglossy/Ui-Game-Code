@@ -1,7 +1,7 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.81
+-- CLUB NEON MASTER INSTALLER v0.4.82
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.81 expands the DJ LED backdrop to 152 segments and corrects its shared beat-clock rate scaling.
+-- v0.4.82 replaces the stage-dependent DJ LED backdrop with a four-wall venue-perimeter LED system (448 segments) using the shared beat clock.
 -- v0.4.79 adds the dual-architecture DJ stage LED bar rig and client-local synchronized FX.
 -- v0.4.73 publishes server-authoritative full-floor bounds so streamed clients do not mistake partial panel replication for the complete dance floor.
 -- v0.4.72 spreads every laser and moving-head target across a dedicated full-floor cell while preserving independent BPM-adaptive motion.
@@ -26,7 +26,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.81"
+local INSTALLER_VERSION = "0.4.82"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -41,8 +41,8 @@ local RELEASE = {
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "b5012fa3b375f5c99287291c4ba698eef1bc3ad2",
     audioSync = "375f4d668974e00e468bcd958c9cc534c8632f43",
-    djStageBarRig = "4c180825ab00ecb2b6ceb4b0e2763e4d54f08ccc",
-    djStageBarFX = "ae727fdeb1ed6c6d25b0f8a064f46207f70574d1",
+    djStageBarRig = "e43fe8030e9f8cd7671e1fdc6736378c171db458",
+    djStageBarFX = "5d48b2efdb95fd6969e4b04d4799e8156a5af01c",
     laserFX = "97d318d9eba89f1f1f6a7c28a1c2fd9117571380",
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     movingHeadFX = "3a16afc4108546d4a3a84d8d3726b09173ec28ef",
