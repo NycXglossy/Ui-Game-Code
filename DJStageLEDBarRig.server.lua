@@ -1,44 +1,75 @@
 --!strict
--- DJStageLEDBarRig: server-owned geometry for the dual-script DJ booth LED bar system.
--- The client controller animates these replicated segments using ClubAudioSync.
--- Add a Part named DJStageLEDBarAnchor behind the DJ booth and orient its LookVector
--- toward the audience. The bars are built behind it (local -Z). A Model named DJBooth
--- is accepted as a fallback; its pivot LookVector is treated as audience-facing.
+-- ClubNeon distributed venue LED bar rig.
+-- Independent of the DJ booth/stage: derives its layout from the same
+-- CeilingFX floor grid and wall-trim bounds used by the other ClubNeon rigs.
+-- Server owns geometry; DJStageLEDBarFX animates it using ClubAudioSync.
 
 local Workspace = game:GetService("Workspace")
 
 local RIG_NAME = "DJStageLEDBarRig"
-local ANCHOR_NAME = "DJStageLEDBarAnchor"
+local FLOOR_FOLDER_NAME = "CeilingFX"
+local HORIZONTAL_ROWS_PER_WALL = 3
+local HORIZONTAL_SEGMENTS = 32
+local VERTICAL_SEGMENTS = 16
+local WALL_INSET = 7
+local CORNER_INSET = 2
 
-local function findAnchor(): (CFrame?, Vector3?, string?)
-	local explicit = Workspace:FindFirstChild(ANCHOR_NAME, true)
-	if explicit and explicit:IsA("BasePart") then
-		return explicit.CFrame, explicit.Size, explicit:GetFullName()
+local floorFolder = Workspace:FindFirstChild(FLOOR_FOLDER_NAME)
+if not floorFolder then
+	warn("[ClubNeon][VenueLEDBarRig] CeilingFX floor grid not found; distributed LED bars were not created.")
+	return
+end
+
+local floorY = -math.huge
+local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+local floorPanels = 0
+for _, item in ipairs(floorFolder:GetChildren()) do
+	if item:IsA("BasePart") and item.Name == "FloorPanel" then
+		floorPanels += 1
+		local p = item.Position
+		floorY = math.max(floorY, p.Y)
+		minX = math.min(minX, p.X)
+		maxX = math.max(maxX, p.X)
+		minZ = math.min(minZ, p.Z)
+		maxZ = math.max(maxZ, p.Z)
 	end
+end
 
-	for _, item in ipairs(Workspace:GetDescendants()) do
-		if item:IsA("Model") then
-			local normalized = string.lower(string.gsub(item.Name, "[^%w]", ""))
-			if normalized == "djbooth" or normalized == "djstage" or normalized == "stagebooth" then
-				local ok, boxCFrame, boxSize = pcall(function()
-					local cf, size = item:GetBoundingBox()
-					return cf, size
-				end)
-				if ok then return boxCFrame, boxSize, item:GetFullName() end
-			end
-		elseif item:IsA("BasePart") then
-			local normalized = string.lower(string.gsub(item.Name, "[^%w]", ""))
-			if normalized == "djbooth" or normalized == "djboothanchor" or normalized == "djstageanchor" then
-				return item.CFrame, item.Size, item:GetFullName()
+if floorPanels < 4 or floorY == -math.huge or maxX - minX < 40 or maxZ - minZ < 40 then
+	warn("[ClubNeon][VenueLEDBarRig] Floor grid bounds are incomplete; refusing to build a collapsed LED layout. panels=" .. floorPanels)
+	return
+end
+
+-- Match MovingHeadShow's venue-wide trim measurement so the bars follow the
+-- room perimeter rather than clustering around the dance-floor/stage footprint.
+local venueMinX, venueMaxX, venueMinZ, venueMaxZ = minX, maxX, minZ, maxZ
+local foundTrim = false
+for _, item in ipairs(Workspace:GetDescendants()) do
+	if item:IsA("BasePart") and (item.Name == "TrimH" or item.Name == "TrimV")
+		and math.max(item.Size.X, item.Size.Z) >= 300 then
+		foundTrim = true
+		local cf, size = item.CFrame, item.Size
+		for _, ux in ipairs({-0.5, 0.5}) do
+			for _, uz in ipairs({-0.5, 0.5}) do
+				local corner = cf * Vector3.new(size.X * ux, 0, size.Z * uz)
+				venueMinX = math.min(venueMinX, corner.X)
+				venueMaxX = math.max(venueMaxX, corner.X)
+				venueMinZ = math.min(venueMinZ, corner.Z)
+				venueMaxZ = math.max(venueMaxZ, corner.Z)
 			end
 		end
 	end
-	return nil, nil, nil
 end
 
-local anchorCFrame, anchorSize, anchorPath = findAnchor()
-if not anchorCFrame or not anchorSize then
-	warn("[ClubNeon][DJStageLEDBarRig] No DJStageLEDBarAnchor or exact DJBooth model found. Add a Part named DJStageLEDBarAnchor behind the booth, facing the audience. Existing rig was left untouched.")
+local center = Vector3.new((venueMinX + venueMaxX) * 0.5, floorY, (venueMinZ + venueMaxZ) * 0.5)
+local ceilingRay = Workspace:Raycast(center, Vector3.new(0, 500, 0))
+local ceilingY = ceilingRay and ceilingRay.Position.Y or floorY + 60
+local topY = math.max(floorY + 12, ceilingY - 5)
+local usableTopY = math.min(topY, floorY + 55)
+local x0, x1 = venueMinX + WALL_INSET, venueMaxX - WALL_INSET
+local z0, z1 = venueMinZ + WALL_INSET, venueMaxZ - WALL_INSET
+if x1 - x0 < 40 or z1 - z0 < 40 then
+	warn("[ClubNeon][VenueLEDBarRig] Venue perimeter is too small after safety inset; no rig was replaced.")
 	return
 end
 
@@ -48,18 +79,12 @@ if oldRig then oldRig:Destroy() end
 local rig = Instance.new("Folder")
 rig.Name = RIG_NAME
 rig:SetAttribute("Ready", false)
-rig:SetAttribute("AnchorSource", anchorPath or "unknown")
+rig:SetAttribute("LayoutMode", "FourWallVenuePerimeter")
+rig:SetAttribute("FloorPanelCount", floorPanels)
+rig:SetAttribute("UsedVenueTrimBounds", foundTrim)
 rig.Parent = Workspace
 
-local width = math.clamp(math.max(anchorSize.X, 12) + 4, 12, 32)
-local barDepth = math.clamp(anchorSize.Z * 0.25, 0.5, 2)
-local rearOffset = anchorSize.Z * 0.5 + 3
-local baseY = math.max(2.5, anchorSize.Y * 0.5 + 2)
-local horizontalRows = 5
-local horizontalCount = 24
-local verticalCount = 16
-
-local function makeSegment(name: string, localCFrame: CFrame, size: Vector3, row: number, index: number, orientation: string)
+local function makeSegment(name: string, position: Vector3, size: Vector3, rotation: CFrame, row: number, index: number, orientation: string, wallSide: string)
 	local part = Instance.new("Part")
 	part.Name = name
 	part.Size = size
@@ -70,48 +95,93 @@ local function makeSegment(name: string, localCFrame: CFrame, size: Vector3, row
 	part.CastShadow = false
 	part.Material = Enum.Material.Neon
 	part.Color = Color3.fromRGB(40, 180, 255)
-	part.Transparency = 0.82
-	part.CFrame = anchorCFrame * CFrame.new(0, 0, -rearOffset) * localCFrame
+	part.Transparency = 0.84
+	part.CFrame = CFrame.new(position) * rotation
 	part:SetAttribute("BarOrientation", orientation)
 	part:SetAttribute("BarRow", row)
 	part:SetAttribute("BarIndex", index)
+	part:SetAttribute("WallSide", wallSide)
 	part.Parent = rig
 end
 
--- Three horizontal pixel bars span the DJ backdrop.
-for row = 1, horizontalRows do
-	local y = baseY + (row - 1) * 1.45
-	for index = 1, horizontalCount do
-		local x = -width * 0.5 + (index - 0.5) * (width / horizontalCount)
+local function makeWallRun(side: string, row: number, count: number)
+	local y = usableTopY - (row - 1) * math.min(4, math.max(2.5, (usableTopY - floorY - 5) / 3))
+	local runLength = if side == "north" or side == "south" then x1 - x0 else z1 - z0
+	local segmentLength = runLength / count
+	for index = 1, count do
+		local along = (index - 0.5) / count
+		local position: Vector3
+		local rotation: CFrame
+		if side == "north" then
+			position = Vector3.new(x0 + runLength * along, y, z0)
+			rotation = CFrame.new()
+		elseif side == "east" then
+			position = Vector3.new(x1, y, z0 + runLength * along)
+			rotation = CFrame.Angles(0, math.pi * 0.5, 0)
+		elseif side == "south" then
+			position = Vector3.new(x1 - runLength * along, y, z1)
+			rotation = CFrame.Angles(0, math.pi, 0)
+		else
+			position = Vector3.new(x0, y, z1 - runLength * along)
+			rotation = CFrame.Angles(0, -math.pi * 0.5, 0)
+		end
 		makeSegment(
-			"HBar_R" .. row .. "_S" .. index,
-			CFrame.new(x, y, 0),
-			Vector3.new(width / horizontalCount * 0.88, 0.34, barDepth),
-			row, index, "Horizontal"
+			"LED_" .. side .. "_R" .. row .. "_S" .. index,
+			position,
+			Vector3.new(segmentLength * 0.88, 0.34, 0.32),
+			rotation,
+			(row - 1) * 4 + ({north = 1, east = 2, south = 3, west = 4})[side],
+			index,
+			"Horizontal",
+			side
 		)
 	end
 end
 
--- Two vertical pixel bars frame the horizontal array.
-for side = 1, 2 do
-	local x = (side == 1 and -1 or 1) * (width * 0.5 + 0.65)
-	for index = 1, verticalCount do
-		local y = baseY - 0.7 + (index - 0.5) * 0.68
+-- Three independently animated horizontal runs on each of the four walls.
+for _, side in ipairs({"north", "east", "south", "west"}) do
+	for row = 1, HORIZONTAL_ROWS_PER_WALL do
+		makeWallRun(side, row, HORIZONTAL_SEGMENTS)
+	end
+end
+
+-- Four vertical corner columns visually connect the wall runs.
+local verticalHeight = math.max(8, usableTopY - floorY - 3)
+local verticalStep = verticalHeight / VERTICAL_SEGMENTS
+for cornerIndex, corner in ipairs({
+	{side = "northwest", x = x0 + CORNER_INSET, z = z0 + CORNER_INSET},
+	{side = "northeast", x = x1 - CORNER_INSET, z = z0 + CORNER_INSET},
+	{side = "southeast", x = x1 - CORNER_INSET, z = z1 - CORNER_INSET},
+	{side = "southwest", x = x0 + CORNER_INSET, z = z1 - CORNER_INSET},
+}) do
+	for index = 1, VERTICAL_SEGMENTS do
+		local y = floorY + 1.5 + (index - 0.5) * verticalStep
 		makeSegment(
-			"VBar_S" .. side .. "_S" .. index,
-			CFrame.new(x, y, 0),
-			Vector3.new(0.38, 0.58, barDepth),
-			 side, index, "Vertical"
+			"LED_" .. corner.side .. "_V" .. index,
+			Vector3.new(corner.x, y, corner.z),
+			Vector3.new(0.34, verticalStep * 0.88, 0.32),
+			CFrame.new(),
+			cornerIndex,
+			index,
+			"Vertical",
+			corner.side
 		)
 	end
 end
 
-rig:SetAttribute("HorizontalBars", horizontalRows)
-rig:SetAttribute("HorizontalSegmentsPerBar", horizontalCount)
-rig:SetAttribute("VerticalBars", 2)
-rig:SetAttribute("VerticalSegmentsPerBar", verticalCount)
-rig:SetAttribute("SegmentCount", horizontalRows * horizontalCount + 2 * verticalCount)
+local horizontalBars = 4 * HORIZONTAL_ROWS_PER_WALL
+local verticalBars = 4
+local segmentCount = horizontalBars * HORIZONTAL_SEGMENTS + verticalBars * VERTICAL_SEGMENTS
+rig:SetAttribute("HorizontalBars", horizontalBars)
+rig:SetAttribute("HorizontalSegmentsPerBar", HORIZONTAL_SEGMENTS)
+rig:SetAttribute("VerticalBars", verticalBars)
+rig:SetAttribute("VerticalSegmentsPerBar", VERTICAL_SEGMENTS)
+rig:SetAttribute("SegmentCount", segmentCount)
 rig:SetAttribute("Ready", true)
 
-print("[ClubNeon][DJStageLEDBarRig] Ready; horizontal=5x24 vertical=2x16 segments="
-	.. tostring(rig:GetAttribute("SegmentCount")) .. " anchor=" .. tostring(anchorPath))
+print("[ClubNeon][VenueLEDBarRig] Four-wall venue perimeter ready; walls=N/E/S/W=3/3/3/3 rows; "
+	.. "horizontal=" .. horizontalBars .. "x" .. HORIZONTAL_SEGMENTS
+	.. " vertical=" .. verticalBars .. "x" .. VERTICAL_SEGMENTS
+	.. " segments=" .. segmentCount
+	.. " floorPanels=" .. floorPanels
+	.. " trimBounds=" .. tostring(foundTrim))
