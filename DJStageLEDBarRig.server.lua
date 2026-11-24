@@ -8,9 +8,9 @@ local Workspace = game:GetService("Workspace")
 
 local RIG_NAME = "DJStageLEDBarRig"
 local FLOOR_FOLDER_NAME = "CeilingFX"
-local HORIZONTAL_ROWS_PER_WALL = 3
-local HORIZONTAL_SEGMENTS = 32
-local VERTICAL_SEGMENTS = 16
+local HORIZONTAL_ROWS_PER_WALL = 5
+local HORIZONTAL_SEGMENTS = 48
+local VERTICAL_SEGMENTS = 24
 local WALL_INSET = 7
 local CORNER_INSET = 2
 
@@ -105,7 +105,7 @@ local function makeSegment(name: string, position: Vector3, size: Vector3, rotat
 end
 
 local function makeWallRun(side: string, row: number, count: number)
-	local y = usableTopY - (row - 1) * math.min(4, math.max(2.5, (usableTopY - floorY - 5) / 3))
+	local rowSpacing = math.min(3.2, math.max(1.8, (usableTopY - floorY - 5) / (HORIZONTAL_ROWS_PER_WALL + 1)))\n\tlocal y = usableTopY - (row - 1) * rowSpacing
 	local runLength = if side == "north" or side == "south" then x1 - x0 else z1 - z0
 	local segmentLength = runLength / count
 	for index = 1, count do
@@ -138,21 +138,25 @@ local function makeWallRun(side: string, row: number, count: number)
 	end
 end
 
--- Three independently animated horizontal runs on each of the four walls.
+-- Five independently animated horizontal runs on each of the four walls.
 for _, side in ipairs({"north", "east", "south", "west"}) do
 	for row = 1, HORIZONTAL_ROWS_PER_WALL do
 		makeWallRun(side, row, HORIZONTAL_SEGMENTS)
 	end
 end
 
--- Four vertical corner columns visually connect the wall runs.
+-- Eight vertical columns: corners plus each wall midpoint for denser connections.
 local verticalHeight = math.max(8, usableTopY - floorY - 3)
 local verticalStep = verticalHeight / VERTICAL_SEGMENTS
 for cornerIndex, corner in ipairs({
 	{side = "northwest", x = x0 + CORNER_INSET, z = z0 + CORNER_INSET},
+	{side = "northmid", x = (x0 + x1) * 0.5, z = z0 + CORNER_INSET},
 	{side = "northeast", x = x1 - CORNER_INSET, z = z0 + CORNER_INSET},
+	{side = "eastmid", x = x1 - CORNER_INSET, z = (z0 + z1) * 0.5},
 	{side = "southeast", x = x1 - CORNER_INSET, z = z1 - CORNER_INSET},
+	{side = "southmid", x = (x0 + x1) * 0.5, z = z1 - CORNER_INSET},
 	{side = "southwest", x = x0 + CORNER_INSET, z = z1 - CORNER_INSET},
+	{side = "westmid", x = x0 + CORNER_INSET, z = (z0 + z1) * 0.5},
 }) do
 	for index = 1, VERTICAL_SEGMENTS do
 		local y = floorY + 1.5 + (index - 0.5) * verticalStep
@@ -170,7 +174,7 @@ for cornerIndex, corner in ipairs({
 end
 
 local horizontalBars = 4 * HORIZONTAL_ROWS_PER_WALL
-local verticalBars = 4
+local verticalBars = 8
 local segmentCount = horizontalBars * HORIZONTAL_SEGMENTS + verticalBars * VERTICAL_SEGMENTS
 rig:SetAttribute("HorizontalBars", horizontalBars)
 rig:SetAttribute("HorizontalSegmentsPerBar", HORIZONTAL_SEGMENTS)
@@ -179,7 +183,7 @@ rig:SetAttribute("VerticalSegmentsPerBar", VERTICAL_SEGMENTS)
 rig:SetAttribute("SegmentCount", segmentCount)
 rig:SetAttribute("Ready", true)
 
-print("[ClubNeon][VenueLEDBarRig] Four-wall venue perimeter ready; walls=N/E/S/W=3/3/3/3 rows; "
+print("[ClubNeon][VenueLEDBarRig] Four-wall venue perimeter ready; walls=N/E/S/W=5/5/5/5 rows; "
 	.. "horizontal=" .. horizontalBars .. "x" .. HORIZONTAL_SEGMENTS
 	.. " vertical=" .. verticalBars .. "x" .. VERTICAL_SEGMENTS
 	.. " segments=" .. segmentCount
