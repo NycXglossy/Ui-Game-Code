@@ -75,6 +75,9 @@ local TEMPO_STALE_SECONDS = 12
 -- transient pattern dominates. Keep family evidence across one full long-window
 -- analysis span, but expire it before stale section evidence can linger indefinitely.
 local PENDING_EVIDENCE_TIMEOUT = 8.0
+-- Evidence is recency-weighted: a family that dominated several sections ago
+-- must not beat a currently consistent challenger solely through old sample count.
+local TEMPO_EVIDENCE_DECAY_SECONDS = 6.0
 local CHALLENGER_REQUIRED_SAMPLES = 8
 local energy = 0
 local movementSpeedCurrent = 1
@@ -629,14 +632,28 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 
 	local analysisNow = os.clock()
 	if analysisNow - lastTempoAnalysisAt < TEMPO_ANALYZE_INTERVAL then return end
+	local analysisElapsed = if lastTempoAnalysisAt > 0
+		then math.clamp(analysisNow - lastTempoAnalysisAt, 0, TEMPO_ANALYZE_INTERVAL * 4)
+		else TEMPO_ANALYZE_INTERVAL
 	lastTempoAnalysisAt = analysisNow
+	-- Decay every family on every analysis pass, including passes with no
+	-- candidate. This makes pending evidence represent recent support rather
+	-- than an unbounded lifetime tally.
+	local evidenceDecay = math.exp(-analysisElapsed / TEMPO_EVIDENCE_DECAY_SECONDS)
+	for _, hypothesis in ipairs(tempoFamilyHypotheses) do
+		hypothesis.samples *= evidenceDecay
+	end
 	local detected, confidence = estimateTempo()
 	rawCandidateBPM = detected
 	-- Initial acquisition is deliberately stricter than tracking an established
 	-- clock. A weak but persistent low-frequency periodicity can otherwise win
 	-- during a hybrid intro before the analyzer has enough evidence to identify
 	-- the main pulse. Once acquired, normal transition thresholds apply.
-	local minimumCandidateConfidence = if bpmDetected then 0.34 else 0.52
+	-- When the incumbent has lost nearly all confidence, require fresh
+	-- acquisition-grade evidence from its challenger. A stale lock must not
+	-- retain the easier established-track threshold indefinitely.
+	local incumbentStillTrusted = bpmDetected ~= nil and bpmConfidence > 0.18
+	local minimumCandidateConfidence = if incumbentStillTrusted then 0.34 else 0.52
 	-- Preserve moderate-confidence candidates as family evidence during hybrid
 	-- arrangements. A candidate may alternate between half-time and double-time
 	-- (e.g. 85.7 and 171 BPM) while describing the same underlying pulse family.
@@ -732,7 +749,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 				preferredBPM = math.max(winner.highBPM, winner.lowBPM)
 			end
 			pendingBPM = preferredBPM
-			pendingTempoSamples = winner.samples
+			pendingTempoSamples = math.floor(winner.samples)
 			pendingTempoConfidence = winner.confidence
 			lastPendingTempoEvidenceAt = analysisNow
 
@@ -740,7 +757,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			-- family is reported as a challenger, but cannot reset winner evidence.
 			local challenger = tempoFamilyHypotheses[2]
 			pendingChallengerBPM = if challenger then challenger.familyBPM else nil
-			pendingChallengerSamples = if challenger then challenger.samples else 0
+			pendingChallengerSamples = if challenger then math.floor(challenger.samples) else 0
 
 			local relativeChange = if bpmDetected
 				then math.abs(preferredBPM - bpmDetected) / math.max(bpmDetected, 1) else 0
@@ -749,22 +766,16 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 				or math.abs(preferredBPM * 0.5 - bpmDetected) / bpmDetected <= 0.08)
 			local requiredSamples = if not bpmDetected then 30 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
 			if winner.samples >= requiredSamples and winner.confidence >= minimumCandidateConfidence then
-				if bpmDetected and relativeChange > 0.30 and not octaveMatch
-					and winner.confidence < 0.58 then
-					-- Preserve evidence but wait for stronger confidence.
-					pendingTempoSamples = requiredSamples - 1
-				else
-					local deltaRatio = if bpmDetected then math.abs(preferredBPM - bpmDetected) / math.max(bpmDetected, 1) else 1
-					local blend = math.clamp(0.18 + winner.confidence * 0.30
-						+ math.clamp(deltaRatio * 1.4, 0, 0.18), 0.18, 0.58)
-					local previousDetected = bpmDetected
-					bpmDetected = if previousDetected then previousDetected + (preferredBPM - previousDetected) * blend else preferredBPM
-					bpmConfidence += (winner.confidence - bpmConfidence) * 0.28
-					if previousDetected and deltaRatio > 0.025 then
-						phaseLockConfidence *= 0.92
-					end
-					lastTempoUpdate = os.clock()
+				local deltaRatio = if bpmDetected then math.abs(preferredBPM - bpmDetected) / math.max(bpmDetected, 1) else 1
+				local blend = math.clamp(0.18 + winner.confidence * 0.30
+					+ math.clamp(deltaRatio * 1.4, 0, 0.18), 0.18, 0.58)
+				local previousDetected = bpmDetected
+				bpmDetected = if previousDetected then previousDetected + (preferredBPM - previousDetected) * blend else preferredBPM
+				bpmConfidence += (winner.confidence - bpmConfidence) * 0.28
+				if previousDetected and deltaRatio > 0.025 then
+					phaseLockConfidence *= 0.92
 				end
+				lastTempoUpdate = os.clock()
 			end
 		end
 	else
