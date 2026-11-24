@@ -506,8 +506,10 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			end
 		end
 	else
-		pendingTempoSamples = math.max(0, pendingTempoSamples - 1)
-		pendingTempoConfidence *= 0.96
+		-- A low-energy dropout or short breakdown is missing evidence, not
+		-- contradictory tempo evidence. Preserve an in-progress consensus so
+		-- a brief break cannot erase the candidate being established. A
+		-- genuinely different candidate still resets the consensus above.
 	end
 end
 
