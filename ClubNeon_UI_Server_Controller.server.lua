@@ -447,18 +447,45 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			end
 
 
-			-- Stop the outgoing source before changing ownership. If it cannot be
-			-- stopped, leave the old source authoritative so Cancel can restore gain.
-			local outgoingSnapshot = ControllerFunctions.getAudioSnapshot()
-			local outgoingWasPlaying = typeof(outgoingSnapshot) == "table" and outgoingSnapshot.playing == true
-			local outgoingPosition = if typeof(outgoingSnapshot) == "table"
-				then math.max(0, tonumber(outgoingSnapshot.position) or 0) else 0
+			-- Capture a verified playhead from the actual outgoing AudioPlayer before
+			-- stopping it. Never turn an unreadable position into zero: a rollback
+			-- from zero would replay the outgoing track's intro during a transition.
+			local outgoingPlayerOk, outgoingPlayer = pcall(function() return outgoing.backend:GetPlayer() end)
+			if not outgoingPlayerOk or typeof(outgoingPlayer) ~= "Instance"
+				or not outgoingPlayer:IsA("AudioPlayer") then
+				warn("[ClubMusic][Crossfade] Commit deferred: outgoing AudioPlayer could not be verified.")
+				return false
+			end
+			local outgoingPositionOk, outgoingPosition = pcall(function() return outgoingPlayer.TimePosition end)
+			local outgoingPlayingOk, outgoingWasPlaying = pcall(function() return outgoingPlayer.IsPlaying end)
+			local outgoingAssetOk, outgoingAsset = pcall(function() return outgoingPlayer.Asset end)
+			local expectedOutgoingAsset = tostring(nowPlaying and nowPlaying.soundId or "")
+			if not outgoingPositionOk or not ControllerFunctions.isFiniteNumber(outgoingPosition)
+				or outgoingPosition < 0 or not outgoingPlayingOk or outgoingWasPlaying ~= true
+				or not outgoingAssetOk or typeof(outgoingAsset) ~= "string"
+				or expectedOutgoingAsset == "" or outgoingAsset ~= expectedOutgoingAsset then
+				warn("[ClubMusic][Crossfade] Commit deferred: outgoing track identity or playback position could not be verified.")
+				return false
+			end
+
+			local function restoreOutgoingAtCapturedPosition(reason: string)
+				local restoreCallOk, restored, restoreError = pcall(function()
+					return outgoing.backend:Play(nil, outgoingPosition)
+				end)
+				if not restoreCallOk or restored ~= true then
+					warn("[ClubMusic][Crossfade] Outgoing playback rollback failed (" .. reason .. "): "
+						.. tostring(restoreError or restored))
+				end
+			end
+
+			-- Stop only after the outgoing asset and its non-zero-or-zero-but-verified
+			-- playhead have been captured. If Stop fails, the old source stays active.
 			local stopOk, stopResult = pcall(function()
 				local stopped, stopError = outgoing.backend:Stop()
-				if stopped == false then error(tostring(stopError or "Outgoing AudioPlayer did not stop.")) end
+				if stopped ~= true then error(tostring(stopError or "Outgoing AudioPlayer did not stop.")) end
 				return true
 			end)
-			if not stopOk or stopResult == false then
+			if not stopOk or stopResult ~= true then
 				return false
 			end
 
@@ -468,11 +495,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				audioState.activeAudioSource = outgoing
 				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
 				if recoverCommittedGlobalTrack() then return true end
-				if outgoingWasPlaying then
-					pcall(function()
-						outgoing.backend:Play(nil, outgoingPosition)
-					end)
-				end
+				restoreOutgoingAtCapturedPosition("commit rollback")
 				return false
 			end
 
@@ -484,11 +507,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			if not popOk or popped ~= entry then
 				audioState.activeAudioSource = outgoing
 				pcall(ControllerFunctions.bindActiveAudioPlayingSignal)
-				if outgoingWasPlaying then
-					pcall(function()
-						outgoing.backend:Play(nil, outgoingPosition)
-					end)
-				end
+				restoreOutgoingAtCapturedPosition("commit rollback")
 				return false
 			end
 			audioState.audioSourceRevision += 1
