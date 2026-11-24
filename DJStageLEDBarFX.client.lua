@@ -25,7 +25,7 @@ type Segment = {
 local segments: {Segment} = {}
 local function collectSegments()
 	table.clear(segments)
-	for _, item in ipairs(rig:GetChildren()) do
+	for _, item in ipairs(rig:GetDescendants()) do
 		if item:IsA("BasePart") then
 			table.insert(segments, {
 				part = item,
@@ -37,7 +37,20 @@ local function collectSegments()
 		end
 	end
 end
-collectSegments()
+-- Ready is replicated before/after descendant replication in no guaranteed
+-- order. Wait for the server-declared segment count instead of starting with
+-- an empty client cache and reporting a false successful startup.
+local expectedSegments = tonumber(rig:GetAttribute("SegmentCount")) or 0
+local discoveryDeadline = os.clock() + 20
+repeat
+	collectSegments()
+	if #segments >= expectedSegments and expectedSegments > 0 then break end
+	task.wait(0.2)
+until os.clock() >= discoveryDeadline or not rig.Parent
+
+if expectedSegments > 0 and #segments < expectedSegments then
+	warn(string.format("[ClubNeon][VenueLEDBarFX] LED rig replication incomplete; received=%d expected=%d. Continuing discovery.", #segments, expectedSegments))
+end
 
 local lastBeatCount = -1
 local dropUntil = 0
@@ -53,7 +66,7 @@ end
 RunService.RenderStepped:Connect(function(dt)
 	if not rig.Parent then return end
 	showClock += math.min(dt, 0.05)
-	if #segments == 0 or (os.clock() - lastAudit > 2) then
+	if #segments < expectedSegments or (os.clock() - lastAudit > 2) then
 		lastAudit = os.clock()
 		collectSegments()
 	end
@@ -118,4 +131,4 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 end)
 
-print("[ClubNeon][VenueLEDBarFX] Shared beat-clock venue choreography active; segments=" .. #segments)
+print(string.format("[ClubNeon][VenueLEDBarFX] Shared beat-clock venue choreography active; segments=%d/%d", #segments, expectedSegments))
