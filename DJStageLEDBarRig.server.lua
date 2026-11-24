@@ -76,8 +76,11 @@ end
 local oldRig = Workspace:FindFirstChild(RIG_NAME)
 if oldRig then oldRig:Destroy() end
 
-local rig = Instance.new("Folder")
+local rig = Instance.new("Model")
 rig.Name = RIG_NAME
+-- Keep the complete venue rig available to clients even when instance
+-- streaming is enabled; clients must not animate a partially streamed rig.
+rig.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
 rig:SetAttribute("Ready", false)
 rig:SetAttribute("LayoutMode", "FourWallVenuePerimeter")
 rig:SetAttribute("FloorPanelCount", floorPanels)
