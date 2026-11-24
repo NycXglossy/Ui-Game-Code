@@ -48,10 +48,13 @@ local rawCandidateBPM: number? = nil
 local pendingBPM: number? = nil
 local pendingTempoSamples = 0
 local pendingTempoConfidence = 0
+local lastPendingTempoEvidenceAt = 0
 local lastTempoUpdate = 0
 local lastTempoAnalysisAt = 0
 local TEMPO_ANALYZE_INTERVAL = 0.10
 local TEMPO_STALE_SECONDS = 12
+-- A short break may pause consensus, but a long gap must not revive stale evidence.
+local PENDING_EVIDENCE_TIMEOUT = 2.0
 local energy = 0
 local movementSpeedCurrent = 1
 local lastT = os.clock()
@@ -110,6 +113,7 @@ local function clearAnalysis()
 	pendingBPM = nil
 	pendingTempoSamples = 0
 	pendingTempoConfidence = 0
+	lastPendingTempoEvidenceAt = 0
 	lastTempoUpdate = 0
 	lastTempoAnalysisAt = 0
 	energy = 0
@@ -284,16 +288,19 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 	local selectedLag = bestLag
 	local selectedScore = bestScore
 	local referenceBPM = bpmDetected or bpmCurrent
+	local familyAmbiguous = false
 	local alternatives = {bestLag * 2, math.floor(bestLag / 2 + 0.5)}
 	for _, alternateLag in ipairs(alternatives) do
 		if alternateLag >= minLag and alternateLag <= maxLag then
 			local alternateScore = scoreAt(alternateLag)
 			local candidateBPM = 60 * SAMPLE_RATE / alternateLag
 			local selectedBPM = 60 * SAMPLE_RATE / selectedLag
-			if alternateScore >= bestScore - 0.075
-				and math.abs(candidateBPM - referenceBPM) < math.abs(selectedBPM - referenceBPM) then
-				selectedLag = alternateLag
-				selectedScore = alternateScore
+			if alternateScore >= bestScore - 0.075 then
+				familyAmbiguous = true
+				if math.abs(candidateBPM - referenceBPM) < math.abs(selectedBPM - referenceBPM) then
+					selectedLag = alternateLag
+					selectedScore = alternateScore
+				end
 			end
 		end
 	end
@@ -304,6 +311,12 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 		then math.clamp((bestScore - secondScore) / 0.18, 0, 1)
 		else 0.5
 	local confidence = periodicity * (0.62 + peakSeparation * 0.38)
+	-- A near-tie between a pulse and its octave-related interpretation is
+	-- not enough evidence to declare the metrical level on a new track.
+	-- Once a tempo is established, continuity may resolve that ambiguity.
+	if familyAmbiguous and not bpmDetected then
+		confidence *= 0.68
+	end
 	if confidence < 0.22 then return nil, confidence end
 	return bpm, confidence
 end
@@ -460,6 +473,13 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	rawCandidateBPM = detected
 	local minimumCandidateConfidence = if bpmDetected then 0.34 else 0.46
 	if detected and confidence >= minimumCandidateConfidence then
+		if lastPendingTempoEvidenceAt > 0
+			and analysisNow - lastPendingTempoEvidenceAt > PENDING_EVIDENCE_TIMEOUT then
+			pendingBPM = nil
+			pendingTempoSamples = 0
+			pendingTempoConfidence = 0
+		end
+		lastPendingTempoEvidenceAt = analysisNow
 		-- Require a sustained, internally consistent candidate before it can
 		-- influence the shared clock. A fill or one ambiguous autocorrelation
 		-- peak cannot immediately retune the lighting system.
@@ -506,10 +526,15 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			end
 		end
 	else
-		-- A low-energy dropout or short breakdown is missing evidence, not
-		-- contradictory tempo evidence. Preserve an in-progress consensus so
-		-- a brief break cannot erase the candidate being established. A
-		-- genuinely different candidate still resets the consensus above.
+		-- A brief dropout pauses consensus. After a longer evidence gap, discard
+		-- only the unconfirmed candidate; the last confirmed BPM remains intact.
+		if lastPendingTempoEvidenceAt > 0
+			and analysisNow - lastPendingTempoEvidenceAt > PENDING_EVIDENCE_TIMEOUT then
+			pendingBPM = nil
+			pendingTempoSamples = 0
+			pendingTempoConfidence = 0
+			lastPendingTempoEvidenceAt = 0
+		end
 	end
 end
 
