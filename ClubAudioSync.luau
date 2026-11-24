@@ -672,7 +672,11 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	-- Requiring the full acquisition confidence on every individual window
 	-- discards that recurring evidence before consensus can form.
 	local minimumFamilyEvidenceConfidence = if bpmDetected then 0.34 else 0.30
-	if detected and confidence >= minimumFamilyEvidenceConfidence then
+	-- Do not let numerical autocorrelation noise from a near-silent
+	-- interval seed or confirm a tempo family. The floor is intentionally
+	-- very low so quiet musical passages remain analyzable.
+	local hasUsableSignal = rms > 0.0005
+	if detected and hasUsableSignal and confidence >= minimumFamilyEvidenceConfidence then
 		-- Expire stale hypotheses independently so an intermittent but recurring
 		-- pulse can survive brief windows in which another periodicity wins.
 		for index = #tempoFamilyHypotheses, 1, -1 do
