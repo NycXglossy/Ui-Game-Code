@@ -317,14 +317,25 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 	local referenceBPM = bpmDetected or bpmCurrent
 	local familyAmbiguous = false
 	local alternatives = {bestLag * 2, math.floor(bestLag / 2 + 0.5)}
+	-- On established tracks, protect the confirmed metrical level against
+	-- octave-related transients (blast beats, double-kick, tremolo and dense
+	-- electronic subdivisions). A competing octave hypothesis may be weaker
+	-- than the raw autocorrelation winner yet still be the correct beat grid.
+	-- This is continuity evidence, not a hard BPM clamp: a genuinely new tempo
+	-- can still win when its evidence is clearly stronger across the windows.
+	local familyContinuityMargin = if bpmDetected then 0.18 else 0.075
 	for _, alternateLag in ipairs(alternatives) do
 		if alternateLag >= minLag and alternateLag <= maxLag then
 			local alternateScore = scoreAt(alternateLag)
 			local candidateBPM = 60 * SAMPLE_RATE / alternateLag
 			local selectedBPM = 60 * SAMPLE_RATE / selectedLag
-			if alternateScore >= bestScore - 0.075 then
-				familyAmbiguous = true
-				if math.abs(candidateBPM - referenceBPM) < math.abs(selectedBPM - referenceBPM) then
+			local candidateDistance = math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1)
+			local selectedDistance = math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1)
+			if alternateScore >= bestScore - familyContinuityMargin then
+				if alternateScore >= bestScore - 0.075 then
+					familyAmbiguous = true
+				end
+				if candidateDistance < selectedDistance then
 					selectedLag = alternateLag
 					selectedScore = alternateScore
 				end
