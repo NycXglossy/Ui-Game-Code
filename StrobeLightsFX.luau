@@ -14,11 +14,24 @@ local function findRig()
 	return workspace:FindFirstChild("StrobeLights")
 end
 
-local strobesModel = findRig()
-while not strobesModel do
-	task.wait(0.5)
-	strobesModel = findRig()
+local function waitForReadyRig()
+	while true do
+		local candidate = findRig()
+		if candidate then
+			while candidate.Parent and candidate:GetAttribute("Ready") ~= true do
+				task.wait(0.1)
+			end
+			if candidate.Parent and candidate:GetAttribute("Ready") == true then
+				return candidate
+			end
+		end
+		task.wait(0.5)
+	end
 end
+
+-- The server publishes the complete persistent rig before the client takes
+-- its first fixture snapshot; this prevents a partial-startup animation set.
+local strobesModel = waitForReadyRig()
 
 local function isLight(instance)
 	return instance:IsA("PointLight") or instance:IsA("SpotLight") or instance:IsA("SurfaceLight")
