@@ -397,7 +397,6 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 		if priorLag >= minLag and priorLag <= maxLag and priorScore >= bestScore - 0.22 then
 			selectedLag = priorLag
 			selectedScore = priorScore
-			familyAmbiguous = true
 		end
 	end
 
