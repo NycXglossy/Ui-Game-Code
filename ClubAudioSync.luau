@@ -39,7 +39,7 @@ local pendingBPM: number? = nil
 local pendingTempoSamples = 0
 local pendingTempoConfidence = 0
 local lastTempoUpdate = 0
-local TEMPO_STALE_SECONDS = 5
+local TEMPO_STALE_SECONDS = 12
 local energy = 0
 local movementSpeedCurrent = 1
 local lastT = os.clock()
@@ -336,7 +336,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		-- influence the shared clock. A fill or one ambiguous autocorrelation
 		-- peak cannot immediately retune the lighting system.
 		local agrees = pendingBPM ~= nil
-			and math.abs(detected - pendingBPM) / math.max(pendingBPM, 1) <= 0.045
+			and math.abs(detected - pendingBPM) / math.max(pendingBPM, 1) <= 0.07
 		if agrees then
 			local priorPending = pendingBPM :: number
 			pendingBPM = priorPending + (detected - priorPending) * 0.12
@@ -348,8 +348,8 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			pendingTempoConfidence = confidence
 		end
 
-		-- 36 consecutive 40 Hz observations ~= 0.9 seconds of stable evidence.
-		if pendingTempoSamples >= 36 then
+		-- 48 consecutive 40 Hz observations ~= 1.2 seconds of stable evidence.
+		if pendingTempoSamples >= 48 then
 			local accepted = pendingBPM :: number
 			if bpmDetected then
 				local relativeChange = math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1)
@@ -365,7 +365,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 					end
 				end
 			end
-			local blend = math.clamp(0.10 + pendingTempoConfidence * 0.20, 0.10, 0.28)
+			local blend = math.clamp(0.18 + pendingTempoConfidence * 0.22, 0.18, 0.40)
 			bpmDetected = if bpmDetected then bpmDetected + (accepted - bpmDetected) * blend else accepted
 			bpmConfidence += (pendingTempoConfidence - bpmConfidence) * 0.22
 			lastTempoUpdate = os.clock()
