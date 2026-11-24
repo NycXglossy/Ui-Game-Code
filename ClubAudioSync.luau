@@ -71,9 +71,10 @@ local lastTempoUpdate = 0
 local lastTempoAnalysisAt = 0
 local TEMPO_ANALYZE_INTERVAL = 0.10
 local TEMPO_STALE_SECONDS = 12
--- A short break may pause consensus, but a long gap must not revive stale evidence.
--- Preserve a pending family through short analysis gaps, not long section changes.
-local PENDING_EVIDENCE_TIMEOUT = 4.0
+-- Mixed arrangements can suppress a candidate for several seconds while a different
+-- transient pattern dominates. Keep family evidence across one full long-window
+-- analysis span, but expire it before stale section evidence can linger indefinitely.
+local PENDING_EVIDENCE_TIMEOUT = 8.0
 local CHALLENGER_REQUIRED_SAMPLES = 8
 local energy = 0
 local movementSpeedCurrent = 1
