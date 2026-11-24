@@ -1,7 +1,7 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.77
+-- CLUB NEON MASTER INSTALLER v0.4.78
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.77 adds sustained tempo-candidate validation, stronger octave-error handling, and clearer phase-lock diagnostics while preserving fixture choreography.
+-- v0.4.78 improves adaptive tempo tracking for fluctuating tracks, including sustained passages up to 170+ BPM, without changing fixture choreography.
 -- v0.4.73 publishes server-authoritative full-floor bounds so streamed clients do not mistake partial panel replication for the complete dance floor.
 -- v0.4.72 spreads every laser and moving-head target across a dedicated full-floor cell while preserving independent BPM-adaptive motion.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
@@ -39,7 +39,7 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "b5012fa3b375f5c99287291c4ba698eef1bc3ad2",
-    audioSync = "0c30397d6138bd9d46f57e9d6f771affc25ac51f",
+    audioSync = "e0d0b49426b06a5053d411789db5d79fea828b25",
     laserFX = "97d318d9eba89f1f1f6a7c28a1c2fd9117571380",
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     movingHeadFX = "3a16afc4108546d4a3a84d8d3726b09173ec28ef",
