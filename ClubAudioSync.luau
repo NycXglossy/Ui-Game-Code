@@ -461,7 +461,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		if pendingTempoSamples >= requiredSamples then
 			if bpmDetected and relativeChange > 0.30 and not octaveMatch
 				and pendingTempoConfidence < 0.58 then
-				pendingTempoSamples = 47
+				pendingTempoSamples = requiredSamples - 1
 			else
 			-- React faster to sustained, confident tempo movement while keeping
 			-- weak or ambiguous estimates deliberately conservative.
