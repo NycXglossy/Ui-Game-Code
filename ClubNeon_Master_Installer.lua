@@ -1,7 +1,8 @@
 --!strict
+-- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.117
+-- CLUB NEON MASTER INSTALLER v0.4.118
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
@@ -32,7 +33,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.117"
+local INSTALLER_VERSION = "0.4.118"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -55,7 +56,7 @@ local RELEASE = {
     movingHeadFX = "3a16afc4108546d4a3a84d8d3726b09173ec28ef",
     movingHeadRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     strobeFX = "850ba444fc0662f5bf4683b2485d8b85dd871a32",
-    strobeRig = "70e1ad0926a877847bdcc3248c94004d38769931",
+    strobeRig = "f58820f6275ab438f7da67bae588e3cc7341a0cf",
     ceilingComplementRig = "0c137232d84a0f2e58149a8add5ec35fd3dc918b",
     ceilingComplementFX = "6946445fbc5670bf96a64a715eab9d84fdce7b7a",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
