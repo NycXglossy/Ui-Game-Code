@@ -51,6 +51,22 @@ local pendingTempoConfidence = 0
 local pendingChallengerBPM: number? = nil
 local pendingChallengerSamples = 0
 local lastPendingTempoEvidenceAt = 0
+-- Keep several independent tempo-family hypotheses alive at once. Octave-related
+-- estimates (e.g. 65 and 130 BPM) contribute to one family, while unrelated
+-- periodicities (e.g. 86 BPM) cannot erase that family's accumulated evidence.
+type TempoFamilyHypothesis = {
+	familyBPM: number,
+	lowBPM: number,
+	highBPM: number,
+	lowSamples: number,
+	highSamples: number,
+	confidence: number,
+	samples: number,
+	lastEvidenceAt: number,
+}
+local tempoFamilyHypotheses: {TempoFamilyHypothesis} = {}
+local TEMPO_FAMILY_MATCH_TOLERANCE = 0.055
+local TEMPO_FAMILY_MAX_HYPOTHESES = 4
 local lastTempoUpdate = 0
 local lastTempoAnalysisAt = 0
 local TEMPO_ANALYZE_INTERVAL = 0.10
@@ -136,6 +152,7 @@ local function clearAnalysis()
 	pendingChallengerBPM = nil
 	pendingChallengerSamples = 0
 	lastPendingTempoEvidenceAt = 0
+	tempoFamilyHypotheses = {}
 	lastTempoUpdate = 0
 	lastTempoAnalysisAt = 0
 	energy = 0
@@ -594,88 +611,138 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	-- the main pulse. Once acquired, normal transition thresholds apply.
 	local minimumCandidateConfidence = if bpmDetected then 0.34 else 0.52
 	if detected and confidence >= minimumCandidateConfidence then
-		if lastPendingTempoEvidenceAt > 0
-			and analysisNow - lastPendingTempoEvidenceAt > PENDING_EVIDENCE_TIMEOUT then
-			pendingBPM = nil
-			pendingTempoSamples = 0
-			pendingTempoConfidence = 0
-			pendingChallengerBPM = nil
-			pendingChallengerSamples = 0
-		end
-		lastPendingTempoEvidenceAt = analysisNow
-		-- Accumulate evidence by candidate family instead of allowing each
-		-- isolated autocorrelation winner to replace the pending family. Hybrid
-		-- passages can alternate a real pulse (e.g. ~89/178 BPM) with unrelated
-		-- periodicities (e.g. ~60 BPM).
-		local agrees = pendingBPM ~= nil
-			and math.abs(detected - pendingBPM) / math.max(pendingBPM, 1) <= 0.055
-		if pendingBPM == nil or agrees then
-			local priorPending = pendingBPM or detected
-			pendingBPM = priorPending + (detected - priorPending) * 0.12
-			pendingTempoSamples += 1
-			pendingTempoConfidence += (confidence - pendingTempoConfidence) * 0.12
-			pendingChallengerBPM = nil
-			pendingChallengerSamples = 0
-		else
-			-- A distinct family must win repeatedly before replacing the incumbent.
-			-- Evidence returning to the incumbent clears this challenge immediately.
-			local challengerAgrees = pendingChallengerBPM ~= nil
-				and math.abs(detected - pendingChallengerBPM) / math.max(pendingChallengerBPM, 1) <= 0.055
-			if challengerAgrees then
-				local priorChallenger = pendingChallengerBPM :: number
-				pendingChallengerBPM = priorChallenger + (detected - priorChallenger) * 0.12
-				pendingChallengerSamples += 1
-			else
-				pendingChallengerBPM = detected
-				pendingChallengerSamples = 1
-			end
-			if pendingChallengerSamples >= CHALLENGER_REQUIRED_SAMPLES then
-				pendingBPM = pendingChallengerBPM
-				pendingTempoSamples = pendingChallengerSamples
-				pendingTempoConfidence = confidence
-				pendingChallengerBPM = nil
-				pendingChallengerSamples = 0
+		-- Expire stale hypotheses independently so an intermittent but recurring
+		-- pulse can survive brief windows in which another periodicity wins.
+		for index = #tempoFamilyHypotheses, 1, -1 do
+			if analysisNow - tempoFamilyHypotheses[index].lastEvidenceAt > PENDING_EVIDENCE_TIMEOUT then
+				table.remove(tempoFamilyHypotheses, index)
 			end
 		end
 
-		-- Require a longer consensus than a single short fill or genre-layer change.
-		-- At 10 Hz, 12 observations ~= 1.2 seconds; large non-octave transitions
-		-- need 1.8 seconds so a competing subdivision cannot retune the clock.
-		local accepted = pendingBPM :: number
-		local relativeChange = if bpmDetected
-			then math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1) else 0
-		local octaveMatch = bpmDetected ~= nil and (
-			math.abs(accepted * 2 - bpmDetected) / bpmDetected <= 0.08
-			or math.abs(accepted * 0.5 - bpmDetected) / bpmDetected <= 0.08)
-		-- Give first acquisition a longer, higher-confidence consensus. This
-		-- rejects persistent but weak false families (for example ~60 BPM in a
-		-- passage whose stronger pulse is near ~89 BPM) without constraining later
-		-- genuine section changes or octave-related metrical interpretations.
-		local requiredSamples = if not bpmDetected then 30 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
-		if pendingTempoSamples >= requiredSamples then
-			if bpmDetected and relativeChange > 0.30 and not octaveMatch
-				and pendingTempoConfidence < 0.58 then
-				pendingTempoSamples = requiredSamples - 1
-			else
-			-- React faster to sustained, confident tempo movement while keeping
-			-- weak or ambiguous estimates deliberately conservative.
-			local deltaRatio = if bpmDetected then math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1) else 1
-			local blend = math.clamp(0.18 + pendingTempoConfidence * 0.30
-				+ math.clamp(deltaRatio * 1.4, 0, 0.18), 0.18, 0.58)
-			local previousDetected = bpmDetected
-			bpmDetected = if previousDetected then previousDetected + (accepted - previousDetected) * blend else accepted
-			bpmConfidence += (pendingTempoConfidence - bpmConfidence) * 0.28
-			if previousDetected and deltaRatio > 0.025 then
-				phaseLockConfidence *= 0.92
+		-- Canonicalize only octave-equivalent BPMs into the same family. This
+		-- deliberately does not merge unrelated candidates such as 86 and 130.
+		local familyBPM = detected
+		while familyBPM > 120 do familyBPM *= 0.5 end
+		while familyBPM < 60 do familyBPM *= 2 end
+		local hypothesis: TempoFamilyHypothesis? = nil
+		for _, item in ipairs(tempoFamilyHypotheses) do
+			local familyDistance = math.abs(familyBPM - item.familyBPM) / math.max(item.familyBPM, 1)
+			if familyDistance <= TEMPO_FAMILY_MATCH_TOLERANCE then
+				hypothesis = item
+				break
 			end
-			lastTempoUpdate = os.clock()
+		end
+		if not hypothesis then
+			hypothesis = {
+				familyBPM = familyBPM,
+				lowBPM = 0,
+				highBPM = 0,
+				lowSamples = 0,
+				highSamples = 0,
+				confidence = confidence,
+				samples = 0,
+				lastEvidenceAt = analysisNow,
+			}
+			table.insert(tempoFamilyHypotheses, hypothesis)
+		end
+
+		hypothesis.familyBPM += (familyBPM - hypothesis.familyBPM) * 0.12
+		if detected > hypothesis.familyBPM * 1.42 then
+			hypothesis.highSamples += 1
+			hypothesis.highBPM = if hypothesis.highBPM > 0
+				then hypothesis.highBPM + (detected - hypothesis.highBPM) * 0.12 else detected
+		else
+			hypothesis.lowSamples += 1
+			hypothesis.lowBPM = if hypothesis.lowBPM > 0
+				then hypothesis.lowBPM + (detected - hypothesis.lowBPM) * 0.12 else detected
+		end
+		hypothesis.samples += 1
+		hypothesis.confidence += (confidence - hypothesis.confidence) * 0.12
+		hypothesis.lastEvidenceAt = analysisNow
+
+		-- Retain the strongest few independent families. Give the startup tempo
+		-- only a modest tie-break advantage when choosing the displayed metrical
+		-- level; it never causes unrelated families to be merged.
+		table.sort(tempoFamilyHypotheses, function(a, b)
+			local aScore = a.samples * (0.65 + a.confidence * 0.35)
+			local bScore = b.samples * (0.65 + b.confidence * 0.35)
+			if math.abs(aScore - bScore) < 0.001 then
+				local aLevel = if a.highSamples > a.lowSamples then a.highBPM
+					elseif a.lowSamples > a.highSamples then a.lowBPM
+					else if a.highBPM > 0 and a.lowBPM > 0
+						then (if math.abs(a.highBPM - bpmCurrent) < math.abs(a.lowBPM - bpmCurrent) then a.highBPM else a.lowBPM)
+						else math.max(a.highBPM, a.lowBPM)
+				local bLevel = if b.highSamples > b.lowSamples then b.highBPM
+					elseif b.lowSamples > b.highSamples then b.lowBPM
+					else if b.highBPM > 0 and b.lowBPM > 0
+						then (if math.abs(b.highBPM - bpmCurrent) < math.abs(b.lowBPM - bpmCurrent) then b.highBPM else b.lowBPM)
+						else math.max(b.highBPM, b.lowBPM)
+					return math.abs(aLevel - bpmCurrent) < math.abs(bLevel - bpmCurrent)
+			end
+			return aScore > bScore
+		end)
+		while #tempoFamilyHypotheses > TEMPO_FAMILY_MAX_HYPOTHESES do
+			table.remove(tempoFamilyHypotheses)
+		end
+
+		local winner = tempoFamilyHypotheses[1]
+		if winner then
+			local preferredBPM: number
+			if winner.highSamples > winner.lowSamples and winner.highBPM > 0 then
+				preferredBPM = winner.highBPM
+			elseif winner.lowSamples > winner.highSamples and winner.lowBPM > 0 then
+				preferredBPM = winner.lowBPM
+			elseif winner.highBPM > 0 and winner.lowBPM > 0 then
+				preferredBPM = if math.abs(winner.highBPM - bpmCurrent) < math.abs(winner.lowBPM - bpmCurrent)
+					then winner.highBPM else winner.lowBPM
+			else
+				preferredBPM = math.max(winner.highBPM, winner.lowBPM)
+			end
+			pendingBPM = preferredBPM
+			pendingTempoSamples = winner.samples
+			pendingTempoConfidence = winner.confidence
+			lastPendingTempoEvidenceAt = analysisNow
+
+			-- Keep legacy diagnostic challenger fields meaningful: the runner-up
+			-- family is reported as a challenger, but cannot reset winner evidence.
+			local challenger = tempoFamilyHypotheses[2]
+			pendingChallengerBPM = if challenger then challenger.familyBPM else nil
+			pendingChallengerSamples = if challenger then challenger.samples else 0
+
+			local relativeChange = if bpmDetected
+				then math.abs(preferredBPM - bpmDetected) / math.max(bpmDetected, 1) else 0
+			local octaveMatch = bpmDetected ~= nil and (
+				math.abs(preferredBPM * 2 - bpmDetected) / bpmDetected <= 0.08
+				or math.abs(preferredBPM * 0.5 - bpmDetected) / bpmDetected <= 0.08)
+			local requiredSamples = if not bpmDetected then 30 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
+			if winner.samples >= requiredSamples then
+				if bpmDetected and relativeChange > 0.30 and not octaveMatch
+					and winner.confidence < 0.58 then
+					-- Preserve evidence but wait for stronger confidence.
+					pendingTempoSamples = requiredSamples - 1
+				else
+					local deltaRatio = if bpmDetected then math.abs(preferredBPM - bpmDetected) / math.max(bpmDetected, 1) else 1
+					local blend = math.clamp(0.18 + winner.confidence * 0.30
+						+ math.clamp(deltaRatio * 1.4, 0, 0.18), 0.18, 0.58)
+					local previousDetected = bpmDetected
+					bpmDetected = if previousDetected then previousDetected + (preferredBPM - previousDetected) * blend else preferredBPM
+					bpmConfidence += (winner.confidence - bpmConfidence) * 0.28
+					if previousDetected and deltaRatio > 0.025 then
+						phaseLockConfidence *= 0.92
+					end
+					lastTempoUpdate = os.clock()
+				end
 			end
 		end
 	else
 		-- A brief dropout pauses consensus. After a longer evidence gap, discard
 		-- only the unconfirmed candidate; the last confirmed BPM remains intact.
-		if lastPendingTempoEvidenceAt > 0
-			and analysisNow - lastPendingTempoEvidenceAt > PENDING_EVIDENCE_TIMEOUT then
+		for index = #tempoFamilyHypotheses, 1, -1 do
+			if analysisNow - tempoFamilyHypotheses[index].lastEvidenceAt > PENDING_EVIDENCE_TIMEOUT then
+				table.remove(tempoFamilyHypotheses, index)
+			end
+		end
+		if #tempoFamilyHypotheses == 0 then
 			pendingBPM = nil
 			pendingTempoSamples = 0
 			pendingTempoConfidence = 0
