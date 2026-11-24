@@ -1,7 +1,8 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.72
+-- CLUB NEON MASTER INSTALLER v0.4.73
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.71 spreads every laser and moving-head target across a dedicated full-floor cell while preserving independent BPM-adaptive motion.
+-- v0.4.73 publishes server-authoritative full-floor bounds so streamed clients do not mistake partial panel replication for the complete dance floor.
+-- v0.4.72 spreads every laser and moving-head target across a dedicated full-floor cell while preserving independent BPM-adaptive motion.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
 --
@@ -23,7 +24,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.72"
+local INSTALLER_VERSION = "0.4.73"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -36,7 +37,7 @@ local RELEASE = {
     phase32 = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
-    fx = "df45c86a1d3e115fb17c5f5dc9c9c1905ae0a917",
+    fx = "b5012fa3b375f5c99287291c4ba698eef1bc3ad2",
     audioSync = "e0b631612dd9479021930d79ad250530990d2f97",
     laserFX = "310e4849000c353b2ca15757db8791855ddd9a6e",
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
