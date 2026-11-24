@@ -105,7 +105,8 @@ local function makeSegment(name: string, position: Vector3, size: Vector3, rotat
 end
 
 local function makeWallRun(side: string, row: number, count: number)
-	local rowSpacing = math.min(3.2, math.max(1.8, (usableTopY - floorY - 5) / (HORIZONTAL_ROWS_PER_WALL + 1)))\n\tlocal y = usableTopY - (row - 1) * rowSpacing
+	local rowSpacing = math.min(3.2, math.max(1.8, (usableTopY - floorY - 5) / (HORIZONTAL_ROWS_PER_WALL + 1)))
+	local y = usableTopY - (row - 1) * rowSpacing
 	local runLength = if side == "north" or side == "south" then x1 - x0 else z1 - z0
 	local segmentLength = runLength / count
 	for index = 1, count do
