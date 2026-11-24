@@ -582,7 +582,11 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	lastTempoAnalysisAt = analysisNow
 	local detected, confidence = estimateTempo()
 	rawCandidateBPM = detected
-	local minimumCandidateConfidence = if bpmDetected then 0.34 else 0.46
+	-- Initial acquisition is deliberately stricter than tracking an established
+	-- clock. A weak but persistent low-frequency periodicity can otherwise win
+	-- during a hybrid intro before the analyzer has enough evidence to identify
+	-- the main pulse. Once acquired, normal transition thresholds apply.
+	local minimumCandidateConfidence = if bpmDetected then 0.34 else 0.52
 	if detected and confidence >= minimumCandidateConfidence then
 		if lastPendingTempoEvidenceAt > 0
 			and analysisNow - lastPendingTempoEvidenceAt > PENDING_EVIDENCE_TIMEOUT then
@@ -616,7 +620,11 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		local octaveMatch = bpmDetected ~= nil and (
 			math.abs(accepted * 2 - bpmDetected) / bpmDetected <= 0.08
 			or math.abs(accepted * 0.5 - bpmDetected) / bpmDetected <= 0.08)
-		local requiredSamples = if not bpmDetected then 24 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
+		-- Give first acquisition a longer, higher-confidence consensus. This
+		-- rejects persistent but weak false families (for example ~60 BPM in a
+		-- passage whose stronger pulse is near ~89 BPM) without constraining later
+		-- genuine section changes or octave-related metrical interpretations.
+		local requiredSamples = if not bpmDetected then 30 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
 		if pendingTempoSamples >= requiredSamples then
 			if bpmDetected and relativeChange > 0.30 and not octaveMatch
 				and pendingTempoConfidence < 0.58 then
