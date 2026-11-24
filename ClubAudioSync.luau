@@ -339,7 +339,8 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		local agrees = pendingBPM ~= nil
 			and math.abs(detected - pendingBPM) / math.max(pendingBPM, 1) <= 0.045
 		if agrees then
-			pendingBPM = pendingBPM :: number + (detected - (pendingBPM :: number)) * 0.12
+			local priorPending = pendingBPM :: number
+			pendingBPM = priorPending + (detected - priorPending) * 0.12
 			pendingTempoSamples += 1
 			pendingTempoConfidence += (confidence - pendingTempoConfidence) * 0.12
 		else
