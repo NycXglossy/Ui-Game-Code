@@ -636,7 +636,13 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	-- during a hybrid intro before the analyzer has enough evidence to identify
 	-- the main pulse. Once acquired, normal transition thresholds apply.
 	local minimumCandidateConfidence = if bpmDetected then 0.34 else 0.52
-	if detected and confidence >= minimumCandidateConfidence then
+	-- Preserve moderate-confidence candidates as family evidence during hybrid
+	-- arrangements. A candidate may alternate between half-time and double-time
+	-- (e.g. 85.7 and 171 BPM) while describing the same underlying pulse family.
+	-- Requiring the full acquisition confidence on every individual window
+	-- discards that recurring evidence before consensus can form.
+	local minimumFamilyEvidenceConfidence = if bpmDetected then 0.34 else 0.30
+	if detected and confidence >= minimumFamilyEvidenceConfidence then
 		-- Expire stale hypotheses independently so an intermittent but recurring
 		-- pulse can survive brief windows in which another periodicity wins.
 		for index = #tempoFamilyHypotheses, 1, -1 do
@@ -741,7 +747,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 				math.abs(preferredBPM * 2 - bpmDetected) / bpmDetected <= 0.08
 				or math.abs(preferredBPM * 0.5 - bpmDetected) / bpmDetected <= 0.08)
 			local requiredSamples = if not bpmDetected then 30 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
-			if winner.samples >= requiredSamples then
+			if winner.samples >= requiredSamples and winner.confidence >= minimumCandidateConfidence then
 				if bpmDetected and relativeChange > 0.30 and not octaveMatch
 					and winner.confidence < 0.58 then
 					-- Preserve evidence but wait for stronger confidence.
