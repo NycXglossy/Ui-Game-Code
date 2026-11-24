@@ -27,6 +27,7 @@ local analyzerWire: Wire? = nil
 local lastScan = 0
 local lastPlayer: AudioPlayer? = nil
 local lastAssetId = ""
+local trackGeneration = 0
 local lastSampleAt = 0
 local sampleAccumulator = 0
 local previousSpectrum: {number}? = nil
@@ -103,6 +104,7 @@ local function clearAnalysis()
 	envelopeHistory = {}
 	bandHistories = {bass = {}, lowMid = {}, presence = {}, high = {}}
 	bpmDetected = nil
+	bpmCurrent = BPM_SEED
 	bpmConfidence = 0
 	rawCandidateBPM = nil
 	pendingBPM = nil
@@ -456,7 +458,8 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	lastTempoAnalysisAt = analysisNow
 	local detected, confidence = estimateTempo()
 	rawCandidateBPM = detected
-	if detected and confidence >= 0.34 then
+	local minimumCandidateConfidence = if bpmDetected then 0.34 else 0.46
+	if detected and confidence >= minimumCandidateConfidence then
 		-- Require a sustained, internally consistent candidate before it can
 		-- influence the shared clock. A fill or one ambiguous autocorrelation
 		-- peak cannot immediately retune the lighting system.
@@ -482,7 +485,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		local octaveMatch = bpmDetected ~= nil and (
 			math.abs(accepted * 2 - bpmDetected) / bpmDetected <= 0.08
 			or math.abs(accepted * 0.5 - bpmDetected) / bpmDetected <= 0.08)
-		local requiredSamples = if bpmDetected and relativeChange > 0.30 and not octaveMatch then 18 else 12
+		local requiredSamples = if not bpmDetected then 24 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
 		if pendingTempoSamples >= requiredSamples then
 			if bpmDetected and relativeChange > 0.30 and not octaveMatch
 				and pendingTempoConfidence < 0.58 then
@@ -553,6 +556,7 @@ function ClubAudioSync.getBeatState(): BeatState
 	local assetId = getActiveAssetId(player)
 	if assetId ~= lastAssetId then
 		lastAssetId = assetId
+		trackGeneration += 1
 		clearAnalysis()
 	end
 
@@ -598,9 +602,14 @@ function ClubAudioSync.getBeatState(): BeatState
 	local pulse = math.exp(-beatPhase * 5)
 	if RunService:IsClient() and playing and now - lastDiagnosticsAt >= 5 then
 		lastDiagnosticsAt = now
+		local candidateText = if rawCandidateBPM then string.format("%.1f", rawCandidateBPM) else "none"
+		local tempoFamily = if rawCandidateBPM
+			then string.format("%.1f/%.1f/%.1f", rawCandidateBPM * 0.5, rawCandidateBPM, rawCandidateBPM * 2)
+			else "none"
 		print(string.format(
-			"[ClubAudioSync][Analyzer] BPM=%.1f confidence=%.2f candidate=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
-			bpm, bpmConfidence, if rawCandidateBPM then string.format("%.1f", rawCandidateBPM) else "none",
+			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s familyHalfCurrentDouble=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
+			if assetId ~= "" then assetId else "unknown", trackGeneration, bpm, bpmConfidence,
+			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, tempoFamily,
 			pendingTempoSamples, phaseLockConfidence, phaseErrorSeconds * 1000, onsetStrength, energy,
 			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
 		))
