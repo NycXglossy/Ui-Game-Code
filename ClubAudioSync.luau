@@ -322,8 +322,8 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 
 	-- Convert spectrum indices to their documented frequency positions
 	-- (0..24 kHz). Fixed bin numbers are invalid across different window sizes.
-	local bandFlux = {bass = 0, lowMid = 0, presence = 0, high = 0}
-	local bandCounts = {bass = 0, lowMid = 0, presence = 0, high = 0}
+	local bandFlux: {[string]: number} = {bass = 0, lowMid = 0, presence = 0, high = 0}
+	local bandCounts: {[string]: number} = {bass = 0, lowMid = 0, presence = 0, high = 0}
 	local spectrumCount = #spectrum
 	for i = 2, spectrumCount do
 		local frequency = ((i - 1) / math.max(spectrumCount - 1, 1)) * 24000
