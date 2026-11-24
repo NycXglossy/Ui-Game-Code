@@ -48,13 +48,17 @@ local rawCandidateBPM: number? = nil
 local pendingBPM: number? = nil
 local pendingTempoSamples = 0
 local pendingTempoConfidence = 0
+local pendingChallengerBPM: number? = nil
+local pendingChallengerSamples = 0
 local lastPendingTempoEvidenceAt = 0
 local lastTempoUpdate = 0
 local lastTempoAnalysisAt = 0
 local TEMPO_ANALYZE_INTERVAL = 0.10
 local TEMPO_STALE_SECONDS = 12
 -- A short break may pause consensus, but a long gap must not revive stale evidence.
-local PENDING_EVIDENCE_TIMEOUT = 2.0
+-- Preserve a pending family through short analysis gaps, not long section changes.
+local PENDING_EVIDENCE_TIMEOUT = 4.0
+local CHALLENGER_REQUIRED_SAMPLES = 8
 local energy = 0
 local movementSpeedCurrent = 1
 local lastT = os.clock()
@@ -129,6 +133,8 @@ local function clearAnalysis()
 	pendingBPM = nil
 	pendingTempoSamples = 0
 	pendingTempoConfidence = 0
+	pendingChallengerBPM = nil
+	pendingChallengerSamples = 0
 	lastPendingTempoEvidenceAt = 0
 	lastTempoUpdate = 0
 	lastTempoAnalysisAt = 0
@@ -593,22 +599,43 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			pendingBPM = nil
 			pendingTempoSamples = 0
 			pendingTempoConfidence = 0
+			pendingChallengerBPM = nil
+			pendingChallengerSamples = 0
 		end
 		lastPendingTempoEvidenceAt = analysisNow
-		-- Require a sustained, internally consistent candidate before it can
-		-- influence the shared clock. A fill or one ambiguous autocorrelation
-		-- peak cannot immediately retune the lighting system.
+		-- Accumulate evidence by candidate family instead of allowing each
+		-- isolated autocorrelation winner to replace the pending family. Hybrid
+		-- passages can alternate a real pulse (e.g. ~89/178 BPM) with unrelated
+		-- periodicities (e.g. ~60 BPM).
 		local agrees = pendingBPM ~= nil
 			and math.abs(detected - pendingBPM) / math.max(pendingBPM, 1) <= 0.055
-		if agrees then
-			local priorPending = pendingBPM :: number
+		if pendingBPM == nil or agrees then
+			local priorPending = pendingBPM or detected
 			pendingBPM = priorPending + (detected - priorPending) * 0.12
 			pendingTempoSamples += 1
 			pendingTempoConfidence += (confidence - pendingTempoConfidence) * 0.12
+			pendingChallengerBPM = nil
+			pendingChallengerSamples = 0
 		else
-			pendingBPM = detected
-			pendingTempoSamples = 1
-			pendingTempoConfidence = confidence
+			-- A distinct family must win repeatedly before replacing the incumbent.
+			-- Evidence returning to the incumbent clears this challenge immediately.
+			local challengerAgrees = pendingChallengerBPM ~= nil
+				and math.abs(detected - pendingChallengerBPM) / math.max(pendingChallengerBPM, 1) <= 0.055
+			if challengerAgrees then
+				local priorChallenger = pendingChallengerBPM :: number
+				pendingChallengerBPM = priorChallenger + (detected - priorChallenger) * 0.12
+				pendingChallengerSamples += 1
+			else
+				pendingChallengerBPM = detected
+				pendingChallengerSamples = 1
+			end
+			if pendingChallengerSamples >= CHALLENGER_REQUIRED_SAMPLES then
+				pendingBPM = pendingChallengerBPM
+				pendingTempoSamples = pendingChallengerSamples
+				pendingTempoConfidence = confidence
+				pendingChallengerBPM = nil
+				pendingChallengerSamples = 0
+			end
 		end
 
 		-- Require a longer consensus than a single short fill or genre-layer change.
@@ -652,6 +679,8 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			pendingBPM = nil
 			pendingTempoSamples = 0
 			pendingTempoConfidence = 0
+			pendingChallengerBPM = nil
+			pendingChallengerSamples = 0
 			lastPendingTempoEvidenceAt = 0
 		end
 	end
