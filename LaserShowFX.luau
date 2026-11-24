@@ -20,16 +20,36 @@ local folder = workspace:FindFirstChild("CeilingFX")
 local floorY = -math.huge
 local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
 local floorPartCount = 0
+local localPanelCount = 0
+local boundsSource = "local-fallback"
 local floorDeadline = os.clock() + 60
-repeat
-	folder = folder or workspace:FindFirstChild("CeilingFX")
-	floorY = -math.huge
-	minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
-	floorPartCount = 0
+
+local function readAuthoritativeBounds()
+	if not folder then return false end
+	if folder:GetAttribute("FloorBoundsReady") ~= true then return false end
+	local ax = folder:GetAttribute("FloorBoundsMinX")
+	local bx = folder:GetAttribute("FloorBoundsMaxX")
+	local az = folder:GetAttribute("FloorBoundsMinZ")
+	local bz = folder:GetAttribute("FloorBoundsMaxZ")
+	local ay = folder:GetAttribute("FloorBoundsY")
+	local count = folder:GetAttribute("FloorPanelCount")
+	if type(ax) ~= "number" or type(bx) ~= "number" or type(az) ~= "number"
+		or type(bz) ~= "number" or type(ay) ~= "number" or bx <= ax or bz <= az then
+		return false
+	end
+	minX, maxX, minZ, maxZ, floorY = ax, bx, az, bz, ay
+	floorPartCount = if type(count) == "number" then count else 0
+	boundsSource = "server-authoritative"
+	return true
+end
+
+local function readLocalBounds()
+	minX, maxX, minZ, maxZ, floorY = math.huge, -math.huge, math.huge, -math.huge, -math.huge
+	localPanelCount = 0
 	if folder then
-		for _, p in folder:GetChildren() do
+		for _, p in ipairs(folder:GetChildren()) do
 			if p:IsA("BasePart") and p.Name == "FloorPanel" then
-				floorPartCount += 1
+				localPanelCount += 1
 				local pos = p.Position
 				floorY = math.max(floorY, pos.Y)
 				minX = math.min(minX, pos.X); maxX = math.max(maxX, pos.X)
@@ -37,13 +57,31 @@ repeat
 			end
 		end
 	end
-	if floorY == -math.huge or maxX <= minX or maxZ <= minZ then task.wait(0.5) end
-until (floorY ~= -math.huge and maxX > minX and maxZ > minZ) or os.clock() >= floorDeadline
-if floorY == -math.huge or maxX <= minX or maxZ <= minZ then
-	warn("[ClubNeon][LaserShowFX] Startup aborted: CeilingFX floor panels did not replicate with usable bounds within 60 seconds.")
-	return
+	return floorY ~= -math.huge and maxX > minX and maxZ > minZ
 end
-print("[ClubNeon][LaserShowFX] Floor bounds ready; panels=" .. floorPartCount)
+
+repeat
+	folder = folder or workspace:FindFirstChild("CeilingFX")
+	if not readAuthoritativeBounds() then
+		-- Keep waiting for the server-published complete layout. Do not accept a
+		-- partial streamed-in subset as the full dance-floor rectangle.
+		if not readLocalBounds() then task.wait(0.5) end
+		if boundsSource ~= "server-authoritative" then task.wait(0.5) end
+	end
+until boundsSource == "server-authoritative" or (floorY ~= -math.huge and maxX > minX and maxZ > minZ and os.clock() >= floorDeadline)
+	or os.clock() >= floorDeadline
+
+if not readAuthoritativeBounds() then
+	if not readLocalBounds() then
+		warn("[ClubNeon][LaserShowFX] Startup aborted: no usable authoritative or local floor bounds were available within 60 seconds.")
+		return
+	end
+	warn("[ClubNeon][LaserShowFX] Using LOCAL FALLBACK floor bounds; streaming may have provided only a partial floor. localPanels="
+		.. localPanelCount .. ".")
+end
+print("[ClubNeon][LaserShowFX] Floor bounds ready; panels=" .. floorPartCount
+	.. " localPanels=" .. localPanelCount .. " source=" .. boundsSource)
+
 
 local CENTER = Vector3.new((minX + maxX) / 2, floorY, (minZ + maxZ) / 2)
 local RADIUS = math.min(maxX - minX, maxZ - minZ) / 2
