@@ -6,6 +6,7 @@
 -- is consumed by the client-side MovingHeadShowFX and LaserShowFX scripts only.
 
 local SoundService = game:GetService("SoundService")
+local RunService = game:GetService("RunService")
 
 local ClubAudioSync = {}
 
@@ -377,12 +378,12 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 
 	local detected, confidence = estimateTempo()
 	rawCandidateBPM = detected
-	if detected and confidence >= 0.30 then
+	if detected and confidence >= 0.34 then
 		-- Require a sustained, internally consistent candidate before it can
 		-- influence the shared clock. A fill or one ambiguous autocorrelation
 		-- peak cannot immediately retune the lighting system.
 		local agrees = pendingBPM ~= nil
-			and math.abs(detected - pendingBPM) / math.max(pendingBPM, 1) <= 0.07
+			and math.abs(detected - pendingBPM) / math.max(pendingBPM, 1) <= 0.055
 		if agrees then
 			local priorPending = pendingBPM :: number
 			pendingBPM = priorPending + (detected - priorPending) * 0.12
@@ -394,23 +395,21 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			pendingTempoConfidence = confidence
 		end
 
-		-- 32 consecutive 40 Hz observations ~= 0.8 seconds of stable evidence.
-		if pendingTempoSamples >= 32 then
-			local accepted = pendingBPM :: number
-			if bpmDetected then
-				local relativeChange = math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1)
-				-- Stable evidence is allowed to move well beyond the old 3.5% cap.
-				-- Keep only a guard against implausible non-octave jumps; ordinary
-				-- tempo ramps and 130->170 BPM passages are smoothed downstream.
-				if relativeChange > 0.55 then
-					local octaveMatch = math.abs(accepted * 2 - bpmDetected) / bpmDetected <= 0.08
-						or math.abs(accepted * 0.5 - bpmDetected) / bpmDetected <= 0.08
-					if not octaveMatch then
-						accepted = bpmDetected + math.clamp(accepted - bpmDetected,
-							-bpmDetected * 0.18, bpmDetected * 0.18)
-					end
-				end
-			end
+		-- Require a longer consensus than a single short fill or genre-layer change.
+		-- At 40 Hz, 48 observations ~= 1.2 seconds; large non-octave transitions
+		-- need 1.8 seconds so a competing subdivision cannot retune the clock.
+		local accepted = pendingBPM :: number
+		local relativeChange = if bpmDetected
+			then math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1) else 0
+		local octaveMatch = bpmDetected ~= nil and (
+			math.abs(accepted * 2 - bpmDetected) / bpmDetected <= 0.08
+			or math.abs(accepted * 0.5 - bpmDetected) / bpmDetected <= 0.08)
+		local requiredSamples = if bpmDetected and relativeChange > 0.30 and not octaveMatch then 72 else 48
+		if pendingTempoSamples >= requiredSamples then
+			if bpmDetected and relativeChange > 0.30 and not octaveMatch
+				and pendingTempoConfidence < 0.58 then
+				pendingTempoSamples = 47
+			else
 			-- React faster to sustained, confident tempo movement while keeping
 			-- weak or ambiguous estimates deliberately conservative.
 			local deltaRatio = if bpmDetected then math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1) else 1
@@ -423,6 +422,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 				phaseLockConfidence *= 0.92
 			end
 			lastTempoUpdate = os.clock()
+			end
 		end
 	else
 		pendingTempoSamples = math.max(0, pendingTempoSamples - 2)
@@ -518,7 +518,7 @@ function ClubAudioSync.getBeatState(): BeatState
 	end
 	local beatPhase = beats % 1
 	local pulse = math.exp(-beatPhase * 5)
-	if playing and now - lastDiagnosticsAt >= 5 then
+	if RunService:IsClient() and playing and now - lastDiagnosticsAt >= 5 then
 		lastDiagnosticsAt = now
 		print(string.format(
 			"[ClubAudioSync][Analyzer] BPM=%.1f confidence=%.2f candidate=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
