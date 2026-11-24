@@ -13,10 +13,10 @@ local ROOT_NAME = "ClubMusicModernAudio"
 local BPM_MIN = 70
 local BPM_MAX = 190
 local BPM_SEED = 120
-local SAMPLE_RATE = 20
-local HISTORY_SECONDS = 12
+local SAMPLE_RATE = 40
+local HISTORY_SECONDS = 10
 local HISTORY_LIMIT = SAMPLE_RATE * HISTORY_SECONDS
-local ANALYZE_INTERVAL = 0.05
+local ANALYZE_INTERVAL = 0.025
 local MOVEMENT_SPEED_MIN = 0.55
 local MOVEMENT_SPEED_MAX = 1.45
 
@@ -34,12 +34,29 @@ local envelopeHistory: {number} = {}
 local bpmCurrent = BPM_SEED
 local bpmDetected: number? = nil
 local bpmConfidence = 0
+local rawCandidateBPM: number? = nil
+local pendingBPM: number? = nil
+local pendingTempoSamples = 0
+local pendingTempoConfidence = 0
+local lastTempoUpdate = 0
+local TEMPO_STALE_SECONDS = 12
 local energy = 0
 local movementSpeedCurrent = 1
 local lastT = os.clock()
 local lastBeatIndex = -1
 local beatCount = 0
 local lastPlaying: boolean? = nil
+-- Three-point onset peak tracking and a lightweight beat phase-locked loop.
+local fluxOlder = 0
+local fluxPrevious = 0
+local fluxPreviousPosition = 0
+local lastOnsetPosition = -math.huge
+local beatAnchorPosition = 0
+local beatAnchorReady = false
+local fallbackAnchorReady = false
+local onsetStrength = 0
+local phaseLockConfidence = 0
+local lastDiagnosticsAt = 0
 
 local function finite(value: any): boolean
 	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
@@ -73,10 +90,24 @@ local function clearAnalysis()
 	envelopeHistory = {}
 	bpmDetected = nil
 	bpmConfidence = 0
+	rawCandidateBPM = nil
+	pendingBPM = nil
+	pendingTempoSamples = 0
+	pendingTempoConfidence = 0
+	lastTempoUpdate = 0
 	energy = 0
 	sampleAccumulator = 0
 	lastSampleAt = 0
 	lastBeatIndex = -1
+	fluxOlder = 0
+	fluxPrevious = 0
+	fluxPreviousPosition = 0
+	lastOnsetPosition = -math.huge
+	beatAnchorPosition = 0
+	beatAnchorReady = false
+	fallbackAnchorReady = false
+	onsetStrength = 0
+	phaseLockConfidence = 0
 end
 
 local function ensureAnalyzer(player: AudioPlayer?)
@@ -141,17 +172,20 @@ end
 -- lag across a rolling 12-second window estimates tempo from the audio itself.
 local function estimateTempo(): (number?, number)
 	local count = #envelopeHistory
-	if count < SAMPLE_RATE * 7 then return nil, 0 end
+	local analysisSamples = math.min(count, SAMPLE_RATE * 6)
+	if analysisSamples < SAMPLE_RATE * 4 then return nil, 0 end
+	local firstIndex = count - analysisSamples + 1
 	local mean = 0
-	for _, value in ipairs(envelopeHistory) do mean += value end
-	mean /= count
-	local centered = table.create(count)
+	for i = firstIndex, count do mean += envelopeHistory[i] end
+	mean /= analysisSamples
+	local centered = table.create(analysisSamples)
 	local variance = 0
-	for i, value in ipairs(envelopeHistory) do
-		local v = value - mean
-		centered[i] = v
+	for i = firstIndex, count do
+		local v = envelopeHistory[i] - mean
+		centered[i - firstIndex + 1] = v
 		variance += v * v
 	end
+	count = analysisSamples
 	if variance < 0.00001 then return nil, 0 end
 
 	local bestLag, bestScore = 0, -math.huge
@@ -166,23 +200,41 @@ local function estimateTempo(): (number?, number)
 			normB += b * b
 		end
 		local normalized = score / math.sqrt(math.max(1e-9, normA * normB))
-		-- Slight preference for the normal club tempo range reduces octave errors.
-		local candidateBPM = 60 * SAMPLE_RATE / lag
-		local preference = if candidateBPM >= 95 and candidateBPM <= 160 then 0.025 else 0
-		normalized += preference
+		-- Do not favor a narrow club-tempo band: genuine passages up to 170 BPM
+		-- (and slower breakdowns) must compete on measured periodicity alone.
 		if normalized > bestScore then
 			bestScore = normalized
 			bestLag = lag
 		end
 	end
 	if bestLag == 0 then return nil, 0 end
-	local bpm = math.clamp(60 * SAMPLE_RATE / bestLag, BPM_MIN, BPM_MAX)
-	local confidence = math.clamp((bestScore - 0.08) / 0.52, 0, 1)
-	if confidence < 0.12 then return nil, confidence end
+	-- Parabolic interpolation around the winning autocorrelation lag reduces
+	-- quantization error between integer sample offsets.
+	local refinedLag = bestLag
+	if bestLag > minLag and bestLag < maxLag then
+		local function correlationAt(lag)
+			local score, normA, normB = 0, 0, 0
+			for i = lag + 1, count do
+				local a, b = centered[i], centered[i - lag]
+				score += a * b
+				normA += a * a
+				normB += b * b
+			end
+			return score / math.sqrt(math.max(1e-9, normA * normB))
+		end
+		local left, center, right = correlationAt(bestLag - 1), correlationAt(bestLag), correlationAt(bestLag + 1)
+		local denominator = left - 2 * center + right
+		if math.abs(denominator) > 1e-6 then
+			refinedLag += math.clamp(0.5 * (left - right) / denominator, -0.5, 0.5)
+		end
+	end
+	local bpm = math.clamp(60 * SAMPLE_RATE / refinedLag, BPM_MIN, BPM_MAX)
+	local confidence = math.clamp((bestScore - 0.10) / 0.48, 0, 1)
+	if confidence < 0.24 then return nil, confidence end
 	return bpm, confidence
 end
 
-local function sampleAnalyzer(dt: number)
+local function sampleAnalyzer(dt: number, timePosition: number)
 	if not analyzer or not analyzer.Parent then return end
 	sampleAccumulator += dt
 	if sampleAccumulator < ANALYZE_INTERVAL then return end
@@ -192,30 +244,135 @@ local function sampleAnalyzer(dt: number)
 	if not ok or not finite(rms) then return end
 	local spectrumOk, spectrum = pcall(function() return analyzer:GetSpectrum() end)
 	if not spectrumOk or typeof(spectrum) ~= "table" or #spectrum < 8 then
-		-- RMS-only fallback still supplies real audio energy, but not a tempo claim.
 		energy += (math.clamp(rms, 0, 1) - energy) * 0.25
 		return
 	end
 
-	local flux = 0
-	local firstBin = 2
-	local lastBin = math.min(#spectrum, 28)
-	for i = firstBin, lastBin do
+	-- Separate bass, low-mid and upper transient energy. Bass gets the
+	-- strongest weight for kick detection, while upper bands retain snare/clap
+	-- information so the tempo estimator does not depend on bass-only tracks.
+	local bassFlux, lowMidFlux, upperFlux = 0, 0, 0
+	local lastBin = math.min(#spectrum, 48)
+	for i = 2, lastBin do
 		local current = if finite(spectrum[i]) then math.max(0, spectrum[i]) else 0
 		local previous = previousSpectrum and previousSpectrum[i] or 0
-		flux += math.max(0, current - previous)
+		local rise = math.max(0, current - previous)
+		if i <= 9 then
+			bassFlux += rise
+		elseif i <= 24 then
+			lowMidFlux += rise
+		else
+			upperFlux += rise
+		end
 	end
 	local rmsRise = math.max(0, rms - previousRms)
-	local onsetEnvelope = flux * 0.82 + rmsRise * 0.18
 	previousSpectrum = table.clone(spectrum)
 	previousRms = rms
-	energy += (math.clamp(rms * 5, 0, 1) - energy) * 0.22
-	pushHistory(onsetEnvelope)
+
+	-- Normalize bands independently to avoid a loud midrange dominating the
+	-- onset stream. A small RMS-rise term preserves kick transients.
+	local flux = bassFlux * 1.0 + lowMidFlux * 0.62 + upperFlux * 0.34
+	local rawOnset = flux * 0.78 + rmsRise * 0.22
+	local smoothedOnset = rawOnset
+	if #envelopeHistory > 0 then
+		smoothedOnset = envelopeHistory[#envelopeHistory] * 0.32 + rawOnset * 0.68
+	end
+	pushHistory(smoothedOnset)
+	energy += (math.clamp(rms * 5, 0, 1) - energy) * 0.20
+
+	-- Use a rolling adaptive threshold, rather than a fixed amplitude. This
+	-- allows quieter mastered tracks and louder drops to share one detector.
+	local n = math.min(#envelopeHistory, SAMPLE_RATE * 3)
+	local mean, variance = 0, 0
+	for i = #envelopeHistory - n + 1, #envelopeHistory do
+		mean += envelopeHistory[i]
+	end
+	if n > 0 then mean /= n end
+	for i = #envelopeHistory - n + 1, #envelopeHistory do
+		local delta = envelopeHistory[i] - mean
+		variance += delta * delta
+	end
+	local deviation = if n > 1 then math.sqrt(variance / (n - 1)) else 0
+	local threshold = mean + deviation * 0.72
+
+	-- Confirm a peak one sample late (three-point peak detector) to avoid
+	-- locking the beat clock to every rising sample in a sustained sound.
+	local peak = fluxPrevious
+	local peakPosition = fluxPreviousPosition
+	if fluxPrevious > fluxOlder and fluxPrevious >= smoothedOnset
+		and peak > threshold and peakPosition - lastOnsetPosition >= 0.22 then
+		lastOnsetPosition = peakPosition
+		onsetStrength = math.clamp((peak - mean) / math.max(deviation * 3, 1e-5), 0, 1)
+
+		local bpm = bpmDetected or bpmCurrent
+		local period = 60 / math.clamp(bpm, BPM_MIN, BPM_MAX)
+		if not beatAnchorReady then
+			beatAnchorPosition = peakPosition
+			beatAnchorReady = true
+			phaseLockConfidence = 0.25
+		else
+			-- Find the nearest predicted beat and gently correct phase. Ignore
+			-- off-beat percussion instead of allowing it to drag the whole show.
+			local beatsFromAnchor = (peakPosition - beatAnchorPosition) / period
+			local phaseError = beatsFromAnchor - math.floor(beatsFromAnchor + 0.5)
+			local errorSeconds = phaseError * period
+			if math.abs(errorSeconds) <= period * 0.22 then
+				local gain = 0.12 + 0.20 * math.clamp(bpmConfidence, 0, 1)
+				beatAnchorPosition += errorSeconds * gain
+				phaseLockConfidence += (1 - phaseLockConfidence) * 0.12
+			else
+				phaseLockConfidence *= 0.96
+			end
+		end
+	end
+	fluxOlder = fluxPrevious
+	fluxPrevious = smoothedOnset
+	fluxPreviousPosition = timePosition
 
 	local detected, confidence = estimateTempo()
-	if detected then
-		bpmDetected = detected
-		bpmConfidence = confidence
+	rawCandidateBPM = detected
+	if detected and confidence >= 0.30 then
+		-- Require a sustained, internally consistent candidate before it can
+		-- influence the shared clock. A fill or one ambiguous autocorrelation
+		-- peak cannot immediately retune the lighting system.
+		local agrees = pendingBPM ~= nil
+			and math.abs(detected - pendingBPM) / math.max(pendingBPM, 1) <= 0.07
+		if agrees then
+			local priorPending = pendingBPM :: number
+			pendingBPM = priorPending + (detected - priorPending) * 0.12
+			pendingTempoSamples += 1
+			pendingTempoConfidence += (confidence - pendingTempoConfidence) * 0.12
+		else
+			pendingBPM = detected
+			pendingTempoSamples = 1
+			pendingTempoConfidence = confidence
+		end
+
+		-- 48 consecutive 40 Hz observations ~= 1.2 seconds of stable evidence.
+		if pendingTempoSamples >= 48 then
+			local accepted = pendingBPM :: number
+			if bpmDetected then
+				local relativeChange = math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1)
+				-- Stable evidence is allowed to move well beyond the old 3.5% cap.
+				-- Keep only a guard against implausible non-octave jumps; ordinary
+				-- tempo ramps and 130->170 BPM passages are smoothed downstream.
+				if relativeChange > 0.55 then
+					local octaveMatch = math.abs(accepted * 2 - bpmDetected) / bpmDetected <= 0.08
+						or math.abs(accepted * 0.5 - bpmDetected) / bpmDetected <= 0.08
+					if not octaveMatch then
+						accepted = bpmDetected + math.clamp(accepted - bpmDetected,
+							-bpmDetected * 0.18, bpmDetected * 0.18)
+					end
+				end
+			end
+			local blend = math.clamp(0.18 + pendingTempoConfidence * 0.22, 0.18, 0.40)
+			bpmDetected = if bpmDetected then bpmDetected + (accepted - bpmDetected) * blend else accepted
+			bpmConfidence += (pendingTempoConfidence - bpmConfidence) * 0.22
+			lastTempoUpdate = os.clock()
+		end
+	else
+		pendingTempoSamples = math.max(0, pendingTempoSamples - 2)
+		pendingTempoConfidence *= 0.96
 	end
 end
 
@@ -250,6 +407,8 @@ export type BeatState = {
 	pulse: number,
 	energy: number,
 	movementSpeed: number,
+	phaseLocked: boolean,
+	onsetStrength: number,
 }
 
 function ClubAudioSync.getBeatState(): BeatState
@@ -271,15 +430,28 @@ function ClubAudioSync.getBeatState(): BeatState
 		lastPlaying = playing
 		lastBeatIndex = -1
 	end
-	if playing then sampleAnalyzer(dt) end
+	if playing then sampleAnalyzer(dt, timePosition) end
 
+	if bpmDetected and lastTempoUpdate > 0 and now - lastTempoUpdate > TEMPO_STALE_SECONDS then
+		bpmDetected = nil
+		bpmConfidence = 0
+		phaseLockConfidence *= 0.8
+	end
 	local targetBPM = bpmDetected or BPM_SEED
-	bpmCurrent += (targetBPM - bpmCurrent) * (1 - math.exp(-2.4 * dt))
+	bpmCurrent += (targetBPM - bpmCurrent) * (1 - math.exp(-1.8 * dt))
 	local bpm = bpmCurrent
 
-	-- The analyzer supplies actual audio energy. TimePosition remains the
-	-- stable playback clock; measured BPM controls its beat phase and cadence.
-	local beats = (if playing then timePosition else now) * bpm / 60
+	-- Analyzer onset peaks now correct the phase of the playback-time clock.
+	-- This preserves smooth AudioPlayer timing while preventing BPM-only drift.
+	local period = 60 / bpm
+	local beatPosition = if playing then timePosition else now
+	if not beatAnchorReady and (not playing or not analyzer or not analyzer.Parent) then
+		if not fallbackAnchorReady then
+			beatAnchorPosition = beatPosition
+			fallbackAnchorReady = true
+		end
+	end
+	local beats = (beatPosition - beatAnchorPosition) / period
 	local beatIndex = math.floor(beats)
 	if beatIndex ~= lastBeatIndex then
 		if lastBeatIndex >= 0 and beatIndex > lastBeatIndex then
@@ -291,6 +463,15 @@ function ClubAudioSync.getBeatState(): BeatState
 	end
 	local beatPhase = beats % 1
 	local pulse = math.exp(-beatPhase * 5)
+	if playing and now - lastDiagnosticsAt >= 5 then
+		lastDiagnosticsAt = now
+		print(string.format(
+			"[ClubAudioSync][Analyzer] BPM=%.1f confidence=%.2f candidate=%s pending=%d phaseLockQuality=%.2f onset=%.2f energy=%.2f analyzerReady=%s",
+			bpm, bpmConfidence, if rawCandidateBPM then string.format("%.1f", rawCandidateBPM) else "none",
+			pendingTempoSamples, phaseLockConfidence, onsetStrength, energy,
+			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
+		))
+	end
 	local tempoDrive = math.clamp((bpm - 70) / 90, 0, 1)
 	local targetMovementSpeed = math.clamp(0.58 + tempoDrive * 0.68 + energy * 0.18,
 		MOVEMENT_SPEED_MIN, MOVEMENT_SPEED_MAX)
@@ -302,7 +483,7 @@ function ClubAudioSync.getBeatState(): BeatState
 		timePosition = timePosition,
 		bpm = bpm,
 		bpmConfidence = bpmConfidence,
-		bpmSource = if bpmDetected then "AudioAnalyzer" else "Analyzer warming up",
+		bpmSource = if bpmDetected then "AudioAnalyzer+OnsetPLL" else "Analyzer warming up",
 		beatIndex = beatIndex,
 		beatCount = beatCount,
 		beatPhase = beatPhase,
@@ -310,6 +491,8 @@ function ClubAudioSync.getBeatState(): BeatState
 		pulse = pulse,
 		energy = energy,
 		movementSpeed = movementSpeedCurrent,
+		phaseLocked = phaseLockConfidence >= 0.35,
+		onsetStrength = onsetStrength,
 	}
 end
 

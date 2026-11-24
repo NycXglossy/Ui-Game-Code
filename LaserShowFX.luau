@@ -1,7 +1,7 @@
 -- LaserShowFX (client half of the dual-script laser show):
 -- animates the wall-mounted laser projector rig built by the server
 -- script. Uses the shared ClubAudioSync beat clock, hue cadence
--- (0.045/beat) and 16-beat pattern rotation so the whole club hits
+-- (0.045/beat) and independent quadrant trajectories driven by shared
 -- together, synced to the club's ClubMusic AudioPlayer backend.
 -- Heavy kicks fire hard flare bursts across the rig. Runs client-side
 -- for 60fps beam sweeps.
@@ -20,16 +20,36 @@ local folder = workspace:FindFirstChild("CeilingFX")
 local floorY = -math.huge
 local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
 local floorPartCount = 0
+local localPanelCount = 0
+local boundsSource = "local-fallback"
 local floorDeadline = os.clock() + 60
-repeat
-	folder = folder or workspace:FindFirstChild("CeilingFX")
-	floorY = -math.huge
-	minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
-	floorPartCount = 0
+
+local function readAuthoritativeBounds()
+	if not folder then return false end
+	if folder:GetAttribute("FloorBoundsReady") ~= true then return false end
+	local ax = folder:GetAttribute("FloorBoundsMinX")
+	local bx = folder:GetAttribute("FloorBoundsMaxX")
+	local az = folder:GetAttribute("FloorBoundsMinZ")
+	local bz = folder:GetAttribute("FloorBoundsMaxZ")
+	local ay = folder:GetAttribute("FloorBoundsY")
+	local count = folder:GetAttribute("FloorPanelCount")
+	if type(ax) ~= "number" or type(bx) ~= "number" or type(az) ~= "number"
+		or type(bz) ~= "number" or type(ay) ~= "number" or bx <= ax or bz <= az then
+		return false
+	end
+	minX, maxX, minZ, maxZ, floorY = ax, bx, az, bz, ay
+	floorPartCount = if type(count) == "number" then count else 0
+	boundsSource = "server-authoritative"
+	return true
+end
+
+local function readLocalBounds()
+	minX, maxX, minZ, maxZ, floorY = math.huge, -math.huge, math.huge, -math.huge, -math.huge
+	localPanelCount = 0
 	if folder then
-		for _, p in folder:GetChildren() do
+		for _, p in ipairs(folder:GetChildren()) do
 			if p:IsA("BasePart") and p.Name == "FloorPanel" then
-				floorPartCount += 1
+				localPanelCount += 1
 				local pos = p.Position
 				floorY = math.max(floorY, pos.Y)
 				minX = math.min(minX, pos.X); maxX = math.max(maxX, pos.X)
@@ -37,13 +57,31 @@ repeat
 			end
 		end
 	end
-	if floorY == -math.huge or maxX <= minX or maxZ <= minZ then task.wait(0.5) end
-until (floorY ~= -math.huge and maxX > minX and maxZ > minZ) or os.clock() >= floorDeadline
-if floorY == -math.huge or maxX <= minX or maxZ <= minZ then
-	warn("[ClubNeon][LaserShowFX] Startup aborted: CeilingFX floor panels did not replicate with usable bounds within 60 seconds.")
-	return
+	return floorY ~= -math.huge and maxX > minX and maxZ > minZ
 end
-print("[ClubNeon][LaserShowFX] Floor bounds ready; panels=" .. floorPartCount)
+
+repeat
+	folder = folder or workspace:FindFirstChild("CeilingFX")
+	if not readAuthoritativeBounds() then
+		-- Keep waiting for the server-published complete layout. Do not accept a
+		-- partial streamed-in subset as the full dance-floor rectangle.
+		if not readLocalBounds() then task.wait(0.5) end
+		if boundsSource ~= "server-authoritative" then task.wait(0.5) end
+	end
+until boundsSource == "server-authoritative" or (floorY ~= -math.huge and maxX > minX and maxZ > minZ and os.clock() >= floorDeadline)
+	or os.clock() >= floorDeadline
+
+if not readAuthoritativeBounds() then
+	if not readLocalBounds() then
+		warn("[ClubNeon][LaserShowFX] Startup aborted: no usable authoritative or local floor bounds were available within 60 seconds.")
+		return
+	end
+	warn("[ClubNeon][LaserShowFX] Using LOCAL FALLBACK floor bounds; streaming may have provided only a partial floor. localPanels="
+		.. localPanelCount .. ".")
+end
+print("[ClubNeon][LaserShowFX] Floor bounds ready; panels=" .. floorPartCount
+	.. " localPanels=" .. localPanelCount .. " source=" .. boundsSource)
+
 
 local CENTER = Vector3.new((minX + maxX) / 2, floorY, (minZ + maxZ) / 2)
 local RADIUS = math.min(maxX - minX, maxZ - minZ) / 2
@@ -99,52 +137,102 @@ end
 
 -- Stratified coverage assigns each laser a distinct floor cell. Per-beat
 -- variation stays inside that cell, preventing random pileups in one hotspot.
-local function distributedFloorSpot(index, total, seed, y)
-	local columns = math.max(1, math.ceil(math.sqrt(total * ((maxX - minX) / math.max(1, maxZ - minZ)))))
-	local rows = math.max(1, math.ceil(total / columns))
-	local cell = (index - 1) % total
-	local column = cell % columns
-	local row = math.floor(cell / columns)
-	local cellWidth = (maxX - minX) / columns
-	local cellDepth = (maxZ - minZ) / rows
-	local jitterX = (seededUnit(seed) - 0.5) * cellWidth * 0.42
-	local jitterZ = (seededUnit(seed + 1) - 0.5) * cellDepth * 0.42
-	return clampFloorPoint(
-		minX + (column + 0.5) * cellWidth + jitterX,
-		minZ + (row + 0.5) * cellDepth + jitterZ,
-		y
+-- Four-wall crosshatch coverage: north/south fixtures scan the full floor depth
+-- on distinct X lanes; east/west fixtures scan the full width on distinct Z lanes.
+-- Fixture phase and BPM-scaled speed remain independent; no ceiling-FX pattern clock.
+local coverageGridLogged = false
+local function adaptiveCoverageTarget(coverageIndex, totalFixtures, phase, fixtureSpeed, showTime, beat, y)
+	local spanX, spanZ = maxX - minX, maxZ - minZ
+	local marginX = math.min(2.5, spanX * 0.035)
+	local marginZ = math.min(2.5, spanZ * 0.035)
+	local usableX = math.max(1, spanX - marginX * 2)
+	local usableZ = math.max(1, spanZ - marginZ * 2)
+
+	-- Assign every fixture a dedicated cell across the entire floor. The
+	-- previous wall-parallel lanes left the same narrow strips active for long
+	-- periods, so overlapping sweeps could still look weighted to one side.
+	-- A 2:1 cell grid keeps the 32-head and 24-laser layouts evenly tiled.
+	local aspect = usableX / math.max(1, usableZ)
+	-- Never collapse the target lattice into a single row/column: that leaves
+	-- one full half-axis underused on long rectangular dance floors.
+	local rows = math.max(2, math.floor(math.sqrt(math.max(1, totalFixtures) / (2 * aspect)) + 0.5))
+	local columns = math.max(2, math.ceil(totalFixtures / rows))
+	if not coverageGridLogged then
+		coverageGridLogged = true
+		print("[ClubNeon][LaserShowFX] Full-floor target lattice; columns=" .. columns
+			.. ", rows=" .. rows .. ", floorAspect=" .. string.format("%.2f", aspect)
+			.. ", fixtures=" .. totalFixtures)
+	end
+	local index = math.clamp(math.floor(coverageIndex or 1) - 1, 0, math.max(0, totalFixtures - 1))
+	local column = index % columns
+	local row = math.floor(index / columns)
+	local cellWidth = usableX / columns
+	local cellDepth = usableZ / rows
+	local centerX = minX + marginX + (column + 0.5) * cellWidth
+	local centerZ = minZ + marginZ + (row + 0.5) * cellDepth
+
+	-- Shared BPM/energy changes travel speed only. Each fixture retains its
+	-- own phase and traces a two-axis loop inside its assigned floor cell.
+	local tempoDrive = math.clamp((((beat and beat.bpm) or 120) - 70) / 120, 0, 1)
+	local energyDrive = math.clamp((beat and beat.energy) or 0, 0, 1)
+	local rate = (0.38 + tempoDrive * 0.32 + energyDrive * 0.12) * fixtureSpeed
+	local sweepX = math.sin(showTime * rate + phase)
+	local sweepZ = math.sin(showTime * rate * 0.73 + phase * 1.61)
+	local x = centerX + sweepX * cellWidth * 0.48
+	local z = centerZ + sweepZ * cellDepth * 0.48
+	return Vector3.new(
+		math.clamp(x, minX + marginX, maxX - marginX),
+		y,
+		math.clamp(z, minZ + marginZ, maxZ - marginZ)
 	)
 end
-
--- Wall-balanced floor anchors: every perimeter wall contributes targets to
--- all four floor quadrants. This avoids a whole wall's fixtures inheriting
--- neighboring cells on one side of the venue.
-local function wallBalancedFloorSpot(laneIndex, sideIndex, seed, y)
-	-- Interleave successive fixtures across all four quadrants, rotating
-	-- the starting quadrant by wall. This prevents every wall's first lane
-	-- from targeting the same half of the dance floor.
-	local slot = (laneIndex - 1) * 4 + (sideIndex - 1)
-	local quadrant = slot % 4
-	local withinQuadrant = math.floor(slot / 4)
-	local quadrantColumn = quadrant % 2
-	local quadrantRow = math.floor(quadrant / 2)
-	local halfWidth = (maxX - minX) * 0.5
-	local halfDepth = (maxZ - minZ) * 0.5
-	-- Four walls x two fixture lanes provide eight distinct anchor cells
-	-- inside each quadrant rather than stacking fixtures at shared points.
-	local cell = (sideIndex - 1) * 2 + (withinQuadrant % 2)
-	local localX = ((cell % 4) + 0.5) / 4
-	local localZ = (math.floor(cell / 4) + 0.5) / 2
-	local jitterX = (seededUnit(seed) - 0.5) * halfWidth * 0.16
-	local jitterZ = (seededUnit(seed + 1) - 0.5) * halfDepth * 0.16
-	local x = minX + quadrantColumn * halfWidth + localX * halfWidth + jitterX
-	local z = minZ + quadrantRow * halfDepth + localZ * halfDepth + jitterZ
-	return clampFloorPoint(x, z, y)
-end
-
 local function collectLasers()
 	local list = {}
 	if not rig then return list, {north = 0, east = 0, south = 0, west = 0} end
+	-- Backward-compatible metadata recovery: older replicated rig builders may not
+	-- have WallSide/WallSlot yet. Infer from the actual emitter perimeter, never
+	-- from CeilingFX floor bounds (which can collapse the entire rig onto one wall).
+	local rigMinX, rigMaxX, rigMinZ, rigMaxZ = math.huge, -math.huge, math.huge, -math.huge
+	local emitterCount = 0
+	for _, candidate in ipairs(rig:GetChildren()) do
+		if candidate:IsA("BasePart") and candidate.Name:match("^Laser(%d+)_Lens$") then
+			emitterCount += 1
+			rigMinX = math.min(rigMinX, candidate.Position.X)
+			rigMaxX = math.max(rigMaxX, candidate.Position.X)
+			rigMinZ = math.min(rigMinZ, candidate.Position.Z)
+			rigMaxZ = math.max(rigMaxZ, candidate.Position.Z)
+		end
+	end
+	local rigSpanX = math.max(0.01, rigMaxX - rigMinX)
+	local rigSpanZ = math.max(0.01, rigMaxZ - rigMinZ)
+	local function inferWallMetadata(emitter, preferredSide)
+		local side = preferredSide
+		if side ~= "north" and side ~= "east" and side ~= "south" and side ~= "west" then
+			local p = emitter.Position
+			local distances = {
+				{side = "north", distance = math.abs(p.Z - rigMinZ)},
+				{side = "east", distance = math.abs(rigMaxX - p.X)},
+				{side = "south", distance = math.abs(rigMaxZ - p.Z)},
+				{side = "west", distance = math.abs(p.X - rigMinX)},
+			}
+			table.sort(distances, function(a, b) return a.distance < b.distance end)
+			side = distances[1].side
+		end
+		local p = emitter.Position
+		local slot
+		if side == "north" then
+			slot = (p.X - rigMinX) / rigSpanX
+		elseif side == "east" then
+			slot = (p.Z - rigMinZ) / rigSpanZ
+		elseif side == "south" then
+			slot = (rigMaxX - p.X) / rigSpanX
+		else
+			slot = (rigMaxZ - p.Z) / rigSpanZ
+		end
+		return side, math.clamp(slot, 0.04, 0.96)
+	end
+	local recoveredMetadata = 0
+	local invalidMetadata = 0
 	-- Use the actual emitter perimeter for wall classification. The venue trim
 	-- can extend beyond the CeilingFX dance-floor panels, so comparing fixture
 	-- positions directly with floor bounds can label every fixture as one side.
@@ -160,11 +248,19 @@ local function collectLasers()
 				for _, child in d:GetChildren() do
 					if child:IsA("Beam") then table.insert(beams, child) end
 				end
-				-- Wall identity is authored by the server rig builder; do not infer
-				-- it from world-space extrema, which can collapse on irregular venues.
 				local side = d:GetAttribute("WallSide")
 				local along = d:GetAttribute("WallSlot")
-				if type(side) ~= "string" or type(along) ~= "number" then
+				if side ~= "north" and side ~= "east" and side ~= "south" and side ~= "west" then
+					side = nil
+				end
+				if type(along) ~= "number" then along = nil end
+				if not side or not along then
+					recoveredMetadata += 1
+					side, along = inferWallMetadata(d, side)
+				end
+				if not side or not along then
+					invalidMetadata += 1
+					warn("[ClubNeon][FX] Unable to infer wall metadata for " .. d:GetFullName())
 					continue
 				end
 				table.insert(list, {
@@ -204,23 +300,52 @@ local function collectLasers()
 			if L then
 				coverageIndex += 1
 				L.coverageIndex = coverageIndex
-				-- Each wall cycles its own projectors through all four floor quadrants.
-				L.anchor = wallBalancedFloorSpot(laneIndex, sideIndex, L.idx * 31.9, floorY + 0.5)
-				L.currentTarget = L.anchor
+				-- The wall and slot define the full-floor crosshatch lane.
 			end
 		end
 	end
+	print("[ClubNeon][FX] Laser fixtures=" .. #list
+		.. " emitters=" .. emitterCount
+		.. " sides N/E/S/W=" .. sideCounts.north .. "/" .. sideCounts.east .. "/" .. sideCounts.south .. "/" .. sideCounts.west
+		.. " recoveredMetadata=" .. recoveredMetadata .. " invalidMetadata=" .. invalidMetadata)
 	return list, sideCounts
 end
 
 local lasers, laserSideCounts = collectLasers()
-while #lasers == 0 do
-	task.wait(0.5)
-	lasers, laserSideCounts = collectLasers()
+-- A replicated rig Folder can arrive before all fixture parts and their
+-- attachments/targets. Wait for the ready-fixture count to settle before
+-- taking the one-time controller snapshot.
+-- Wait for the full rig rather than accepting a temporarily stable streamed subset.
+-- The controller still starts after the grace period and its live audit keeps discovering
+-- late fixtures; zero fixtures is not a fatal startup condition.
+local EXPECTED_LASERS = 24
+local stableCount = #lasers
+local stableSince = os.clock()
+local replicationDeadline = os.clock() + 45
+local announcedPartial = false
+while os.clock() < replicationDeadline do
+	task.wait(0.25)
+	local nextFixtures, nextCounts = collectLasers()
+	if #nextFixtures ~= stableCount then
+		stableCount = #nextFixtures
+		stableSince = os.clock()
+	end
+	lasers, laserSideCounts = nextFixtures, nextCounts
+	if #lasers >= EXPECTED_LASERS and os.clock() - stableSince >= 1.5 then
+		break
+	end
+	if #lasers > 0 and not announcedPartial and os.clock() - stableSince >= 3 then
+		announcedPartial = true
+		print("[ClubNeon][LaserShowFX] Partial replication (" .. #lasers .. "/" .. EXPECTED_LASERS .. "); continuing to wait for the full rig.")
+	end
+end
+if #lasers < EXPECTED_LASERS then
+	warn("[ClubNeon][LaserShowFX] Startup grace period ended with " .. #lasers .. "/" .. EXPECTED_LASERS
+		.. " fixtures; controller remains active and will recover streamed fixtures automatically.")
 end
 local beamCount = 0
 for _, laser in ipairs(lasers) do beamCount += #laser.beams end
-print("[ClubNeon][LaserShowFX] Four-wall coverage ready; lasers=" .. #lasers
+print("[ClubNeon][LaserShowFX] Four-wall crosshatch coverage ready; lasers=" .. #lasers
 	.. ", sides=N:" .. (laserSideCounts.north or 0) .. "/E:" .. (laserSideCounts.east or 0)
 	.. "/S:" .. (laserSideCounts.south or 0) .. "/W:" .. (laserSideCounts.west or 0)
 	.. ", floorCells=" .. #lasers .. ", beams=" .. beamCount)
@@ -301,9 +426,6 @@ RunService.Heartbeat:Connect(function()
 
 	local kick = math.exp(-beat.beatPhase * 5) * beatPower
 	local hue = (beatCount * 0.045) % 1 -- same cadence as the other FX
-	local pattern = math.floor(beatCount / 16) % 6
-	local beatBlend = math.clamp(beat.beatPhase, 0, 1)
-	beatBlend = beatBlend * beatBlend * (3 - 2 * beatBlend)
 	local flaring = now < flareUntil
 	local flare = flaring and (math.floor(now * FLARE_HZ) % 2 == 0) and 1 or 0
 	local flareKick = kick + flare * 1.5
@@ -327,64 +449,20 @@ RunService.Heartbeat:Connect(function()
 	local poolScale = 1 + math.clamp(flareKick, 0, 1.5) * 0.08
 	local poolFade = math.clamp(0.86 - math.clamp(flareKick, 0, 1.5) * 0.025, 0.82, 0.86)
 
-	-- Laser choreography: a new pattern every 16 beats (one musical phrase)
+	-- Full-floor crosshatch movement: each wall scans an independent axis,
+	-- while shared BPM/energy continuously modulate its sweep rate.
 	for i, L in ipairs(lasers) do
-		local phase, speed = L.phase, L.speed
-		local anchor = L.anchor
-		local targetPos
-		if pattern == 0 then
-			-- Independent orbit paths around randomized floor anchors.
-			local spin = showTime * 0.6 * speed + phase
-			local r = RADIUS * (0.12 + 0.22 * (0.5 + 0.5 * math.sin(showTime * 0.25 * speed + phase)))
-			targetPos = clampFloorPoint(anchor.X + math.cos(spin) * r,
-				anchor.Z + math.sin(spin) * r, floorY + 0.5)
-		elseif pattern == 1 then
-			-- Criss-cross sweeps use separate randomized lanes per laser.
-			local sweep = math.sin(showTime * 1.5 * speed + phase)
-			targetPos = clampFloorPoint(anchor.X + sweep * RADIUS * 0.3,
-				anchor.Z + math.cos(phase) * RADIUS * 0.3, floorY + 0.5)
-		elseif pattern == 2 then
-			-- Beat destinations are independently randomized across the floor.
-			local function spotForBeat(n)
-				return distributedFloorSpot(L.coverageIndex or i, #lasers, n * 211 + L.idx * 1877, floorY + 0.5)
-			end
-			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
-		elseif pattern == 3 then
-			-- Balanced four-wall cross-hatch: each wall owns evenly spaced lanes.
-			-- Opposing walls sweep in opposite directions so the whole floor is
-			-- crossed without repeatedly piling every beam into the center.
-			local sweep = (math.sin(showTime * 0.42 * speed + phase) + 1) * 0.5
-			local marginX = math.min(3, (maxX - minX) * 0.045)
-			local marginZ = math.min(3, (maxZ - minZ) * 0.045)
-			local x, z
-			if L.side == "north" or L.side == "south" then
-				x = minX + marginX + L.sideSlot * (maxX - minX - marginX * 2)
-				local depth = if L.side == "north" then sweep else 1 - sweep
-				z = minZ + marginZ + depth * (maxZ - minZ - marginZ * 2)
-			else
-				z = minZ + marginZ + L.sideSlot * (maxZ - minZ - marginZ * 2)
-				local width = if L.side == "west" then 1 - sweep else sweep
-				x = minX + marginX + width * (maxX - minX - marginX * 2)
-			end
-			targetPos = clampFloorPoint(x, z, floorY + 0.5)
-		elseif pattern == 4 then
-			-- Broad floor sweep stays inside each wall's assigned quadrant.
-			-- The old perimeter crawl repeatedly concentrated pools on the walls.
-			local sweepX = math.sin(showTime * 0.36 * speed + phase)
-			local sweepZ = math.cos(showTime * 0.27 * speed + phase * 0.81)
-			targetPos = clampFloorPoint(
-				anchor.X + sweepX * (maxX - minX) * 0.20,
-				anchor.Z + sweepZ * (maxZ - minZ) * 0.20,
-				floorY + 0.5
-			)
-		else
-			-- Blizzard: randomized full-floor spots on each beat, no center snap.
-			local function spotForBeat(n)
-				return distributedFloorSpot(L.coverageIndex or i, #lasers, n * 307 + L.idx * 2371, floorY + 0.5)
-			end
-			targetPos = spotForBeat(beatCount):Lerp(spotForBeat(beatCount + 1), beatBlend)
-		end
-		-- Smooth target motion across beat/pattern changes rather than snapping fixtures.
+		local targetPos = adaptiveCoverageTarget(
+			L.coverageIndex,
+			#lasers,
+			L.phase,
+			L.speed,
+			showTime,
+			beat,
+			floorY + 0.5
+		)
+
+		-- Smooth adaptive target motion rather than snapping fixtures.
 		local motionAlpha = 1 - math.exp(-dt * 10)
 		L.currentTarget = L.currentTarget:Lerp(targetPos, motionAlpha)
 		local smoothTarget = L.currentTarget

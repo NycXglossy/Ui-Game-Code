@@ -1,7 +1,10 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.65
+-- CLUB NEON MASTER INSTALLER v0.4.83
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
--- v0.4.63 adds client-side live AudioAnalyzer tempo detection and removes ceiling/perimeter-only sweeps from floor-coverage patterns.
+-- v0.4.82 replaces the stage-dependent DJ LED backdrop with a dense four-wall venue-perimeter LED system (1,152 segments) using the shared beat clock.
+-- v0.4.79 adds the dual-architecture DJ stage LED bar rig and client-local synchronized FX.
+-- v0.4.73 publishes server-authoritative full-floor bounds so streamed clients do not mistake partial panel replication for the complete dance floor.
+-- v0.4.72 spreads every laser and moving-head target across a dedicated full-floor cell while preserving independent BPM-adaptive motion.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
 -- Stop Play/Run first. Back up the place. Test in an unpublished copy before publishing.
 --
@@ -23,7 +26,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.65"
+local INSTALLER_VERSION = "0.4.83"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -36,11 +39,13 @@ local RELEASE = {
     phase32 = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
-    fx = "df45c86a1d3e115fb17c5f5dc9c9c1905ae0a917",
-    audioSync = "e0b631612dd9479021930d79ad250530990d2f97",
-    laserFX = "8cb2285ad120a32d6bb50f8525bc10e0094a3969",
+    fx = "b5012fa3b375f5c99287291c4ba698eef1bc3ad2",
+    audioSync = "375f4d668974e00e468bcd958c9cc534c8632f43",
+    djStageBarRig = "64451f27b3e23863dc78de171a85912f69978f50",
+    djStageBarFX = "e2afa628010125c0ba689284e76acc5633a2e09f",
+    laserFX = "97d318d9eba89f1f1f6a7c28a1c2fd9117571380",
     laserRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
-    movingHeadFX = "ab6e5283dd435dfbb8da6a8680f8a3387fc55ea6",
+    movingHeadFX = "3a16afc4108546d4a3a84d8d3726b09173ec28ef",
     movingHeadRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
@@ -314,6 +319,8 @@ end
 -- Client scripts stay in StarterPlayerScripts; rig builders and replicated
 -- fixture animators stay server-side. All source is pinned to the FX upload.
 addSource("ClubAudioSync.luau", "ModuleScript", "ReplicatedStorage", "ClubAudioSync", RELEASE.audioSync)
+addSource("DJStageLEDBarRig.server.lua", "Script", "ServerScriptService", "DJStageLEDBarRig", RELEASE.djStageBarRig)
+addSource("DJStageLEDBarFX.client.lua", "LocalScript", "StarterPlayerScripts", "DJStageLEDBarFX", RELEASE.djStageBarFX)
 -- Server-owned fixture/layout halves; their paired LocalScripts animate locally.
 addSource("AudienceBlinderRig.server.lua", "Script", "ServerScriptService", "AudienceBlinderRig", RELEASE.fx)
 addSource("StageHazeRig.server.lua", "Script", "ServerScriptService", "StageHazeRig", RELEASE.fx)
@@ -342,7 +349,7 @@ for _, item in ipairs({
     {"StrobeLightsFX.luau", "LocalScript", "StarterPlayerScripts", "StrobeLightsFX"},
     {"WallVisualizerClient.luau", "LocalScript", "StarterPlayerScripts", "WallVisualizerClient"},
 }) do
-    addSource(item[1], item[2], item[3], item[4], RELEASE.fx)
+    addSource(item[1], item[2], item[3], item[4], item[5] or RELEASE.fx)
 end
 addSource("UtilityBarPanels.luau", "LocalScript", "StarterPlayerScripts", "UtilityBarPanels", RELEASE.utility)
 addSource("UtilityBarExtendedActions.luau", "Script", "ServerScriptService", "UtilityBarExtendedActions", RELEASE.utility)
@@ -677,8 +684,8 @@ print("Client diagnostics release: " .. RELEASE.diagnostics)
 print("Client integrity telemetry release: " .. RELEASE.integrityClient)
 print("Intro release: " .. RELEASE.intro)
 print("Lighting/FX baseline release: " .. RELEASE.fx)
-print("Laser coverage correction release: " .. RELEASE.laserFX)
-print("Moving-head coverage correction release: " .. RELEASE.movingHeadFX)
+print("Laser coverage metadata-recovery release: " .. RELEASE.laserFX)
+print("Moving-head coverage metadata-recovery release: " .. RELEASE.movingHeadFX)
 print("Instances promoted: " .. #promoted)
 print("Prior instances and retired playback authority archived under ServerStorage/" .. backupRoot.Name .. "/" .. backupRelease.Name)
 print("Playback synchronization: DISABLED. No leader lease or shared playback snapshots are installed.")
