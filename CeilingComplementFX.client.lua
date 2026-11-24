@@ -52,11 +52,11 @@ end
 print("[ClubNeon][CeilingComplementFX] Client animation ready; profiles=" .. #profiles
     .. " washes=" .. #washes .. " ledPars=" .. #pars)
 local started = os.clock()
+local function readRigBounds()
+    return rig:GetAttribute("VenueMinX"), rig:GetAttribute("VenueMaxX"), rig:GetAttribute("VenueMinZ"), rig:GetAttribute("VenueMaxZ"), rig:GetAttribute("FloorY")
+end
 local lastBeat = -1
 local hueBase = 0
-local function clampTarget(x,z,y)
-    return Vector3.new(x,z and y or y,z)
-end
 RunService.Heartbeat:Connect(function()
     if not rig or not rig.Parent then
         rig = workspace:FindFirstChild(RIG_NAME)
@@ -81,7 +81,13 @@ RunService.Heartbeat:Connect(function()
         local x = math.sin(phase) * 0.39 + math.sin(phase*0.43+f.phase)*0.12
         local z = math.cos(phase*0.71+f.phase) * 0.39
         local pos = f.emitter.Position
-        local target = pos + Vector3.new(x*150,-math.max(35, pos.Y*0 + 70),z*150)
+        local minX,maxX,minZ,maxZ,floorY = readRigBounds()
+        if type(minX) ~= "number" or type(maxX) ~= "number" or type(minZ) ~= "number" or type(maxZ) ~= "number" or type(floorY) ~= "number" then continue end
+        local target = Vector3.new(
+            math.clamp(pos.X + x*150,minX+1,maxX-1),
+            floorY + 1,
+            math.clamp(pos.Z + z*150,minZ+1,maxZ-1)
+        )
         f.target.CFrame = CFrame.new(target)
         f.emitter.CFrame = CFrame.lookAt(pos,target)
         f.lens.CFrame = f.emitter.CFrame * CFrame.new(0,0,-0.56)
