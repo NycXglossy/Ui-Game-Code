@@ -1,6 +1,6 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.109
--- v0.4.109 prevents the playback watchdog from replaying an outgoing track during crossfade handoff or mistaking a near-end playhead reset for a recoverable interruption.
+-- CLUB NEON MASTER INSTALLER v0.4.110
+-- v0.4.110 pins recency-weighted ClubAudioSync tempo-family consensus and metrical-level hysteresis.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
 -- v0.4.107 hardens crossfade rollback: require verified outgoing asset/playhead before Stop and never default a failed capture to zero.
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
@@ -29,7 +29,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.109"
+local INSTALLER_VERSION = "0.4.110"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
