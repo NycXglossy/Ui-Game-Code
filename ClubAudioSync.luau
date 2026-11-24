@@ -550,9 +550,15 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	-- voting and a weighted composite for onset/phase tracking.
 	local function smoothBand(name: string): number
 		local raw = bandFlux[name] / math.max(1, bandCounts[name])
+		-- Extreme-metal blast beats and double-kick runs can create very large,
+		-- tightly packed spectral-flux spikes. Apply a concave transfer before
+		-- autocorrelation so isolated high-energy attacks cannot dominate the
+		-- envelope by amplitude alone. Timing and periodicity are preserved;
+		-- this is not a low-pass tempo clamp or an instrument classifier.
+		local compressed = math.sqrt(math.max(0, raw))
 		local history = bandHistories[name]
-		if #history > 0 then return history[#history] * 0.32 + raw * 0.68 end
-		return raw
+		if #history > 0 then return history[#history] * 0.42 + compressed * 0.58 end
+		return compressed
 	end
 	local smoothedBands = {
 		bass = smoothBand("bass"),
