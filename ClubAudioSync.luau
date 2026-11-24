@@ -34,6 +34,10 @@ local envelopeHistory: {number} = {}
 local bpmCurrent = BPM_SEED
 local bpmDetected: number? = nil
 local bpmConfidence = 0
+local rawCandidateBPM: number? = nil
+local pendingBPM: number? = nil
+local pendingTempoSamples = 0
+local pendingTempoConfidence = 0
 local lastTempoUpdate = 0
 local TEMPO_STALE_SECONDS = 5
 local energy = 0
@@ -86,6 +90,10 @@ local function clearAnalysis()
 	envelopeHistory = {}
 	bpmDetected = nil
 	bpmConfidence = 0
+	rawCandidateBPM = nil
+	pendingBPM = nil
+	pendingTempoSamples = 0
+	pendingTempoConfidence = 0
 	lastTempoUpdate = 0
 	energy = 0
 	sampleAccumulator = 0
@@ -189,9 +197,11 @@ local function estimateTempo(): (number?, number)
 			normB += b * b
 		end
 		local normalized = score / math.sqrt(math.max(1e-9, normA * normB))
-		-- Slight preference for the normal club tempo range reduces octave errors.
+		-- Explicitly resolve common half/double-time ambiguity in the club range.
+		-- This is a modest prior, not a hard BPM clamp: low-tempo tracks remain valid.
 		local candidateBPM = 60 * SAMPLE_RATE / lag
-		local preference = if candidateBPM >= 95 and candidateBPM <= 160 then 0.025 else 0
+		local preference = if candidateBPM >= 95 and candidateBPM <= 160 then 0.075
+			elseif candidateBPM < 85 then -0.035 else -0.015
 		normalized += preference
 		if normalized > bestScore then
 			bestScore = normalized
@@ -220,8 +230,8 @@ local function estimateTempo(): (number?, number)
 		end
 	end
 	local bpm = math.clamp(60 * SAMPLE_RATE / refinedLag, BPM_MIN, BPM_MAX)
-	local confidence = math.clamp((bestScore - 0.08) / 0.52, 0, 1)
-	if confidence < 0.16 then return nil, confidence end
+	local confidence = math.clamp((bestScore - 0.10) / 0.48, 0, 1)
+	if confidence < 0.24 then return nil, confidence end
 	return bpm, confidence
 end
 
@@ -321,17 +331,50 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	fluxPreviousPosition = timePosition
 
 	local detected, confidence = estimateTempo()
-	if detected then
-		-- Confidence-weighted adaptation, with a tighter clamp to prevent
-		-- octave errors and momentary fills from abruptly changing tempo.
-		if bpmDetected then
-			local maxStep = bpmCurrent * 0.035
-			detected = math.clamp(detected, bpmDetected - maxStep, bpmDetected + maxStep)
+	rawCandidateBPM = detected
+	if detected and confidence >= 0.30 then
+		-- Require a sustained, internally consistent candidate before it can
+		-- influence the shared clock. A fill or one ambiguous autocorrelation
+		-- peak cannot immediately retune the lighting system.
+		local agrees = pendingBPM ~= nil
+			and math.abs(detected - pendingBPM) / math.max(pendingBPM, 1) <= 0.045
+		if agrees then
+			pendingBPM = pendingBPM :: number + (detected - (pendingBPM :: number)) * 0.12
+			pendingTempoSamples += 1
+			pendingTempoConfidence += (confidence - pendingTempoConfidence) * 0.12
+		else
+			pendingBPM = detected
+			pendingTempoSamples = 1
+			pendingTempoConfidence = confidence
 		end
-		local blend = math.clamp(0.08 + confidence * 0.22, 0.08, 0.30)
-		bpmDetected = if bpmDetected then bpmDetected + (detected - bpmDetected) * blend else detected
-		bpmConfidence += (confidence - bpmConfidence) * 0.18
-		lastTempoUpdate = os.clock()
+
+		-- 36 consecutive 40 Hz observations ~= 0.9 seconds of stable evidence.
+		if pendingTempoSamples >= 36 then
+			local accepted = pendingBPM :: number
+			if bpmDetected then
+				local relativeChange = math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1)
+				-- Permit an octave correction only when the raw candidate has
+				-- remained stable; otherwise limit normal retuning to 3.5%.
+				if relativeChange > 0.35 then
+					local octaveMatch = math.abs(accepted * 2 - bpmDetected) / bpmDetected <= 0.08
+						or math.abs(accepted * 0.5 - bpmDetected) / bpmDetected <= 0.08
+					if not octaveMatch then
+						accepted = bpmDetected + math.clamp(accepted - bpmDetected,
+							-bpmDetected * 0.035, bpmDetected * 0.035)
+					end
+				else
+					accepted = bpmDetected + math.clamp(accepted - bpmDetected,
+						-bpmDetected * 0.035, bpmDetected * 0.035)
+				end
+			end
+			local blend = math.clamp(0.10 + pendingTempoConfidence * 0.20, 0.10, 0.28)
+			bpmDetected = if bpmDetected then bpmDetected + (accepted - bpmDetected) * blend else accepted
+			bpmConfidence += (pendingTempoConfidence - bpmConfidence) * 0.22
+			lastTempoUpdate = os.clock()
+		end
+	else
+		pendingTempoSamples = math.max(0, pendingTempoSamples - 2)
+		pendingTempoConfidence *= 0.96
 	end
 end
 
@@ -425,9 +468,10 @@ function ClubAudioSync.getBeatState(): BeatState
 	if playing and now - lastDiagnosticsAt >= 5 then
 		lastDiagnosticsAt = now
 		print(string.format(
-			"[ClubAudioSync][Analyzer] BPM=%.1f confidence=%.2f phaseLocked=%s onset=%.2f energy=%.2f analyzerReady=%s",
-			bpm, bpmConfidence, tostring(phaseLockConfidence >= 0.35), onsetStrength,
-			energy, tostring(analyzer ~= nil and analyzer.Parent ~= nil)
+			"[ClubAudioSync][Analyzer] BPM=%.1f confidence=%.2f candidate=%s pending=%d phaseLockQuality=%.2f onset=%.2f energy=%.2f analyzerReady=%s",
+			bpm, bpmConfidence, if rawCandidateBPM then string.format("%.1f", rawCandidateBPM) else "none",
+			pendingTempoSamples, phaseLockConfidence, onsetStrength, energy,
+			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
 		))
 	end
 	local tempoDrive = math.clamp((bpm - 70) / 90, 0, 1)
