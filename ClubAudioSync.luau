@@ -436,7 +436,10 @@ local function updateRhythmicFeel(onsetPosition: number, referenceBPM: number)
 		elseif onBeatCount > doubleTimeCount and onBeatCount > halfTimeCount then "on-beat"
 		else "ambiguous"
 	local winnerCount = math.max(doubleTimeCount, onBeatCount, halfTimeCount)
-	local confidence = winnerCount / total
+	-- Confidence includes inconclusive intervals. A dense subdivision pattern
+	-- must not be labeled as a confident rhythmic feel when much of the recent
+	-- onset history does not support that interpretation.
+	local confidence = winnerCount / math.max(#feelOnsetIntervals, 1)
 	if confidence < 0.70 then winner = "ambiguous" end
 	rhythmicFeelConfidence = confidence
 	if winner == rhythmicFeelCandidate then
