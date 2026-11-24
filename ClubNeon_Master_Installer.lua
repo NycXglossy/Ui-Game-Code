@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.84
+-- CLUB NEON MASTER INSTALLER v0.4.85
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- v0.4.82 replaces the stage-dependent DJ LED backdrop with a dense four-wall venue-perimeter LED system (1,152 segments) using the shared beat clock.
 -- v0.4.79 adds the dual-architecture DJ stage LED bar rig and client-local synchronized FX.
@@ -40,7 +40,7 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "b5012fa3b375f5c99287291c4ba698eef1bc3ad2",
-    audioSync = "375f4d668974e00e468bcd958c9cc534c8632f43",
+    audioSync = "b76dd0bd6aa410c2acb51109b21c9114d7a0261b",
     djStageBarRig = "8cc6b60640b48ce69b4bc3911b4c75f802f89f47",
     djStageBarFX = "e2afa628010125c0ba689284e76acc5633a2e09f",
     laserFX = "97d318d9eba89f1f1f6a7c28a1c2fd9117571380",
