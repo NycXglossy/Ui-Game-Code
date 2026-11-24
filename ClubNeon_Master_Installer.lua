@@ -1,5 +1,5 @@
 --!strict
--- CLUB NEON MASTER INSTALLER v0.4.101
+-- CLUB NEON MASTER INSTALLER v0.4.102
 -- One Command Bar installer for the repository-owned Club Neon / ClubMusic runtime.
 -- v0.4.82 replaces the stage-dependent DJ LED backdrop with a dense four-wall venue-perimeter LED system (1,152 segments) using the shared beat clock.
 -- v0.4.79 adds the dual-architecture DJ stage LED bar rig and client-local synchronized FX.
@@ -26,14 +26,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.101"
+local INSTALLER_VERSION = "0.4.102"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
     runtime = "311d5ea60cfb275f833d02d7c2caa589c7d03415",
     audio = "096f9444e650c3c6b1859549661561f7735ed789",
-    catalog = "b6f80bc745719f15e90040605236f22a51ba6302",
+    catalog = "2083b434941b2706d18f2643c20ab87de937f331",
     globalService = "60922f3cc7d62ecdfc9673f40653cc0125d19a2c",
     security = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     threat = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
