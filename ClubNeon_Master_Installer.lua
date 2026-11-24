@@ -54,8 +54,8 @@ local RELEASE = {
     movingHeadRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     strobeFX = "850ba444fc0662f5bf4683b2485d8b85dd871a32",
     strobeRig = "70e1ad0926a877847bdcc3248c94004d38769931",
-    ceilingComplementRig = "481f82c27139a5a7e7395f39f193acf10b1b2423",
-    ceilingComplementFX = "783f39a5ea07fc94bff940f07c441ff5df954292",
+    ceilingComplementRig = "1c07904f04038e87585062ddb46e183cd2e5ca86",
+    ceilingComplementFX = "6946445fbc5670bf96a64a715eab9d84fdce7b7a",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
 }
