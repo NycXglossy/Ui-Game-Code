@@ -52,6 +52,7 @@ local beatAnchorReady = false
 local fallbackAnchorReady = false
 local onsetStrength = 0
 local phaseLockConfidence = 0
+local lastDiagnosticsAt = 0
 
 local function finite(value: any): boolean
 	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
@@ -421,6 +422,14 @@ function ClubAudioSync.getBeatState(): BeatState
 	end
 	local beatPhase = beats % 1
 	local pulse = math.exp(-beatPhase * 5)
+	if playing and now - lastDiagnosticsAt >= 5 then
+		lastDiagnosticsAt = now
+		print(string.format(
+			"[ClubAudioSync][Analyzer] BPM=%.1f confidence=%.2f phaseLocked=%s onset=%.2f energy=%.2f analyzerReady=%s",
+			bpm, bpmConfidence, tostring(phaseLockConfidence >= 0.35), onsetStrength,
+			energy, tostring(analyzer ~= nil and analyzer.Parent ~= nil)
+		))
+	end
 	local tempoDrive = math.clamp((bpm - 70) / 90, 0, 1)
 	local targetMovementSpeed = math.clamp(0.58 + tempoDrive * 0.68 + energy * 0.18,
 		MOVEMENT_SPEED_MIN, MOVEMENT_SPEED_MAX)
