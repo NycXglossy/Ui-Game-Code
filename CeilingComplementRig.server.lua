@@ -62,6 +62,11 @@ rig:SetAttribute("ServerOwnedLayout", true)
 rig:SetAttribute("Ready", false)
 rig:SetAttribute("FloorPanelCount", panelCount)
 rig:SetAttribute("UsedVenueTrimBounds", usedTrim)
+rig:SetAttribute("VenueMinX", vx0)
+rig:SetAttribute("VenueMaxX", vx1)
+rig:SetAttribute("VenueMinZ", vz0)
+rig:SetAttribute("VenueMaxZ", vz1)
+rig:SetAttribute("FloorY", floorY)
 rig.Parent = Workspace
 
 local function makePart(name, size, cf, parent, material, color)
