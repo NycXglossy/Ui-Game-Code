@@ -52,6 +52,7 @@ local RELEASE = {
     movingHeadFX = "3a16afc4108546d4a3a84d8d3726b09173ec28ef",
     movingHeadRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
     strobeRig = "4a4b275264582f3e02b0b66f3ee366ea96b73b72",
+    strobeFX = "850ba444fc0662f5bf4683b2485d8b85dd871a32",
     strobeRig = "70e1ad0926a877847bdcc3248c94004d38769931",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
@@ -354,7 +355,7 @@ for _, item in ipairs({
     {"SpeakerEffects.luau", "LocalScript", "StarterPlayerScripts", "SpeakerEffects"},
     {"StrobeLightsRig.server.lua", "Script", "ServerScriptService", "StrobeLightsRig", RELEASE.strobeRig},
     {"StrobeLightsRig.server.lua", "Script", "ServerScriptService", "StrobeLightsRig", RELEASE.strobeRig},
-    {"StrobeLightsFX.luau", "LocalScript", "StarterPlayerScripts", "StrobeLightsFX"},
+    {"StrobeLightsFX.luau", "LocalScript", "StarterPlayerScripts", "StrobeLightsFX", RELEASE.strobeFX},
     {"WallVisualizerClient.luau", "LocalScript", "StarterPlayerScripts", "WallVisualizerClient"},
 }) do
     addSource(item[1], item[2], item[3], item[4], item[5] or RELEASE.fx)
