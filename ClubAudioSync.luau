@@ -71,13 +71,15 @@ local lastTempoUpdate = 0
 local lastTempoAnalysisAt = 0
 local TEMPO_ANALYZE_INTERVAL = 0.10
 local TEMPO_STALE_SECONDS = 12
--- Mixed arrangements can suppress a candidate for several seconds while a different
--- transient pattern dominates. Keep family evidence across one full long-window
--- analysis span, but expire it before stale section evidence can linger indefinitely.
-local PENDING_EVIDENCE_TIMEOUT = 8.0
+-- Mixed arrangements and free-time intros can suppress a candidate while a different
+-- transient pattern dominates. Retain recurring family evidence across a longer gap,
+-- but still expire it before evidence from an earlier musical section can linger.
+local PENDING_EVIDENCE_TIMEOUT = 14.0
 -- Evidence is recency-weighted: a family that dominated several sections ago
 -- must not beat a currently consistent challenger solely through old sample count.
-local TEMPO_EVIDENCE_DECAY_SECONDS = 6.0
+-- A slower decay lets intermittent groove evidence survive sparse transitions
+-- without turning old evidence into a permanent vote.
+local TEMPO_EVIDENCE_DECAY_SECONDS = 9.0
 local CHALLENGER_REQUIRED_SAMPLES = 8
 local energy = 0
 local movementSpeedCurrent = 1
@@ -774,7 +776,9 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			local octaveMatch = bpmDetected ~= nil and (
 				math.abs(preferredBPM * 2 - bpmDetected) / bpmDetected <= 0.08
 				or math.abs(preferredBPM * 0.5 - bpmDetected) / bpmDetected <= 0.08)
-			local requiredSamples = if not bpmDetected then 30 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
+			-- Initial acquisition needs fewer repeated windows now that family evidence is
+			-- retained across short candidate dropouts. Confidence remains unchanged.
+			local requiredSamples = if not bpmDetected then 24 elseif relativeChange > 0.30 and not octaveMatch then 18 else 12
 			if winner.samples >= requiredSamples and winner.confidence >= minimumCandidateConfidence then
 				local deltaRatio = if bpmDetected then math.abs(preferredBPM - bpmDetected) / math.max(bpmDetected, 1) else 1
 				local blend = math.clamp(0.18 + winner.confidence * 0.30
