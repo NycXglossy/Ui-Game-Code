@@ -28,14 +28,14 @@ local function findAnchor(): (CFrame?, Vector3?, string?)
 	return nil, nil, nil
 end
 
-local oldRig = Workspace:FindFirstChild(RIG_NAME)
-if oldRig then oldRig:Destroy() end
-
 local anchorCFrame, anchorSize, anchorPath = findAnchor()
 if not anchorCFrame or not anchorSize then
-	warn("[ClubNeon][DJStageLEDBarRig] No DJStageLEDBarAnchor or exact DJBooth model found. Add a Part named DJStageLEDBarAnchor behind the booth, facing the audience. No rig was created.")
+	warn("[ClubNeon][DJStageLEDBarRig] No DJStageLEDBarAnchor or exact DJBooth model found. Add a Part named DJStageLEDBarAnchor behind the booth, facing the audience. Existing rig was left untouched.")
 	return
 end
+
+local oldRig = Workspace:FindFirstChild(RIG_NAME)
+if oldRig then oldRig:Destroy() end
 
 local rig = Instance.new("Folder")
 rig.Name = RIG_NAME
