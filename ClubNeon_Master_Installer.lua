@@ -26,13 +26,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.90"
+local INSTALLER_VERSION = "0.4.91"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
     runtime = "311d5ea60cfb275f833d02d7c2caa589c7d03415",
     audio = "096f9444e650c3c6b1859549661561f7735ed789",
+    catalog = "b6f80bc745719f15e90040605236f22a51ba6302",
     globalService = "60922f3cc7d62ecdfc9673f40653cc0125d19a2c",
     security = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     threat = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
@@ -192,7 +193,7 @@ for _, item in ipairs({
     addSource(item[1], "ModuleScript", "AudioModules", item[2], RELEASE.audio)
 end
 addSource("ClubMusicPlayerPreferences.luau", "ModuleScript", "ClientAudioModules", "ClubMusicPlayerPreferences", RELEASE.audio)
-addSource("MusicCoreService.lua", "ModuleScript", "ServerStorage", "MusicCoreService", RELEASE.audio)
+addSource("MusicCoreService.lua", "ModuleScript", "ServerStorage", "MusicCoreService", RELEASE.catalog)
 addSource("MusicPlaylistService.lua", "ModuleScript", "ServerStorage", "MusicPlaylistService", RELEASE.audio)
 
 -- Security Core keeps its three certified source pins independent.
