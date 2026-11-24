@@ -84,6 +84,7 @@ RunService.Heartbeat:Connect(function()
         local target = pos + Vector3.new(x*150,-math.max(35, pos.Y*0 + 70),z*150)
         f.target.CFrame = CFrame.new(target)
         f.emitter.CFrame = CFrame.lookAt(pos,target)
+        f.lens.CFrame = f.emitter.CFrame * CFrame.new(0,0,-0.56)
         local hue = (hueBase + f.phase*0.025 + math.sin(phase*0.3)*0.035) % 1
         local color = Color3.fromHSV(hue,0.72,1)
         f.lens.Color, f.beam.Color, f.spot.Color = color,ColorSequence.new(color),color
