@@ -74,6 +74,17 @@ local phaseLockConfidence = 0
 local phaseErrorSeconds = 0
 local lastAcceptedOnsetPosition = -math.huge
 local lastDiagnosticsAt = 0
+-- Rhythmic feel is diagnostic-only: it never retunes BPM or changes BeatState.
+-- AudioAnalyzer supplies a mixed signal, so classifications require repeated
+-- onset-interval evidence and remain unknown when accents are inconclusive.
+local feelOnsetIntervals: {number} = {}
+local lastFeelOnsetPosition = -math.huge
+local rhythmicFeel = "unknown"
+local rhythmicFeelCandidate = "unknown"
+local rhythmicFeelCandidateSamples = 0
+local rhythmicFeelConfidence = 0
+local FEEL_INTERVAL_HISTORY = 12
+local FEEL_CLASSIFY_MIN_INTERVALS = 6
 
 local function finite(value: any): boolean
 	return typeof(value) == "number" and value == value and value > -math.huge and value < math.huge
@@ -131,6 +142,12 @@ local function clearAnalysis()
 	phaseLockConfidence = 0
 	phaseErrorSeconds = 0
 	lastAcceptedOnsetPosition = -math.huge
+	feelOnsetIntervals = {}
+	lastFeelOnsetPosition = -math.huge
+	rhythmicFeel = "unknown"
+	rhythmicFeelCandidate = "unknown"
+	rhythmicFeelCandidateSamples = 0
+	rhythmicFeelConfidence = 0
 end
 
 local function ensureAnalyzer(player: AudioPlayer?)
@@ -346,6 +363,53 @@ local function estimateTempo(): (number?, number)
 	return nil, math.max(shortConfidence, longConfidence)
 end
 
+local function updateRhythmicFeel(onsetPosition: number, referenceBPM: number)
+	if referenceBPM < BPM_MIN or referenceBPM > BPM_MAX then return end
+	if lastFeelOnsetPosition > -math.huge then
+		local interval = onsetPosition - lastFeelOnsetPosition
+		if interval >= 0.22 and interval <= 2.0 then
+			table.insert(feelOnsetIntervals, interval)
+			if #feelOnsetIntervals > FEEL_INTERVAL_HISTORY then
+				table.remove(feelOnsetIntervals, 1)
+			end
+		end
+	end
+	lastFeelOnsetPosition = onsetPosition
+	if #feelOnsetIntervals < FEEL_CLASSIFY_MIN_INTERVALS then return end
+
+	local beatPeriod = 60 / referenceBPM
+	local onBeatCount, halfTimeCount, total = 0, 0, 0
+	for _, interval in ipairs(feelOnsetIntervals) do
+		local beatError = math.abs(interval - beatPeriod) / beatPeriod
+		local halfError = math.abs(interval - beatPeriod * 2) / (beatPeriod * 2)
+		if math.min(beatError, halfError) <= 0.22 then
+			total += 1
+			if beatError <= halfError then
+				onBeatCount += 1
+			else
+				halfTimeCount += 1
+			end
+		end
+	end
+	if total < FEEL_CLASSIFY_MIN_INTERVALS then return end
+
+	local winner = if halfTimeCount > onBeatCount then "half-time"
+		elseif onBeatCount > halfTimeCount then "on-beat" else "ambiguous"
+	local winnerCount = math.max(halfTimeCount, onBeatCount)
+	local confidence = winnerCount / total
+	if confidence < 0.70 then winner = "ambiguous" end
+	rhythmicFeelConfidence = confidence
+	if winner == rhythmicFeelCandidate then
+		rhythmicFeelCandidateSamples += 1
+	else
+		rhythmicFeelCandidate = winner
+		rhythmicFeelCandidateSamples = 1
+	end
+	if rhythmicFeelCandidateSamples >= 3 then
+		rhythmicFeel = winner
+	end
+end
+
 local function sampleAnalyzer(dt: number, timePosition: number)
 	if not analyzer or not analyzer.Parent then return end
 	sampleAccumulator += dt
@@ -433,6 +497,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		onsetStrength = math.clamp((peak - mean) / math.max(deviation * 3, 1e-5), 0, 1)
 
 		local bpm = bpmDetected or bpmCurrent
+		updateRhythmicFeel(peakPosition, bpm)
 		local period = 60 / math.clamp(bpm, BPM_MIN, BPM_MAX)
 		-- Reject weak transients and repeated subdivisions as phase references.
 		local strongOnset = onsetStrength >= 0.18
@@ -633,10 +698,14 @@ function ClubAudioSync.getBeatState(): BeatState
 		local tempoFamily = if rawCandidateBPM
 			then string.format("%.1f/%.1f/%.1f", rawCandidateBPM * 0.5, rawCandidateBPM, rawCandidateBPM * 2)
 			else "none"
+		local feelFamily = if bpmDetected
+			then string.format("half=%.1f base=%.1f double=%.1f", bpmDetected * 0.5, bpmDetected, bpmDetected * 2)
+			else "warming"
 		print(string.format(
-			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s familyHalfCurrentDouble=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
+			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
 			if assetId ~= "" then assetId else "unknown", trackGeneration, bpm, bpmConfidence,
 			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, tempoFamily,
+			rhythmicFeel, rhythmicFeelConfidence, #feelOnsetIntervals, feelFamily,
 			pendingTempoSamples, phaseLockConfidence, phaseErrorSeconds * 1000, onsetStrength, energy,
 			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
 		))
