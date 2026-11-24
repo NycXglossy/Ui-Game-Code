@@ -139,19 +139,19 @@ local function makePar(index, pos, targetPos)
     light.Brightness, light.Shadows, light.Enabled = 0, false, false
     light.Parent = lens
 end
--- Four pan/tilt profiles per wall, three broad washes per wall, four PARs per wall.
+-- Eight pan/tilt profiles per wall, six broad washes per wall, eight PARs per wall.
 for wallIndex, pointOnWall in ipairs(walls) do
-    for slot = 1, 4 do
-        local pos, target = pointOnWall((slot - 0.5) / 4)
-        makeProfile((wallIndex-1)*4+slot, pos, target)
+    for slot = 1, 8 do
+        local pos, target = pointOnWall((slot - 0.5) / 8)
+        makeProfile((wallIndex-1)*8+slot, pos, target)
     end
-    for slot = 1, 3 do
-        local pos, target = pointOnWall((slot - 0.5) / 3)
-        makeWash((wallIndex-1)*3+slot, pos + Vector3.new(0,-0.6,0), target)
+    for slot = 1, 6 do
+        local pos, target = pointOnWall((slot - 0.5) / 6)
+        makeWash((wallIndex-1)*6+slot, pos + Vector3.new(0,-0.6,0), target)
     end
-    for slot = 1, 4 do
-        local pos, target = pointOnWall((slot - 0.5) / 4)
-        makePar((wallIndex-1)*4+slot, pos + Vector3.new(0,-1.2,0), target)
+    for slot = 1, 8 do
+        local pos, target = pointOnWall((slot - 0.5) / 8)
+        makePar((wallIndex-1)*8+slot, pos + Vector3.new(0,-1.2,0), target)
     end
 end
 rig:SetAttribute("ProfileCount", profileCount)
