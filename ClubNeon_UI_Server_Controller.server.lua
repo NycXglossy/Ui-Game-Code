@@ -1,22 +1,22 @@
 --!strict
 
--- Keep controller helpers in one registry to stay below Luau's local-register limit.
+
 local ControllerFunctions: {[string]: any} = {}
--- UI_Server_Controller (Security Hardened)
--- Place as Script: ServerScriptService/UI_Server_Controller
---
--- Preserves the existing Club Music UI features and adds:
---   * Per-action, per-player token buckets, and server-wide RemoteEvent budgets.
---   * GetState RemoteFunction throttling and protected snapshot generation.
---   * Server-wide audio inspection budgets, bounded concurrency, and timeout cleanup.
---   * Strict finite-number / byte-length validation for custom title settings.
---   * Fail-closed profile loading (no default-profile overwrite after a DataStore error).
---   * Bounded profile write serialization, coalesced saves, and cross-server session leases.
---   * Durable, idempotent Developer Product receipt recording before PurchaseGranted.
---   * Preservation and size safeguards for the durable receipt ledger (never pruned).\n--   * Coalesced state broadcasts and bounded GetState snapshot work.
---
--- Keep this script server-side. Configure GroupId, StaffUserIds, audio allowlists,
--- and real Developer Product IDs before publishing. See the companion README.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -29,7 +29,7 @@ local SoundService = game:GetService("SoundService")
 local HttpService = game:GetService("HttpService")
 
 local ServerStorage = game:GetService("ServerStorage")
--- Legacy lowercase alias.
+
 local serverStorage = ServerStorage
 local projectConfigModule = ServerStorage:WaitForChild("ClubNeon_Config", 20)
 if not projectConfigModule or not projectConfigModule:IsA("ModuleScript") then
@@ -98,7 +98,7 @@ local CONFIG = {
 }
 
 
--- Catalog diagnostics run asynchronously and never gate controller startup.
+
 local marketplaceDiagnosticsModule = ServerStorage:FindFirstChild("ClubNeon_MarketplaceDiagnostics")
 if not marketplaceDiagnosticsModule or not marketplaceDiagnosticsModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_MarketplaceDiagnostics; controller will not start.")
@@ -109,10 +109,10 @@ require(marketplaceDiagnosticsModule)({
 	Enum = Enum,
 })
 
--- Publish the remote contract before loading storage modules so clients can
--- wait safely even when catalog initialization is delayed.
--- The catalog is server-owned. The controller remains the only authority
--- for request limits, moderation, queue priority, and playback.
+
+
+
+
 local bootstrapHelpersModule = ServerStorage:FindFirstChild("ClubNeon_ControllerBootstrap")
 if not bootstrapHelpersModule or not bootstrapHelpersModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_ControllerBootstrap; controller will not start.")
@@ -137,7 +137,7 @@ local stateFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction",
 local catalogFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicCatalog") :: RemoteFunction
 local playlistFunction = ControllerFunctions.getOrCreate(remotes, "RemoteFunction", "GetMusicPlaylists") :: RemoteFunction
 
--- Purchase and moderation telemetry is isolated in a server-local service.
+
 local purchaseDiagnosticRemote = ControllerFunctions.getOrCreate(remotes, "RemoteEvent", "PurchaseDiagnostic") :: RemoteEvent
 local purchaseDiagnosticsModule = ServerStorage:FindFirstChild("ClubNeon_PurchaseDiagnostics")
 if not purchaseDiagnosticsModule or not purchaseDiagnosticsModule:IsA("ModuleScript") then
@@ -148,14 +148,14 @@ local purchaseDiagnostics = require(purchaseDiagnosticsModule)({
 	CONFIG = CONFIG,
 	PurchaseDiagnosticRemote = purchaseDiagnosticRemote,
 })
--- Resolve optional audio modules in either supported installation layout:
---   ServerStorage/ClubMusicAudioModules/<ModuleScript>
---   ServerStorage/<ModuleScript>
--- Folder layout takes precedence when both copies exist, avoiding accidental
--- mixing of two independently installed module sets.
 
 
--- Diagnostics are optional: a missing handler must never prevent ClubMusic startup.
+
+
+
+
+
+
 local diagnosticsModule = serverStorage:FindFirstChild("ClubMusicErrorHandler")
 if diagnosticsModule and diagnosticsModule:IsA("ModuleScript") then
 	local diagnosticsOk, diagnosticsResult = pcall(require, diagnosticsModule)
@@ -177,8 +177,8 @@ if not startupErrorReporterModule or not startupErrorReporterModule:IsA("ModuleS
 end
 require(startupErrorReporterModule).initialize(ControllerFunctions, remotes)
 
--- Resolve canonical ServerStorage modules from either direct-child installation
--- or the bundled ClubMusic_ServerStorage_Modules folder.
+
+
 
 
 remotes:SetAttribute("StartupStage", "LoadingMusicCoreService")
@@ -240,7 +240,7 @@ local TAGS: {[string]: boolean} = {
 	vip = true, party = true, wave = true, neon = true, sunset = true, bass = true, island = true,
 }
 
--- Server-owned title validation palettes and allowlists are staged as a focused data module.
+
 local titleValidationDataModule = ServerStorage:FindFirstChild("ClubNeon_TitleValidationData")
 if not titleValidationDataModule or not titleValidationDataModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_TitleValidationData; controller will not start.")
@@ -275,7 +275,7 @@ end
 local SESSION_TOKEN = if game.JobId ~= "" then game.JobId else HttpService:GenerateGUID(false)
 local random = Random.new()
 
--- Main playback is owned exclusively by the modern AudioPlayer backend.
+
 local audioState: {[string]: any} = {
 	activeAudioSource = { kind = "Unavailable" },
 	audioSourceRevision = 0,
@@ -286,27 +286,27 @@ local audioState: {[string]: any} = {
 	audioReloadInProgress = false,
 	audioTransitionTrackToken = 0,
 }
--- Forward-declared state is shared with the early-created crossfade factory.
+
 local queue: any = {}
 local queueManager: any = nil
--- Retired permanently: all request queues and playback transitions are server-local.
+
 local enterLocalQueueBackup: ((string) -> ())? = nil
--- Display hints may lead the authoritative snapshot, but must never advance
--- queue ownership or the revision used by crossfade compare-and-swap.
+
+
 local nowPlaying: any = nil
 local refreshLocalCatalog: (() -> boolean)? = nil
 local publishState: (Player?) -> () = function(_player: Player?) end
 local pendingCrossfadeEntry: any = nil
 local pendingCrossfadeToken = -1
 
--- legacy group migration and setup
--- Publish the number of active controller-owned main outputs (0 or 1).
--- The binding is refreshed whenever the canonical source changes.
--- AudioBackendManager owns the modern source contract and recovery lifecycle.
+
+
+
+
 local audioBackendManager: any = nil
 
--- One controller-owned cancellation seam for every dual-deck transition.
--- Pending queue metadata is invalidated even when the manager is absent or cleanup reports failure.
+
+
 ControllerFunctions.cancelAudioTransition = function(reason: string?)
 	local managers = ControllerFunctions.ChildManagers
 	local crossfade = managers and managers.Crossfade
@@ -325,18 +325,18 @@ ControllerFunctions.cancelAudioTransition = function(reason: string?)
 	return true
 end
 
--- A prepared incoming deck is a real playback resource, not just queue metadata.
--- Invalidate it immediately when its catalog/moderation identity is withdrawn;
--- waiting for OnCommit to notice a changed queue head would allow an obsolete
--- asset to become audible during the fade window.
+
+
+
+
 ControllerFunctions.cancelPreparedCrossfadeForTrack = function(trackId: string, reason: string): boolean
 	local prepared = pendingCrossfadeEntry
 	if typeof(prepared) ~= "table" or prepared.trackId ~= trackId then return true end
 	return ControllerFunctions.cancelAudioTransition(reason)
 end
 
--- Destroy the optional coordinator explicitly during teardown. Cleanup invalidates
--- any waiting transition, destroys its incoming deck, and restores outgoing gain.
+
+
 ControllerFunctions.destroyAudioCrossfadeManager = function(reason: string?): (boolean, string?)
 	local managers = ControllerFunctions.ChildManagers
 	local crossfade = managers and managers.Crossfade
@@ -346,8 +346,8 @@ ControllerFunctions.destroyAudioCrossfadeManager = function(reason: string?): (b
 	local ok, result, detail = pcall(function()
 		return crossfade:Cleanup()
 	end)
-	-- Cleanup permanently destroys this manager even when it reports a resource
-	-- cleanup failure, so never leave a dead instance registered as reusable.
+	
+	
 	if managers.Crossfade == crossfade then
 		managers.Crossfade = nil
 	end
@@ -358,8 +358,8 @@ ControllerFunctions.destroyAudioCrossfadeManager = function(reason: string?): (b
 	return true, nil
 end
 
--- Explicit, dormant factory for the controller-owned dual-deck coordinator.
--- Nothing is constructed at startup; Studio validation must precede any call.
+
+
 ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 	local managers = ControllerFunctions.ChildManagers
 	if typeof(managers) ~= "table" then return false, "Audio manager registry is unavailable." end
@@ -425,8 +425,8 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			warn("[ClubMusic][Crossfade] Transition was cancelled safely: " .. tostring(message))
 		end,
 		OnSettled = function(_outcome: string)
-			-- Do not retain a reference to the previous outgoing backend after
-			-- commit, cancellation, or teardown; the active source owns it now.
+			
+			
 			transitionOutgoing = nil
 			transitionRevision = nil
 			ControllerFunctions.crossfadeOutgoingBaseGain = nil
@@ -447,9 +447,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			end
 
 
-			-- Capture a verified playhead from the actual outgoing AudioPlayer before
-			-- stopping it. Never turn an unreadable position into zero: a rollback
-			-- from zero would replay the outgoing track's intro during a transition.
+			
+			
+			
 			local outgoingPlayerOk, outgoingPlayer = pcall(function() return outgoing.backend:GetPlayer() end)
 			if not outgoingPlayerOk or typeof(outgoingPlayer) ~= "Instance"
 				or not outgoingPlayer:IsA("AudioPlayer") then
@@ -478,9 +478,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				end
 			end
 
-			-- Stop only after the outgoing asset and its verified playhead have been
-			-- captured. A legitimate zero is allowed; a failed read is not. If Stop
-			-- fails, the old source stays active.
+			
+			
+			
 			local stopOk, stopResult = pcall(function()
 				local stopped, stopError = outgoing.backend:Stop()
 				if stopped ~= true then error(tostring(stopError or "Outgoing AudioPlayer did not stop.")) end
@@ -500,7 +500,7 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return false
 			end
 
-			-- Crossfade completion consumes the prepared entry from this server's queue.
+			
 			local popOk, popped = pcall(function()
 				if not queueManager then return nil end
 				return queueManager:PopNext()
@@ -512,9 +512,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				return false
 			end
 			audioState.audioSourceRevision += 1
-			-- Ownership and queue consumption are now committed. Never surface a
-			-- later bookkeeping error as a failed commit: manager cancellation would
-			-- otherwise destroy the incoming deck that is already controller-active.
+			
+			
+			
 			local nowPlayingOk, nowPlayingError = pcall(function()
 				ControllerFunctions.setNowPlaying(entry, true)
 			end)
@@ -538,8 +538,8 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 				warn("[ClubMusic][Crossfade] Deferred post-commit work could not be scheduled: " .. tostring(deferError))
 			end
 			if outgoing.backend ~= incoming then
-				-- Ownership has transferred to the incoming deck; retire the previous
-				-- backend through the controller registry so failed cleanup stays reachable.
+				
+				
 				audioBackendManager.RetireBackend(outgoing.backend, "crossfade outgoing commit")
 			end
 			return true
@@ -555,8 +555,8 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 	return true, nil
 end
 
--- Explicit transition entry point. This does not alter queue state or run
--- automatically; callers must provide a validated catalog asset and duration.
+
+
 ControllerFunctions.beginAudioCrossfade = function(asset: string, duration: number): (boolean, string?)
 	local managers = ControllerFunctions.ChildManagers
 	local crossfade = managers and managers.Crossfade
@@ -598,8 +598,8 @@ audioBackendManager = require(ServerStorage:WaitForChild("ClubNeon_AudioBackendM
 	getNowPlaying = function() return nowPlaying end,
 })
 
--- Optional cross-server service bridge. The UI remains functional if this separate
--- service is disabled or temporarily unavailable; the server's local security remains active.
+
+
 remotes:SetAttribute("StartupStage", "LoadingReceiptHash")
 local receiptSecurityCore = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 local receiptHashModule = receiptSecurityCore and receiptSecurityCore:FindFirstChild("ReceiptHash")
@@ -615,7 +615,7 @@ end
 local ReceiptHash = receiptHashResult
 local globalApi: Instance? = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 ControllerFunctions.globalInvoke = function(name: string, ...: any): any
-	-- Re-resolve on every call so the bridge recovers if its separate Script starts late.
+	
 	if not globalApi or globalApi.Parent ~= ServerStorage or not globalApi:IsA("Folder") then
 		local discovered = ServerStorage:FindFirstChild("ClubMusicGlobalAPI")
 		globalApi = if discovered and discovered:IsA("Folder") then discovered else nil
@@ -624,8 +624,8 @@ ControllerFunctions.globalInvoke = function(name: string, ...: any): any
 	local fn = globalApi:FindFirstChild(name)
 	if not fn or not fn:IsA("BindableFunction") then return false end
 	local args = table.pack(...)
-	-- Preserve every BindableFunction return value. Some contracts (notably
-	-- GetModerationState) return more than three values, including revision data.
+	
+	
 	local results = table.pack(pcall(function()
 		return (fn :: BindableFunction):Invoke(table.unpack(args, 1, args.n))
 	end))
@@ -717,13 +717,13 @@ if typeof(MusicQueueManager) ~= "table" or typeof(MusicQueueManager.new) ~= "fun
 	error("[ClubMusic] " .. detail)
 end
 local autoQueueHold = false; ControllerFunctions.autoQueueHold = false
--- Queue mutations have their own revision, independent of playback transitions.
--- This prevents delayed MessagingService snapshots from restoring an older queue.
--- Catalog revision fences every shared enqueue/advance against stale local caches.
+
+
+
 ControllerFunctions.refreshCatalogWhenReady = function(): boolean
-	-- The controller publishes its remote contract before the cross-server
-	-- invalidation listener is defined. A very early UI action waits briefly for
-	-- that initializer rather than stranding a catalog reservation.
+	
+	
+	
 	for _ = 1, 100 do
 		local callback = refreshLocalCatalog
 		if callback then return callback() end
@@ -731,8 +731,8 @@ ControllerFunctions.refreshCatalogWhenReady = function(): boolean
 	end
 	return false
 end
--- A newly joined server must align its audio deck once the asset is ready,
--- even when that deck initially reports position 0 or is ahead of the snapshot.
+
+
 local activePlaylistId: string? = nil
 local activePlaylistName = ""
 local activePlaylistTracks: {Track} = {}
@@ -761,8 +761,8 @@ local pendingAudio: {[number]: boolean} = {}
 local pendingArtwork: {[number]: boolean} = {}
 local artworkInspectionCount = 0
 local lastActionByType: {[number]: {[string]: number}} = {}
--- Admin-addon commands use their own per-action cooldown namespace so recent
--- UI actions cannot reject a trusted command (and vice versa).
+
+
 local lastAdminActionByType: {[number]: {[string]: number}} = {}
 local lastStateInvoke: {[number]: number} = {}
 local lastCatalogInvoke: {[number]: number} = {}
@@ -776,8 +776,8 @@ local saveAgain: {[number]: boolean} = {}
 local saveQueueTokens: {[number]: any} = {}
 local queueCounter = 0
 
--- Rate-limit buckets are isolated in a server-only module. The buckets remain
--- local to this server instance; no cross-server coordination is introduced.
+
+
 local rateLimitModule = ServerStorage:FindFirstChild("ClubNeon_RateLimitBuckets")
 assert(rateLimitModule and rateLimitModule:IsA("ModuleScript"), "ClubNeon_RateLimitBuckets is required")
 local RateLimitBuckets = require(rateLimitModule)
@@ -842,8 +842,8 @@ ControllerFunctions.isFiniteNumber = function(value: any): boolean
 	return typeof(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
--- Audio asset IDs are untrusted input. Prefer the shared finite-integer validator;
--- keep a strict local fallback for staged deployments without the module.
+
+
 ControllerFunctions.isValidAudioAssetId = function(value: any): boolean
 	if sanityValidationService then
 		local ok, valid = pcall(sanityValidationService.IsInteger, value, 1, 9007199254740991)
@@ -866,8 +866,8 @@ local profileWriteLocksService = require(profileWriteLocksModule)({
 ControllerFunctions.acquireProfileWriteLock = profileWriteLocksService.acquire
 ControllerFunctions.releaseProfileWriteLock = profileWriteLocksService.release
 
--- Session-only moderation / VIP / vote state.
--- All group-rank authorization and caching is owned by SecurityCore.Authorization.
+
+
 local entitlementAuthority: any = nil
 local blockedUsers: {[number]: boolean} = {}
 local skipVotes: {[number]: boolean} = {}
@@ -936,8 +936,8 @@ do
 	end
 end
 
--- Phase 32 moderation services share the already initialized SecurityCore authority.
--- No client remote is created; the Kohl's Admin server bridge is the only staff entry point.
+
+
 local phase32Services: any = nil
 do
 	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
@@ -982,8 +982,8 @@ do
 	end
 end
 
--- Membership entitlement decisions are centralized separately from staff authorization.
--- This service reuses Authorization's group cache and keeps bounded, session-only pass results.
+
+
 do
 	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("EntitlementAuthority") else nil
@@ -1011,8 +1011,8 @@ do
 	end
 end
 
--- Detection-only avatar/accessory validation. It records bounded server observations
--- and never removes accessories or applies moderation actions.
+
+
 local avatarAccessoryValidation: any = nil
 do
 	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
@@ -1065,8 +1065,8 @@ script.Destroying:Connect(function()
 	end
 end)
 
--- Server-observed animation inventory. This is bounded telemetry only: it does
--- not stop tracks, rewrite assets, or infer that an unfamiliar ID is malicious.
+
+
 local animationIntegrityService: any = nil
 local animationIntegrityStatus: BindableFunction? = nil
 do
@@ -1134,7 +1134,7 @@ script.Destroying:Connect(function()
 	end
 end)
 
--- Rank names, levels and refreshes are projections of the single SecurityCore cache.
+
 ControllerFunctions.computeRank = function(player: Player): (string, number)
 	if not authorizationService then return "GUEST", 0 end
 	return authorizationService:GetRank(player)
@@ -1165,13 +1165,13 @@ ControllerFunctions.isAdmin = function(player: Player): boolean
 	return ControllerFunctions.getLevel(player) >= 2
 end
 
--- Elevated booth management remains Owner/Co-owner only.
+
 ControllerFunctions.isDJBoothController = function(player: Player): boolean
 	return ControllerFunctions.getLevel(player) >= 3
 end
 
--- Rank-100+ DJs may enter limited Control Mode and operate playback controls.
--- This is deliberately separate from staff and elevated booth-management rights.
+
+
 ControllerFunctions.canUseDJBooth = function(player: Player): boolean
 	if not authorizationService or player.Parent ~= Players then return false end
 	local ok, allowed = pcall(authorizationService.Check, authorizationService, player.UserId, "GlobalDJ")
@@ -1185,8 +1185,8 @@ ControllerFunctions.passTier = function(player: Player): number
 		local ok, tier = pcall(entitlementAuthority.GetTier, entitlementAuthority, player, rewardedTier)
 		if ok and typeof(tier) == "number" then return math.clamp(math.floor(tier), 0, 3) end
 	end
-	-- Preserve owner and profile-awarded access during a staged module outage;
-	-- paid/group access is never reconstructed from client attributes.
+	
+	
 	if ControllerFunctions.getLevel(player) >= 4 then return 3 end
 	return rewardedTier
 end
@@ -1209,7 +1209,7 @@ ControllerFunctions.hasClubNeonAccess = function(player: Player): boolean
 	return ControllerFunctions.passTier(player) >= 3
 end
 
--- Owners can moderate anyone but themselves; everyone else only moderates strictly lower ranks.
+
 ControllerFunctions.canModerate = function(actor: Player, target: Player): boolean
 	if actor == target then return false end
 	local actorLevel = ControllerFunctions.getLevel(actor)
@@ -1224,8 +1224,8 @@ ControllerFunctions.applyVipAttribute = function(player: Player)
 	player:SetAttribute("ClubPassTier", ControllerFunctions.passTier(player))
 end
 
--- Ownership is always checked by the server. Failed marketplace lookups fail closed
--- for the affected pass and are retried by the periodic refresh.
+
+
 ControllerFunctions.ownsGamePass = function(userId: number, passId: number): boolean
 	if passId <= 0 then return false end
 	local ok, owns = pcall(function()
@@ -1284,10 +1284,10 @@ ControllerFunctions.cooldownFor = function(player: Player): number
 	return CONFIG.RequestCooldownSeconds
 end
 
--- Title slots -------------------------------------------------------------------
 
--- Returns the hex colors for an effect/set (empty for RGB, which animates by speed instead).
--- Title presentation and slot validation are isolated from persistence and text filtering.
+
+
+
 local titlePresentationModule = ServerStorage:FindFirstChild("ClubNeon_TitlePresentation")
 if not titlePresentationModule or not titlePresentationModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_TitlePresentation; controller will not start.")
@@ -1302,20 +1302,20 @@ ControllerFunctions.titleHexFor = titlePresentation.titleHexFor
 ControllerFunctions.sanitizeTitleSlot = titlePresentation.sanitizeTitleSlot
 ControllerFunctions.firstFilledSlot = titlePresentation.firstFilledSlot
 
--- Per-session cache of text that has passed Roblox broadcast filtering.
--- Profile text is preserved if TextService is temporarily unavailable, but is never
--- replicated until the current value has been filtered successfully.
+
+
+
 local filteredTitleTextByUserId: {[number]: {[number]: string}} = {}
 local lastCustomTitleTextAt: {[number]: number} = {}
 local CUSTOM_TITLE_TEXT_COOLDOWN_SECONDS = 60
 
--- Mirrors the active slot onto player attributes for the overhead title script.
--- Legacy attributes (CustomTitle/TitleColor/TitleStyle/ShowCustomTitle) are kept up to date as well.
+
+
 ControllerFunctions.applyTitleAttributes = function(player: Player, profile: Profile)
 	titlePresentation.applyTitleAttributes(player, profile, filteredTitleTextByUserId[player.UserId])
 end
 
--- Filters player-authored text on the server before storing or replicating it. Returns nil on failure.
+
 ControllerFunctions.filterTitleText = function(player: Player, rawText: string): string?
 	if typeof(rawText) ~= "string" or #rawText > 256 then return nil end
 	local trimmed = string.match(rawText, "^%s*(.-)%s*$") or ""
@@ -1327,8 +1327,8 @@ ControllerFunctions.filterTitleText = function(player: Player, rawText: string):
 		if not filterOk or typeof(filtered) ~= "string" then return nil end
 		return ControllerFunctions.truncateUtf8(filtered, MAX_CUSTOM_TITLE_LENGTH)
 	end
-	-- Compatibility fallback while the Phase 32 module bundle is not installed.
-	-- Still fail closed and never display raw player text.
+	
+	
 	local ok, result = pcall(function()
 		local filtered = TextService:FilterStringAsync(trimmed, player.UserId, Enum.TextFilterContext.PublicChat)
 		return filtered:GetNonChatStringForBroadcastAsync()
@@ -1337,9 +1337,9 @@ ControllerFunctions.filterTitleText = function(player: Player, rawText: string):
 	return ControllerFunctions.truncateUtf8(result, MAX_CUSTOM_TITLE_LENGTH)
 end
 
--- Re-filter persisted titles before they can be selected or replicated. The cache
--- is session-local and keyed by slot; failed filtering leaves saved profile data
--- intact but keeps that title hidden until a later successful retry.
+
+
+
 ControllerFunctions.ensureFilteredTitleSlot = function(player: Player, profile: Profile, slotNumber: number): boolean
 	local slot = profile.titleSlots[slotNumber]
 	if not slot then return false end
@@ -1357,9 +1357,9 @@ ControllerFunctions.ensureFilteredTitleSlot = function(player: Player, profile: 
 	return true
 end
 
--- Profiles --------------------------------------------------------------------
 
--- Profile persistence is isolated behind an injected state contract.
+
+
 local profilePersistenceModule = ServerStorage:FindFirstChild("ClubNeon_ProfilePersistence")
 if not profilePersistenceModule or not profilePersistenceModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_ProfilePersistence; controller will not start.")
@@ -1387,10 +1387,10 @@ initializeProfilePersistence({
 	saveQueueTokens = saveQueueTokens,
 })
 
--- Dance Floor rewards are server-observed and profile-backed. The map supplies
--- one or more BaseParts tagged ClubNeonDanceFloorZone; without a valid tagged
--- zone the service remains fail-closed and grants nothing.
--- Dance-floor rewards are isolated in a server-only, injected module.
+
+
+
+
 local danceFloorRewardsModule = ServerStorage:FindFirstChild("ClubNeon_DanceFloorRewards")
 if not danceFloorRewardsModule or not danceFloorRewardsModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_DanceFloorRewards; controller will not start.")
@@ -1408,8 +1408,8 @@ ControllerFunctions.recordDiagnosticPulse = function(name: string, detail: strin
 	return ok and recorded == true
 end
 
--- Queue / Auto DJ ---------------------------------------------------------------
--- Queue primitives operate on the controller-owned local queue and request counts.
+
+
 local queuePrimitivesModule = ServerStorage:FindFirstChild("ClubNeon_QueuePrimitives")
 assert(queuePrimitivesModule and queuePrimitivesModule:IsA("ModuleScript"), "ClubNeon_QueuePrimitives is required")
 local QueuePrimitives = require(queuePrimitivesModule)
@@ -1428,8 +1428,8 @@ ControllerFunctions.findQueueIndex = queuePrimitives.findQueueIndex
 ControllerFunctions.insertIndex = queuePrimitives.insertIndex
 ControllerFunctions.isTrackBlocked = queuePrimitives.isTrackBlocked
 
--- The manager is an adapter over the same controller-owned table. It never creates
--- a parallel queue and all request-slot accounting remains in releaseSlot above.
+
+
 queueManager = MusicQueueManager.new(queue, ControllerFunctions.releaseSlot)
 
 ControllerFunctions.pickAutoTrack = function(): Track?
@@ -1455,9 +1455,9 @@ ControllerFunctions.pickAutoTrack = function(): Track?
 		lastAutoGenre = chosen.genreId
 		return chosen
 	end
-	-- Never bypass recent-history exclusions when the preferred pool is empty.
-	-- Waiting for the next authoritative refill is safer than replaying a
-	-- recently heard track simply to keep the queue populated.
+	
+	
+	
 	return nil
 end
 
@@ -1532,7 +1532,7 @@ ControllerFunctions.setNowPlaying = function(entry: QueueEntry, preserveAudio: b
 	end
 end
 
--- Playback-only sync shares Now Playing; queues remain server-local.
+
 ControllerFunctions.globalPlaybackSyncState = {
 	enabled = false, isLeader = false, revision = 0, trackRevision = 0,
 	lastAppliedRevision = -1, lastSyncAppliedAt = 0, lastErrorAt = 0, leaderJobId = nil, authorityReady = false, statusError = nil,
@@ -1668,10 +1668,10 @@ ControllerFunctions.applyGlobalPlaybackSyncSnapshot = function(snapshot: any, al
 end
 
 
--- Local queue and playback transitions.
+
 ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, string?)
-	-- Server-local queue only. Generation checks prevent the playback clock and
-	-- watchdog from advancing the same track twice.
+	
+	
 	if transitionInProgress then return false, "A track transition is already in progress." end
 	if expectedGeneration ~= nil and expectedGeneration ~= playbackGeneration then
 		return false, "The current track changed before the transition started."
@@ -1705,7 +1705,7 @@ ControllerFunctions.advance = function(expectedGeneration: number?): (boolean, s
 	return true, nil
 end
 
--- Boot: start with an auto-selected track and a visible auto queue.
+
 local initialTrack = ControllerFunctions.pickAutoTrack()
 if initialTrack then
 	ControllerFunctions.setNowPlaying(ControllerFunctions.makeEntry(initialTrack, "auto", nil))
@@ -1714,9 +1714,9 @@ else
 	warn("[ClubMusic] Startup held: the catalog contains no playable audio tracks.")
 end
 
--- Each server runs its own local queue and playback clock.
 
--- Skip voting ---------------------------------------------------------------------
+
+
 
 local skipVotingModule = ServerStorage:FindFirstChild("ClubNeon_SkipVoting")
 if not skipVotingModule or not skipVotingModule:IsA("ModuleScript") then
@@ -1729,7 +1729,7 @@ require(skipVotingModule).initialize({
 	ControllerFunctions = ControllerFunctions,
 })
 
--- State publishing ------------------------------------------------------------------
+
 
 ControllerFunctions.snapshotFor = function(player: Player)
 	local profile = profiles[player.UserId] or ControllerFunctions.defaultProfile()
@@ -1750,7 +1750,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 
 	local votes, needed, voted = ControllerFunctions.skipStatus(player)
 
-	-- Title slots use string keys so sparse slots survive the remote.
+	
 	local slotsOut: {[string]: any} = {}
 	for i = 1, TITLE_SLOT_COUNT do
 		local slot = profile.titleSlots[i]
@@ -1769,8 +1769,8 @@ ControllerFunctions.snapshotFor = function(player: Player)
 	end
 	local activeSlotData = profile.titleSlots[profile.activeSlot]
 	local xpClientState = xpService.GetClientState()
-	-- The rotation cursor points beyond tracks already prefetched into the queue.
-	-- Derive the visible position from the authoritative current track instead.
+	
+	
 	local playlistPosition: number? = nil
 	local playlistTotal = if activePlaylistId ~= nil then #activePlaylistTracks else 0
 	local playlistRemaining: number? = nil
@@ -1853,7 +1853,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 			prices = pricesOut,
 			products = productsOut,
 		},
-		-- Legacy fields (mirror the active slot) for older clients.
+		
 		customTitle = if activeSlotData then activeSlotData.text else "",
 		titleColor = if activeSlotData and activeSlotData.effect == "fixed" then activeSlotData.set else "gold",
 		titleStyle = if activeSlotData then activeSlotData.style else "normal",
@@ -1875,7 +1875,7 @@ ControllerFunctions.snapshotFor = function(player: Player)
 		players = nil :: any,
 	}
 
-	-- Only staff receive the moderation roster.
+	
 	if level >= 1 then
 		local roster = {}
 		for _, other in ipairs(Players:GetPlayers()) do
@@ -1891,8 +1891,8 @@ ControllerFunctions.snapshotFor = function(player: Player)
 				blocked = blockedUsers[other.UserId] == true,
 				requests = requestCounts[other.UserId] or 0,
 				canMod = ControllerFunctions.canModerate(player, other),
-				-- Explicit server-derived flag for the free tier award controls.
-				-- Owners may award any other player; self-awards remain prohibited.
+				
+				
 				canAwardPassTier = ControllerFunctions.getLevel(player) >= 4 and other.UserId ~= player.UserId,
 			})
 		end
@@ -1902,8 +1902,8 @@ ControllerFunctions.snapshotFor = function(player: Player)
 	return snapshot
 end
 
--- Coalesce bursts of state changes. A nil target means a full server broadcast;
--- individual player refreshes are batched when no full broadcast is pending.
+
+
 local pendingStateAll = false
 local pendingStatePlayers: {[number]: boolean} = {}
 local stateFlushScheduled = false
@@ -1933,19 +1933,19 @@ ControllerFunctions.flushPendingState = function()
 	end
 
 	stateFlushScheduled = false
-	-- Work queued during the flush is handled by one further coalesced pass.
+	
 	if pendingStateAll or next(pendingStatePlayers) ~= nil then
 		stateFlushScheduled = true
 		task.defer(ControllerFunctions.flushPendingState)
 	end
 end
 
--- Playback state is latency-sensitive: don't hold title, pause, or restart
--- updates behind the general-purpose state coalescing interval.
+
+
 ControllerFunctions.publishPlaybackState = function()
-	-- Playback commits already run on the server task that owns the new state.
-	-- Build and send the snapshot in that same task so clients don't wait for
-	-- another deferred scheduler turn to learn the new title/pause/restart state.
+	
+	
+	
 	for _, target in ipairs(Players:GetPlayers()) do
 		local ok, snapshot = pcall(ControllerFunctions.snapshotFor, target)
 		if ok and target.Parent == Players then
@@ -1976,14 +1976,14 @@ ControllerFunctions.broadcast = function(text: string, kind: string?)
 end
 
 
--- Developer Product purchases --------------------------------------------------
--- The catalog owns metadata registration; receipt authority remains in this controller.
+
+
 local productCatalogModule = ServerStorage:WaitForChild("ClubNeon_ProductCatalog")
 assert(productCatalogModule:IsA("ModuleScript"), "ClubNeon_ProductCatalog is required")
 local PRODUCT_MAP = require(productCatalogModule).new(CONFIG, TITLE_SLOT_COUNT)
 
--- Durable receipt journal ownership is in Security Core. This controller only
--- supplies the existing profile/session adapters and product reward mutators.
+
+
 do
 	local core = ServerStorage:FindFirstChild("ClubNeonSecurityCore")
 	local module = if core and core:IsA("Folder") then core:FindFirstChild("ReceiptTransactionService") else nil
@@ -2127,12 +2127,12 @@ if receiptAuthorityStatus then
 	end
 end
 
--- This controller remains Roblox's single ProcessReceipt callback adapter.
--- Security Core owns validation, serialization, profile receipt journaling, and
--- recovery. The Global Service retains the existing cross-server XP boost journal.
+
+
+
 MarketplaceService.ProcessReceipt = function(receiptInfo: any)
-	-- Stop accepting new callbacks once shutdown starts. Roblox will retry any
-	-- unacknowledged receipt on another server; active callbacks remain tracked.
+	
+	
 	if serverShuttingDown or not receiptAuthority then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
@@ -2171,7 +2171,7 @@ ControllerFunctions.isBoundedPayload = requestValidation.isBoundedPayload
 ControllerFunctions.findTarget = requestValidation.findTarget
 ControllerFunctions.requestBlockReason = requestValidation.requestBlockReason
 
--- Yields. Confirms an asset is an audio file, loadable by this experience, and returns its real length.
+
 local audioAssetInspectorModule = ServerStorage:FindFirstChild("ClubNeon_AudioAssetInspector")
 if not audioAssetInspectorModule or not audioAssetInspectorModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_AudioAssetInspector; controller will not start.")
@@ -2187,7 +2187,7 @@ ControllerFunctions.inspectAudioAsset = createAudioAssetInspector({
 	end,
 })
 
--- Saves a validated title slot. Returns true on success. Yields (text filtering).
+
 ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number, data: any, visible: boolean): boolean
 	local profile = profiles[player.UserId]
 	if not profile then return false end
@@ -2224,8 +2224,8 @@ ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number,
 	end
 	clean.text = filtered
 
-	-- Filtering yields. Revalidate profile ownership, live caller, entitlement,
-	-- and slot access immediately before committing the filtered text.
+	
+	
 	local commitNow = os.clock()
 	local latestTextAt = lastCustomTitleTextAt[player.UserId] or 0
 	if profiles[player.UserId] ~= profile or player.Parent ~= Players
@@ -2249,10 +2249,10 @@ ControllerFunctions.saveTitleSlot = function(player: Player, slotNumber: number,
 	return true
 end
 
--- Actions -----------------------------------------------------------------------------
 
--- Catalog mutation logic is isolated from the request router. The context uses
--- accessors for counters and playlist cursor so yielding work updates live state.
+
+
+
 local catalogMutationModule = ServerStorage:FindFirstChild("ClubNeon_CatalogMutationActions")
 if not catalogMutationModule or not catalogMutationModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_CatalogMutationActions; controller will not start.")
@@ -2289,30 +2289,30 @@ local catalogMutationContext = {
 ControllerFunctions.handleAction = function(player: Player, action: any, payload: any, trustedAdminCommand: boolean?): (boolean?, string?)
 	if not ControllerFunctions.isLiveRemotePlayer(player) then return false, "The caller is no longer in this server." end
 
-	-- Spend the cheap per-player/per-server ingress budget before walking any
-	-- attacker-controlled table. This bounds validation CPU under malformed spam.
+	
+	
 	local now = os.clock()
 	local userId = player.UserId
 	if not ControllerFunctions.consumeActionBudget(userId, now) then return false, "ClubMusic action rate limit reached. Try again shortly." end
 
-	-- Validate the fixed request contract only after the ingress budget is charged.
+	
 	if not ControllerFunctions.isValidString(action, 32)
 		or not ControllerFunctions.isBoundedPayload(payload) then
 		return false, "Invalid action or payload."
 	end
 	if ACTION_COOLDOWNS[action] == nil then return false, "That action is not supported." end
-	-- Check every cooldown before recording timestamps. A rejected action must not
-	-- consume the cross-action interval and block an unrelated command immediately after it.
-	-- Keep trusted admin commands in a separate per-action cooldown lane.
-	-- The local per-player/server budgets still protect this bridge, while this avoids
-	-- a normal DJ-booth/UI action accidentally blocking the equivalent admin command.
+	
+	
+	
+	
+	
 	local actionTimesByPlayer = if trustedAdminCommand == true then lastAdminActionByType else lastActionByType
 	local actionTimes = actionTimesByPlayer[userId]
 	if not actionTimes then actionTimes = {}; actionTimesByPlayer[userId] = actionTimes end
-	-- Trusted admin commands use only the dedicated cross-command throttle below.
-	-- Do not apply a second per-action cooldown: the shared token/global budgets
-	-- and cross-command interval already protect this bridge, and a redundant
-	-- per-action gate can reject valid Kohl's Admin invocations.
+	
+	
+	
+	
 	local previousAction = actionTimes[action] or 0
 	if trustedAdminCommand ~= true then
 		local actionCooldown = ACTION_COOLDOWNS[action] or 0.2
@@ -2322,9 +2322,9 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if trustedAdminCommand == true then
-		-- Protect state-changing admin commands from duplicate command-framework
-		-- dispatch. Toggle duplicates reverse state; restart duplicates replay the
-		-- same track and can emit repeated success notices.
+		
+		
+		
 		if action == "DJPause" or action == "DJToggleLock" or action == "DJRestart" then
 			local duplicateCooldown = if action == "DJPause" then 0.75
 				elseif action == "DJToggleLock" then 1.25
@@ -2355,8 +2355,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not ControllerFunctions.waitForDataStoreBudget(5) then
 			notify(player, "Shared DataStore budget is unavailable; playlist was not changed.", "warn"); return
 		end
-		-- The budget wait can yield. Revalidate the caller and staff role before
-		-- entering a persistent playlist mutation.
+		
+		
 		if not ControllerFunctions.isLiveRemotePlayer(player) or not ControllerFunctions.isStaff(player) then return end
 		local wasActivePlaylist = activePlaylistId == payload.playlistId
 		local ok, message = false, "Invalid playlist action."
@@ -2403,8 +2403,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			local restrictionOk, restricted = phase32Services:IsRestricted(player.UserId, "MusicRequests")
 			if not restrictionOk then notify(player, "Moderation restrictions could not be verified. Requests are temporarily unavailable.", "warn"); return end
 			if restricted then notify(player, "Your music requests are restricted by moderation.", "warn"); return end
-			-- Moderation lookup may yield. Revalidate the player session before
-			-- allowing the request to mutate this server's queue.
+			
+			
 			if not ControllerFunctions.isLiveRemotePlayer(player) then return end
 		end
 		local trackId = payload.trackId
@@ -2461,7 +2461,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		return
 	end
 
-	-- Staff only: queue a Creator Hub / Roblox audio asset by ID.
+	
 	if action == "RequestAudioAsset" then
 		if not ControllerFunctions.isStaff(player) then
 			notify(player, "Audio asset IDs are staff only.", "warn")
@@ -2535,7 +2535,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			return
 		end
 
-		-- State may have changed while the asset loaded, so re-check before queueing.
+		
 		local recheckNow = os.clock()
 		local recheck = ControllerFunctions.requestBlockReason(player, trackId, recheckNow)
 		if recheck then
@@ -2563,8 +2563,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "ReloadSong" then
-		-- Self-service recovery: any live player may reload audio when it fails.
-		-- Per-player cooldown and the global action budget still protect this operation.
+		
+		
 		local last = lastReloadAt[player.UserId] or -1000
 		if now - last < CONFIG.ReloadCooldownSeconds then return end
 		lastReloadAt[player.UserId] = now
@@ -2606,7 +2606,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		return
 	end
 
-	-- Staff ----------------------------------------------------------------------------
+	
 
 	if action == "DJToggleGlobalPlaybackSync" then
 		if not CONFIG.EnableGlobalPlaybackSync then return false, "Optional global playback sync is disabled in this controller." end
@@ -2795,7 +2795,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		if not target or typeof(payload.blocked) ~= "boolean" then return end
 
 		if payload.blocked then
-			-- Apply the local restriction before yielding to persistent storage.
+			
 			blockedUsers[target.UserId] = true
 			ControllerFunctions.purgeUserEntries(target.UserId)
 		end
@@ -2807,8 +2807,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		end
 
 		if not globalWriteOk then
-			-- Never claim a global moderation change succeeded if its durable
-			-- record could not be confirmed. Failed unblocks remain blocked.
+			
+			
 			if payload.blocked then
 				blockedUsers[target.UserId] = true
 				ControllerFunctions.purgeUserEntries(target.UserId)
@@ -2841,7 +2841,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 	end
 
 	if action == "ModSetPassTier" then
-		-- Only the actual configured OWNER may issue free membership rank-up rewards.
+		
 		if ControllerFunctions.getLevel(player) < 4 then return end
 		local target = ControllerFunctions.findTarget(player, payload.userId)
 		local requestedTier = payload.passTier
@@ -2872,7 +2872,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		return
 	end
 
-	-- Rewards / cosmetics -------------------------------------------------------------
+	
 
 	if action == "ClaimDailyReward" then
 		local day = payload.day
@@ -2880,7 +2880,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local profile = profiles[player.UserId]
 		if not profile or profile.claimedToday or day ~= profile.loginStreak then return end
 
-		-- Grants map directly to the reward labels in the supplied data file.
+		
 		if day == 1 then profile.coins += 50
 		elseif day == 2 then profile.glowsticks += 2
 		elseif day == 3 then profile.tickets += 100
@@ -2937,7 +2937,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		return
 	end
 
-	-- Legacy single custom title: stored in slot 1 as a fixed-color title.
+	
 	if action == "SaveCustomTitle" then
 		if phase32Services then
 			local restrictionOk, restricted = phase32Services:IsRestricted(player.UserId, "CustomText")
@@ -2952,8 +2952,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local visible = payload.visible
 
 		if typeof(rawText) ~= "string" then return end
-		-- Match the extended title-slot path: trim first, then enforce the
-		-- character limit against the exact text that will be filtered and saved.
+		
+		
 		local trimmedText = string.match(rawText, "^%s*(.-)%s*$") or ""
 		local rawLength = utf8.len(trimmedText)
 		if not rawLength or rawLength < 1 or rawLength > MAX_CUSTOM_TITLE_LENGTH then
@@ -2982,7 +2982,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		return
 	end
 
-	-- Extended title slots ------------------------------------------------------------
+	
 
 	if action == "SaveTitleSlot" then
 		if phase32Services then
@@ -2992,7 +2992,7 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 		local slotNumber = payload.slot
 		if typeof(slotNumber) ~= "number" or slotNumber % 1 ~= 0 or slotNumber < 1 or slotNumber > TITLE_SLOT_COUNT then return end
 		if typeof(payload.text) ~= "string" then return end
-		-- Colors sent by the client are ignored; the server derives them from the allowlisted set.
+		
 		local visible = if typeof(payload.visible) == "boolean" then payload.visible else true
 		local ok = ControllerFunctions.saveTitleSlot(player, slotNumber, {
 			text = string.match(payload.text, "^%s*(.-)%s*$") or "",
@@ -3025,8 +3025,8 @@ ControllerFunctions.handleAction = function(player: Player, action: any, payload
 			notify(player, "Roblox text filtering is unavailable. This title remains hidden; please try again.", "warn")
 			return
 		end
-		-- The filter call yields; entitlement and profile identity must still be
-		-- valid before switching the replicated active title.
+		
+		
 		if profiles[player.UserId] ~= profile or player.Parent ~= Players
 			or not ControllerFunctions.hasClubNeonAccess(player)
 			or slotNumber > profile.unlockedSlots then return end
@@ -3075,10 +3075,10 @@ catalogFunction.OnServerInvoke = function(player: Player, query: any, genreId: a
 	if not ControllerFunctions.isLiveRemotePlayer(player) then return nil end
 	local now = os.clock()
 	if not ControllerFunctions.consumeToken(globalCatalogQueryBucket, now, 1) then return nil end
-	-- Catalog browsing is a read-only lookup over the built-in in-memory
-	-- catalog plus the local custom-track cache. Keep it available during a
-	-- transient global security-service outage; the per-server token bucket
-	-- above and per-player cooldown below still bound request volume.
+	
+	
+	
+	
 	local previous = lastCatalogInvoke[player.UserId] or 0
 	if previous > 0 and now - previous < 0.75 then return nil end
 	lastCatalogInvoke[player.UserId] = now
@@ -3109,9 +3109,9 @@ playlistFunction.OnServerInvoke = function(player: Player)
 	if os.clock() - playlistRefreshAt >= 5 then
 		if ControllerFunctions.waitForDataStoreBudget(2) and MusicPlaylistService:Refresh() then
 			playlistRefreshAt = os.clock()
-			-- Another server may have edited or deleted the active playlist. Reconcile
-			-- this server's playback view from the refreshed saved record. Compare the
-			-- resolved sequence first so ordinary UI polling does not reset the queue.
+			
+			
+			
 			if activePlaylistId then
 				local previousId = activePlaylistId
 				local previousName = activePlaylistName
@@ -3154,8 +3154,8 @@ stateFunction.OnServerInvoke = function(player: Player)
 	return snapshot
 end
 
--- Local diagnostics and admin authorization adapters are initialized in a
--- server-only module; all live state and authorization remain controller-owned.
+
+
 local localDiagnosticsBridgeModule = ServerStorage:FindFirstChild("ClubNeon_LocalDiagnosticsBridge")
 if not localDiagnosticsBridgeModule or not localDiagnosticsBridgeModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_LocalDiagnosticsBridge; controller will not start.")
@@ -3184,7 +3184,7 @@ if not adminBridgeModuleSource or not adminBridgeModuleSource:IsA("ModuleScript"
 end
 local createAdminBridge = require(adminBridgeModuleSource)
 local adminBridgeModule = createAdminBridge({
-	-- Mutable primitives remain controller-owned; bridge receives live accessors, not snapshots.
+	
 	getPlaybackPaused = function(): boolean return audioState.playbackPaused end,
 	setPlaybackPaused = function(value: boolean) audioState.playbackPaused = value == true end,
 	getRequestsLocked = function(): boolean return requestsLocked end,
@@ -3211,12 +3211,12 @@ local adminBridgeModule = createAdminBridge({
 })
 local adminBridge = adminBridgeModule.Bridge
 
--- Do not leave a stale callback closure callable if this controller Script is
--- removed or replaced. Clear only the exact callback owned by this instance.
+
+
 script.Destroying:Connect(adminBridgeModule.Shutdown)
 
--- Construct the remaining optional child managers only after controller state exists.
--- Playback quality is now inspected directly from the canonical modern AudioPlayer snapshot.
+
+
 ControllerFunctions.ChildManagers = {}
 
 
@@ -3237,8 +3237,8 @@ ControllerFunctions.castSkipVote = function(player: Player): (boolean, string)
 	return true, "Skip vote counted."
 end
 
--- Optional DJ session facade. It is loaded from either supported ServerStorage
--- layout and never grants staff roles or changes queue/playback ownership.
+
+
 local djSessionModule = ControllerFunctions.findAudioModule("ClubMusicDJSessionManager")
 if djSessionModule and djSessionModule:IsA("ModuleScript") then
 	local djRequireOk, djSessionClass = pcall(require, djSessionModule)
@@ -3268,9 +3268,9 @@ else
 	warn("[ClubMusic][DJSession] Optional ClubMusicDJSessionManager ModuleScript was not found under ServerStorage or ServerStorage.ClubMusicAudioModules. DJ session commands are unavailable.")
 end
 
--- Load the optional crossfade coordinator after controller state and all child
--- managers exist. Construction creates no deck and does not change live output;
--- an explicit controller call is still required to begin a transition.
+
+
+
 do
 	local crossfadeOk, crossfadeError = ControllerFunctions.createAudioCrossfadeManager()
 	if not crossfadeOk then
@@ -3314,15 +3314,15 @@ end)
 remotes:SetAttribute("StartupStage", "Ready")
 remotes:SetAttribute("Ready", true)
 
--- Releases this server's profile lease after the final save. Ownership is checked
--- inside UpdateAsync so a stale server cannot clear a newer server's lease.
+
+
 ControllerFunctions.releaseProfileSession = function(userId: number)
 	if USE_STUDIO_MEMORY_PROFILES then
 		return
 	end
-	-- Lease release shares the same local writer lock as saves and receipt commits.
-	-- Otherwise a receipt transaction could be interrupted between its durable
-	-- profile marker and journal completion by a concurrent departure release.
+	
+	
+	
 	local writeLockToken = ControllerFunctions.acquireProfileWriteLock(userId)
 	if not writeLockToken then
 		warn("[ClubMusic] Could not acquire profile writer lock for lease release; lease will expire naturally for userId " .. tostring(userId))
@@ -3347,9 +3347,9 @@ ControllerFunctions.releaseProfileSession = function(userId: number)
 	if not ok then warn("[ClubMusic] Could not release profile session for " .. tostring(userId) .. ": " .. tostring(err)) end
 end
 
--- Player lifecycle ----------------------------------------------------------------------
 
--- Collection tag unlocks are granted only from server-verified profile/pass state.
+
+
 ControllerFunctions.syncTitleTagUnlocks = function(player: Player): boolean
 	local profile = profiles[player.UserId]
 	if not profile then return false end
@@ -3376,15 +3376,15 @@ ControllerFunctions.syncTitleTagUnlocks = function(player: Player): boolean
 	return changed
 end
 
--- Roblox-native ban history remains separate from Club Neon's custom moderation store.
+
 local nativeBanHistoryModule = ServerStorage:FindFirstChild("ClubNeon_NativeBanHistory")
 if not nativeBanHistoryModule or not nativeBanHistoryModule:IsA("ModuleScript") then
 	error("[Club Neon] Missing ServerStorage.ClubNeon_NativeBanHistory; controller will not start.")
 end
 ControllerFunctions.checkNativeBanHistory = require(nativeBanHistoryModule).create(Players, RunService)
 
--- PlayerAdded and the startup GetPlayers sweep can overlap. Make join
--- initialization idempotent for the lifetime of this Player instance.
+
+
 local onJoinStarted: {[Player]: boolean} = {}
 
 ControllerFunctions.onJoin = function(player: Player)
@@ -3395,9 +3395,9 @@ ControllerFunctions.onJoin = function(player: Player)
 	if player.Parent ~= Players or serverShuttingDown then return end
 	local globalModerationRequired = not RunService:IsStudio()
 	local globalServiceReady = enabledCallOk and globalServiceEnabled == true
-	-- A service-readiness failure is not a ban. Keep moderation-sensitive actions
-	-- closed and retry authoritative checks instead of kicking legitimate players.
-	-- Fetch ban and request-block status together to avoid serial durable reads.
+	
+	
+	
 	local moderationCallOk, moderationLookupOk, globallyBanned, globallyBlocked, _moderationReason, moderationRevision =
 		ControllerFunctions.globalInvoke("GetModerationState", player.UserId)
 	if player.Parent ~= Players or serverShuttingDown then return end
@@ -3405,8 +3405,8 @@ ControllerFunctions.onJoin = function(player: Player)
 		and ControllerFunctions.moderationRevisions[player.UserId] or 0
 	if moderationCallOk and moderationLookupOk == true
 		and (not ControllerFunctions.isFiniteNumber(moderationRevision) or moderationRevision < knownModerationRevision) then
-		-- A cross-server invalidation arrived while this yielding lookup was in flight.
-		-- Its newer revision wins; keep the player restricted until a current read succeeds.
+		
+		
 		moderationLookupOk = false
 	elseif moderationCallOk and moderationLookupOk == true then
 		ControllerFunctions.moderationRevisions = ControllerFunctions.moderationRevisions or {}
@@ -3428,7 +3428,7 @@ ControllerFunctions.onJoin = function(player: Player)
 		end
 		blockedUsers[player.UserId] = if globallyBlocked == true then true else nil
 	elseif globalModerationRequired then
-		-- Unknown remains restricted; a failed read never grants requests or kicks.
+		
 		blockedUsers[player.UserId] = true
 	end
 	local retryModeration = globalModerationRequired and
@@ -3439,14 +3439,14 @@ ControllerFunctions.onJoin = function(player: Player)
 			local serviceResolved = globalServiceReady
 			local moderationResolved = not retryModeration
 			local attempt = 0
-			-- Stable per-user staggering prevents simultaneous joins from retrying
-			-- the shared DataStore bucket on identical backoff boundaries.
+			
+			
 			local retryJitter = 0.85 + ((player.UserId % 31) / 100)
 			while not serverShuttingDown and player.Parent == Players and not (serviceResolved and moderationResolved) do
 				attempt += 1
-				-- The initial join checks already ran immediately. If a backend was still
-				-- loading, retry quickly instead of imposing a five-second blind lock;
-				-- increase the interval only when the service continues to fail.
+				
+				
+				
 				local retryBaseDelay = if attempt == 1 then 1 else math.min(15, 2 ^ math.min(attempt - 1, 4))
 				local retryDelay = math.min(15, retryBaseDelay * retryJitter)
 				task.wait(retryDelay)
@@ -3486,8 +3486,8 @@ ControllerFunctions.onJoin = function(player: Player)
 					return
 				end
 			end
-			-- If the player leaves, the loop exits. Unknown moderation state never
-			-- grants requests or triggers a kick; checks continue with bounded backoff.
+			
+			
 		end)
 	end
 	ControllerFunctions.refreshRank(player)
@@ -3509,9 +3509,9 @@ ControllerFunctions.onJoin = function(player: Player)
 end
 
 
--- Apply validated cross-server events to this server's local state. The API
--- folder can be created slightly after this controller starts, so attach both
--- immediately and through ServerStorage.ChildAdded for startup-order recovery.
+
+
+
 local lastCatalogRefreshAt = 0
 local catalogRefreshBusy = false
 
@@ -3540,9 +3540,9 @@ refreshLocalCatalog = function(): boolean
 			table.insert(nextIds, track.id)
 		end
 		table.sort(nextIds)
-		-- A remote catalog removal must invalidate every local queue reference too.
-		-- Release request slots for removed tracks; surviving player requests retain
-		-- their existing order and the per-server queue remains authoritative.
+		
+		
+		
 		local removedQueuedTrack = false
 		if typeof(pendingCrossfadeEntry) == "table"
 			and typeof(pendingCrossfadeEntry.trackId) == "string"
@@ -3563,8 +3563,8 @@ refreshLocalCatalog = function(): boolean
 		table.clear(ALL_TRACK_IDS)
 		for _, id in ipairs(nextIds) do table.insert(ALL_TRACK_IDS, id) end
 
-		-- Catalog invalidation can remove tracks referenced by an active playlist.
-		-- Rebuild only this server's playable view; saved IDs/order remain untouched.
+		
+		
 		local activePlaylistChanged = false
 		if activePlaylistId then
 			local previousPlaylistId = activePlaylistId
@@ -3595,7 +3595,7 @@ refreshLocalCatalog = function(): boolean
 	return refreshed
 end
 
--- Playback-only sync messages carry snapshot invalidations, never queue contents.
+
 ControllerFunctions.handleGlobalMessage = function(message: any)
 	if typeof(message) ~= "table" then return end
 	if message.kind == "PlaybackSyncModeChanged" and typeof(message.enabled) == "boolean" then
@@ -3640,10 +3640,10 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 		return
 	end
 	if message.kind == "Catalog" then
-		-- Track moderation shares the catalog topic so one durable update can
-		-- invalidate both the custom catalog and per-server moderation decisions.
-		-- MessagingService delivery is best-effort; the local 300-second cache
-		-- expiry remains the fallback when this invalidation is missed.
+		
+		
+		
+		
 		if message.senderJob ~= game.JobId
 			and typeof(message.trackId) == "string"
 			and #message.trackId >= 1 and #message.trackId <= 64
@@ -3691,8 +3691,8 @@ ControllerFunctions.handleGlobalMessage = function(message: any)
 			or (function() ControllerFunctions.moderationRevisions = {}; return ControllerFunctions.moderationRevisions end)()
 		local target = Players:GetPlayerByUserId(message.userId)
 		local knownRevision = if target then (revisions[message.userId] or 0) else message.revision
-		-- Reconciliation snapshots may equal the last event revision: they contain
-		-- both durable flags and repair state after a missed notification.
+		
+		
 		if target and message.revision >= knownRevision then
 			revisions[message.userId] = message.revision
 			if message.globalBan then
@@ -3735,9 +3735,9 @@ end
 
 local connectedGlobalEvents: {[any]: any} = {}
 
--- Keep bridge connections owned by this controller and reconnect when the
--- optional Global Service recreates its API folder or GlobalEvent BindableEvent.
--- This registry avoids extra top-level locals in the controller's large chunk.
+
+
+
 connectedGlobalEvents.detachEvent = function()
 	local connection = connectedGlobalEvents.eventConnection
 	connectedGlobalEvents.eventConnection = nil
@@ -3756,7 +3756,7 @@ connectedGlobalEvents.attachGlobalEvent = function(folder: Folder, eventObject: 
 	connectedGlobalEvents.detachEvent()
 	connectedGlobalEvents.currentEvent = event
 	connectedGlobalEvents.eventConnection = event.Event:Connect(function(...)
-		-- Ignore callbacks from a removed/replaced API generation.
+		
 		if connectedGlobalEvents.currentFolder == folder
 			and connectedGlobalEvents.currentEvent == event
 			and folder.Parent == ServerStorage and event.Parent == folder then
@@ -3820,8 +3820,8 @@ script.Destroying:Connect(function()
 	end
 end)
 
--- The global service owns the fenced leadership lease. This controller only
--- observes status and reconciles Now Playing; no local queue is ever uploaded.
+
+
 task.spawn(function()
 	local syncState = ControllerFunctions.globalPlaybackSyncState
 	if not CONFIG.EnableGlobalPlaybackSync then return end
@@ -3872,7 +3872,7 @@ task.spawn(function()
 			syncState.statusError = if typeof(status.error) == "string" then string.sub(status.error, 1, 120) else nil
 			publishState(nil)
 		elseif not enabledOk then
-			-- A transient status outage must not let a stale former leader keep advancing.
+			
 			syncState.isLeader = false
 			syncState.wasLeader = false
 			syncState.leaderJobId = nil
@@ -3883,8 +3883,8 @@ task.spawn(function()
 	end
 end)
 
--- MessagingService invalidations are best-effort. A low-frequency, jittered
--- reconciliation repairs missed messages without making the catalog a hot DataStore path.
+
+
 task.spawn(function()
 	while script.Parent do
 		task.wait(180 + math.random(0, 30))
@@ -3926,16 +3926,16 @@ Players.PlayerRemoving:Connect(function(player)
 	if finalSaveOk and not serverShuttingDown then
 		ControllerFunctions.releaseProfileSession(userId)
 	else
-		-- Keep the lease until it expires naturally. Clearing it after a failed
-		-- save could let another server load stale profile data immediately.
+		
+		
 		warn("[ClubMusic] Final profile save failed; retaining session lease until expiry for userId " .. tostring(userId))
 	end
 	local departingProfile = profiles[userId]
 	if receiptTransactions then receiptTransactions:ForgetProfile(departingProfile) end
 	profiles[userId] = nil
-	-- Do not clear profileWriteLocks here. A timed-out save/receipt operation may
-	-- still be in flight; its owner releases its own token when it actually ends.
-	-- A rapid same-server rejoin must wait rather than overlap that old writer.
+	
+	
+	
 	requestCounts[userId] = nil
 	lastRequestAt[userId] = nil
 	lastActionAt[userId] = nil
@@ -3957,7 +3957,7 @@ Players.PlayerRemoving:Connect(function(player)
 	if entitlementAuthority then pcall(entitlementAuthority.Clear, entitlementAuthority, player) end
 	blockedUsers[userId] = nil
 	skipVotes[userId] = nil
-	-- The leaving player may still be counted by GetPlayers(); re-check next frame.
+	
 	task.defer(function()
 		if ControllerFunctions.checkSkipVotes() then ControllerFunctions.broadcast("Track skipped by vote.", "ok") end
 		publishState(nil)
@@ -3968,7 +3968,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 	task.spawn(ControllerFunctions.onJoin, player)
 end
 
--- Refresh purchased membership entitlements after a successful in-session purchase.
+
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, passId: number, purchased: boolean)
 	if not purchased then return end
 	local isMembershipPass = passId == CONFIG.VipGamePassId or passId == CONFIG.VvipGamePassId or passId == CONFIG.ClubNeonPassId
@@ -3993,8 +3993,8 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Playe
 	end)
 end)
 
--- Track time spent in this experience for the Party Animal collection unlock.
--- Progress is server-owned, persisted, and never accepted from a client.
+
+
 task.spawn(function()
 	while not serverShuttingDown do
 		task.wait(60)
@@ -4028,7 +4028,7 @@ task.spawn(function()
 	end
 end)
 
--- Periodically re-check group rank / VIP so promotions apply without rejoining.
+
 task.spawn(function()
 	while not serverShuttingDown do
 		task.wait(60)
@@ -4055,8 +4055,8 @@ task.spawn(function()
 				player:SetAttribute("ClubRank", ControllerFunctions.getRank(player))
 				if serverShuttingDown or player.Parent ~= Players then return end
 				ControllerFunctions.syncTitleTagUnlocks(player)
-				-- Publish promotions/demotions even when the player already owns all
-				-- title slots, so every client receives the current rank and tier.
+				
+				
 				if slotsUpgraded or previousRank ~= ControllerFunctions.getRank(player) or previousTier ~= ControllerFunctions.passTier(player) then
 					publishState(nil)
 				end
@@ -4065,15 +4065,15 @@ task.spawn(function()
 	end
 end)
 
--- The server publishes authoritative elapsed time and current state. Clients interpolate between
--- resyncs. A single server-owned AudioPlayer graph replicates the active track to everyone; CONFIG.SoundIds
--- supplies optional built-in track audio, while staff-requested Creator Hub audio is validated
--- before it can enter the queue.
+
+
+
+
 task.spawn(function()
 	local ticks = 0
-	-- Studio disconnect and production shutdown both set this shared flag in
-	-- BindToClose. Stop the playback worker before it can inspect a destroyed
-	-- AudioPlayer or interpret shutdown as a failed track.
+	
+	
+	
 	while not serverShuttingDown do
 		task.wait(1)
 		if serverShuttingDown then break end
@@ -4097,12 +4097,12 @@ task.spawn(function()
 		local currentGeneration = playbackGeneration
 		local shouldAdvance = not audioState.playbackPaused and not audioState.audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.elapsed >= nowPlaying.duration
-		-- Catalog tracks without a configured SoundId are intentionally silent
-		-- UI/visualizer entries. Do not treat their intentionally absent audio as a failed
-		-- asset: let their catalog duration drive the normal transition instead.
-		-- A transient IsPlaying=false must not be treated as end-of-track.
-		-- Require a short stable stop, then attempt one in-place resume from the
-		-- captured playhead before allowing the queue watchdog to advance.
+		
+		
+		
+		
+		
+		
 		local audio = ControllerFunctions.getAudioSnapshot()
 		if serverShuttingDown then break end
 		if audioState.playbackPaused or audioState.audioReloadInProgress or nowPlaying.trackId == "" or nowPlaying.soundId == ""
@@ -4157,8 +4157,8 @@ task.spawn(function()
 			end
 		end
 
-		-- This server prepares its own next local queue entry before the current
-		-- track ends; the crossfade commit advances only this server's queue.
+		
+		
 		if not audioState.playbackPaused and not audioState.audioReloadInProgress and nowPlaying.trackId ~= ""
 			and nowPlaying.soundId ~= "" and nowPlaying.elapsed < nowPlaying.duration then
 			local remaining = nowPlaying.duration - nowPlaying.elapsed
@@ -4169,9 +4169,9 @@ task.spawn(function()
 				then (nextEntry.soundId or CONFIG.SoundIds[nextEntry.trackId] or "") else ""
 			local validNextAsset = typeof(nextAsset) == "string" and #nextAsset <= 64
 				and string.match(nextAsset, "^rbxassetid://%d+$") ~= nil
-			-- Start preparation any time before the track ends. The coordinator itself waits
-			-- until the fade window; a strict duration-plus-one gate can miss the window
-			-- when the one-second playback clock lands exactly on its boundary.
+			
+			
+			
 			if crossfade and not crossfade.destroyed and not crossfade.active
 				and crossfadeAttemptedGeneration ~= currentGeneration
 				and remaining <= CONFIG.CrossfadePrepareLeadSeconds
@@ -4193,9 +4193,9 @@ task.spawn(function()
 		if shouldAdvance then
 			local crossfade = ControllerFunctions.ChildManagers and ControllerFunctions.ChildManagers.Crossfade
 			if crossfade and crossfade.active and pendingCrossfadeToken == audioState.audioTransitionTrackToken then
-				-- Never race the in-flight deck commit with a second queue advance.
-				-- The manager owns completion or cancellation; normal advance resumes
-				-- on the next clock tick if preparation/fade/commit fails.
+				
+				
+				
 				shouldAdvance = false
 			end
 		end
@@ -4214,16 +4214,16 @@ task.spawn(function()
 end)
 
 game:BindToClose(function()
-	-- Freeze new profile-save scheduling and receipt ingress before taking the
-	-- final snapshot. Existing receipt callbacks retain their shared writer lock.
+	
+	
 	serverShuttingDown = true
 	adminBridgeShuttingDown = true
-	-- Settle accumulated XP once, then fence further accrual before final profile snapshots.
+	
 	xpService.StopAndSettle()
 	local shutdownDeadline = os.clock() + 27
 
-	-- Cancel delayed/coalesced saves; the shutdown pass below writes the latest
-	-- profile snapshots directly and does not depend on task.delay callbacks.
+	
+	
 	for _, player in ipairs(Players:GetPlayers()) do
 		local userId = player.UserId
 		saveQueueTokens[userId] = nil
@@ -4231,10 +4231,10 @@ game:BindToClose(function()
 		saveAgain[userId] = nil
 	end
 
-	-- Give authoritative receipt transactions a short opportunity to finish
-	-- their profile+journal sequence. If one remains active, its writer lock
-	-- prevents a conflicting final save; the durable pending marker/journal
-	-- remains recoverable by Roblox's receipt retry on another server.
+	
+	
+	
+	
 	local receiptDrainDeadline = math.min(shutdownDeadline - 16, os.clock() + 5)
 	while activeReceiptCallbacks > 0 and os.clock() < receiptDrainDeadline do
 		task.wait(0.05)
@@ -4243,8 +4243,8 @@ game:BindToClose(function()
 		warn("[ClubMusic][ReceiptAuthority] Shutdown deadline reached while receipt callbacks remained active; unacknowledged receipts will be retried.")
 	end
 
-	-- Cancel first so an interrupted fade restores the controller-owned outgoing
-	-- source before the active backend is stopped and retired.
+	
+	
 	ControllerFunctions.destroyAudioCrossfadeManager("server-shutdown")
 	local shutdownSource = audioState.activeAudioSource
 	if shutdownSource and shutdownSource.kind == "Backend" and shutdownSource.backend then
@@ -4255,10 +4255,10 @@ game:BindToClose(function()
 		warn("[ClubMusic][AudioBackend] One or more retired backends remain pending after final shutdown cleanup.")
 	end
 
-	-- Studio memory mode has no durable profile backend and never acquires a
-	-- DataStore session lease. PlayerRemoving may already have cleared the
-	-- in-memory profile while the player is still briefly returned by GetPlayers().
-	-- There is therefore nothing to persist or release during Studio shutdown.
+	
+	
+	
+	
 	if USE_STUDIO_MEMORY_PROFILES then
 		return
 	end
@@ -4291,7 +4291,7 @@ game:BindToClose(function()
 		warn(string.format("[ClubMusic] Shutdown save deadline reached; completed %d/%d profile saves. Unreleased leases will expire naturally.",
 			completed, #playersToSave))
 	end
-	-- Do not release session leases from BindToClose. PlayerRemoving may be
-	-- concurrently saving/releasing the same user, and an interrupted shutdown
-	-- save must never make an unconfirmed snapshot available to another server.
+	
+	
+	
 end)
