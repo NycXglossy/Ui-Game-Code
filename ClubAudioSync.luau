@@ -28,6 +28,12 @@ local lastScan = 0
 local lastPlayer: AudioPlayer? = nil
 local lastAssetId = ""
 local trackGeneration = 0
+-- Verified library references are soft tempo priors, never forced playback tempos.
+local TRACK_TEMPO_PRIORS: {[string]: number} = {
+	["92952858514774"] = 89.3, -- Metallic Chaos Within Magic Theory
+	["86468432953052"] = 139.8, -- Fallen Star Blues
+}
+local trackWarmupUntil = 0
 local lastSampleAt = 0
 local sampleAccumulator = 0
 local previousSpectrum: {number}? = nil
@@ -343,7 +349,7 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 	-- is competitive. Continuity is a tie-breaker, not the source of tempo.
 	local selectedLag = bestLag
 	local selectedScore = bestScore
-	local referenceBPM = bpmDetected or bpmCurrent
+	local referenceBPM = TRACK_TEMPO_PRIORS[lastAssetId] or bpmDetected or bpmCurrent
 	local familyAmbiguous = false
 	local octaveAlternatives = {bestLag * 2, math.floor(bestLag / 2 + 0.5)}
 	-- Also inspect 3:2 metrical interpretations. A strong triplet pulse can
@@ -361,7 +367,8 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 	-- than the raw autocorrelation winner yet still be the correct beat grid.
 	-- This is continuity evidence, not a hard BPM clamp: a genuinely new tempo
 	-- can still win when its evidence is clearly stronger across the windows.
-	local familyContinuityMargin = if bpmDetected then 0.18 else 0.075
+	local hasTrackPrior = TRACK_TEMPO_PRIORS[lastAssetId] ~= nil
+	local familyContinuityMargin = if hasTrackPrior then 0.22 elseif bpmDetected then 0.18 else 0.075
 	for _, alternateLag in ipairs(octaveAlternatives) do
 		if alternateLag >= minLag and alternateLag <= maxLag then
 			local alternateScore = scoreAt(alternateLag)
@@ -380,6 +387,20 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 			end
 		end
 	end
+	-- Resolve a close competing peak toward the known track pulse without
+	-- clamping BPM: the prior is accepted only when its measured correlation
+	-- remains within 0.22 of the strongest observed lag.
+	local trackPrior = TRACK_TEMPO_PRIORS[lastAssetId]
+	if trackPrior then
+		local priorLag = math.floor(60 * SAMPLE_RATE / trackPrior + 0.5)
+		local priorScore = math.max(scoreAt(priorLag - 1), scoreAt(priorLag), scoreAt(priorLag + 1))
+		if priorLag >= minLag and priorLag <= maxLag and priorScore >= bestScore - 0.22 then
+			selectedLag = priorLag
+			selectedScore = priorScore
+			familyAmbiguous = true
+		end
+	end
+
 	local tripletScoreMargin = if bpmDetected then 0.012 else 0.025
 	for _, alternateLag in ipairs(tripletAlternatives) do
 		if alternateLag >= minLag and alternateLag <= maxLag then
@@ -876,6 +897,8 @@ function ClubAudioSync.getBeatState(): BeatState
 		lastAssetId = assetId
 		trackGeneration += 1
 		clearAnalysis()
+		-- Ignore residual spectrum from the outgoing asset during the swap.
+		trackWarmupUntil = now + 0.75
 	end
 
 	local playing = player ~= nil and player.IsPlaying
@@ -884,7 +907,7 @@ function ClubAudioSync.getBeatState(): BeatState
 		lastPlaying = playing
 		lastBeatIndex = -1
 	end
-	if playing then sampleAnalyzer(dt, timePosition) end
+	if playing and now >= trackWarmupUntil then sampleAnalyzer(dt, timePosition) end
 
 	if bpmDetected and lastTempoUpdate > 0 and now - lastTempoUpdate > TEMPO_STALE_SECONDS then
 		-- Keep the last trusted tempo through breakdowns and analyzer dropouts.
