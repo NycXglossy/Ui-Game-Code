@@ -17,12 +17,20 @@ local function findAnchor(): (CFrame?, Vector3?, string?)
 	end
 
 	for _, item in ipairs(Workspace:GetDescendants()) do
-		if item:IsA("Model") and item.Name == "DJBooth" then
-			local ok, boxCFrame, boxSize = pcall(function()
+		if item:IsA("Model") then
+			local normalized = string.lower(string.gsub(item.Name, "[^%w]", ""))
+			if normalized == "djbooth" or normalized == "djstage" or normalized == "stagebooth" then
+				local ok, boxCFrame, boxSize = pcall(function()
 					local cf, size = item:GetBoundingBox()
 					return cf, size
 				end)
-			if ok then return boxCFrame, boxSize, item:GetFullName() end
+				if ok then return boxCFrame, boxSize, item:GetFullName() end
+			end
+		elseif item:IsA("BasePart") then
+			local normalized = string.lower(string.gsub(item.Name, "[^%w]", ""))
+			if normalized == "djbooth" or normalized == "djboothanchor" or normalized == "djstageanchor" then
+				return item.CFrame, item.Size, item:GetFullName()
+			end
 		end
 	end
 	return nil, nil, nil
@@ -47,9 +55,9 @@ local width = math.clamp(math.max(anchorSize.X, 12) + 4, 12, 32)
 local barDepth = math.clamp(anchorSize.Z * 0.25, 0.5, 2)
 local rearOffset = anchorSize.Z * 0.5 + 3
 local baseY = math.max(2.5, anchorSize.Y * 0.5 + 2)
-local horizontalRows = 3
-local horizontalCount = 12
-local verticalCount = 8
+local horizontalRows = 5
+local horizontalCount = 24
+local verticalCount = 16
 
 local function makeSegment(name: string, localCFrame: CFrame, size: Vector3, row: number, index: number, orientation: string)
 	local part = Instance.new("Part")
@@ -72,13 +80,13 @@ end
 
 -- Three horizontal pixel bars span the DJ backdrop.
 for row = 1, horizontalRows do
-	local y = baseY + (row - 1) * 2.15
+	local y = baseY + (row - 1) * 1.45
 	for index = 1, horizontalCount do
 		local x = -width * 0.5 + (index - 0.5) * (width / horizontalCount)
 		makeSegment(
 			"HBar_R" .. row .. "_S" .. index,
 			CFrame.new(x, y, 0),
-			Vector3.new(width / horizontalCount * 0.82, 0.42, barDepth),
+			Vector3.new(width / horizontalCount * 0.88, 0.34, barDepth),
 			row, index, "Horizontal"
 		)
 	end
@@ -88,11 +96,11 @@ end
 for side = 1, 2 do
 	local x = (side == 1 and -1 or 1) * (width * 0.5 + 0.65)
 	for index = 1, verticalCount do
-		local y = baseY - 0.7 + (index - 0.5) * 1.25
+		local y = baseY - 0.7 + (index - 0.5) * 0.68
 		makeSegment(
 			"VBar_S" .. side .. "_S" .. index,
 			CFrame.new(x, y, 0),
-			Vector3.new(0.48, 0.92, barDepth),
+			Vector3.new(0.38, 0.58, barDepth),
 			 side, index, "Vertical"
 		)
 	end
@@ -105,5 +113,5 @@ rig:SetAttribute("VerticalSegmentsPerBar", verticalCount)
 rig:SetAttribute("SegmentCount", horizontalRows * horizontalCount + 2 * verticalCount)
 rig:SetAttribute("Ready", true)
 
-print("[ClubNeon][DJStageLEDBarRig] Ready; horizontal=3x12 vertical=2x8 segments="
+print("[ClubNeon][DJStageLEDBarRig] Ready; horizontal=5x24 vertical=2x16 segments="
 	.. tostring(rig:GetAttribute("SegmentCount")) .. " anchor=" .. tostring(anchorPath))
