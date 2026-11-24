@@ -315,9 +315,14 @@ local lasers, laserSideCounts = collectLasers()
 -- A replicated rig Folder can arrive before all fixture parts and their
 -- attachments/targets. Wait for the ready-fixture count to settle before
 -- taking the one-time controller snapshot.
+-- Wait for the full rig rather than accepting a temporarily stable streamed subset.
+-- The controller still starts after the grace period and its live audit keeps discovering
+-- late fixtures; zero fixtures is not a fatal startup condition.
+local EXPECTED_LASERS = 24
 local stableCount = #lasers
 local stableSince = os.clock()
-local replicationDeadline = os.clock() + 20
+local replicationDeadline = os.clock() + 45
+local announcedPartial = false
 while os.clock() < replicationDeadline do
 	task.wait(0.25)
 	local nextFixtures, nextCounts = collectLasers()
@@ -326,13 +331,17 @@ while os.clock() < replicationDeadline do
 		stableSince = os.clock()
 	end
 	lasers, laserSideCounts = nextFixtures, nextCounts
-	if #lasers > 0 and os.clock() - stableSince >= 3 then
+	if #lasers >= EXPECTED_LASERS and os.clock() - stableSince >= 1.5 then
 		break
 	end
+	if #lasers > 0 and not announcedPartial and os.clock() - stableSince >= 3 then
+		announcedPartial = true
+		print("[ClubNeon][LaserShowFX] Partial replication (" .. #lasers .. "/" .. EXPECTED_LASERS .. "); continuing to wait for the full rig.")
+	end
 end
-if #lasers == 0 then
-	warn("[ClubNeon][FX] No complete fixtures replicated within 20 seconds; controller will not start.")
-	return
+if #lasers < EXPECTED_LASERS then
+	warn("[ClubNeon][LaserShowFX] Startup grace period ended with " .. #lasers .. "/" .. EXPECTED_LASERS
+		.. " fixtures; controller remains active and will recover streamed fixtures automatically.")
 end
 local beamCount = 0
 for _, laser in ipairs(lasers) do beamCount += #laser.beams end
