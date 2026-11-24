@@ -197,8 +197,8 @@ end
 -- Fuse independent autocorrelation evidence from frequency regions. No
 -- region is treated as a named instrument; bass, synths, guitars and percussion
 -- can all occupy overlapping frequency ranges in a mixed master.
-local function estimateTempo(): (number?, number)
-	local analysisSamples = math.min(#envelopeHistory, SAMPLE_RATE * 6)
+local function estimateTempoWindow(windowSeconds: number): (number?, number)
+	local analysisSamples = math.min(#envelopeHistory, SAMPLE_RATE * windowSeconds)
 	if analysisSamples < SAMPLE_RATE * 3.5 then return nil, 0 end
 
 	local channels = {
@@ -304,6 +304,31 @@ local function estimateTempo(): (number?, number)
 	local confidence = periodicity * (0.62 + peakSeparation * 0.38)
 	if confidence < 0.22 then return nil, confidence end
 	return bpm, confidence
+end
+
+
+-- Short and long windows serve different purposes: the short view follows
+-- genuine section changes, while the long view protects slow/sparse passages.
+-- When they disagree without a clear winner, hold the prior trusted tempo.
+local function estimateTempo(): (number?, number)
+	local shortBPM, shortConfidence = estimateTempoWindow(3.5)
+	local longBPM, longConfidence = estimateTempoWindow(8.0)
+	if shortBPM and longBPM then
+		local disagreement = math.abs(shortBPM - longBPM) / math.max(longBPM, 1)
+		if disagreement <= 0.06 then
+			return shortBPM * 0.65 + longBPM * 0.35,
+				math.clamp(shortConfidence * 0.65 + longConfidence * 0.35, 0, 1)
+		end
+		if shortConfidence >= 0.48 and shortConfidence >= longConfidence - 0.08 then
+			return shortBPM, shortConfidence * 0.90
+		end
+		return longBPM, longConfidence * 0.92
+	elseif longBPM then
+		return longBPM, longConfidence
+	elseif shortBPM then
+		return shortBPM, shortConfidence * 0.80
+	end
+	return nil, math.max(shortConfidence, longConfidence)
 end
 
 local function sampleAnalyzer(dt: number, timePosition: number)
