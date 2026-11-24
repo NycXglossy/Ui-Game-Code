@@ -22,6 +22,7 @@ export type Track = {
 	genre: string,
 	assetId: number?,
 	soundId: string?,
+	bpm: number?,
 	artworkAssetId: number?,
 	placeholder: boolean?,
 }
@@ -83,6 +84,7 @@ local CATALOG: {Track} = {
 	{id="custom-126526272193872",genreId="exclusive",title="Winter Between Us",artist="DJ Doom",duration=214,genre="Club Exclusives",assetId=126526272193872,soundId="rbxassetid://126526272193872"},
 	{id="custom-96399574470852",genreId="exclusive",title="Terminal Frequency",artist="DJ Doom",duration=200,genre="Club Exclusives",assetId=96399574470852,soundId="rbxassetid://96399574470852"},
 	{id="custom-113786540921203",genreId="exclusive",title="Static Defiance",artist="DJ Doom",duration=230,genre="Club Exclusives",assetId=113786540921203,soundId="rbxassetid://113786540921203"},
+	{id="custom-115697666216583",genreId="exclusive",title="Respawn Anthem_mastered",artist="DJ Doom",duration=248,genre="Club Exclusives",assetId=115697666216583,soundId="rbxassetid://115697666216583",bpm=165},
 	{id="temp-rockstar",genreId="rockstar",title="Coming Soon — Rockstar Music",artist="Temporary placeholder • audio pending",duration=1,genre="Rockstar Music",placeholder=true},
 	{id="temp-other",genreId="other",title="Coming Soon — Other",artist="Temporary placeholder • audio pending",duration=1,genre="Other",placeholder=true},
 }
@@ -117,6 +119,7 @@ local function copyTrack(track: Track): Track
 		genre = track.genre,
 		assetId = track.assetId,
 		soundId = track.soundId,
+		bpm = track.bpm,
 		artworkAssetId = track.artworkAssetId,
 		placeholder = track.placeholder,
 	}
