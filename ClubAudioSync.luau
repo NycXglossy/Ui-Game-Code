@@ -56,6 +56,8 @@ local beatAnchorReady = false
 local fallbackAnchorReady = false
 local onsetStrength = 0
 local phaseLockConfidence = 0
+local phaseErrorSeconds = 0
+local lastAcceptedOnsetPosition = -math.huge
 local lastDiagnosticsAt = 0
 
 local function finite(value: any): boolean
@@ -108,6 +110,8 @@ local function clearAnalysis()
 	fallbackAnchorReady = false
 	onsetStrength = 0
 	phaseLockConfidence = 0
+	phaseErrorSeconds = 0
+	lastAcceptedOnsetPosition = -math.huge
 end
 
 local function ensureAnalyzer(player: AudioPlayer?)
@@ -339,22 +343,31 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 
 		local bpm = bpmDetected or bpmCurrent
 		local period = 60 / math.clamp(bpm, BPM_MIN, BPM_MAX)
+		-- Reject weak transients and repeated subdivisions as phase references.
+		local strongOnset = onsetStrength >= 0.18
 		if not beatAnchorReady then
 			beatAnchorPosition = peakPosition
 			beatAnchorReady = true
-			phaseLockConfidence = 0.25
-		else
-			-- Find the nearest predicted beat and gently correct phase. Ignore
-			-- off-beat percussion instead of allowing it to drag the whole show.
+			lastAcceptedOnsetPosition = peakPosition
+			phaseLockConfidence = 0.20 + onsetStrength * 0.15
+		elseif strongOnset then
 			local beatsFromAnchor = (peakPosition - beatAnchorPosition) / period
 			local phaseError = beatsFromAnchor - math.floor(beatsFromAnchor + 0.5)
 			local errorSeconds = phaseError * period
-			if math.abs(errorSeconds) <= period * 0.22 then
-				local gain = 0.12 + 0.20 * math.clamp(bpmConfidence, 0, 1)
-				beatAnchorPosition += errorSeconds * gain
-				phaseLockConfidence += (1 - phaseLockConfidence) * 0.12
+			local interval = peakPosition - lastAcceptedOnsetPosition
+			local nearBeat = math.abs(errorSeconds) <= period * 0.18
+			local beatLikeInterval = interval >= period * 0.72 and interval <= period * 1.28
+			if nearBeat and (beatLikeInterval or interval > period * 1.65) then
+				-- Bounded correction avoids large phase jumps from one transient.
+				local confidenceWeight = math.clamp(bpmConfidence * 0.65 + onsetStrength * 0.35, 0.15, 1)
+				local gain = 0.07 + 0.11 * confidenceWeight
+				local correction = math.clamp(errorSeconds * gain, -0.018, 0.018)
+				beatAnchorPosition += correction
+				phaseErrorSeconds += (errorSeconds - phaseErrorSeconds) * 0.18
+				lastAcceptedOnsetPosition = peakPosition
+				phaseLockConfidence += (1 - phaseLockConfidence) * (0.08 + onsetStrength * 0.06)
 			else
-				phaseLockConfidence *= 0.96
+				phaseLockConfidence *= 0.985
 			end
 		end
 	end
@@ -398,9 +411,17 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 					end
 				end
 			end
-			local blend = math.clamp(0.22 + pendingTempoConfidence * 0.26, 0.22, 0.48)
-			bpmDetected = if bpmDetected then bpmDetected + (accepted - bpmDetected) * blend else accepted
-			bpmConfidence += (pendingTempoConfidence - bpmConfidence) * 0.22
+			-- React faster to sustained, confident tempo movement while keeping
+			-- weak or ambiguous estimates deliberately conservative.
+			local deltaRatio = if bpmDetected then math.abs(accepted - bpmDetected) / math.max(bpmDetected, 1) else 1
+			local blend = math.clamp(0.18 + pendingTempoConfidence * 0.30
+				+ math.clamp(deltaRatio * 1.4, 0, 0.18), 0.18, 0.58)
+			local previousDetected = bpmDetected
+			bpmDetected = if previousDetected then previousDetected + (accepted - previousDetected) * blend else accepted
+			bpmConfidence += (pendingTempoConfidence - bpmConfidence) * 0.28
+			if previousDetected and deltaRatio > 0.025 then
+				phaseLockConfidence *= 0.92
+			end
 			lastTempoUpdate = os.clock()
 		end
 	else
@@ -500,9 +521,9 @@ function ClubAudioSync.getBeatState(): BeatState
 	if playing and now - lastDiagnosticsAt >= 5 then
 		lastDiagnosticsAt = now
 		print(string.format(
-			"[ClubAudioSync][Analyzer] BPM=%.1f confidence=%.2f candidate=%s pending=%d phaseLockQuality=%.2f onset=%.2f energy=%.2f analyzerReady=%s",
+			"[ClubAudioSync][Analyzer] BPM=%.1f confidence=%.2f candidate=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
 			bpm, bpmConfidence, if rawCandidateBPM then string.format("%.1f", rawCandidateBPM) else "none",
-			pendingTempoSamples, phaseLockConfidence, onsetStrength, energy,
+			pendingTempoSamples, phaseLockConfidence, phaseErrorSeconds * 1000, onsetStrength, energy,
 			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
 		))
 	end
