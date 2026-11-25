@@ -4,8 +4,8 @@ local Workspace = game:GetService("Workspace")
 
 local FLOOR_NAME = "CeilingFX"
 local RIG_NAME = "AtmosFXRig"
-local FOG_COUNT = 4
-local FLAME_COUNT = 8
+local FOG_COUNT = 8
+local FLAME_COUNT = 12
 
 local function floorBounds()
     local folder = Workspace:FindFirstChild(FLOOR_NAME)
@@ -38,17 +38,21 @@ local mountY = floorY + 0.35
 
 local old = Workspace:FindFirstChild(RIG_NAME)
 if old then
-    if old:GetAttribute("Ready") == true then
-        print("[ClubNeon][AtmosFXRig] Existing complete server rig found; preserving it.")
+    -- This named model is exclusively owned by this rig builder. Replace only
+    -- a prior server-owned layout so the expanded fixture manifest can apply;
+    -- never destroy an unrelated object that happens to share the name.
+    if old:IsA("Model") and old:GetAttribute("ServerOwnedLayout") == true then
+        old:Destroy()
     else
-        warn("[ClubNeon][AtmosFXRig] Existing incomplete rig found; refusing destructive rebuild or duplicate creation.")
+        warn("[ClubNeon][AtmosFXRig] Existing non-owned rig name collision; refusing rebuild.")
+        return
     end
-    return
 end
 local rig = Instance.new("Model")
 rig.Name = RIG_NAME
 rig.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
 rig:SetAttribute("ServerOwnedLayout", true)
+rig:SetAttribute("LayoutVersion", 2)
 rig:SetAttribute("Ready", false)
 rig:SetAttribute("FloorPanelCount", panelCount)
 rig:SetAttribute("FloorY", floorY)
@@ -148,9 +152,14 @@ local function makeFlame(index: number, position: Vector3)
 end
 
 -- Foggers occupy the four corners; flame jets line both long sides.
+local midX, midZ = (minX + maxX) * 0.5, (minZ + maxZ) * 0.5
+-- Eight foggers cover all four corners and the midpoint of every perimeter
+-- edge, reducing dead zones without adding a second dense interior row.
 local fogPositions = {
-    Vector3.new(minX, mountY, minZ), Vector3.new(maxX, mountY, minZ),
-    Vector3.new(maxX, mountY, maxZ), Vector3.new(minX, mountY, maxZ),
+    Vector3.new(minX, mountY, minZ), Vector3.new(midX, mountY, minZ),
+    Vector3.new(maxX, mountY, minZ), Vector3.new(maxX, mountY, midZ),
+    Vector3.new(maxX, mountY, maxZ), Vector3.new(midX, mountY, maxZ),
+    Vector3.new(minX, mountY, maxZ), Vector3.new(minX, mountY, midZ),
 }
 for index, position in ipairs(fogPositions) do
     if not adoptedFog[index] then makeFog(index, position) end
