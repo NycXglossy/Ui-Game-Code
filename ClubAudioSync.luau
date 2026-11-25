@@ -124,6 +124,7 @@ local feelDoubleTimeVotes = 0
 local feelOnBeatVotes = 0
 local feelHalfTimeVotes = 0
 local feelUnclassifiedIntervals = 0
+local feelTransientDropouts = 0
 local FEEL_INTERVAL_HISTORY = 12
 local FEEL_CLASSIFY_MIN_INTERVALS = 6
 
@@ -199,6 +200,7 @@ local function clearAnalysis()
 	feelOnBeatVotes = 0
 	feelHalfTimeVotes = 0
 	feelUnclassifiedIntervals = 0
+	feelTransientDropouts = 0
 end
 
 local function ensureAnalyzer(player: AudioPlayer?)
@@ -501,12 +503,41 @@ local function updateRhythmicFeel(onsetPosition: number, referenceBPM: number)
 	if referenceBPM < BPM_MIN or referenceBPM > BPM_MAX then return end
 	if lastFeelOnsetPosition > -math.huge then
 		local interval = onsetPosition - lastFeelOnsetPosition
-		-- Keep a separate diagnostic interval lane below the beat-clock onset
-		-- gate. This can observe fast subdivisions without feeding them to PLL.
+		-- A long gap between detected peaks is not automatically half-time.
+		-- Compare the envelope during that gap with the preceding active section:
+		-- a sharp activity collapse indicates missing transient evidence, not a
+		-- reliable slower pulse. Keep such gaps out of the feel vote history.
+		local transientDropout = false
+		local beatPeriod = 60 / referenceBPM
+		if interval >= beatPeriod * 1.35 and interval <= 2.0 then
+			local segmentSamples = math.min(#envelopeHistory,
+				math.max(1, math.floor(interval * SAMPLE_RATE)))
+			local precedingSamples = math.min(SAMPLE_RATE * 2,
+				math.max(0, #envelopeHistory - segmentSamples))
+			if segmentSamples >= SAMPLE_RATE * 0.5 and precedingSamples >= SAMPLE_RATE * 0.5 then
+				local segmentMean, precedingMean = 0, 0
+				local segmentStart = #envelopeHistory - segmentSamples + 1
+				local precedingStart = segmentStart - precedingSamples
+				for index = segmentStart, #envelopeHistory do
+					segmentMean += envelopeHistory[index]
+				end
+				segmentMean /= segmentSamples
+				for index = precedingStart, segmentStart - 1 do
+					precedingMean += envelopeHistory[index]
+				end
+				precedingMean /= precedingSamples
+				transientDropout = precedingMean > 1e-5
+					and segmentMean < precedingMean * 0.38
+			end
+		end
 		if interval >= 0.16 and interval <= 2.0 then
-			table.insert(feelOnsetIntervals, interval)
-			if #feelOnsetIntervals > FEEL_INTERVAL_HISTORY then
-				table.remove(feelOnsetIntervals, 1)
+			if transientDropout then
+				feelTransientDropouts += 1
+			else
+				table.insert(feelOnsetIntervals, interval)
+				if #feelOnsetIntervals > FEEL_INTERVAL_HISTORY then
+					table.remove(feelOnsetIntervals, 1)
+				end
 			end
 		end
 	end
@@ -1042,11 +1073,12 @@ function ClubAudioSync.getBeatState(): BeatState
 			then string.format("half=%.1f base=%.1f double=%.1f", bpmDetected * 0.5, bpmDetected, bpmDetected * 2)
 			else "warming"
 		print(string.format(
-			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d layerAgreement=%.2f family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
+			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d feelTransientDropouts=%d layerAgreement=%.2f family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
 			if assetId ~= "" then assetId else "unknown", trackGeneration, bpm, bpmConfidence,
 			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, rawCandidateConfidence, priorBPM, pendingTempoConfidence, tempoFamily,
 			rhythmicFeel, rhythmicFeelConfidence, #feelOnsetIntervals,
-			feelDoubleTimeVotes, feelOnBeatVotes, feelHalfTimeVotes, feelUnclassifiedIntervals, tempoLayerAgreement, feelFamily,
+			feelDoubleTimeVotes, feelOnBeatVotes, feelHalfTimeVotes, feelUnclassifiedIntervals,
+			feelTransientDropouts, tempoLayerAgreement, feelFamily,
 			pendingTempoSamples, phaseLockConfidence, phaseErrorSeconds * 1000, onsetStrength, energy,
 			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
 		))
