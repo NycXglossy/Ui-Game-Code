@@ -1,12 +1,12 @@
 --!strict
--- v0.4.123 expands FX watchdog coverage, hardens AtmosFX fixture discovery, throttles ceiling updates,
+-- v0.4.124 expands FX watchdog coverage, hardens AtmosFX fixture discovery, throttles ceiling updates,
 -- adds phrase-based ceiling choreography, makes BeatImpact venue-independent, and refines prior-guided octave selection.
 -- Playback transition/recovery telemetry remains passive; no playback behavior or watchdog thresholds are changed.
 -- v0.4.121 adds passive playback transition, crossfade handoff, and watchdog recovery trace telemetry.
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.123
+-- CLUB NEON MASTER INSTALLER v0.4.124
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
@@ -39,7 +39,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.123"
+local INSTALLER_VERSION = "0.4.124"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -54,6 +54,8 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "826fcf4e1d68cc61f00d5545138cd024697deba0",
+    atmosFX = "8ba6ddde9a311b54aaeff5fe05a5301df374b91e",
+    atmosRig = "b320fc3afed7e494a740cb3411aae59549bc7ecc",
     audioSync = "7850bb0d0c9e47f6b0ad8dfda5ad81d991b0d0e3",
     djStageBarRig = "d4e11efc2a323450461f1a810222caba3ed8dbd9",
     djStageBarFX = "9346b4badf904821eeec297a6aff006ae9e10199",
@@ -345,7 +347,8 @@ addSource("StageHazeRig.server.lua", "Script", "ServerScriptService", "StageHaze
 addSource("ClubNeonArchitecturalAccentRig.server.lua", "Script", "ServerScriptService", "ClubNeonArchitecturalAccentRig", RELEASE.fx)
 addSource("ArchitecturalAccentFX.luau", "LocalScript", "StarterPlayerScripts", "ArchitecturalAccentFX", RELEASE.fx)
 for _, item in ipairs({
-    {"AtmosFX.luau", "LocalScript", "StarterPlayerScripts", "AtmosFX"},
+    {"AtmosFXRig.server.lua", "Script", "ServerScriptService", "AtmosFXRig", RELEASE.atmosRig},
+    {"AtmosFX.luau", "LocalScript", "StarterPlayerScripts", "AtmosFX", RELEASE.atmosFX},
     {"AudienceBlinderFX.luau", "LocalScript", "StarterPlayerScripts", "AudienceBlinderFX"},
     {"BarNeonScript.luau", "Script", "ServerScriptService", "BarNeonScript"},
     {"BeatImpactFX.luau", "LocalScript", "StarterPlayerScripts", "BeatImpactFX"},
@@ -660,6 +663,7 @@ local ok, failure = pcall(function()
         UtilityBarActions = 8,
         UtilityBarExtendedActions = 9,
         ToolShop = 10,
+        AtmosFXRig = 11,
     }
     table.sort(promoted, function(a, b)
         local ap = priority[a.Name] or 100
