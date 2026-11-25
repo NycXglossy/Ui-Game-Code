@@ -109,8 +109,8 @@ end
 
 -- Discover the rig built by the server script (streaming-robust)
 local rig = workspace:FindFirstChild("LaserRig")
-while not rig do
-	task.wait(0.5)
+while not rig or rig:GetAttribute("Ready") ~= true do
+	task.wait(0.25)
 	rig = workspace:FindFirstChild("LaserRig")
 end
 
