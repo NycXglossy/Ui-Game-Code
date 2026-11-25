@@ -1,4 +1,5 @@
 --!strict
+-- v0.4.137 fixes the ClubAudioSync pin: use its containing commit SHA, not its blob SHA;
 -- v0.4.136 adds a pinned GitHub Contents API fallback when raw immutable-commit fetches return 404;
 -- v0.4.135 gates rhythmic-feel votes on locked beat/half-beat phase alignment to reject off-grid hybrid transients;
 -- v0.4.134 adds dropout-aware rhythmic-feel voting so brief transient collapses are not mislabeled as half-time;
@@ -8,7 +9,7 @@
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.136
+-- CLUB NEON MASTER INSTALLER v0.4.137
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
@@ -41,7 +42,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.136"
+local INSTALLER_VERSION = "0.4.137"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -66,7 +67,7 @@ local RELEASE = {
     lightshowFX = "de8cd94b45f1f12002bfe5972ef876b79488f271",
     glowFloorFX = "edda3c68cec02d4b8143e7d212e967f0b0f1a6c0",
     fxWatchdog = "46d68d7a6b761f3391b1245afb8f3eb7ce6a7e89",
-    audioSync = "979ff7bd119acafe4ea173b2f0dc356448f6320f",
+    audioSync = "7946105eb827190fbc25a92eba62853afc5b558a",
     djStageBarRig = "4a501946b7578a71a7a4cc68dc980253ab7bce18",
     djStageBarFX = "9346b4badf904821eeec297a6aff006ae9e10199",
     laserFX = "8c2df5d8796878fe63e77ff7b6f303863cfbee69",
