@@ -272,6 +272,7 @@ end
 -- region is treated as a named instrument; bass, synths, guitars and percussion
 -- can all occupy overlapping frequency ranges in a mixed master.
 local function estimateTempoWindow(windowSeconds: number): (number?, number)
+	tempoLayerAgreement = 0.5
 	local analysisSamples = math.min(#envelopeHistory, SAMPLE_RATE * windowSeconds)
 	if analysisSamples < SAMPLE_RATE * 3.5 then return nil, 0 end
 
