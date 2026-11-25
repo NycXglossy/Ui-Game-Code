@@ -896,7 +896,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			local trackPrior = TRACK_TEMPO_PRIORS[lastAssetId]
 			local priorSupportedAcquisition = trackPrior ~= nil
 				and winner.samples >= 18
-				and winner.confidence >= 0.30
+				and winner.confidence >= 0.26
 				and math.abs(preferredBPM - trackPrior) / trackPrior <= 0.055
 			if sustainedAcquisition or normalAcquisition or priorSupportedAcquisition then
 				local deltaRatio = if bpmDetected then math.abs(preferredBPM - bpmDetected) / math.max(bpmDetected, 1) else 1
@@ -908,7 +908,17 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 				if previousDetected and deltaRatio > 0.025 then
 					phaseLockConfidence *= 0.92
 				end
-				lastTempoUpdate = os.clock()
+				lastTempoUpdate = analysisNow
+			elseif bpmDetected and detected and hasUsableSignal and confidence >= 0.22
+				and tempoLayerAgreement >= 0.45
+				and math.abs(detected - bpmDetected) / math.max(bpmDetected, 1) <= 0.035 then
+				-- A confirmed tempo should not become "untrusted" merely because
+				-- the family accumulator is still gathering enough votes for a
+				-- formal update. Matching, usable live evidence refreshes its lease.
+				-- This does not move BPM or accept an unrelated challenger.
+				lastTempoUpdate = analysisNow
+				local retainedConfidence = math.max(confidence, 0.24)
+				bpmConfidence += (retainedConfidence - bpmConfidence) * 0.08
 			end
 		end
 	else
