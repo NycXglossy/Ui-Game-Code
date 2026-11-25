@@ -30,11 +30,19 @@ local lastAssetId = ""
 local trackGeneration = 0
 -- Verified library references are soft tempo priors, never forced playback tempos.
 local TRACK_TEMPO_PRIORS: {[string]: number} = {
-	["92952858514774"] = 89.3, -- Metallic Chaos Within Magic Theory
-	["86468432953052"] = 139.8, -- Fallen Star Blues
-	["84266261446965"] = 190.0, -- Anvil of Ruin: dominant pulse; bridge/outro sections vary
-	["99973341792058"] = 170.0, -- Midnight Lucid: composition reference pulse; chaotic intro and breakdowns vary
-	["85420661204078"] = 136.0, -- Code in the Smoke: stated composition pulse; trap triplets and sparse drum sections
+	["100919684616729"] = 127.0, -- Crown of the Night
+	["99973341792058"] = 113.0, -- Midnight Lucid
+	["137104933242988"] = 140.0, -- Empire of Stone
+	["84266261446965"] = 127.0, -- Anvil of Ruin
+	["85420661204078"] = 136.0, -- Code in the Smoke
+	["134987433423089"] = 130.0, -- Rich Lifestyle
+	["92952858514774"] = 120.0, -- Metallic Chaos Within Magic Theory
+	["117388170134707"] = 142.0, -- Steel Collision: opening pulse; later section rises to 155 BPM
+	["86468432953052"] = 138.0, -- Fallen Star Blues
+	["126526272193872"] = 143.0, -- Winter Between Us
+	["96399574470852"] = 130.0, -- Terminal Frequency
+	["113786540921203"] = 145.0, -- Static Defiance
+	["115697666216583"] = 165.0, -- Respawn Anthem
 }
 local trackWarmupUntil = 0
 local lastSampleAt = 0
