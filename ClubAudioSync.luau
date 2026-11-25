@@ -34,6 +34,7 @@ local TRACK_TEMPO_PRIORS: {[string]: number} = {
 	["86468432953052"] = 139.8, -- Fallen Star Blues
 	["84266261446965"] = 190.0, -- Anvil of Ruin: dominant pulse; bridge/outro sections vary
 	["99973341792058"] = 170.0, -- Midnight Lucid: composition reference pulse; chaotic intro and breakdowns vary
+	["85420661204078"] = 136.0, -- Code in the Smoke: stated composition pulse; trap triplets and sparse drum sections
 }
 local trackWarmupUntil = 0
 local lastSampleAt = 0
