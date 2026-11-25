@@ -1,5 +1,5 @@
 --!strict
--- v0.4.139 retains confirmed tempo confidence, admits repeated evidence-backed off-grid feel accents, and expands Atmos FX coverage;
+-- v0.4.140 retains confirmed tempo confidence, admits repeated evidence-backed off-grid feel accents, and expands Atmos FX coverage;
 -- v0.4.136 adds a pinned GitHub Contents API fallback when raw immutable-commit fetches return 404;
 -- v0.4.135 gates rhythmic-feel votes on locked beat/half-beat phase alignment to reject off-grid hybrid transients;
 -- v0.4.134 adds dropout-aware rhythmic-feel voting so brief transient collapses are not mislabeled as half-time;
@@ -9,7 +9,7 @@
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.139
+-- CLUB NEON MASTER INSTALLER v0.4.140
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
@@ -42,14 +42,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.139"
+local INSTALLER_VERSION = "0.4.140"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
     runtime = "c5a659f95d3126f2c54bc02f23c36466175103dd",
     audio = "096f9444e650c3c6b1859549661561f7735ed789",
-    catalog = "43f0523a428f0c5833a771d03404e0538d201257",
+    catalog = "9b921e6dcd12f891c53c69feb647f1167ae90451",
     globalService = "60922f3cc7d62ecdfc9673f40653cc0125d19a2c",
     security = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
     threat = "5e50ab2e32ee13fc088c94f53ef6cdcbf4662781",
@@ -67,7 +67,7 @@ local RELEASE = {
     lightshowFX = "de8cd94b45f1f12002bfe5972ef876b79488f271",
     glowFloorFX = "edda3c68cec02d4b8143e7d212e967f0b0f1a6c0",
     fxWatchdog = "46d68d7a6b761f3391b1245afb8f3eb7ce6a7e89",
-    audioSync = "d099dc52184d75360fa920c0f2f940136a0ec261",
+    audioSync = "b9ed4850d6bbb264837c52937c36f2e2a625b43a",
     djStageBarRig = "4a501946b7578a71a7a4cc68dc980253ab7bce18",
     djStageBarFX = "9346b4badf904821eeec297a6aff006ae9e10199",
     laserFX = "8c2df5d8796878fe63e77ff7b6f303863cfbee69",
