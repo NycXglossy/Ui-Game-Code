@@ -37,7 +37,14 @@ local centerX, centerZ = (minX + maxX) * 0.5, (minZ + maxZ) * 0.5
 local mountY = floorY + 0.35
 
 local old = Workspace:FindFirstChild(RIG_NAME)
-if old then old:Destroy() end
+if old then
+    if old:GetAttribute("Ready") == true then
+        print("[ClubNeon][AtmosFXRig] Existing complete server rig found; preserving it.")
+    else
+        warn("[ClubNeon][AtmosFXRig] Existing incomplete rig found; refusing destructive rebuild or duplicate creation.")
+    end
+    return
+end
 local rig = Instance.new("Model")
 rig.Name = RIG_NAME
 rig.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
