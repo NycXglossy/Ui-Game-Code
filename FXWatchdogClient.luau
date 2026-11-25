@@ -156,6 +156,8 @@ local PROBES = {
 	WallVisualizerClient = wallSignature,
 	CeilingPillarFX = pillarSignature,
 	StrobeLightsFX = strobeSignature,
+	CeilingComplementFX = ceilingComplementSignature,
+	DJStageLEDBarFX = ledBarSignature,
 }
 
 -- Is the club's music currently playing? Only treat frozen rigs as dead
@@ -179,8 +181,8 @@ while true do
 	end
 
 	-- 2) Motion: sample each probed rig twice; if the signature does not
-	-- change at all while the music plays, count a strike. Two strikes in
-	-- a row (>= 16s frozen) restarts the script so the show comes back.
+	-- change at all while the music plays, count a strike. Three strikes in
+	-- a row (>= 30s frozen) restarts the script so the show comes back.
 	do
 		-- Moving heads and lasers animate during idle as well as playback.
 		for name, probe in PROBES do
