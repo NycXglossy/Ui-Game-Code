@@ -26,6 +26,11 @@ local FX_NAMES = {
 	"BeatImpactFX",
 	"MovingHeadShowFX",
 	"LaserShowFX",
+	"CeilingComplementFX",
+	"DJStageLEDBarFX",
+	"ArchitecturalAccentFX",
+	"PixelMatrixFX",
+	"GlowFloorFXScript",
 }
 
 local player = Players.LocalPlayer
@@ -121,6 +126,30 @@ local function laserSignature()
 	return nil
 end
 
+local function ceilingComplementSignature()
+	local rig = workspace:FindFirstChild("CeilingComplementRig")
+	if not rig or rig:GetAttribute("Ready") ~= true then return nil end
+	local fixture = rig:FindFirstChild("Profile01")
+	local target = fixture and fixture:FindFirstChild("Target")
+	local emitter = fixture and fixture:FindFirstChild("Emitter")
+	if target and emitter then
+		local p, look = target.Position, emitter.CFrame.LookVector
+		return p.X + p.Y * 3 + p.Z * 7 + look.X * 11 + look.Y * 13 + look.Z * 17
+	end
+	return nil
+end
+
+local function ledBarSignature()
+	local rig = workspace:FindFirstChild("DJStageLEDBarRig")
+	if not rig or rig:GetAttribute("Ready") ~= true then return nil end
+	local segment = rig:FindFirstChildWhichIsA("BasePart", true)
+	if segment then
+		local color = segment.Color
+		return color.R + color.G * 3 + color.B * 7 + segment.Transparency * 11
+	end
+	return nil
+end
+
 local PROBES = {
 	MovingHeadShowFX = movingHeadSignature,
 	LaserShowFX = laserSignature,
@@ -159,15 +188,17 @@ while true do
 			if sig1 then
 				task.wait(SAMPLE_GAP)
 				local sig2 = probe()
-				if sig2 and math.abs(sig2 - sig1) < 1e-6 then
+				if sig2 and math.abs(sig2 - sig1) < 1e-6 and (musicPlaying() or name == "MovingHeadShowFX" or name == "LaserShowFX") then
 					strikes[name] = (strikes[name] or 0) + 1
-					if strikes[name] >= 2 then
+					if strikes[name] >= 3 then
 						strikes[name] = 0
 						restartScript(name)
 					end
 				else
 					strikes[name] = 0
 				end
+			else
+				strikes[name] = 0 -- nil means absent/not streamed, not frozen
 			end
 		end
 	end
