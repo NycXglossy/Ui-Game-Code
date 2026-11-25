@@ -1,12 +1,12 @@
 --!strict
--- v0.4.126 pins cross-layer tempo consensus and persistent/adoptive audience and haze rigs;
+-- v0.4.127 moves remaining architectural animation local and expands FX watchdog probes;
 -- adds phrase-based ceiling choreography, makes BeatImpact venue-independent, and refines prior-guided octave selection.
 -- Playback transition/recovery telemetry remains passive; no playback behavior or watchdog thresholds are changed.
 -- v0.4.121 adds passive playback transition, crossfade handoff, and watchdog recovery trace telemetry.
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.126
+-- CLUB NEON MASTER INSTALLER v0.4.127
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
@@ -39,7 +39,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.126"
+local INSTALLER_VERSION = "0.4.127"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -58,6 +58,11 @@ local RELEASE = {
     atmosRig = "e266e9f7e148ee29b44b972fda2cb1c85c39051a",
     audienceBlinderRig = "5f9cbfd7ba2721315e7dd8642dfe60e35b86986c",
     stageHazeRig = "a118e9964905ecbaf1a06538f1c6c732720bfcf4",
+    neonSignFX = "b2c3e09de5a5ef92c881613976ab8b93af86164e",
+    neonTrimFX = "a07c3bc3f07be97aea7ade2b8ef5ff4beec3c6cc",
+    barNeonFX = "1f5aba82d7e2b97f9cc34b38b0f0ada6e5d15868",
+    lightshowFX = "36f49160d7af278d3b6ae9a36eab9cbeaf571ec9",
+    fxWatchdog = "ee9b03210b00277237287e1dd20901a6ff14dcfb",
     audioSync = "31a1831799eb262e51ce39b0b3863466e20512f5",
     djStageBarRig = "d4e11efc2a323450461f1a810222caba3ed8dbd9",
     djStageBarFX = "9346b4badf904821eeec297a6aff006ae9e10199",
@@ -352,7 +357,7 @@ for _, item in ipairs({
     {"AtmosFXRig.server.lua", "Script", "ServerScriptService", "AtmosFXRig", RELEASE.atmosRig},
     {"AtmosFX.luau", "LocalScript", "StarterPlayerScripts", "AtmosFX", RELEASE.atmosFX},
     {"AudienceBlinderFX.luau", "LocalScript", "StarterPlayerScripts", "AudienceBlinderFX"},
-    {"BarNeonScript.luau", "Script", "ServerScriptService", "BarNeonScript"},
+    {"BarNeonScript.luau", "LocalScript", "StarterPlayerScripts", "BarNeonScript", RELEASE.barNeonFX},
     {"BeatImpactFX.luau", "LocalScript", "StarterPlayerScripts", "BeatImpactFX"},
     {"CeilingFXScript.luau", "Script", "ServerScriptService", "CeilingFXScript"},
     {"PixelMatrixFX.luau", "LocalScript", "StarterPlayerScripts", "PixelMatrixFX"},
@@ -363,11 +368,11 @@ for _, item in ipairs({
     {"LaserShowFX.luau", "LocalScript", "StarterPlayerScripts", "LaserShowFX", RELEASE.laserFX},
     {"LaserShowScript.luau", "Script", "ServerScriptService", "LaserShowScript", RELEASE.laserRig},
     {"KineticCenterpieceFX.luau", "LocalScript", "StarterPlayerScripts", "KineticCenterpieceFX"},
-    {"LightshowFX.luau", "Script", "ServerScriptService", "LightshowFX"},
+    {"LightshowFX.luau", "LocalScript", "StarterPlayerScripts", "LightshowFX", RELEASE.lightshowFX},
     {"MovingHeadShow.luau", "Script", "ServerScriptService", "MovingHeadShow", RELEASE.movingHeadRig},
     {"MovingHeadShowFX.luau", "LocalScript", "StarterPlayerScripts", "MovingHeadShowFX", RELEASE.movingHeadFX},
-    {"NeonSignFX.luau", "Script", "ServerScriptService", "NeonSignFX"},
-    {"NeonTrimEffects.luau", "Script", "ServerScriptService", "NeonTrimEffects"},
+    {"NeonSignFX.luau", "LocalScript", "StarterPlayerScripts", "NeonSignFX", RELEASE.neonSignFX},
+    {"NeonTrimEffects.luau", "LocalScript", "StarterPlayerScripts", "NeonTrimEffects", RELEASE.neonTrimFX},
     {"SpeakerEffects.luau", "LocalScript", "StarterPlayerScripts", "SpeakerEffects"},
     {"StrobeLightsRig.server.lua", "Script", "ServerScriptService", "StrobeLightsRig", RELEASE.strobeRig},
     {"StrobeLightsFX.luau", "LocalScript", "StarterPlayerScripts", "StrobeLightsFX", RELEASE.strobeFX},
