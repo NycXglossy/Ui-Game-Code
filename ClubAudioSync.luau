@@ -91,6 +91,7 @@ local PENDING_EVIDENCE_TIMEOUT = 22.0
 local TEMPO_EVIDENCE_DECAY_SECONDS = 15.0
 local CHALLENGER_REQUIRED_SAMPLES = 8
 local energy = 0
+local tempoLayerAgreement = 0.5
 local movementSpeedCurrent = 1
 local lastT = os.clock()
 local lastBeatIndex = -1
@@ -172,6 +173,7 @@ local function clearAnalysis()
 	lastTempoUpdate = 0
 	lastTempoAnalysisAt = 0
 	energy = 0
+	tempoLayerAgreement = 0.5
 	sampleAccumulator = 0
 	lastSampleAt = 0
 	lastBeatIndex = -1
@@ -297,7 +299,7 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 				variance += value * value
 			end
 			if variance > 0.00001 then
-				table.insert(activeChannels, {centered = centered, weight = channel.weight})
+				table.insert(activeChannels, {centered = centered, weight = channel.weight, scores = {}, bestScore = -math.huge})
 				totalWeight += channel.weight
 			end
 		end
@@ -321,6 +323,8 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 				normB += b * b
 			end
 			local normalized = score / math.sqrt(math.max(1e-9, normA * normB))
+			channel.scores[lag] = normalized
+			channel.bestScore = math.max(channel.bestScore, normalized)
 			weightedScore += normalized * channel.weight
 		end
 		local combined = weightedScore / totalWeight
@@ -422,12 +426,34 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 		end
 	end
 
+	-- Measure whether independent spectral regions support the selected pulse family.
+	-- Octave-related peaks count as the same metrical family, but an unrelated
+	-- transient peak in only one band cannot dominate the fused tempo estimate.
+	local supportedWeight = 0
+	for _, channel in ipairs(activeChannels) do
+		local function localScore(lag: number): number
+			return math.max(channel.scores[lag - 1] or -math.huge,
+				channel.scores[lag] or -math.huge, channel.scores[lag + 1] or -math.huge)
+		end
+		local familyScore = math.max(localScore(selectedLag),
+			localScore(math.floor(selectedLag * 0.5 + 0.5)),
+			localScore(selectedLag * 2))
+		if familyScore >= channel.bestScore - 0.12 then
+			supportedWeight += channel.weight
+		end
+	end
+	tempoLayerAgreement = if #activeChannels >= 2
+		then math.clamp(supportedWeight / totalWeight, 0, 1) else 0.5
+
 	local bpm = math.clamp(60 * SAMPLE_RATE / (if selectedLag == bestLag then refinedLag else selectedLag), BPM_MIN, BPM_MAX)
 	local periodicity = math.clamp((selectedScore - 0.08) / 0.52, 0, 1)
 	local peakSeparation = if secondScore > -math.huge
 		then math.clamp((bestScore - secondScore) / 0.18, 0, 1)
 		else 0.5
 	local confidence = periodicity * (0.62 + peakSeparation * 0.38)
+	-- Apply a bounded penalty when bass, low-mid, presence and high-frequency
+	-- evidence disagree. One dominant attack layer is not sufficient to certify tempo.
+	confidence *= 0.70 + tempoLayerAgreement * 0.30
 	-- A near-tie between a pulse and its octave-related interpretation is
 	-- not enough evidence to declare the metrical level on a new track.
 	-- Once a tempo is established, continuity may resolve that ambiguity.
@@ -444,20 +470,27 @@ end
 -- When they disagree without a clear winner, hold the prior trusted tempo.
 local function estimateTempo(): (number?, number)
 	local shortBPM, shortConfidence = estimateTempoWindow(3.5)
+	local shortLayerAgreement = tempoLayerAgreement
 	local longBPM, longConfidence = estimateTempoWindow(8.0)
+	local longLayerAgreement = tempoLayerAgreement
 	if shortBPM and longBPM then
 		local disagreement = math.abs(shortBPM - longBPM) / math.max(longBPM, 1)
 		if disagreement <= 0.06 then
+			tempoLayerAgreement = shortLayerAgreement * 0.65 + longLayerAgreement * 0.35
 			return shortBPM * 0.65 + longBPM * 0.35,
 				math.clamp(shortConfidence * 0.65 + longConfidence * 0.35, 0, 1)
 		end
 		if shortConfidence >= 0.48 and shortConfidence >= longConfidence - 0.08 then
+			tempoLayerAgreement = shortLayerAgreement
 			return shortBPM, shortConfidence * 0.90
 		end
+		tempoLayerAgreement = longLayerAgreement
 		return longBPM, longConfidence * 0.92
 	elseif longBPM then
+		tempoLayerAgreement = longLayerAgreement
 		return longBPM, longConfidence
 	elseif shortBPM then
+		tempoLayerAgreement = shortLayerAgreement
 		return shortBPM, shortConfidence * 0.80
 	end
 	return nil, math.max(shortConfidence, longConfidence)
@@ -979,11 +1012,11 @@ function ClubAudioSync.getBeatState(): BeatState
 			then string.format("half=%.1f base=%.1f double=%.1f", bpmDetected * 0.5, bpmDetected, bpmDetected * 2)
 			else "warming"
 		print(string.format(
-			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
+			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d layerAgreement=%.2f family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
 			if assetId ~= "" then assetId else "unknown", trackGeneration, bpm, bpmConfidence,
 			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, rawCandidateConfidence, priorBPM, pendingTempoConfidence, tempoFamily,
 			rhythmicFeel, rhythmicFeelConfidence, #feelOnsetIntervals,
-			feelDoubleTimeVotes, feelOnBeatVotes, feelHalfTimeVotes, feelUnclassifiedIntervals, feelFamily,
+			feelDoubleTimeVotes, feelOnBeatVotes, feelHalfTimeVotes, feelUnclassifiedIntervals, tempoLayerAgreement, feelFamily,
 			pendingTempoSamples, phaseLockConfidence, phaseErrorSeconds * 1000, onsetStrength, energy,
 			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
 		))
