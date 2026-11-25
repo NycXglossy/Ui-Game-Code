@@ -11,6 +11,7 @@
 -- v0.4.82 replaces the stage-dependent DJ LED backdrop with a dense four-wall venue-perimeter LED system (1,152 segments) using the shared beat clock.
 -- v0.4.79 adds the dual-architecture DJ stage LED bar rig and client-local synchronized FX.
 -- v0.4.73 publishes server-authoritative full-floor bounds so streamed clients do not mistake partial panel replication for the complete dance floor.
+-- v0.4.120 improves prior-supported BPM acquisition for Metallic Chaos Within Magic Theory and Anvil of Ruin.
 -- v0.4.119 doubles perimeter laser projectors from 24 to 48 and adds track-aware tempo priors plus transition-tail isolation.
 -- v0.4.72 spreads every laser and moving-head target across a dedicated full-floor cell while preserving independent BPM-adaptive motion.
 -- Run from Roblox Studio > View > Command Bar with HTTP Requests enabled.
@@ -34,7 +35,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.119"
+local INSTALLER_VERSION = "0.4.120"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -49,7 +50,7 @@ local RELEASE = {
     diagnostics = "a486f1f046fc187da8c59d46d91d64e96f3e710c",
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "b5012fa3b375f5c99287291c4ba698eef1bc3ad2",
-    audioSync = "4783fa90bd5604ba9aa89c2610dad341724c88c5",
+    audioSync = "828446f3c205aa9926f0329c7e614220dbc582fc",
     djStageBarRig = "d4e11efc2a323450461f1a810222caba3ed8dbd9",
     djStageBarFX = "9346b4badf904821eeec297a6aff006ae9e10199",
     laserFX = "97d318d9eba89f1f1f6a7c28a1c2fd9117571380",
