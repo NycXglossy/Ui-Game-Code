@@ -377,7 +377,9 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 	-- is competitive. Continuity is a tie-breaker, not the source of tempo.
 	local selectedLag = bestLag
 	local selectedScore = bestScore
-	local referenceBPM = TRACK_TEMPO_PRIORS[lastAssetId] or bpmDetected or bpmCurrent
+	-- Do not use BPM_SEED/bpmCurrent to resolve metrical level before audio acquisition.
+	-- The 120 BPM startup value is only a clock fallback, not musical evidence.
+	local referenceBPM = TRACK_TEMPO_PRIORS[lastAssetId] or bpmDetected
 	local familyAmbiguous = false
 	local octaveAlternatives = {bestLag * 2, math.floor(bestLag / 2 + 0.5)}
 	-- Also inspect 3:2 metrical interpretations. A strong triplet pulse can
@@ -402,8 +404,10 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 			local alternateScore = scoreAt(alternateLag)
 			local candidateBPM = 60 * SAMPLE_RATE / alternateLag
 			local selectedBPM = 60 * SAMPLE_RATE / selectedLag
-			local candidateDistance = math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1)
-			local selectedDistance = math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1)
+			local candidateDistance = if referenceBPM
+				then math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1) else math.huge
+			local selectedDistance = if referenceBPM
+				then math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1) else math.huge
 			if alternateScore >= bestScore - familyContinuityMargin then
 				if alternateScore >= bestScore - 0.075 then
 					familyAmbiguous = true
@@ -436,8 +440,10 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 				familyAmbiguous = true
 				local candidateBPM = 60 * SAMPLE_RATE / alternateLag
 				local selectedBPM = 60 * SAMPLE_RATE / selectedLag
-				local candidateDistance = math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1)
-				local selectedDistance = math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1)
+				local candidateDistance = if referenceBPM
+					then math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1) else math.huge
+				local selectedDistance = if referenceBPM
+					then math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1) else math.huge
 				if candidateDistance < selectedDistance then
 					selectedLag = alternateLag
 					selectedScore = alternateScore
@@ -927,8 +933,15 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			elseif winner.lowSamples > winner.highSamples * 1.20 and winner.lowBPM > 0 then
 				preferredBPM = winner.lowBPM
 			elseif winner.highBPM > 0 and winner.lowBPM > 0 then
-				preferredBPM = if math.abs(winner.highBPM - bpmCurrent) < math.abs(winner.lowBPM - bpmCurrent)
-					then winner.highBPM else winner.lowBPM
+				-- Only an already-acquired tempo may resolve a near-tie by continuity.
+				-- During startup, follow the stronger recent level vote instead of
+				-- allowing the arbitrary 120 BPM seed to bias the metrical decision.
+				if bpmDetected then
+					preferredBPM = if math.abs(winner.highBPM - bpmDetected) < math.abs(winner.lowBPM - bpmDetected)
+						then winner.highBPM else winner.lowBPM
+				else
+					preferredBPM = if winner.highSamples > winner.lowSamples then winner.highBPM else winner.lowBPM
+				end
 			else
 				preferredBPM = math.max(winner.highBPM, winner.lowBPM)
 			end
