@@ -32,6 +32,7 @@ local trackGeneration = 0
 local TRACK_TEMPO_PRIORS: {[string]: number} = {
 	["92952858514774"] = 89.3, -- Metallic Chaos Within Magic Theory
 	["86468432953052"] = 139.8, -- Fallen Star Blues
+	["84266261446965"] = 190.0, -- Anvil of Ruin: dominant pulse; bridge/outro sections vary
 }
 local trackWarmupUntil = 0
 local lastSampleAt = 0
@@ -688,16 +689,15 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	-- acquisition-grade evidence from its challenger. A stale lock must not
 	-- retain the easier established-track threshold indefinitely.
 	local incumbentStillTrusted = bpmDetected ~= nil and bpmConfidence > 0.18
+	local hasTrackPrior = TRACK_TEMPO_PRIORS[lastAssetId] ~= nil
 	-- A long-lived, tightly clustered family is stronger evidence than any
-	-- single autocorrelation window. Keep the normal acquisition bar early,
-	-- then allow a modest confidence relaxation only after sustained support.
-	local minimumCandidateConfidence = if incumbentStillTrusted then 0.34 else 0.52
+	-- single autocorrelation window. Track priors may lower the acquisition bar
+	-- only when the measured candidate remains close to that known pulse.
+	local minimumCandidateConfidence = if incumbentStillTrusted then 0.34 elseif hasTrackPrior then 0.38 else 0.52
 	-- Preserve moderate-confidence candidates as family evidence during hybrid
 	-- arrangements. A candidate may alternate between half-time and double-time
 	-- (e.g. 85.7 and 171 BPM) while describing the same underlying pulse family.
-	-- Requiring the full acquisition confidence on every individual window
-	-- discards that recurring evidence before consensus can form.
-	local minimumFamilyEvidenceConfidence = if bpmDetected then 0.34 else 0.30
+	local minimumFamilyEvidenceConfidence = if hasTrackPrior then 0.26 elseif bpmDetected then 0.34 else 0.30
 	-- Do not let numerical autocorrelation noise from a near-silent
 	-- interval seed or confirm a tempo family. The floor is intentionally
 	-- very low so quiet musical passages remain analyzable.
@@ -817,7 +817,12 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 				and winner.confidence >= 0.42
 			local normalAcquisition = winner.samples >= requiredSamples
 				and winner.confidence >= minimumCandidateConfidence
-			if sustainedAcquisition or normalAcquisition then
+			local trackPrior = TRACK_TEMPO_PRIORS[lastAssetId]
+			local priorSupportedAcquisition = trackPrior ~= nil
+				and winner.samples >= 18
+				and winner.confidence >= 0.30
+				and math.abs(preferredBPM - trackPrior) / trackPrior <= 0.055
+			if sustainedAcquisition or normalAcquisition or priorSupportedAcquisition then
 				local deltaRatio = if bpmDetected then math.abs(preferredBPM - bpmDetected) / math.max(bpmDetected, 1) else 1
 				local blend = math.clamp(0.18 + winner.confidence * 0.30
 					+ math.clamp(deltaRatio * 1.4, 0, 0.18), 0.18, 0.58)
