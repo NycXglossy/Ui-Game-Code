@@ -31,6 +31,11 @@ local FX_NAMES = {
 	"ArchitecturalAccentFX",
 	"PixelMatrixFX",
 	"GlowFloorFXScript",
+	"SpeakerEffects",
+	"NeonSignFX",
+	"NeonTrimEffects",
+	"BarNeonScript",
+	"LightshowFX",
 }
 
 local player = Players.LocalPlayer
@@ -150,6 +155,115 @@ local function ledBarSignature()
 	return nil
 end
 
+
+local function audienceBlinderSignature()
+	local rig = workspace:FindFirstChild("AudienceBlinderRig")
+	if not rig or rig:GetAttribute("Ready") ~= true then return nil end
+	local fixture = rig:FindFirstChild("Blinder1")
+	local light = fixture and fixture:FindFirstChild("AudienceWash")
+	if light and light:IsA("SpotLight") then
+		return light.Brightness + light.Color.R * 3 + light.Color.G * 7 + light.Color.B * 11
+	end
+	return nil
+end
+
+local function hazeSignature()
+	local rig = workspace:FindFirstChild("StageHazeRig")
+	if not rig or rig:GetAttribute("Ready") ~= true then return nil end
+	local emitter = rig:FindFirstChild("SoftStageHaze", true)
+	if emitter and emitter:IsA("ParticleEmitter") then return emitter.Rate + (emitter.Enabled and 1 or 0) end
+	return nil
+end
+
+local function pixelMatrixSignature()
+	local rig = workspace:FindFirstChild("CeilingFX")
+	if not rig then return nil end
+	local panel = rig:FindFirstChild("FloorPanel")
+	if panel and panel:IsA("BasePart") then
+		local color = panel.Color
+		return color.R + color.G * 3 + color.B * 7
+	end
+	return nil
+end
+
+local function glowFloorSignature()
+	local rig = workspace:FindFirstChild("GlowFloorFX")
+	if not rig then return nil end
+	for _, part in ipairs(rig:GetChildren()) do
+		if part:IsA("BasePart") and part.Name:match("^Strip_") then
+			local color = part.Color
+			return color.R + color.G * 3 + color.B * 7
+		end
+	end
+	return nil
+end
+
+local function speakerSignature()
+	for _, part in ipairs(workspace:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name == "SpeakerGlow" then
+			local light = part:FindFirstChildOfClass("PointLight")
+			if light then return light.Brightness + light.Color.R * 3 + light.Color.G * 7 end
+		end
+	end
+	return nil
+end
+
+local function accentSignature()
+	for _, part in ipairs(workspace:GetDescendants()) do
+		if part:IsA("BasePart") and part:GetAttribute("ClubNeonAccentEnabled") == true then
+			local color = part.Color
+			return color.R + color.G * 3 + color.B * 7
+		end
+	end
+	return nil
+end
+
+local function signSignature()
+	local sign = workspace:FindFirstChild("ClubNeonSign")
+	local backing = sign and sign:FindFirstChild("Backing")
+	local light = backing and backing:FindFirstChildOfClass("PointLight")
+	if light then return light.Brightness + light.Color.R * 3 + light.Color.G * 7 end
+	return nil
+end
+
+local function trimSignature()
+	local folder = workspace:FindFirstChild("NeonTrim")
+	if not folder then return nil end
+	for _, part in ipairs(folder:GetChildren()) do
+		if part:IsA("BasePart") and part.Name ~= "TrimLightAnchor" then
+			local color = part.Color
+			return color.R + color.G * 3 + color.B * 7
+		end
+	end
+	return nil
+end
+
+local function barNeonSignature()
+	local folder = workspace:FindFirstChild("NeonBar")
+	if not folder then return nil end
+	for _, part in ipairs(folder:GetChildren()) do
+		if part:IsA("BasePart") and part.Name == "BarNeon" then
+			local color = part.Color
+			return color.R + color.G * 3 + color.B * 7
+		end
+	end
+	return nil
+end
+
+local function lightshowSignature()
+	local folder = workspace:FindFirstChild("LightshowRigs")
+	if not folder then return nil end
+	for _, rig in ipairs(folder:GetChildren()) do
+		for _, part in ipairs(rig:GetChildren()) do
+			if part:IsA("BasePart") and part.Name:match("^Segment%d+") then
+				local color = part.Color
+				return color.R + color.G * 3 + color.B * 7
+			end
+		end
+	end
+	return nil
+end
+
 local PROBES = {
 	MovingHeadShowFX = movingHeadSignature,
 	LaserShowFX = laserSignature,
@@ -158,6 +272,16 @@ local PROBES = {
 	StrobeLightsFX = strobeSignature,
 	CeilingComplementFX = ceilingComplementSignature,
 	DJStageLEDBarFX = ledBarSignature,
+	AudienceBlinderFX = audienceBlinderSignature,
+	HazeBeamFX = hazeSignature,
+	PixelMatrixFX = pixelMatrixSignature,
+	GlowFloorFXScript = glowFloorSignature,
+	SpeakerEffects = speakerSignature,
+	ArchitecturalAccentFX = accentSignature,
+	NeonSignFX = signSignature,
+	NeonTrimEffects = trimSignature,
+	BarNeonScript = barNeonSignature,
+	LightshowFX = lightshowSignature,
 }
 
 -- Is the club's music currently playing? Only treat frozen rigs as dead
