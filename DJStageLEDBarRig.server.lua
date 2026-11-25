@@ -74,7 +74,14 @@ if x1 - x0 < 40 or z1 - z0 < 40 then
 end
 
 local oldRig = Workspace:FindFirstChild(RIG_NAME)
-if oldRig then oldRig:Destroy() end
+if oldRig then
+	if oldRig:GetAttribute("Ready") == true then
+		print("[ClubNeon][VenueLEDBarRig] Existing complete server rig found; preserving it.")
+	else
+		warn("[ClubNeon][VenueLEDBarRig] Existing incomplete rig found; refusing destructive rebuild or duplicate creation.")
+	end
+	return
+end
 
 local rig = Instance.new("Model")
 rig.Name = RIG_NAME
