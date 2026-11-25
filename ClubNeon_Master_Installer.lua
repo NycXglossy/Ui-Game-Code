@@ -1,12 +1,12 @@
 --!strict
--- v0.4.124 expands FX watchdog coverage, hardens AtmosFX fixture discovery, throttles ceiling updates,
+-- v0.4.125 makes audience blinders and stage haze persistent/adoptive server rigs;
 -- adds phrase-based ceiling choreography, makes BeatImpact venue-independent, and refines prior-guided octave selection.
 -- Playback transition/recovery telemetry remains passive; no playback behavior or watchdog thresholds are changed.
 -- v0.4.121 adds passive playback transition, crossfade handoff, and watchdog recovery trace telemetry.
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.124
+-- CLUB NEON MASTER INSTALLER v0.4.125
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
@@ -39,7 +39,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.124"
+local INSTALLER_VERSION = "0.4.125"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -56,6 +56,8 @@ local RELEASE = {
     fx = "826fcf4e1d68cc61f00d5545138cd024697deba0",
     atmosFX = "8ba6ddde9a311b54aaeff5fe05a5301df374b91e",
     atmosRig = "e266e9f7e148ee29b44b972fda2cb1c85c39051a",
+    audienceBlinderRig = "5f9cbfd7ba2721315e7dd8642dfe60e35b86986c",
+    stageHazeRig = "a118e9964905ecbaf1a06538f1c6c732720bfcf4",
     audioSync = "7850bb0d0c9e47f6b0ad8dfda5ad81d991b0d0e3",
     djStageBarRig = "d4e11efc2a323450461f1a810222caba3ed8dbd9",
     djStageBarFX = "9346b4badf904821eeec297a6aff006ae9e10199",
@@ -342,8 +344,8 @@ addSource("ClubAudioSync.luau", "ModuleScript", "ReplicatedStorage", "ClubAudioS
 addSource("DJStageLEDBarRig.server.lua", "Script", "ServerScriptService", "DJStageLEDBarRig", RELEASE.djStageBarRig)
 addSource("DJStageLEDBarFX.client.lua", "LocalScript", "StarterPlayerScripts", "DJStageLEDBarFX", RELEASE.djStageBarFX)
 -- Server-owned fixture/layout halves; their paired LocalScripts animate locally.
-addSource("AudienceBlinderRig.server.lua", "Script", "ServerScriptService", "AudienceBlinderRig", RELEASE.fx)
-addSource("StageHazeRig.server.lua", "Script", "ServerScriptService", "StageHazeRig", RELEASE.fx)
+addSource("AudienceBlinderRig.server.lua", "Script", "ServerScriptService", "AudienceBlinderRig", RELEASE.audienceBlinderRig)
+addSource("StageHazeRig.server.lua", "Script", "ServerScriptService", "StageHazeRig", RELEASE.stageHazeRig)
 addSource("ClubNeonArchitecturalAccentRig.server.lua", "Script", "ServerScriptService", "ClubNeonArchitecturalAccentRig", RELEASE.fx)
 addSource("ArchitecturalAccentFX.luau", "LocalScript", "StarterPlayerScripts", "ArchitecturalAccentFX", RELEASE.fx)
 for _, item in ipairs({
