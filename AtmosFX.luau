@@ -45,6 +45,22 @@ while #fogs == 0 and #flames == 0 do
 	fogs, flames = collectFixtures()
 end
 
+local function fixturesNeedRefresh()
+	if #fogs == 0 or #flames == 0 then
+		local currentFogs, currentFlames = collectFixtures()
+		return #currentFogs ~= #fogs or #currentFlames ~= #flames
+	end
+	for _, fixture in ipairs(fogs) do
+		if not fixture.unit.Parent or not fixture.emitter.Parent then return true end
+	end
+	for _, fixture in ipairs(flames) do
+		if not fixture.unit.Parent or not fixture.emitter.Parent then return true end
+	end
+	return false
+end
+
+local lastFixtureAudit = 0
+
 -- Beat state (driven by ClubAudioSync's beat clock)
 local norm = 0
 local lastBeatCount = -1
@@ -61,9 +77,13 @@ RunService.Heartbeat:Connect(function()
 	lastT = now
 	beatAge += dt
 
-	-- Self-heal if streaming replaces the fixtures
-	if fogs[1] and fogs[1].unit.Parent == nil then
-		fogs, flames = collectFixtures()
+	-- Audit both fixture groups independently. This catches late-arriving foggers
+	-- even when flame jets were already present (and vice versa).
+	if now - lastFixtureAudit >= 2 then
+		lastFixtureAudit = now
+		if fixturesNeedRefresh() then
+			fogs, flames = collectFixtures()
+		end
 	end
 
 	-- Beat clock from the shared ClubAudioSync module
