@@ -150,16 +150,26 @@ for index, position in ipairs(fogPositions) do
 end
 for index = 1, FLAME_COUNT do
     local t = (index - 0.5) / (FLAME_COUNT / 2)
-    if index <= FLAME_COUNT / 2 then
-        makeFlame(index, Vector3.new(minX + (maxX - minX) * t, mountY, minZ + 5))
-    else
-        makeFlame(index, Vector3.new(maxX - (maxX - minX) * (t - 1), mountY, maxZ - 5))
+    if not adoptedFlames[index] then
+        if index <= FLAME_COUNT / 2 then
+            makeFlame(index, Vector3.new(minX + (maxX - minX) * t, mountY, minZ + 5))
+        else
+            makeFlame(index, Vector3.new(maxX - (maxX - minX) * (t - 1), mountY, maxZ - 5))
+        end
     end
 end
 
-rig:SetAttribute("FogCount", FOG_COUNT)
-rig:SetAttribute("FlameCount", FLAME_COUNT)
+local fogTotal, flameTotal = 0, 0
+local adoptedFogTotal, adoptedFlameTotal = 0, 0
+for _, child in ipairs(rig:GetChildren()) do
+    if child:IsA("BasePart") and child.Name:match("^Fog%d+$") then fogTotal += 1 end
+    if child:IsA("BasePart") and child.Name:match("^Flame%d+$") then flameTotal += 1 end
+end
+for _ in pairs(adoptedFog) do adoptedFogTotal += 1 end
+for _ in pairs(adoptedFlames) do adoptedFlameTotal += 1 end
+rig:SetAttribute("FogCount", fogTotal)
+rig:SetAttribute("FlameCount", flameTotal)
 rig:SetAttribute("Ready", true)
-print("[ClubNeon][AtmosFXRig] Server-owned atmospheric fixtures ready; fog=" .. FOG_COUNT
-    .. " flames=" .. flameTotal .. " floorPanels=" .. panelCount .. " adoptedFog=" .. tostring((function() local n=0 for _ in pairs(adoptedFog) do n+=1 end return n end)())
-    .. " adoptedFlames=" .. tostring((function() local n=0 for _ in pairs(adoptedFlames) do n+=1 end return n end)()))
+print("[ClubNeon][AtmosFXRig] Server-owned atmospheric fixtures ready; fog=" .. fogTotal
+    .. " flames=" .. flameTotal .. " floorPanels=" .. panelCount
+    .. " adoptedFog=" .. adoptedFogTotal .. " adoptedFlames=" .. adoptedFlameTotal)
