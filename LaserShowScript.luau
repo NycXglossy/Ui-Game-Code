@@ -22,8 +22,19 @@ if floorY == -math.huge then return end
 
 local CENTER = Vector3.new((minX + maxX) / 2, floorY, (minZ + maxZ) / 2)
 
+local existingRig = workspace:FindFirstChild("LaserRig")
+if existingRig then
+	if existingRig:GetAttribute("Ready") == true then
+		print("[ClubNeon][LaserShowScript] Existing complete server rig found; preserving it.")
+	else
+		warn("[ClubNeon][LaserShowScript] Existing incomplete rig found; refusing duplicate creation.")
+	end
+	return
+end
 local rig = Instance.new("Folder")
 rig.Name = "LaserRig"
+rig:SetAttribute("ServerOwnedLayout", true)
+rig:SetAttribute("Ready", false)
 rig.Parent = workspace
 
 local function mkPart(name, size, material, color, cframe)
@@ -175,3 +186,5 @@ end
 
 -- Rig is built. The client script LaserShowFX discovers
 -- Workspace.LaserRig and drives all beat-synced animation.
+rig:SetAttribute("Ready", true)
+print("[ClubNeon][LaserShowScript] Server-owned laser layout ready; fixtures=" .. #rig:GetChildren())
