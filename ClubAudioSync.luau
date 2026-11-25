@@ -33,6 +33,7 @@ local TRACK_TEMPO_PRIORS: {[string]: number} = {
 	["92952858514774"] = 89.3, -- Metallic Chaos Within Magic Theory
 	["86468432953052"] = 139.8, -- Fallen Star Blues
 	["84266261446965"] = 190.0, -- Anvil of Ruin: dominant pulse; bridge/outro sections vary
+	["99973341792058"] = 170.0, -- Midnight Lucid: composition reference pulse; chaotic intro and breakdowns vary
 }
 local trackWarmupUntil = 0
 local lastSampleAt = 0
@@ -52,6 +53,7 @@ local bpmCurrent = BPM_SEED
 local bpmDetected: number? = nil
 local bpmConfidence = 0
 local rawCandidateBPM: number? = nil
+local rawCandidateConfidence = 0
 local pendingBPM: number? = nil
 local pendingTempoSamples = 0
 local pendingTempoConfidence = 0
@@ -159,6 +161,7 @@ local function clearAnalysis()
 	bpmCurrent = BPM_SEED
 	bpmConfidence = 0
 	rawCandidateBPM = nil
+	rawCandidateConfidence = 0
 	pendingBPM = nil
 	pendingTempoSamples = 0
 	pendingTempoConfidence = 0
@@ -681,6 +684,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 	end
 	local detected, confidence = estimateTempo()
 	rawCandidateBPM = detected
+	rawCandidateConfidence = confidence
 	-- Initial acquisition is deliberately stricter than tracking an established
 	-- clock. A weak but persistent low-frequency periodicity can otherwise win
 	-- during a hybrid intro before the analyzer has enough evidence to identify
@@ -948,6 +952,7 @@ function ClubAudioSync.getBeatState(): BeatState
 	if RunService:IsClient() and playing and now - lastDiagnosticsAt >= 5 then
 		lastDiagnosticsAt = now
 		local candidateText = if rawCandidateBPM then string.format("%.1f", rawCandidateBPM) else "none"
+		local priorBPM = TRACK_TEMPO_PRIORS[assetId] or 0
 		local tempoFamily = if rawCandidateBPM
 			then string.format("%.1f/%.1f/%.1f", rawCandidateBPM * 0.5, rawCandidateBPM, rawCandidateBPM * 2)
 			else "none"
@@ -955,9 +960,9 @@ function ClubAudioSync.getBeatState(): BeatState
 			then string.format("half=%.1f base=%.1f double=%.1f", bpmDetected * 0.5, bpmDetected, bpmDetected * 2)
 			else "warming"
 		print(string.format(
-			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
+			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
 			if assetId ~= "" then assetId else "unknown", trackGeneration, bpm, bpmConfidence,
-			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, tempoFamily,
+			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, rawCandidateConfidence, priorBPM, pendingTempoConfidence, tempoFamily,
 			rhythmicFeel, rhythmicFeelConfidence, #feelOnsetIntervals,
 			feelDoubleTimeVotes, feelOnBeatVotes, feelHalfTimeVotes, feelUnclassifiedIntervals, feelFamily,
 			pendingTempoSamples, phaseLockConfidence, phaseErrorSeconds * 1000, onsetStrength, energy,
