@@ -377,7 +377,15 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 	-- is competitive. Continuity is a tie-breaker, not the source of tempo.
 	local selectedLag = bestLag
 	local selectedScore = bestScore
-	local referenceBPM = TRACK_TEMPO_PRIORS[lastAssetId] or bpmDetected or bpmCurrent
+	-- Do not use the 120 BPM startup seed to resolve an octave ambiguity.
+	-- Before the analyzer has acquired a tempo, that seed is only a clock fallback;
+	-- treating it as musical evidence systematically favors whichever candidate
+	-- happens to sit closer to 120 BPM. Use the raw winning lag until a measured
+	-- tempo or independently validated track prior exists.
+	local referenceBPM = TRACK_TEMPO_PRIORS[lastAssetId] or bpmDetected
+	if not referenceBPM then
+		referenceBPM = 60 * SAMPLE_RATE / bestLag
+	end
 	local familyAmbiguous = false
 	local octaveAlternatives = {bestLag * 2, math.floor(bestLag / 2 + 0.5)}
 	-- Also inspect 3:2 metrical interpretations. A strong triplet pulse can
