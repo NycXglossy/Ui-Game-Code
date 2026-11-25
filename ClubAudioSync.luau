@@ -404,8 +404,10 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 			local alternateScore = scoreAt(alternateLag)
 			local candidateBPM = 60 * SAMPLE_RATE / alternateLag
 			local selectedBPM = 60 * SAMPLE_RATE / selectedLag
-			local candidateDistance = math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1)
-			local selectedDistance = math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1)
+			local candidateDistance = if referenceBPM
+				then math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1) else math.huge
+			local selectedDistance = if referenceBPM
+				then math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1) else math.huge
 			if alternateScore >= bestScore - familyContinuityMargin then
 				if alternateScore >= bestScore - 0.075 then
 					familyAmbiguous = true
@@ -438,8 +440,10 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 				familyAmbiguous = true
 				local candidateBPM = 60 * SAMPLE_RATE / alternateLag
 				local selectedBPM = 60 * SAMPLE_RATE / selectedLag
-				local candidateDistance = math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1)
-				local selectedDistance = math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1)
+				local candidateDistance = if referenceBPM
+					then math.abs(candidateBPM - referenceBPM) / math.max(referenceBPM, 1) else math.huge
+				local selectedDistance = if referenceBPM
+					then math.abs(selectedBPM - referenceBPM) / math.max(referenceBPM, 1) else math.huge
 				if candidateDistance < selectedDistance then
 					selectedLag = alternateLag
 					selectedScore = alternateScore
