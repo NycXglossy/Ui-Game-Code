@@ -72,6 +72,23 @@ local function makeNozzle(unit: Part): Attachment
     return nozzle
 end
 
+local adoptedFog: {[number]: boolean} = {}
+local adoptedFlames: {[number]: boolean} = {}
+for _, child in ipairs(Workspace:GetChildren()) do
+    if child:IsA("BasePart") then
+        local fogIndex = tonumber(child.Name:match("^Fog(%d+)$"))
+        local flameIndex = tonumber(child.Name:match("^Flame(%d+)$"))
+        local nozzle = child:FindFirstChild("Nozzle")
+        if fogIndex and nozzle and nozzle:FindFirstChild("Fog") then
+            adoptedFog[fogIndex] = true
+            child.Parent = rig
+        elseif flameIndex and nozzle and nozzle:FindFirstChild("Fire") then
+            adoptedFlames[flameIndex] = true
+            child.Parent = rig
+        end
+    end
+end
+
 local function makeFog(index: number, position: Vector3)
     local unit = makePart(string.format("Fog%d", index), position, rig)
     unit:SetAttribute("FixtureType", "Fog")
@@ -128,7 +145,9 @@ local fogPositions = {
     Vector3.new(minX, mountY, minZ), Vector3.new(maxX, mountY, minZ),
     Vector3.new(maxX, mountY, maxZ), Vector3.new(minX, mountY, maxZ),
 }
-for index, position in ipairs(fogPositions) do makeFog(index, position) end
+for index, position in ipairs(fogPositions) do
+    if not adoptedFog[index] then makeFog(index, position) end
+end
 for index = 1, FLAME_COUNT do
     local t = (index - 0.5) / (FLAME_COUNT / 2)
     if index <= FLAME_COUNT / 2 then
@@ -142,4 +161,5 @@ rig:SetAttribute("FogCount", FOG_COUNT)
 rig:SetAttribute("FlameCount", FLAME_COUNT)
 rig:SetAttribute("Ready", true)
 print("[ClubNeon][AtmosFXRig] Server-owned atmospheric fixtures ready; fog=" .. FOG_COUNT
-    .. " flames=" .. FLAME_COUNT .. " floorPanels=" .. panelCount)
+    .. " flames=" .. flameTotal .. " floorPanels=" .. panelCount .. " adoptedFog=" .. tostring((function() local n=0 for _ in pairs(adoptedFog) do n+=1 end return n end)())
+    .. " adoptedFlames=" .. tostring((function() local n=0 for _ in pairs(adoptedFlames) do n+=1 end return n end)()))
