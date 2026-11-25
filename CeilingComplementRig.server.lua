@@ -54,7 +54,14 @@ if vx1 - vx0 < 40 or vz1 - vz0 < 40 then
 end
 
 local old = Workspace:FindFirstChild(RIG_NAME)
-if old then old:Destroy() end
+if old then
+    if old:GetAttribute("Ready") == true then
+        print("[ClubNeon][CeilingComplementRig] Existing complete server rig found; preserving it.")
+    else
+        warn("[ClubNeon][CeilingComplementRig] Existing incomplete rig found; refusing destructive rebuild or duplicate creation.")
+    end
+    return
+end
 local rig = Instance.new("Model")
 rig.Name = RIG_NAME
 rig.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
