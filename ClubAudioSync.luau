@@ -615,6 +615,25 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		-- this is not a low-pass tempo clamp or an instrument classifier.
 		local compressed = math.sqrt(math.max(0, raw))
 		local history = bandHistories[name]
+		-- Soft-limit isolated spectral outliers against the recent band envelope.
+		-- The cap adapts to recurring attacks, so sustained blast-beat/kick patterns
+		-- remain measurable while one-off clicks and glitch spikes lose influence.
+		if #history >= 12 then
+			local recentCount = math.min(#history, math.floor(SAMPLE_RATE * 1.5))
+			local first = #history - recentCount + 1
+			local mean, variance = 0, 0
+			for i = first, #history do mean += history[i] end
+			mean /= recentCount
+			for i = first, #history do
+				local delta = history[i] - mean
+				variance += delta * delta
+			end
+			local deviation = math.sqrt(variance / math.max(1, recentCount - 1))
+			local ceiling = mean + math.max(deviation * 2.8, mean * 1.8, 0.0001)
+			if compressed > ceiling then
+				compressed = ceiling + (compressed - ceiling) * 0.25
+			end
+		end
 		if #history > 0 then return history[#history] * 0.42 + compressed * 0.58 end
 		return compressed
 	end
