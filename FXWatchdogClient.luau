@@ -156,6 +156,20 @@ local function ledBarSignature()
 end
 
 
+local function atmosSignature()
+	local rig = workspace:FindFirstChild("AtmosFXRig")
+	if not rig or rig:GetAttribute("Ready") ~= true then return nil end
+	local flame = rig:FindFirstChild("Flame1")
+	local nozzle = flame and flame:FindFirstChild("Nozzle")
+	local emitter = nozzle and nozzle:FindFirstChild("Fire")
+	if emitter and emitter:IsA("ParticleEmitter") then
+		local glow = flame:FindFirstChild("Glow")
+		local brightness = if glow and glow:IsA("PointLight") then glow.Brightness else 0
+		return emitter.Rate + brightness * 3
+	end
+	return nil
+end
+
 local function audienceBlinderSignature()
 	local rig = workspace:FindFirstChild("AudienceBlinderRig")
 	if not rig or rig:GetAttribute("Ready") ~= true then return nil end
@@ -272,6 +286,7 @@ local PROBES = {
 	StrobeLightsFX = strobeSignature,
 	CeilingComplementFX = ceilingComplementSignature,
 	DJStageLEDBarFX = ledBarSignature,
+	AtmosFX = atmosSignature,
 	AudienceBlinderFX = audienceBlinderSignature,
 	HazeBeamFX = hazeSignature,
 	PixelMatrixFX = pixelMatrixSignature,
