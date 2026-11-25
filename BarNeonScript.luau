@@ -1,23 +1,30 @@
+--!strict
+-- BarNeonScript: client-local neon bar animation; geometry remains server-owned.
+local Workspace = game:GetService("Workspace")
 local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
--- Animates the NeonBar's neon accents: slow hue shift + breathing pulse
-local bar = workspace:FindFirstChild("NeonBar")
-if not bar then return end
-
+local bar = Workspace:WaitForChild("NeonBar")
 local neons = {}
-for _, p in bar:GetChildren() do
-	if p:IsA("BasePart") and p.Name == "BarNeon" and p.Material == Enum.Material.Neon then
-		table.insert(neons, p)
+local function collect()
+	table.clear(neons)
+	for _, part in ipairs(bar:GetChildren()) do
+		if part:IsA("BasePart") and part.Name == "BarNeon" and part.Material == Enum.Material.Neon then
+			table.insert(neons, part)
+		end
 	end
 end
-if #neons == 0 then return end
-
-while task.wait(0.1) do -- 10 Hz ambient bar updates
+collect()
+bar.ChildAdded:Connect(function() task.defer(collect) end)
+bar.ChildRemoved:Connect(function() task.defer(collect) end)
+while true do
+	task.wait(0.1)
 	local beat = ClubAudioSync.getBeatState()
-	local t = os.clock() * (beat.bpm / 128)
-	local pulse = 0.5 + 0.5 * math.sin(t * 2) -- matches the wall trim pulse
-	for i, p in neons do
-		-- offset hue by position so colors flow along the bar
-		local hue = (t * 0.06 + (p.Position.X + p.Position.Y * 0.3) / 420) % 1
-		p.Color = Color3.fromHSV(hue, 1, 0.75 + 0.25 * pulse)
+	local bpm = math.max(beat.bpm, 1)
+	local musicalTime = (beat.beatCount + beat.beatPhase) * 60 / bpm * bpm / 128
+	local pulse = 0.5 + 0.5 * math.sin(musicalTime * 2)
+	for _, part in ipairs(neons) do
+		if part.Parent then
+			local hue = (musicalTime * 0.06 + (part.Position.X + part.Position.Y * 0.3) / 420) % 1
+			part.Color = Color3.fromHSV(hue, 1, 0.75 + 0.25 * pulse)
+		end
 	end
 end
