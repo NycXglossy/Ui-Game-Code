@@ -22,7 +22,7 @@ local FOG_AMBIENT = 3 -- max particles/sec continuous haze
 -- directly in Workspace, ungrouped so they can be moved individually.
 local function collectFixtures()
 	local fogs, flames = {}, {}
-	for _, unit in workspace:GetChildren() do
+	for _, unit in workspace:GetDescendants() do
 		if unit:IsA("BasePart") then
 			local nozzle = unit:FindFirstChild("Nozzle")
 			if not nozzle then continue end
