@@ -57,7 +57,14 @@ local function readRigBounds()
 end
 local lastBeat = -1
 local hueBase = 0
-RunService.Heartbeat:Connect(function()
+local frameAccumulator = 0
+local UPDATE_INTERVAL = 1 / 30
+local lastPhrase = -1
+local phrasePattern = 1
+RunService.Heartbeat:Connect(function(dt)
+    frameAccumulator += math.min(dt, 0.1)
+    if frameAccumulator < UPDATE_INTERVAL then return end
+    frameAccumulator %= UPDATE_INTERVAL
     if not rig or not rig.Parent then
         rig = workspace:FindFirstChild(RIG_NAME)
         if not rig then return end
@@ -73,16 +80,35 @@ RunService.Heartbeat:Connect(function()
     local bpm = math.clamp(beat.bpm or 120,60,200)
     local energy = math.clamp(beat.energy or 0,0,1)
     local t = now - started
+    local phrase = math.floor((beat.beatCount or 0) / 16)
+    if phrase ~= lastPhrase then
+        lastPhrase = phrase
+        phrasePattern = (phrase % 4) + 1
+    end
+    local minX,maxX,minZ,maxZ,floorY = readRigBounds()
+    if type(minX) ~= "number" or type(maxX) ~= "number" or type(minZ) ~= "number"
+        or type(maxZ) ~= "number" or type(floorY) ~= "number" then return end
     for _, f in ipairs(profiles) do
         if not f.emitter.Parent or not f.target.Parent then continue end
         -- Independent crossed elliptical sweeps keep the profile layer distinct from moving heads.
         local rate = 0.16 + bpm/600 + energy*0.12
         local phase = t*rate + f.phase
-        local x = math.sin(phase) * 0.39 + math.sin(phase*0.43+f.phase)*0.12
-        local z = math.cos(phase*0.71+f.phase) * 0.39
+        local x, z
+        if phrasePattern == 1 then
+            x = math.sin(phase) * 0.39 + math.sin(phase * 0.43 + f.phase) * 0.12
+            z = math.cos(phase * 0.71 + f.phase) * 0.39
+        elseif phrasePattern == 2 then
+            x = math.sin(phase * 0.72 + f.phase) * 0.42
+            z = math.sin(phase * 0.72 + f.phase + math.pi * 0.5) * 0.42
+        elseif phrasePattern == 3 then
+            x = math.sin(phase * 1.15 + f.phase) * 0.34
+            z = math.sin(phase * 0.58 - f.phase) * 0.46
+        else
+            local side = if f.index % 2 == 0 then 1 else -1
+            x = math.sin(phase * 0.82 + f.phase) * 0.44
+            z = math.cos(phase * 0.82 + f.phase) * 0.30 * side
+        end
         local pos = f.emitter.Position
-        local minX,maxX,minZ,maxZ,floorY = readRigBounds()
-        if type(minX) ~= "number" or type(maxX) ~= "number" or type(minZ) ~= "number" or type(maxZ) ~= "number" or type(floorY) ~= "number" then continue end
         local target = Vector3.new(
             math.clamp(pos.X + x*150,minX+1,maxX-1),
             floorY + 1,
