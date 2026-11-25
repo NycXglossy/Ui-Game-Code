@@ -81,9 +81,9 @@ RunService.Heartbeat:Connect(function()
 	-- even when flame jets were already present (and vice versa).
 	if now - lastFixtureAudit >= 2 then
 		lastFixtureAudit = now
-		if fixturesNeedRefresh() then
-			fogs, flames = collectFixtures()
-		end
+		-- Recollect both groups on every audit so newly spawned fixtures are
+		-- discovered even when the existing references are still valid.
+		fogs, flames = collectFixtures()
 	end
 
 	-- Beat clock from the shared ClubAudioSync module
