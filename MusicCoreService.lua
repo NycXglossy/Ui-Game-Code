@@ -76,7 +76,7 @@ local CATALOG: {Track} = {
 	{id="custom-99973341792058",genreId="exclusive",title="Midnight Lucid",artist="DJ Doom",duration=252,genre="Club Exclusives",assetId=99973341792058,soundId="rbxassetid://99973341792058"},
 	{id="custom-137104933242988",genreId="exclusive",title="Empire of Stone",artist="DJ Doom",duration=248,genre="Club Exclusives",assetId=137104933242988,soundId="rbxassetid://137104933242988"},
 	{id="custom-84266261446965",genreId="exclusive",title="Anvil of Ruin",artist="DJ Doom",duration=190,genre="Club Exclusives",assetId=84266261446965,soundId="rbxassetid://84266261446965"},
-	{id="custom-85420661204078",genreId="exclusive",title="Code in the Smoke",artist="DJ Doom",duration=184,genre="Club Exclusives",assetId=85420661204078,soundId="rbxassetid://85420661204078"},
+	{id="custom-85420661204078",genreId="exclusive",title="Code in the Smoke",artist="DJ Doom",duration=184,genre="Club Exclusives",assetId=85420661204078,soundId="rbxassetid://85420661204078",bpm=136},
 	{id="custom-134987433423089",genreId="exclusive",title="Rich Lifestyle",artist="DJ Doom",duration=212,genre="Club Exclusives",assetId=134987433423089,soundId="rbxassetid://134987433423089"},
 	{id="custom-92952858514774",genreId="exclusive",title="Metallic Chaos Within Magic Theory",artist="DJ Doom",duration=333,genre="Club Exclusives",assetId=92952858514774,soundId="rbxassetid://92952858514774"},
 	{id="custom-117388170134707",genreId="exclusive",title="Steel Collision",artist="DJ Doom",duration=184,genre="Club Exclusives",assetId=117388170134707,soundId="rbxassetid://117388170134707"},
