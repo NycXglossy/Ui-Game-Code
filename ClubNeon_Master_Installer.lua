@@ -1,12 +1,12 @@
 --!strict
--- v0.4.128 finalizes client-local architectural FX discovery and watchdog release pins;
+-- v0.4.129 protects all major server-owned rigs from destructive restarts and gates client startup on readiness;
 -- adds phrase-based ceiling choreography, makes BeatImpact venue-independent, and refines prior-guided octave selection.
 -- Playback transition/recovery telemetry remains passive; no playback behavior or watchdog thresholds are changed.
 -- v0.4.121 adds passive playback transition, crossfade handoff, and watchdog recovery trace telemetry.
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.128
+-- CLUB NEON MASTER INSTALLER v0.4.129
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
@@ -39,7 +39,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.128"
+local INSTALLER_VERSION = "0.4.129"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -55,7 +55,7 @@ local RELEASE = {
     integrityClient = "62091fbcfc9cb26930ed11e9c2db7ddf36c55eb0",
     fx = "826fcf4e1d68cc61f00d5545138cd024697deba0",
     atmosFX = "8ba6ddde9a311b54aaeff5fe05a5301df374b91e",
-    atmosRig = "e266e9f7e148ee29b44b972fda2cb1c85c39051a",
+    atmosRig = "fe24b5d86debe2e38cfee1835037844b76d0cd64",
     audienceBlinderRig = "5f9cbfd7ba2721315e7dd8642dfe60e35b86986c",
     stageHazeRig = "a118e9964905ecbaf1a06538f1c6c732720bfcf4",
     neonSignFX = "aa8447710888d804d1351f502c0dd0440c18c24e",
@@ -64,15 +64,15 @@ local RELEASE = {
     lightshowFX = "de8cd94b45f1f12002bfe5972ef876b79488f271",
     fxWatchdog = "ee9b03210b00277237287e1dd20901a6ff14dcfb",
     audioSync = "31a1831799eb262e51ce39b0b3863466e20512f5",
-    djStageBarRig = "d4e11efc2a323450461f1a810222caba3ed8dbd9",
+    djStageBarRig = "4a501946b7578a71a7a4cc68dc980253ab7bce18",
     djStageBarFX = "9346b4badf904821eeec297a6aff006ae9e10199",
-    laserFX = "97d318d9eba89f1f1f6a7c28a1c2fd9117571380",
-    laserRig = "2cdec6813e11cf167a9135c76ffbc59c086b3185",
-    movingHeadFX = "3a16afc4108546d4a3a84d8d3726b09173ec28ef",
-    movingHeadRig = "8a1099efe1e33bd2e643ae317418fdae7d97f0ab",
+    laserFX = "8c2df5d8796878fe63e77ff7b6f303863cfbee69",
+    laserRig = "5382ec2f79edcf00011774169e4a6f500f91c53e",
+    movingHeadFX = "e37972c5594a3d30961a2124f918f4d634050b7e",
+    movingHeadRig = "246ea4c398498f57c7f729f7f7fe66fb8328b106",
     strobeFX = "850ba444fc0662f5bf4683b2485d8b85dd871a32",
-    strobeRig = "f58820f6275ab438f7da67bae588e3cc7341a0cf",
-    ceilingComplementRig = "0c137232d84a0f2e58149a8add5ec35fd3dc918b",
+    strobeRig = "84cae929cd4a7629116ea985904654fdb249967b",
+    ceilingComplementRig = "92eca92d7c1f89e0dd90498ab326eb00033efa9e",
     ceilingComplementFX = "bcd294408bbcbd0be87fe5c1bf69c7d13c49f4f8",
     utility = "49854d7a11592af42cf18211016f4a2df25bec3d",
     intro = "0fd9dea154d5efe27a92c9f8635c79e033930420",
