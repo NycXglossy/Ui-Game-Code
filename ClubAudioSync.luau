@@ -28,21 +28,25 @@ local lastScan = 0
 local lastPlayer: AudioPlayer? = nil
 local lastAssetId = ""
 local trackGeneration = 0
--- Verified library references are soft tempo priors, never forced playback tempos.
-local TRACK_TEMPO_PRIORS: {[string]: number} = {
-	["100919684616729"] = 127.0, -- Crown of the Night
-	["99973341792058"] = 113.0, -- Midnight Lucid
-	["137104933242988"] = 140.0, -- Empire of Stone
-	["84266261446965"] = 127.0, -- Anvil of Ruin
-	["85420661204078"] = 136.0, -- Code in the Smoke
-	["134987433423089"] = 130.0, -- Rich Lifestyle
-	["92952858514774"] = 120.0, -- Metallic Chaos Within Magic Theory
-	["117388170134707"] = 142.0, -- Steel Collision: opening pulse; later section rises to 155 BPM
-	["86468432953052"] = 138.0, -- Fallen Star Blues
-	["126526272193872"] = 143.0, -- Winter Between Us
-	["96399574470852"] = 130.0, -- Terminal Frequency
-	["113786540921203"] = 145.0, -- Static Defiance
-	["115697666216583"] = 165.0, -- Respawn Anthem
+-- No audio tempo has been manually verified yet. Provisional composition references
+-- are diagnostic hints only; they must not bias candidate selection, octave resolution,
+-- acquisition thresholds, or the measured BPM. Populate TRACK_TEMPO_PRIORS only after
+-- validating the rendered audio independently.
+local TRACK_TEMPO_PRIORS: {[string]: number} = {}
+local TRACK_TEMPO_HINTS: {[string]: number} = {
+	["100919684616729"] = 127.0, -- Crown of the Night (provisional)
+	["99973341792058"] = 113.0, -- Midnight Lucid (provisional)
+	["137104933242988"] = 140.0, -- Empire of Stone (provisional)
+	["84266261446965"] = 127.0, -- Anvil of Ruin (provisional)
+	["85420661204078"] = 136.0, -- Code in the Smoke (provisional)
+	["134987433423089"] = 130.0, -- Rich Lifestyle (provisional)
+	["92952858514774"] = 120.0, -- Metallic Chaos Within Magic Theory (provisional)
+	["117388170134707"] = 142.0, -- Steel Collision opening pulse; later section may rise to 155 (provisional)
+	["86468432953052"] = 138.0, -- Fallen Star Blues (provisional)
+	["126526272193872"] = 143.0, -- Winter Between Us (provisional)
+	["96399574470852"] = 130.0, -- Terminal Frequency (provisional)
+	["113786540921203"] = 145.0, -- Static Defiance (provisional)
+	["115697666216583"] = 165.0, -- Respawn Anthem (provisional)
 }
 local trackWarmupUntil = 0
 local lastSampleAt = 0
@@ -1130,6 +1134,7 @@ function ClubAudioSync.getBeatState(): BeatState
 		lastDiagnosticsAt = now
 		local candidateText = if rawCandidateBPM then string.format("%.1f", rawCandidateBPM) else "none"
 		local priorBPM = TRACK_TEMPO_PRIORS[assetId] or 0
+		local hintBPM = TRACK_TEMPO_HINTS[assetId] or 0
 		local tempoFamily = if rawCandidateBPM
 			then string.format("%.1f/%.1f/%.1f", rawCandidateBPM * 0.5, rawCandidateBPM, rawCandidateBPM * 2)
 			else "none"
@@ -1137,9 +1142,9 @@ function ClubAudioSync.getBeatState(): BeatState
 			then string.format("half=%.1f base=%.1f double=%.1f", bpmDetected * 0.5, bpmDetected, bpmDetected * 2)
 			else "warming"
 		print(string.format(
-			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d feelTransientDropouts=%d feelGridRejected=%d layerAgreement=%.2f family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
+			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f provisionalHint=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d feelTransientDropouts=%d feelGridRejected=%d layerAgreement=%.2f family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
 			if assetId ~= "" then assetId else "unknown", trackGeneration, bpm, bpmConfidence,
-			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, rawCandidateConfidence, priorBPM, pendingTempoConfidence, tempoFamily,
+			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, rawCandidateConfidence, priorBPM, hintBPM, pendingTempoConfidence, tempoFamily,
 			rhythmicFeel, rhythmicFeelConfidence, #feelOnsetIntervals,
 			feelDoubleTimeVotes, feelOnBeatVotes, feelHalfTimeVotes, feelUnclassifiedIntervals,
 			feelTransientDropouts, feelGridRejected, tempoLayerAgreement, feelFamily,
