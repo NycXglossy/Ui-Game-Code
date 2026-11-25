@@ -377,7 +377,9 @@ local function estimateTempoWindow(windowSeconds: number): (number?, number)
 	-- is competitive. Continuity is a tie-breaker, not the source of tempo.
 	local selectedLag = bestLag
 	local selectedScore = bestScore
-	local referenceBPM = TRACK_TEMPO_PRIORS[lastAssetId] or bpmDetected or bpmCurrent
+	-- Do not use BPM_SEED/bpmCurrent to resolve metrical level before audio acquisition.
+	-- The 120 BPM startup value is only a clock fallback, not musical evidence.
+	local referenceBPM = TRACK_TEMPO_PRIORS[lastAssetId] or bpmDetected
 	local familyAmbiguous = false
 	local octaveAlternatives = {bestLag * 2, math.floor(bestLag / 2 + 0.5)}
 	-- Also inspect 3:2 metrical interpretations. A strong triplet pulse can
@@ -927,8 +929,15 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			elseif winner.lowSamples > winner.highSamples * 1.20 and winner.lowBPM > 0 then
 				preferredBPM = winner.lowBPM
 			elseif winner.highBPM > 0 and winner.lowBPM > 0 then
-				preferredBPM = if math.abs(winner.highBPM - bpmCurrent) < math.abs(winner.lowBPM - bpmCurrent)
-					then winner.highBPM else winner.lowBPM
+				-- Only an already-acquired tempo may resolve a near-tie by continuity.
+				-- During startup, follow the stronger recent level vote instead of
+				-- allowing the arbitrary 120 BPM seed to bias the metrical decision.
+				if bpmDetected then
+					preferredBPM = if math.abs(winner.highBPM - bpmDetected) < math.abs(winner.lowBPM - bpmDetected)
+						then winner.highBPM else winner.lowBPM
+				else
+					preferredBPM = if winner.highSamples > winner.lowSamples then winner.highBPM else winner.lowBPM
+				end
 			else
 				preferredBPM = math.max(winner.highBPM, winner.lowBPM)
 			end
@@ -1097,83 +1106,3 @@ function ClubAudioSync.getBeatState(): BeatState
 		lastBeatIndex = -1
 	end
 	if playing and now >= trackWarmupUntil then sampleAnalyzer(dt, timePosition) end
-
-	if bpmDetected and lastTempoUpdate > 0 and now - lastTempoUpdate > TEMPO_STALE_SECONDS then
-		-- Keep the last trusted tempo through breakdowns and analyzer dropouts.
-		-- A new asset explicitly clears this state in clearAnalysis().
-		bpmConfidence *= math.exp(-dt * 0.12)
-		phaseLockConfidence *= math.exp(-dt * 0.08)
-	end
-	local targetBPM = bpmDetected or bpmCurrent
-	bpmCurrent += (targetBPM - bpmCurrent) * (1 - math.exp(-1.8 * dt))
-	local bpm = bpmCurrent
-
-	-- Analyzer onset peaks now correct the phase of the playback-time clock.
-	-- This preserves smooth AudioPlayer timing while preventing BPM-only drift.
-	local period = 60 / bpm
-	local beatPosition = if playing then timePosition else now
-	if not beatAnchorReady and (not playing or not analyzer or not analyzer.Parent) then
-		if not fallbackAnchorReady then
-			beatAnchorPosition = beatPosition
-			fallbackAnchorReady = true
-		end
-	end
-	local beats = (beatPosition - beatAnchorPosition) / period
-	local beatIndex = math.floor(beats)
-	if beatIndex ~= lastBeatIndex then
-		if lastBeatIndex >= 0 and beatIndex > lastBeatIndex then
-			beatCount += math.min(beatIndex - lastBeatIndex, 8)
-		else
-			beatCount += 1
-		end
-		lastBeatIndex = beatIndex
-	end
-	local beatPhase = beats % 1
-	local pulse = math.exp(-beatPhase * 5)
-	if RunService:IsClient() and playing and now - lastDiagnosticsAt >= 5 then
-		lastDiagnosticsAt = now
-		local candidateText = if rawCandidateBPM then string.format("%.1f", rawCandidateBPM) else "none"
-		local priorBPM = TRACK_TEMPO_PRIORS[assetId] or 0
-		local hintBPM = TRACK_TEMPO_HINTS[assetId] or 0
-		local tempoFamily = if rawCandidateBPM
-			then string.format("%.1f/%.1f/%.1f", rawCandidateBPM * 0.5, rawCandidateBPM, rawCandidateBPM * 2)
-			else "none"
-		local feelFamily = if bpmDetected
-			then string.format("half=%.1f base=%.1f double=%.1f", bpmDetected * 0.5, bpmDetected, bpmDetected * 2)
-			else "warming"
-		print(string.format(
-			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f provisionalHint=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d feelTransientDropouts=%d feelGridRejected=%d layerAgreement=%.2f family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
-			if assetId ~= "" then assetId else "unknown", trackGeneration, bpm, bpmConfidence,
-			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, rawCandidateConfidence, priorBPM, hintBPM, pendingTempoConfidence, tempoFamily,
-			rhythmicFeel, rhythmicFeelConfidence, #feelOnsetIntervals,
-			feelDoubleTimeVotes, feelOnBeatVotes, feelHalfTimeVotes, feelUnclassifiedIntervals,
-			feelTransientDropouts, feelGridRejected, tempoLayerAgreement, feelFamily,
-			pendingTempoSamples, phaseLockConfidence, phaseErrorSeconds * 1000, onsetStrength, energy,
-			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
-		))
-	end
-	local tempoDrive = math.clamp((bpm - 70) / 90, 0, 1)
-	local targetMovementSpeed = math.clamp(0.58 + tempoDrive * 0.68 + energy * 0.18,
-		MOVEMENT_SPEED_MIN, MOVEMENT_SPEED_MAX)
-	movementSpeedCurrent += (targetMovementSpeed - movementSpeedCurrent) * (1 - math.exp(-1.8 * dt))
-
-	return {
-		playing = playing,
-		assetId = assetId,
-		timePosition = timePosition,
-		bpm = bpm,
-		bpmConfidence = bpmConfidence,
-		bpmSource = if bpmDetected then "AudioAnalyzer+OnsetPLL" else "Analyzer warming up",
-		beatIndex = beatIndex,
-		beatCount = beatCount,
-		beatPhase = beatPhase,
-		barPhase = (beatIndex % 4) / 4,
-		pulse = pulse,
-		energy = energy,
-		movementSpeed = movementSpeedCurrent,
-		phaseLocked = phaseLockConfidence >= 0.35,
-		onsetStrength = onsetStrength,
-	}
-end
-
-return ClubAudioSync
