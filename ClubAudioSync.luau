@@ -126,6 +126,7 @@ local feelHalfTimeVotes = 0
 local feelUnclassifiedIntervals = 0
 local feelTransientDropouts = 0
 local feelGridRejected = 0
+local matchingTempoEvidenceSamples = 0
 local FEEL_INTERVAL_HISTORY = 12
 local FEEL_CLASSIFY_MIN_INTERVALS = 6
 
@@ -203,6 +204,7 @@ local function clearAnalysis()
 	feelUnclassifiedIntervals = 0
 	feelTransientDropouts = 0
 	feelGridRejected = 0
+	matchingTempoEvidenceSamples = 0
 end
 
 local function ensureAnalyzer(player: AudioPlayer?)
@@ -514,9 +516,28 @@ local function updateRhythmicFeel(onsetPosition: number, referenceBPM: number)
 	local beatPeriod = 60 / referenceBPM
 	local beatsFromAnchor = (onsetPosition - beatAnchorPosition) / beatPeriod
 	local nearestHalfBeat = math.floor(beatsFromAnchor * 2 + 0.5) * 0.5
-	if math.abs(beatsFromAnchor - nearestHalfBeat) > 0.16 then
-		feelGridRejected += 1
-		return
+	local gridAligned = math.abs(beatsFromAnchor - nearestHalfBeat) <= 0.16
+	if not gridAligned then
+		-- Some hybrid grooves place recurring accents just outside the strict
+		-- beat/half-beat phase window. Admit one only when it repeats at a
+		-- plausible subdivision of the established pulse, with stronger live
+		-- onset and phase evidence than the normal on-grid path requires.
+		local interval = if lastFeelOnsetPosition > -math.huge
+			then onsetPosition - lastFeelOnsetPosition else 0
+		local repeatedPulseInterval = false
+		if interval > 0 then
+			for _, multiplier in ipairs({0.5, 1, 2}) do
+				local expected = beatPeriod * multiplier
+				if math.abs(interval - expected) / expected <= 0.16 then
+					repeatedPulseInterval = true
+					break
+				end
+			end
+		end
+		if not repeatedPulseInterval or phaseLockConfidence < 0.45 or onsetStrength < 0.30 then
+			feelGridRejected += 1
+			return
+		end
 	end
 	if lastFeelOnsetPosition > -math.huge then
 		local interval = onsetPosition - lastFeelOnsetPosition
@@ -985,6 +1006,23 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			pendingChallengerSamples = 0
 			lastPendingTempoEvidenceAt = 0
 		end
+	end
+
+	-- Keep an established tempo trusted when several consecutive windows
+	-- continue to support the same pulse, even if individual windows fall
+	-- below the stricter family-accumulation threshold. This refresh is
+	-- continuity-only: it cannot acquire a tempo or move the confirmed BPM.
+	if bpmDetected and detected and hasUsableSignal and confidence >= 0.14
+		and tempoLayerAgreement >= 0.40
+		and math.abs(detected - bpmDetected) / math.max(bpmDetected, 1) <= 0.025 then
+		matchingTempoEvidenceSamples = math.min(matchingTempoEvidenceSamples + 1, 8)
+	else
+		matchingTempoEvidenceSamples = math.max(0, matchingTempoEvidenceSamples - 0.75)
+	end
+	if bpmDetected and matchingTempoEvidenceSamples >= 3 then
+		lastTempoUpdate = analysisNow
+		local retainedConfidence = math.max(confidence, 0.22)
+		bpmConfidence += (retainedConfidence - bpmConfidence) * 0.06
 	end
 end
 
