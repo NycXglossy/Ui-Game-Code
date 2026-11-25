@@ -1,4 +1,5 @@
 --!strict
+-- v0.4.121 adds passive playback transition, crossfade handoff, and watchdog recovery trace telemetry.
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
@@ -35,12 +36,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.120"
+local INSTALLER_VERSION = "0.4.121"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
 local RELEASE = {
-    runtime = "c95fe0f303194de902e01f4125d69c046e04b090",
+    runtime = "c5a659f95d3126f2c54bc02f23c36466175103dd",
     audio = "096f9444e650c3c6b1859549661561f7735ed789",
     catalog = "d7588c3ebe523d9b70ac04d6306d9f649a561763",
     globalService = "60922f3cc7d62ecdfc9673f40653cc0125d19a2c",
