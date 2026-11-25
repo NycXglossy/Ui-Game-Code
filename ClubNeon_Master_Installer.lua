@@ -1,4 +1,5 @@
 --!strict
+-- v0.4.136 adds a pinned GitHub Contents API fallback when raw immutable-commit fetches return 404;
 -- v0.4.135 gates rhythmic-feel votes on locked beat/half-beat phase alignment to reject off-grid hybrid transients;
 -- v0.4.134 adds dropout-aware rhythmic-feel voting so brief transient collapses are not mislabeled as half-time;
 -- adds phrase-based ceiling choreography, makes BeatImpact venue-independent, and refines prior-guided octave selection.
@@ -7,7 +8,7 @@
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.135
+-- CLUB NEON MASTER INSTALLER v0.4.136
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
@@ -40,7 +41,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.135"
+local INSTALLER_VERSION = "0.4.136"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -89,14 +90,41 @@ local function encodePath(path: string): string
 end
 
 local function fetchSource(path: string, commit: string, minimum: number?): string
-    local url = REPO .. commit .. "/" .. encodePath(path)
+    local encodedPath = encodePath(path)
+    local url = REPO .. commit .. "/" .. encodedPath
     local ok, result = pcall(function()
         return HttpService:GetAsync(url, true)
     end)
-    if not ok or type(result) ~= "string" or #result < (minimum or 100) then
-        error("[ClubNeon Master Installer] Could not stage " .. path .. " from " .. commit .. ": " .. tostring(result))
+    if ok and type(result) == "string" and #result >= (minimum or 100) then
+        return result
     end
-    return result
+
+    -- Raw GitHub can briefly return 404 for a newly-created immutable commit
+    -- even after the Git object is available. Fall back to the authenticated-
+    -- public Contents API response, which returns the same pinned blob as base64.
+    local rawError = tostring(result)
+    local apiUrl = "https://api.github.com/repos/NycXglossy/Ui-Game-Code/contents/"
+        .. encodedPath .. "?ref=" .. commit
+    local apiOK, apiResult = pcall(function()
+        return HttpService:GetAsync(apiUrl, true)
+    end)
+    if apiOK and type(apiResult) == "string" then
+        local decodeOK, decoded = pcall(function()
+            local payload = HttpService:JSONDecode(apiResult)
+            if type(payload) ~= "table" or payload.encoding ~= "base64"
+                or type(payload.content) ~= "string" then
+                error("GitHub Contents API returned an unexpected payload")
+            end
+            local compactBase64 = string.gsub(payload.content, "%s", "")
+            return HttpService:Base64Decode(compactBase64)
+        end)
+        if decodeOK and type(decoded) == "string" and #decoded >= (minimum or 100) then
+            return decoded
+        end
+        apiResult = tostring(decoded)
+    end
+    error("[ClubNeon Master Installer] Could not stage " .. path .. " from " .. commit
+        .. ": raw fetch=" .. rawError .. "; pinned API fallback=" .. tostring(apiResult))
 end
 
 type Entry = {
