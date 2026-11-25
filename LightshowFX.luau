@@ -15,23 +15,19 @@ local function addSegment(part)
 	local index = tonumber(part.Name:match("^Segment(%d+)"))
 	if index then table.insert(segments, {part=part, index=index}) end
 end
-local function collectRig(rig)
-	for _, part in ipairs(rig:GetChildren()) do addSegment(part) end
-	rig.ChildAdded:Connect(function() task.defer(function()
-		table.clear(segments)
-		for _, child in ipairs(rigsFolder:GetChildren()) do
-			for _, part in ipairs(child:GetChildren()) do addSegment(part) end
-		end
-	end) end)
-end
 local function collectAll()
 	table.clear(segments)
 	for _, rig in ipairs(rigsFolder:GetChildren()) do
 		for _, part in ipairs(rig:GetChildren()) do addSegment(part) end
 	end
 end
+local function bindRig(rig)
+	rig.ChildAdded:Connect(function() task.defer(collectAll) end)
+	rig.ChildRemoved:Connect(function() task.defer(collectAll) end)
+end
+for _, rig in ipairs(rigsFolder:GetChildren()) do bindRig(rig) end
 collectAll()
-rigsFolder.ChildAdded:Connect(function() task.defer(collectAll) end)
+rigsFolder.ChildAdded:Connect(function(rig) bindRig(rig); task.defer(collectAll) end)
 rigsFolder.ChildRemoved:Connect(function() task.defer(collectAll) end)
 local lastStep = -1
 while true do
