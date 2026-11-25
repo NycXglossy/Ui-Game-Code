@@ -44,8 +44,19 @@ for _, d in workspace:GetDescendants() do
 	end
 end
 
+local existingRig = workspace:FindFirstChild("MovingHeadRig")
+if existingRig then
+	if existingRig:GetAttribute("Ready") == true then
+		print("[ClubNeon][MovingHeadShow] Existing complete server rig found; preserving it.")
+	else
+		warn("[ClubNeon][MovingHeadShow] Existing incomplete rig found; refusing duplicate creation.")
+	end
+	return
+end
 local rig = Instance.new("Folder")
 rig.Name = "MovingHeadRig"
+rig:SetAttribute("ServerOwnedLayout", true)
+rig:SetAttribute("Ready", false)
 rig.Parent = workspace
 
 -- -----------------------------------------------------------
@@ -347,3 +358,5 @@ makeStrobeBar("StrobeE", tx1 - 1, (tz0 + tz1) / 2, true)
 
 -- Rig is built. The client script MovingHeadShowFX discovers
 -- Workspace.MovingHeadRig and drives all beat-synced animation.
+rig:SetAttribute("Ready", true)
+print("[ClubNeon][MovingHeadShow] Server-owned moving-head layout ready; instances=" .. #rig:GetChildren())
