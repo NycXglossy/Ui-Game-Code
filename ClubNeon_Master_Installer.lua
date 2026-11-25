@@ -6,7 +6,7 @@
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.118
+-- CLUB NEON MASTER INSTALLER v0.4.123
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
