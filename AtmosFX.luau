@@ -11,11 +11,11 @@ local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild(
 
 -- Tunables
 local FOG_EVERY = 4 -- beats between fog bursts
-local FOG_PUFF = 35 -- particles per fog burst
-local FLAME_PUFF = 10 -- particles per flame beat (scaled by power)
-local FLAME_PUFF_HOT = 30 -- particles on a heavy kick
-local FLAME_AMBIENT = 22 -- max particles/sec flickering with the envelope
-local FOG_AMBIENT = 3 -- max particles/sec continuous haze
+local FOG_PUFF = 28 -- per-fixture reduction offsets the expanded fogger count
+local FLAME_PUFF = 8 -- per-fixture reduction offsets the expanded flame ring
+local FLAME_PUFF_HOT = 24 -- preserve total burst budget with more jets
+local FLAME_AMBIENT = 18 -- per-jet ambient rate; total remains performance bounded
+local FOG_AMBIENT = 2 -- per-fogger haze rate; expanded coverage stays budgeted
 
 -- Collect fixtures (streaming-robust: retry until they arrive).
 -- All fixtures (foggers and flame jets) live as independent objects
@@ -101,8 +101,13 @@ RunService.Heartbeat:Connect(function()
 		-- of them breathe together for a heavy haze
 		if #fogs > 0 and beatCount % FOG_EVERY == 0 then
 			if norm > 0.6 then
-				for _, fog in fogs do
-					if fog.emitter.Parent then fog.emitter:Emit(FOG_PUFF) end
+				for index, fog in ipairs(fogs) do
+					local delaySeconds = (index - 1) * 0.035
+					task.delay(delaySeconds, function()
+						if fog.unit.Parent and fog.emitter.Parent then
+							fog.emitter:Emit(FOG_PUFF)
+						end
+					end)
 				end
 			else
 				local pickIndex = (math.floor(beatCount / FOG_EVERY) % #fogs) + 1
