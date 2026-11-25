@@ -1247,6 +1247,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			return ControllerFunctions.setAudioGain(value, transitionOutgoing)
 		end,
 		OnFailure = function(message: string)
+			warn(string.format("[ClubMusic][PlaybackTrace] CROSSFADE_CANCEL track=%s generation=%d transition=%d sourceRevision=%d outgoing=%s message=%s",
+				tostring(nowPlaying.trackId), playbackGeneration, audioTransitionTrackToken, audioSourceRevision,
+				tostring(transitionOutgoing and transitionOutgoing.backend or "none"), string.sub(tostring(message), 1, 180)))
 			warn("[ClubMusic][Crossfade] Transition was cancelled safely: " .. tostring(message))
 		end,
 		OnSettled = function(_outcome: string)
@@ -1275,6 +1278,12 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			-- Stop the outgoing source before changing ownership. If it cannot be
 			-- stopped, leave the old source authoritative so Cancel can restore gain.
 			local outgoingSnapshot = ControllerFunctions.getAudioSnapshot()
+			warn(string.format("[ClubMusic][PlaybackTrace] CROSSFADE_COMMIT_BEGIN outgoingTrack=%s incomingTrack=%s generation=%d transition=%d sourceRevision=%d outgoingBackend=%s incomingBackend=%s outgoingPlaying=%s outgoingPosition=%.3f incomingPosition=%.3f",
+				tostring(nowPlaying.trackId), tostring(entry.trackId), playbackGeneration, audioTransitionTrackToken,
+				audioSourceRevision, tostring(outgoing.backend), tostring(incoming),
+				tostring(typeof(outgoingSnapshot) == "table" and outgoingSnapshot.playing == true),
+				typeof(outgoingSnapshot) == "table" and tonumber(outgoingSnapshot.position) or -1,
+				tonumber(player.TimePosition) or -1))
 			local outgoingWasPlaying = typeof(outgoingSnapshot) == "table" and outgoingSnapshot.playing == true
 			local outgoingPosition = if typeof(outgoingSnapshot) == "table"
 				then math.max(0, tonumber(outgoingSnapshot.position) or 0) else 0
@@ -1342,6 +1351,9 @@ ControllerFunctions.createAudioCrossfadeManager = function(): (boolean, string?)
 			if not deferOk then
 				warn("[ClubMusic][Crossfade] Deferred post-commit work could not be scheduled: " .. tostring(deferError))
 			end
+			warn(string.format("[ClubMusic][PlaybackTrace] CROSSFADE_COMMIT_OK activeTrack=%s generation=%d transition=%d sourceRevision=%d activeBackend=%s incomingPosition=%.3f",
+				tostring(nowPlaying.trackId), playbackGeneration, audioTransitionTrackToken, audioSourceRevision,
+				tostring(activeAudioSource.backend), tonumber(player.TimePosition) or -1))
 			if outgoing.backend ~= incoming then
 				-- Ownership has transferred to the incoming deck; retire the previous
 				-- backend through the controller registry so failed cleanup stays reachable.
@@ -7852,6 +7864,12 @@ task.spawn(function()
 				and audio.position >= math.max(0, audio.length - 1.5)
 			if stoppedFor >= 2 and not playheadAtEnd and loadedAndKnownLength
 				and ControllerFunctions.audioRecoveryAttemptedGeneration ~= currentGeneration then
+				local traceSource = activeAudioSource
+				warn(string.format("[ClubMusic][PlaybackTrace] STOP_RECOVERY_BEGIN track=%s generation=%d transition=%d sourceRevision=%d backend=%s asset=%s stoppedFor=%.2f playing=%s ready=%s position=%.3f length=%.3f playheadAtEnd=%s",
+					tostring(nowPlaying.trackId), currentGeneration, audioTransitionTrackToken, audioSourceRevision,
+					tostring(traceSource.backend or traceSource.kind), tostring(audio.asset), stoppedFor,
+					tostring(audio.playing), tostring(audio.ready), tonumber(audio.position) or -1,
+					typeof(audio.length) == "number" and audio.length or -1, tostring(playheadAtEnd)))
 				ControllerFunctions.audioRecoveryAttemptedGeneration = currentGeneration
 				local resumePosition = math.clamp(audio.position, 0, math.max(0, audio.length - 0.25))
 				local seekOk, seekResult = pcall(ControllerFunctions.seekAudio, resumePosition)
@@ -7860,6 +7878,13 @@ task.spawn(function()
 					playOk, playResult = pcall(ControllerFunctions.playAudio)
 				end
 				local recoveredAudio = playOk and playResult ~= false
+				local afterRecoveryOk, afterRecovery = pcall(ControllerFunctions.getAudioSnapshot)
+				warn(string.format("[ClubMusic][PlaybackTrace] STOP_RECOVERY_RESULT track=%s generation=%d transition=%d sourceRevision=%d recovered=%s seekCallOk=%s seekResult=%s playCallOk=%s playResult=%s afterPlaying=%s afterPosition=%.3f backend=%s",
+					tostring(nowPlaying.trackId), currentGeneration, audioTransitionTrackToken, audioSourceRevision,
+					tostring(recoveredAudio), tostring(seekOk), tostring(seekResult), tostring(playOk), tostring(playResult),
+					tostring(afterRecoveryOk and typeof(afterRecovery) == "table" and afterRecovery.playing),
+					afterRecoveryOk and typeof(afterRecovery) == "table" and tonumber(afterRecovery.position) or -1,
+					tostring(activeAudioSource.backend or activeAudioSource.kind)))
 				ControllerFunctions.recordDiagnosticPulse("Recovery",
 					if recoveredAudio then "audio-resume-recovered" else "audio-resume-failed",
 					recoveredAudio, {generation = currentGeneration})
@@ -7871,6 +7896,12 @@ task.spawn(function()
 				or (not loadedAndKnownLength and nowPlaying.elapsed >= 45) then
 				local quality = ControllerFunctions.inspectPlaybackQuality()
 				local reason = if typeof(quality) == "table" then tostring(quality.state or "Unknown") else "WatchdogStoppedTrack"
+				warn(string.format("[ClubMusic][PlaybackTrace] WATCHDOG_ADVANCE track=%s generation=%d transition=%d sourceRevision=%d reason=%s stoppedFor=%.2f playing=%s ready=%s position=%.3f length=%.3f attemptedRecovery=%s",
+					tostring(nowPlaying.trackId), currentGeneration, audioTransitionTrackToken, audioSourceRevision,
+					reason, stoppedFor, tostring(audio.playing), tostring(audio.ready),
+					typeof(audio.position) == "number" and audio.position or -1,
+					typeof(audio.length) == "number" and audio.length or -1,
+					tostring(ControllerFunctions.audioRecoveryAttemptedGeneration == currentGeneration)))
 				shouldAdvance = true
 				warn("[ClubMusic] Playback watchdog confirmed an ended or unrecoverable track (" .. reason .. "); advancing safely.")
 				if ControllerFunctions.ErrorHandler then
@@ -7910,6 +7941,13 @@ task.spawn(function()
 				crossfadeAttemptedGeneration = currentGeneration
 				pendingCrossfadeEntry = nextEntry
 				pendingCrossfadeToken = audioTransitionTrackToken
+				local preCrossfade = ControllerFunctions.getAudioSnapshot()
+				warn(string.format("[ClubMusic][PlaybackTrace] CROSSFADE_BEGIN track=%s nextTrack=%s generation=%d transition=%d sourceRevision=%d backend=%s playing=%s position=%.3f length=%.3f remaining=%.2f nextAsset=%s",
+					tostring(nowPlaying.trackId), tostring(nextEntry.trackId), currentGeneration, audioTransitionTrackToken,
+					audioSourceRevision, tostring(activeAudioSource.backend or activeAudioSource.kind),
+					tostring(typeof(preCrossfade) == "table" and preCrossfade.playing),
+					typeof(preCrossfade) == "table" and tonumber(preCrossfade.position) or -1,
+					typeof(preCrossfade) == "table" and tonumber(preCrossfade.length) or -1, remaining, nextAsset))
 				local started, startError = ControllerFunctions.beginAudioCrossfade(nextAsset, CONFIG.CrossfadeDurationSeconds)
 				if not started then
 					pendingCrossfadeEntry = nil
