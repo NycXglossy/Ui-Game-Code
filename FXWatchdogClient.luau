@@ -31,7 +31,6 @@ local FX_NAMES = {
 	"ArchitecturalAccentFX",
 	"PixelMatrixFX",
 	"GlowFloorFXScript",
-	"SpeakerEffects",
 	"NeonSignFX",
 	"NeonTrimEffects",
 	"BarNeonScript",
