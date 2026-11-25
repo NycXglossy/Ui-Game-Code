@@ -125,6 +125,7 @@ local feelOnBeatVotes = 0
 local feelHalfTimeVotes = 0
 local feelUnclassifiedIntervals = 0
 local feelTransientDropouts = 0
+local feelGridRejected = 0
 local FEEL_INTERVAL_HISTORY = 12
 local FEEL_CLASSIFY_MIN_INTERVALS = 6
 
@@ -201,6 +202,7 @@ local function clearAnalysis()
 	feelHalfTimeVotes = 0
 	feelUnclassifiedIntervals = 0
 	feelTransientDropouts = 0
+	feelGridRejected = 0
 end
 
 local function ensureAnalyzer(player: AudioPlayer?)
@@ -501,6 +503,21 @@ end
 
 local function updateRhythmicFeel(onsetPosition: number, referenceBPM: number)
 	if referenceBPM < BPM_MIN or referenceBPM > BPM_MAX then return end
+	-- A mixed electronic/metal master can generate many valid spectral peaks
+	-- that are not part of its perceived pulse. Only let sufficiently strong
+	-- peaks vote when they align with the locked beat OR half-beat grid.
+	-- This keeps syncopated/glitch transients from freely steering feel labels.
+	if not beatAnchorReady or phaseLockConfidence < 0.28 or onsetStrength < 0.18 then
+		feelGridRejected += 1
+		return
+	end
+	local beatPeriod = 60 / referenceBPM
+	local beatsFromAnchor = (onsetPosition - beatAnchorPosition) / beatPeriod
+	local nearestHalfBeat = math.floor(beatsFromAnchor * 2 + 0.5) * 0.5
+	if math.abs(beatsFromAnchor - nearestHalfBeat) > 0.16 then
+		feelGridRejected += 1
+		return
+	end
 	if lastFeelOnsetPosition > -math.huge then
 		local interval = onsetPosition - lastFeelOnsetPosition
 		-- A long gap between detected peaks is not automatically half-time.
@@ -709,7 +726,6 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 		onsetStrength = math.clamp((peak - mean) / math.max(deviation * 3, 1e-5), 0, 1)
 
 		local bpm = bpmDetected or bpmCurrent
-		updateRhythmicFeel(peakPosition, bpm)
 		local period = 60 / math.clamp(bpm, BPM_MIN, BPM_MAX)
 		-- The fast diagnostic lane may observe 0.16-0.22s events, but the
 		-- primary beat PLL retains its independent stricter 0.22s gate.
@@ -741,6 +757,7 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 				phaseLockConfidence *= 0.985
 			end
 		end
+		updateRhythmicFeel(peakPosition, bpm)
 	end
 	fluxOlder = fluxPrevious
 	fluxPrevious = smoothedOnset
@@ -1073,12 +1090,12 @@ function ClubAudioSync.getBeatState(): BeatState
 			then string.format("half=%.1f base=%.1f double=%.1f", bpmDetected * 0.5, bpmDetected, bpmDetected * 2)
 			else "warming"
 		print(string.format(
-			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d feelTransientDropouts=%d layerAgreement=%.2f family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
+			"[ClubAudioSync][Analyzer] track=%s generation=%d BPM=%.1f confidence=%.2f source=%s candidate=%s candidateConfidence=%.2f prior=%.1f pendingConfidence=%.2f familyHalfCurrentDouble=%s feel=%s feelConfidence=%.2f feelSamples=%d feelVotes(double/on/half/unclassified)=%d/%d/%d/%d feelTransientDropouts=%d feelGridRejected=%d layerAgreement=%.2f family=%s pending=%d phaseLockQuality=%.2f phaseErrorMs=%.1f onset=%.2f energy=%.2f analyzerReady=%s",
 			if assetId ~= "" then assetId else "unknown", trackGeneration, bpm, bpmConfidence,
 			if bpmDetected then "audio-confirmed" else "seed/warming", candidateText, rawCandidateConfidence, priorBPM, pendingTempoConfidence, tempoFamily,
 			rhythmicFeel, rhythmicFeelConfidence, #feelOnsetIntervals,
 			feelDoubleTimeVotes, feelOnBeatVotes, feelHalfTimeVotes, feelUnclassifiedIntervals,
-			feelTransientDropouts, tempoLayerAgreement, feelFamily,
+			feelTransientDropouts, feelGridRejected, tempoLayerAgreement, feelFamily,
 			pendingTempoSamples, phaseLockConfidence, phaseErrorSeconds * 1000, onsetStrength, energy,
 			tostring(analyzer ~= nil and analyzer.Parent ~= nil)
 		))
