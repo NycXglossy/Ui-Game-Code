@@ -19,7 +19,7 @@ local baseCameraOffset = Vector3.zero
 local BASE_FOV = 70
 local MAX_FOV_PUNCH = 5 -- extra FOV degrees at full beat power
 local SHAKE_POWER = 0.35 -- max humanoid camera offset magnitude
-local FLOOR_CENTER = Vector3.new(458, 0, -110)
+local FLOOR_BOUNDS_NAME = "CeilingFX"
 local FULL_EFFECT_DIST = 150 -- full intensity inside this radius
 local FADE_OUT_DIST = 320 -- no effect beyond this radius
 
@@ -46,6 +46,17 @@ local shake = Vector3.zero
 
 local clock = os.clock
 local lastT = clock()
+
+local function getVenueCenter(): Vector3?
+	local bounds = workspace:FindFirstChild(FLOOR_BOUNDS_NAME)
+	if not bounds or bounds:GetAttribute("FloorBoundsReady") ~= true then return nil end
+	local minX, maxX = bounds:GetAttribute("FloorBoundsMinX"), bounds:GetAttribute("FloorBoundsMaxX")
+	local minZ, maxZ = bounds:GetAttribute("FloorBoundsMinZ"), bounds:GetAttribute("FloorBoundsMaxZ")
+	if typeof(minX) ~= "number" or typeof(maxX) ~= "number"
+		or typeof(minZ) ~= "number" or typeof(maxZ) ~= "number"
+		or maxX <= minX or maxZ <= minZ then return nil end
+	return Vector3.new((minX + maxX) * 0.5, 0, (minZ + maxZ) * 0.5)
+end
 
 local heartbeatConnection = RunService.Heartbeat:Connect(function()
 	local currentCamera = workspace.CurrentCamera
@@ -82,8 +93,15 @@ local heartbeatConnection = RunService.Heartbeat:Connect(function()
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	local effectScale = 0
 	if hrp then
-		local dist = (Vector3.new(hrp.Position.X, 0, hrp.Position.Z) - FLOOR_CENTER).Magnitude
-		effectScale = 1 - math.clamp((dist - FULL_EFFECT_DIST) / (FADE_OUT_DIST - FULL_EFFECT_DIST), 0, 1)
+		local floorCenter = getVenueCenter()
+		if floorCenter then
+			local dist = (Vector3.new(hrp.Position.X, 0, hrp.Position.Z) - floorCenter).Magnitude
+			effectScale = 1 - math.clamp((dist - FULL_EFFECT_DIST) / (FADE_OUT_DIST - FULL_EFFECT_DIST), 0, 1)
+		else
+			-- If authoritative bounds have not replicated yet, avoid applying a
+			-- misleading distance fade from a hardcoded venue coordinate.
+			effectScale = 1
+		end
 	end
 
 	-- Master switch: players can turn the immersion off from the phone Settings app
