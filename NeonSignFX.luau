@@ -1,4 +1,3 @@
---!strict
 -- NeonSignFX: client-local marquee, gradient and glow choreography for server-owned sign geometry.
 local ClubAudioSync = require(game:GetService("ReplicatedStorage"):WaitForChild("ClubAudioSync"))
 local Workspace = game:GetService("Workspace")
@@ -20,7 +19,7 @@ local function collect()
 	local viewport = gui and gui:FindFirstChild("ScrollViewport")
 	local candidate = viewport and viewport:FindFirstChild("ScrollContainer")
 	container = if candidate and candidate:IsA("GuiObject") then candidate else nil
-	light = if back then back:FindFirstChildOfClass("PointLight") else nil
+	light = if back then back:FindFirstChildOfClass("PointLight") :: PointLight? else nil
 	frame = {
 		sign and sign:FindFirstChild("FrameTop"),
 		sign and sign:FindFirstChild("FrameBottom"),
@@ -91,7 +90,7 @@ while true do
 		light.Brightness = 2 + glow * 3
 		light.Range = 90 + glow * 60
 	end
-	for i, part in ipairs(frame) do
+	for i, part in pairs(frame) do
 		if part and part:IsA("BasePart") then
 			part.Color = Color3.fromHSV((hue + i * 0.06) % 1, 1, 1)
 			part.Transparency = 1 - glow
