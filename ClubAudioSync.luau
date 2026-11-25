@@ -797,6 +797,25 @@ local function sampleAnalyzer(dt: number, timePosition: number)
 			else
 				preferredBPM = math.max(winner.highBPM, winner.lowBPM)
 			end
+
+			-- A track prior may disambiguate the octave inside an already-supported
+			-- family. It cannot create a family or bypass the evidence/confidence gate.
+			local trackPrior = TRACK_TEMPO_PRIORS[lastAssetId]
+			if trackPrior then
+				local lowMatchesPrior = winner.lowBPM > 0
+					and math.abs(winner.lowBPM - trackPrior) / trackPrior <= 0.055
+				local highMatchesPrior = winner.highBPM > 0
+					and math.abs(winner.highBPM - trackPrior) / trackPrior <= 0.055
+				local lowEvidence = winner.lowSamples or 0
+				local highEvidence = winner.highSamples or 0
+				if highMatchesPrior and highEvidence >= math.max(8, lowEvidence * 0.65)
+					and winner.confidence >= 0.28 then
+					preferredBPM = winner.highBPM
+				elseif lowMatchesPrior and lowEvidence >= math.max(8, highEvidence * 0.65)
+					and winner.confidence >= 0.28 then
+					preferredBPM = winner.lowBPM
+				end
+			end
 			pendingBPM = preferredBPM
 			pendingTempoSamples = math.floor(winner.samples)
 			pendingTempoConfidence = winner.confidence
