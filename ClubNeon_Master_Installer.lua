@@ -1,12 +1,12 @@
 --!strict
--- v0.4.127 moves remaining architectural animation local and expands FX watchdog probes;
+-- v0.4.128 finalizes client-local architectural FX discovery and watchdog release pins;
 -- adds phrase-based ceiling choreography, makes BeatImpact venue-independent, and refines prior-guided octave selection.
 -- Playback transition/recovery telemetry remains passive; no playback behavior or watchdog thresholds are changed.
 -- v0.4.121 adds passive playback transition, crossfade handoff, and watchdog recovery trace telemetry.
 -- v0.4.118 doubles the four-wall perimeter strobe layout from 24 to 48 fixtures.
 -- v0.4.117 doubles ceiling profile, wash and LED PAR coverage while retaining server-owned fixtures and client-local animation.
 -- v0.4.116 applies compressive spectral-flux handling to reduce transient dominance in dense blast-beat/double-kick material.
--- CLUB NEON MASTER INSTALLER v0.4.127
+-- CLUB NEON MASTER INSTALLER v0.4.128
 -- v0.4.115 adds pan/tilt ceiling profiles, broad wash fixtures and LED PARs with local beat-synced animation.
 -- v0.4.114 adds a server-owned four-wall strobe rig paired with local client animation.
 -- v0.4.108 trims standalone controller comments to stay below Roblox's 200,000-character source limit; executable logic is unchanged.
@@ -39,7 +39,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 local StarterPlayerScripts = StarterPlayer:WaitForChild("StarterPlayerScripts")
 
-local INSTALLER_VERSION = "0.4.127"
+local INSTALLER_VERSION = "0.4.128"
 local DRY_RUN = true -- Set false only after ClubNeon_Config.lua is completed and a place backup exists.
 
 local REPO = "https://raw.githubusercontent.com/NycXglossy/Ui-Game-Code/"
@@ -58,10 +58,10 @@ local RELEASE = {
     atmosRig = "e266e9f7e148ee29b44b972fda2cb1c85c39051a",
     audienceBlinderRig = "5f9cbfd7ba2721315e7dd8642dfe60e35b86986c",
     stageHazeRig = "a118e9964905ecbaf1a06538f1c6c732720bfcf4",
-    neonSignFX = "b2c3e09de5a5ef92c881613976ab8b93af86164e",
+    neonSignFX = "aa8447710888d804d1351f502c0dd0440c18c24e",
     neonTrimFX = "a07c3bc3f07be97aea7ade2b8ef5ff4beec3c6cc",
     barNeonFX = "1f5aba82d7e2b97f9cc34b38b0f0ada6e5d15868",
-    lightshowFX = "36f49160d7af278d3b6ae9a36eab9cbeaf571ec9",
+    lightshowFX = "de8cd94b45f1f12002bfe5972ef876b79488f271",
     fxWatchdog = "ee9b03210b00277237287e1dd20901a6ff14dcfb",
     audioSync = "31a1831799eb262e51ce39b0b3863466e20512f5",
     djStageBarRig = "d4e11efc2a323450461f1a810222caba3ed8dbd9",
@@ -362,7 +362,7 @@ for _, item in ipairs({
     {"CeilingFXScript.luau", "Script", "ServerScriptService", "CeilingFXScript"},
     {"PixelMatrixFX.luau", "LocalScript", "StarterPlayerScripts", "PixelMatrixFX"},
     {"CeilingPillarFX.luau", "LocalScript", "StarterPlayerScripts", "CeilingPillarFX"},
-    {"FXWatchdogClient.luau", "LocalScript", "StarterPlayerScripts", "FXWatchdogClient"},
+    {"FXWatchdogClient.luau", "LocalScript", "StarterPlayerScripts", "FXWatchdogClient", RELEASE.fxWatchdog},
     {"GlowFloorFXScript.luau", "LocalScript", "StarterPlayerScripts", "GlowFloorFXScript"},
     {"HazeBeamFX.luau", "LocalScript", "StarterPlayerScripts", "HazeBeamFX"},
     {"LaserShowFX.luau", "LocalScript", "StarterPlayerScripts", "LaserShowFX", RELEASE.laserFX},
